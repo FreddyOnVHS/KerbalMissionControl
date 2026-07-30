@@ -1,3 +1,5 @@
 <Solution>
-  <Project Path="KMC.shared/KMC.shared.csproj" />
+  <Project Path="KMC.MissionControl/KMC.MissionControl.csproj" Id="0bea5954-90dc-4b02-b9b3-6df2e8bbba46" />
+  <Project Path="KMC.Plugin/KMC.Plugin.csproj" Id="26fc5569-6518-457d-8f57-3cfaae024fc4" />
+  <Project Path="KMC.shared/KMC.Shared.csproj" Id="c6298e64-33fb-4ab2-a330-6c825cee3b6d" />
 </Solution>
