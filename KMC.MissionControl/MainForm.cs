@@ -13,8 +13,8 @@ namespace KMC.MissionControl
 {
     public sealed class MainForm : Form
     {
-        private const int OuterMargin = 24;
-        private const int HeaderHeight = 58;
+        private const int OuterMargin = 16;
+        private const int HeaderHeight = 42;
         private const int SectionSpacing = 16;
         private const int NavigationHeight = 44;
         private const int NormalSummaryHeight = 250;
@@ -44,9 +44,10 @@ namespace KMC.MissionControl
                 1180,
                 900);
 
-            MinimumSize = new Size(
-                760,
-                600);
+            MinimumSize = SizeFromClientSize(
+                new Size(
+                744,
+                1000));
 
             StartPosition =
                 FormStartPosition.CenterScreen;
@@ -193,9 +194,9 @@ namespace KMC.MissionControl
                     100.0f));
 
             rootLayout.RowStyles.Add(
-                new RowStyle(
+                 new RowStyle(
                     SizeType.Absolute,
-                    NormalSummaryHeight));
+                    HeaderHeight));
 
             rootLayout.RowStyles.Add(
                 new RowStyle(
