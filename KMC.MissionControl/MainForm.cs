@@ -13,11 +13,24 @@ namespace KMC.MissionControl
 {
     public sealed class MainForm : Form
     {
+        private const int OuterMargin = 24;
+        private const int HeaderHeight = 58;
+        private const int SectionSpacing = 16;
+        private const int NavigationHeight = 44;
+        private const int NormalSummaryHeight = 250;
+        private const int CompactSummaryHeight = 190;
+
+        private const int CompactHeightBreakpoint = 820;
+        private const int HideSummaryHeightBreakpoint = 700;
+
+        private readonly TableLayoutPanel _rootLayout;
+
         private readonly MissionControlReceiver _receiver;
         private readonly FormsTimer _connectionTimer;
+
         private readonly Label _connectionLabel;
-        private readonly ConsolePanel _testPanel;
-        private readonly MissionDisplay _ascentCrt;
+        private readonly ConsolePanel _displayPanel;
+        private readonly MissionDisplay _missionDisplay;
         private readonly NavigationBar _navigationBar;
         private readonly MissionSummary _missionSummary;
 
@@ -27,80 +40,293 @@ namespace KMC.MissionControl
         {
             Text = "KMC - Kerbal Mission Control";
 
-            Width = 760;
-            Height = 960;
-            MinimumSize = new Size(700, 760);
+            ClientSize = new Size(
+                1180,
+                900);
 
-            StartPosition = FormStartPosition.CenterScreen;
-            AutoScroll = true;
+            MinimumSize = new Size(
+                760,
+                600);
 
-            BackColor = ApolloTheme.WindowBackground;
-            ForeColor = Color.FromArgb(190, 255, 190);
+            StartPosition =
+                FormStartPosition.CenterScreen;
+
+            BackColor =
+                ApolloTheme.WindowBackground;
+
+            ForeColor =
+                Color.FromArgb(
+                    190,
+                    255,
+                    190);
 
             Font = new Font(
                 "Consolas",
-                12f,
+                12.0f,
                 FontStyle.Regular);
 
-            Label titleLabel = new Label
-            {
-                Text = "KERBAL MISSION CONTROL",
-                Left = 24,
-                Top = 18,
-                Width = 500,
-                Height = 36,
-                Font = new Font(
-                    "Consolas",
-                    20f,
-                    FontStyle.Bold)
-            };
+            AutoScaleMode =
+                AutoScaleMode.Dpi;
 
-            _connectionLabel = new Label
+            _connectionLabel =
+                CreateConnectionLabel();
+
+            _displayPanel =
+                new ConsolePanel
+                {
+                    PanelTitle = "ASCENT DISPLAY",
+                    Dock = DockStyle.Fill,
+                    Margin = Padding.Empty
+                };
+
+            _missionDisplay =
+                new MissionDisplay
+                {
+                    ScreenTitle = "ASCENT DATA",
+                    PhosphorMode =
+                        CrtPhosphorMode.Blue,
+                    ShowScanLines = true,
+                    ShowScalingDiagnostics = false,
+                    Dock = DockStyle.Fill,
+                    Margin = Padding.Empty,
+                    MinimumSize = new Size(
+                        320,
+                        180)
+                };
+
+            _navigationBar =
+                new NavigationBar
+                {
+                    Dock = DockStyle.Top,
+                    Height = NavigationHeight,
+                    Margin = Padding.Empty
+                };
+
+            ConfigureNavigation();
+
+            MissionTelemetry initialTelemetry =
+                new MissionTelemetry();
+
+            _missionDisplay.SetPage(
+                new AscentPage());
+
+            _missionDisplay.UpdateTelemetry(
+                initialTelemetry);
+
+            /*
+             * Docking order matters in WinForms.
+             *
+             * Add the fill control first and the top control second.
+             * The navigation bar then occupies the top of the panel,
+             * while the mission display fills the remaining space.
+             */
+            _displayPanel.Controls.Add(
+                _missionDisplay);
+
+            _displayPanel.Controls.Add(
+                _navigationBar);
+
+            _missionSummary =
+                new MissionSummary
+                {
+                    Dock = DockStyle.Fill,
+                    Margin = Padding.Empty,
+                    MinimumSize = new Size(
+                        320,
+                        180)
+                };
+
+            _missionSummary.UpdateTelemetry(
+                initialTelemetry);
+
+            _rootLayout =
+                 CreateMainLayout();
+
+            Controls.Add(
+                _rootLayout);
+
+            Resize +=
+                OnMainFormResize;
+
+                UpdateResponsiveLayout();
+
+            _receiver =
+                new MissionControlReceiver();
+
+            _receiver.TelemetryReceived +=
+                OnTelemetryReceived;
+
+            _connectionTimer =
+                new FormsTimer
+                {
+                    Interval = 500
+                };
+
+            _connectionTimer.Tick +=
+                OnConnectionTimerTick;
+
+            Load +=
+                OnFormLoad;
+
+            FormClosing +=
+                OnFormClosing;
+        }
+
+        private TableLayoutPanel CreateMainLayout()
+        {
+            TableLayoutPanel rootLayout =
+                new TableLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    BackColor =
+                        ApolloTheme.WindowBackground,
+                    Padding = new Padding(
+                        OuterMargin),
+                    Margin = Padding.Empty,
+                    ColumnCount = 1,
+                    RowCount = 5
+                };
+
+            rootLayout.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Percent,
+                    100.0f));
+
+            rootLayout.RowStyles.Add(
+                new RowStyle(
+                    SizeType.Absolute,
+                    NormalSummaryHeight));
+
+            rootLayout.RowStyles.Add(
+                new RowStyle(
+                    SizeType.Percent,
+                    100.0f));
+
+            rootLayout.RowStyles.Add(
+                new RowStyle(
+                    SizeType.Absolute,
+                    SectionSpacing));
+
+            rootLayout.RowStyles.Add(
+                new RowStyle(
+                    SizeType.Absolute,
+                    NormalSummaryHeight));
+
+            rootLayout.RowStyles.Add(
+                new RowStyle(
+                    SizeType.Absolute,
+                    1.0f));
+
+            Control header =
+                CreateHeader();
+
+            rootLayout.Controls.Add(
+                header,
+                0,
+                0);
+
+            rootLayout.Controls.Add(
+                _displayPanel,
+                0,
+                1);
+
+            /*
+             * Row 2 is intentionally empty.
+             * It acts as the space between the console display
+             * and the mission summary.
+             */
+
+            rootLayout.Controls.Add(
+                _missionSummary,
+                0,
+                3);
+
+            return rootLayout;
+        }
+
+        private Control CreateHeader()
+        {
+            TableLayoutPanel headerLayout =
+                new TableLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    BackColor =
+                        ApolloTheme.WindowBackground,
+                    Margin = Padding.Empty,
+                    Padding = Padding.Empty,
+                    ColumnCount = 2,
+                    RowCount = 1
+                };
+
+            headerLayout.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Percent,
+                    100.0f));
+
+            headerLayout.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Absolute,
+                    210.0f));
+
+            headerLayout.RowStyles.Add(
+                new RowStyle(
+                    SizeType.Percent,
+                    100.0f));
+
+            Label titleLabel =
+                new Label
+                {
+                    Text =
+                        "KERBAL MISSION CONTROL",
+                    Dock = DockStyle.Fill,
+                    Margin = Padding.Empty,
+                    TextAlign =
+                        ContentAlignment.MiddleLeft,
+                    ForeColor =
+                        Color.FromArgb(
+                            190,
+                            255,
+                            190),
+                    Font = new Font(
+                        "Consolas",
+                        20.0f,
+                        FontStyle.Bold),
+                    AutoEllipsis = true
+                };
+
+            headerLayout.Controls.Add(
+                titleLabel,
+                0,
+                0);
+
+            headerLayout.Controls.Add(
+                _connectionLabel,
+                1,
+                0);
+
+            return headerLayout;
+        }
+
+        private static Label CreateConnectionLabel()
+        {
+            return new Label
             {
                 Text = "LINK OFFLINE",
-                Left = 545,
-                Top = 25,
-                Width = 170,
-                Height = 28,
-                TextAlign = ContentAlignment.MiddleRight,
-                ForeColor = Color.OrangeRed,
+                Dock = DockStyle.Fill,
+                Margin = Padding.Empty,
+                TextAlign =
+                    ContentAlignment.MiddleRight,
+                ForeColor =
+                    Color.OrangeRed,
                 Font = new Font(
                     "Consolas",
-                    12f,
+                    12.0f,
                     FontStyle.Bold)
             };
+        }
 
-            Controls.Add(titleLabel);
-            Controls.Add(_connectionLabel);
-
-            _testPanel = new ConsolePanel
-            {
-                PanelTitle = "ASCENT DISPLAY",
-                Left = 30,
-                Top = 80,
-                Width = 680,
-                Height = 500
-            };
-
-            _ascentCrt = new MissionDisplay
-            {
-                ScreenTitle = "ASCENT DATA",
-                PhosphorMode = CrtPhosphorMode.Blue,
-                ShowScanLines = true,
-                Left = 30,
-                Top = 94,
-                Width = 620,
-                Height = 378
-            };
-
-            _navigationBar = new NavigationBar
-            {
-                Left = 30,
-                Top = 42,
-                Width = 620,
-                Height = 44
-            };
-
+        private void ConfigureNavigation()
+        {
             _navigationBar.AddPage(
                 "ASCENT",
                 new AscentPage());
@@ -139,57 +365,93 @@ namespace KMC.MissionControl
                 enabled: false);
 
             _navigationBar.PageChanged +=
-                (page, title) =>
-                {
-                    _ascentCrt.SetPage(page);
-                    _ascentCrt.ScreenTitle = title + " DATA";
-                    _testPanel.PanelTitle = title + " DISPLAY";
-                };
+                OnPageChanged;
+        }
 
-            MissionTelemetry initialTelemetry =
-                new MissionTelemetry();
+        private void OnPageChanged(
+            IMissionPage page,
+            string title)
+        {
+            _missionDisplay.SetPage(
+                page);
 
-            _ascentCrt.SetPage(
-                new AscentPage());
+            _missionDisplay.ScreenTitle =
+                title + " DATA";
 
-            _ascentCrt.UpdateTelemetry(
-                initialTelemetry);
+            _displayPanel.PanelTitle =
+                title + " DISPLAY";
+        }
 
-            _testPanel.Controls.Add(
-                _navigationBar);
+        private void OnMainFormResize(
+    object sender,
+    EventArgs e)
+        {
+            UpdateResponsiveLayout();
+        }
 
-            _testPanel.Controls.Add(
-                _ascentCrt);
-
-            Controls.Add(
-                _testPanel);
-
-            _missionSummary = new MissionSummary
+        private void UpdateResponsiveLayout()
+        {
+            if (_rootLayout == null ||
+                _missionSummary == null)
             {
-                Left = 30,
-                Top = 600,
-                Width = 680,
-                Height = 270
-            };
+                return;
+            }
 
-            _missionSummary.UpdateTelemetry(
-                initialTelemetry);
+            int availableHeight =
+                ClientSize.Height;
 
-            Controls.Add(
-                _missionSummary);
-
-            _receiver = new MissionControlReceiver();
-            _receiver.TelemetryReceived += OnTelemetryReceived;
-
-            _connectionTimer = new FormsTimer
+            if (availableHeight <
+                HideSummaryHeightBreakpoint)
             {
-                Interval = 500
-            };
+                SetSummaryLayout(
+                    visible: false,
+                    height: 0);
+            }
+            else if (availableHeight <
+                     CompactHeightBreakpoint)
+            {
+                SetSummaryLayout(
+                    visible: true,
+                    height: CompactSummaryHeight);
+            }
+            else
+            {
+                SetSummaryLayout(
+                    visible: true,
+                    height: NormalSummaryHeight);
+            }
+        }
 
-            _connectionTimer.Tick += OnConnectionTimerTick;
+        private void SetSummaryLayout(
+            bool visible,
+            int height)
+        {
+            _rootLayout.SuspendLayout();
 
-            Load += OnFormLoad;
-            FormClosing += OnFormClosing;
+            try
+            {
+                _missionSummary.Visible =
+                    visible;
+
+                _rootLayout.RowStyles[3].Height =
+                    Math.Max(
+                        0,
+                        height);
+
+                /*
+                 * Remove the gap above the summary when the
+                 * summary is hidden.
+                 */
+                _rootLayout.RowStyles[2].Height =
+                    visible
+                        ? SectionSpacing
+                        : 0;
+            }
+            finally
+            {
+                _rootLayout.ResumeLayout(
+                    performLayout: true);
+            }
         }
 
         private void OnFormLoad(
@@ -204,7 +466,8 @@ namespace KMC.MissionControl
             catch (Exception ex)
             {
                 MessageBox.Show(
-                    "Mission Control could not start the telemetry receiver.\n\n"
+                    "Mission Control could not start "
+                    + "the telemetry receiver.\n\n"
                     + ex.Message,
                     "KMC Startup Error",
                     MessageBoxButtons.OK,
@@ -215,6 +478,11 @@ namespace KMC.MissionControl
         private void OnTelemetryReceived(
             TelemetryPacket packet)
         {
+            if (packet == null)
+            {
+                return;
+            }
+
             if (InvokeRequired)
             {
                 BeginInvoke(
@@ -225,107 +493,152 @@ namespace KMC.MissionControl
                 return;
             }
 
-            _lastPacketUtc = DateTime.UtcNow;
+            _lastPacketUtc =
+                DateTime.UtcNow;
 
             MissionTelemetry telemetry =
-                new MissionTelemetry
-                {
-                    VesselName = packet.VesselName,
-                    BodyName = packet.BodyName,
-                    MissionTime = packet.MissionTime,
+                CreateMissionTelemetry(
+                    packet);
 
-                    Altitude = packet.Altitude,
-                    RadarAltitude = packet.RadarAltitude,
-
-                    Apoapsis = packet.Apoapsis,
-                    Periapsis = packet.Periapsis,
-                    TimeToApoapsis = packet.TimeToApoapsis,
-
-                    SurfaceSpeed = packet.SurfaceSpeed,
-                    HorizontalSpeed = packet.HorizontalSpeed,
-                    VerticalSpeed = packet.VerticalSpeed,
-                    OrbitalSpeed = packet.OrbitalSpeed,
-
-                    Throttle = packet.Throttle,
-                    CurrentStage = packet.CurrentStage,
-                    GForce = packet.GForce,
-
-                    Pitch = packet.Pitch,
-                    Heading = packet.Heading,
-                    Roll = packet.Roll,
-
-                    DynamicPressureKpa =
-                        packet.DynamicPressureKpa,
-
-                    StaticPressureKpa =
-                        packet.StaticPressureKpa,
-
-                    Mach = packet.Mach,
-
-                    VesselMass = packet.VesselMass,
-                    CurrentThrust = packet.CurrentThrust,
-                    MaximumThrust = packet.MaximumThrust,
-
-                    ThrustToWeightRatio =
-                        packet.ThrustToWeightRatio,
-
-                    EngineCount =
-                        packet.EngineCount,
-
-                    IgnitedEngineCount =
-                        packet.IgnitedEngineCount,
-
-                    ProducingThrustEngineCount =
-                        packet.ProducingThrustEngineCount,
-
-                    FlameoutEngineCount =
-                        packet.FlameoutEngineCount,
-
-                    AverageSpecificImpulse =
-                        packet.AverageSpecificImpulse,
-
-                    StageLiquidFuelAmount =
-                        packet.StageLiquidFuelAmount,
-
-                    StageLiquidFuelCapacity =
-                        packet.StageLiquidFuelCapacity,
-
-                    StageOxidizerAmount =
-                        packet.StageOxidizerAmount,
-
-                    StageOxidizerCapacity =
-                        packet.StageOxidizerCapacity,
-
-                    StageMonopropellantAmount =
-                        packet.StageMonopropellantAmount,
-
-                    StageMonopropellantCapacity =
-                        packet.StageMonopropellantCapacity,
-
-                    TotalLiquidFuelAmount =
-                        packet.TotalLiquidFuelAmount,
-
-                    TotalLiquidFuelCapacity =
-                        packet.TotalLiquidFuelCapacity,
-
-                    TotalOxidizerAmount =
-                        packet.TotalOxidizerAmount,
-
-                    TotalOxidizerCapacity =
-                        packet.TotalOxidizerCapacity,
-
-                    TotalMonopropellantAmount =
-                        packet.TotalMonopropellantAmount,
-
-                    TotalMonopropellantCapacity =
-                        packet.TotalMonopropellantCapacity
-                };
-
-            _ascentCrt.UpdateTelemetry(
+            _missionDisplay.UpdateTelemetry(
                 telemetry);
 
             _missionSummary.UpdateTelemetry(
                 telemetry);
+        }
+
+        private static MissionTelemetry
+            CreateMissionTelemetry(
+                TelemetryPacket packet)
+        {
+            return new MissionTelemetry
+            {
+                VesselName =
+                    packet.VesselName,
+
+                BodyName =
+                    packet.BodyName,
+
+                MissionTime =
+                    packet.MissionTime,
+
+                Altitude =
+                    packet.Altitude,
+
+                RadarAltitude =
+                    packet.RadarAltitude,
+
+                Apoapsis =
+                    packet.Apoapsis,
+
+                Periapsis =
+                    packet.Periapsis,
+
+                TimeToApoapsis =
+                    packet.TimeToApoapsis,
+
+                SurfaceSpeed =
+                    packet.SurfaceSpeed,
+
+                HorizontalSpeed =
+                    packet.HorizontalSpeed,
+
+                VerticalSpeed =
+                    packet.VerticalSpeed,
+
+                OrbitalSpeed =
+                    packet.OrbitalSpeed,
+
+                Throttle =
+                    packet.Throttle,
+
+                CurrentStage =
+                    packet.CurrentStage,
+
+                GForce =
+                    packet.GForce,
+
+                Pitch =
+                    packet.Pitch,
+
+                Heading =
+                    packet.Heading,
+
+                Roll =
+                    packet.Roll,
+
+                DynamicPressureKpa =
+                    packet.DynamicPressureKpa,
+
+                StaticPressureKpa =
+                    packet.StaticPressureKpa,
+
+                Mach =
+                    packet.Mach,
+
+                VesselMass =
+                    packet.VesselMass,
+
+                CurrentThrust =
+                    packet.CurrentThrust,
+
+                MaximumThrust =
+                    packet.MaximumThrust,
+
+                ThrustToWeightRatio =
+                    packet.ThrustToWeightRatio,
+
+                EngineCount =
+                    packet.EngineCount,
+
+                IgnitedEngineCount =
+                    packet.IgnitedEngineCount,
+
+                ProducingThrustEngineCount =
+                    packet.ProducingThrustEngineCount,
+
+                FlameoutEngineCount =
+                    packet.FlameoutEngineCount,
+
+                AverageSpecificImpulse =
+                    packet.AverageSpecificImpulse,
+
+                StageLiquidFuelAmount =
+                    packet.StageLiquidFuelAmount,
+
+                StageLiquidFuelCapacity =
+                    packet.StageLiquidFuelCapacity,
+
+                StageOxidizerAmount =
+                    packet.StageOxidizerAmount,
+
+                StageOxidizerCapacity =
+                    packet.StageOxidizerCapacity,
+
+                StageMonopropellantAmount =
+                    packet.StageMonopropellantAmount,
+
+                StageMonopropellantCapacity =
+                    packet.StageMonopropellantCapacity,
+
+                TotalLiquidFuelAmount =
+                    packet.TotalLiquidFuelAmount,
+
+                TotalLiquidFuelCapacity =
+                    packet.TotalLiquidFuelCapacity,
+
+                TotalOxidizerAmount =
+                    packet.TotalOxidizerAmount,
+
+                TotalOxidizerCapacity =
+                    packet.TotalOxidizerCapacity,
+
+                TotalMonopropellantAmount =
+                    packet.TotalMonopropellantAmount,
+
+                TotalMonopropellantCapacity =
+                    packet.TotalMonopropellantCapacity
+            };
         }
 
         private void OnConnectionTimerTick(
@@ -333,9 +646,11 @@ namespace KMC.MissionControl
             EventArgs e)
         {
             bool online =
-                _lastPacketUtc != default(DateTime) &&
-                DateTime.UtcNow - _lastPacketUtc
-                    < TimeSpan.FromSeconds(2);
+                _lastPacketUtc !=
+                    default(DateTime) &&
+                DateTime.UtcNow -
+                    _lastPacketUtc <
+                TimeSpan.FromSeconds(2.0);
 
             _connectionLabel.Text =
                 online
@@ -353,6 +668,7 @@ namespace KMC.MissionControl
             FormClosingEventArgs e)
         {
             _connectionTimer.Stop();
+
             _receiver.Dispose();
         }
     }

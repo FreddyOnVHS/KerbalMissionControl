@@ -20,18 +20,20 @@ namespace KMC.MissionControl.Controls
     /// <summary>
     /// Apollo-inspired CRT display.
     ///
-    /// Mission pages are rendered to a fixed 1280 x 720 virtual canvas.
-    /// The finished canvas is then scaled into the CRT glass while
-    /// preserving its aspect ratio.
+    /// Mission pages render to a virtual canvas with a fixed height of
+    /// 720 units. The canvas has a minimum width of 1280 units and expands
+    /// horizontally when the physical CRT becomes wider than 16:9.
     /// </summary>
     public sealed class MissionDisplay : Control
     {
-        public const int VirtualWidth = 1280;
+        public const int MinimumVirtualWidth = 1280;
         public const int VirtualHeight = 720;
+        public const int VirtualWidth = MinimumVirtualWidth;
 
         private const int BezelInset = 18;
         private const int GlassContentInsetX = 22;
         private const int GlassContentInsetY = 18;
+        private const int MaximumVirtualWidth = 4096;
 
         private IMissionPage _missionPage;
         private MissionTelemetry _telemetry;
@@ -39,6 +41,14 @@ namespace KMC.MissionControl.Controls
         private CrtPhosphorMode _phosphorMode;
         private bool _showScanLines;
         private bool _showScalingDiagnostics;
+        private int _currentVirtualWidth;
+
+        private struct CanvasLayout
+        {
+            public int VirtualWidth;
+            public RectangleF DestinationRectangle;
+            public float Scale;
+        }
 
         public MissionDisplay()
         {
@@ -48,13 +58,12 @@ namespace KMC.MissionControl.Controls
             _phosphorMode = CrtPhosphorMode.Blue;
             _showScanLines = true;
             _showScalingDiagnostics = false;
+            _currentVirtualWidth = MinimumVirtualWidth;
 
             Width = 640;
             Height = 400;
-
             BackColor = ApolloTheme.ConsoleFace;
             ForeColor = ApolloTheme.CrtBlue;
-
             DoubleBuffered = true;
             ResizeRedraw = true;
 
@@ -69,29 +78,19 @@ namespace KMC.MissionControl.Controls
 
         public string ScreenTitle
         {
-            get
-            {
-                return _screenTitle;
-            }
-
+            get { return _screenTitle; }
             set
             {
-                _screenTitle =
-                    string.IsNullOrWhiteSpace(value)
-                        ? "DATA DISPLAY"
-                        : value.Trim().ToUpperInvariant();
-
+                _screenTitle = string.IsNullOrWhiteSpace(value)
+                    ? "DATA DISPLAY"
+                    : value.Trim().ToUpperInvariant();
                 Invalidate();
             }
         }
 
         public CrtPhosphorMode PhosphorMode
         {
-            get
-            {
-                return _phosphorMode;
-            }
-
+            get { return _phosphorMode; }
             set
             {
                 _phosphorMode = value;
@@ -101,11 +100,7 @@ namespace KMC.MissionControl.Controls
 
         public bool ShowScanLines
         {
-            get
-            {
-                return _showScanLines;
-            }
-
+            get { return _showScanLines; }
             set
             {
                 _showScanLines = value;
@@ -113,17 +108,9 @@ namespace KMC.MissionControl.Controls
             }
         }
 
-        /// <summary>
-        /// Draws the virtual-canvas dimensions and scale value.
-        /// This is intended only for temporary testing.
-        /// </summary>
         public bool ShowScalingDiagnostics
         {
-            get
-            {
-                return _showScalingDiagnostics;
-            }
-
+            get { return _showScalingDiagnostics; }
             set
             {
                 _showScalingDiagnostics = value;
@@ -133,71 +120,42 @@ namespace KMC.MissionControl.Controls
 
         public Size VirtualCanvasSize
         {
-            get
-            {
-                return new Size(
-                    VirtualWidth,
-                    VirtualHeight);
-            }
+            get { return new Size(_currentVirtualWidth, VirtualHeight); }
         }
 
-        public void SetPage(
-            IMissionPage page)
+        public void SetPage(IMissionPage page)
         {
-            if (page == null)
-            {
-                return;
-            }
-
+            if (page == null) return;
             _missionPage = page;
             Invalidate();
         }
 
-        public void UpdateTelemetry(
-            MissionTelemetry telemetry)
+        public void UpdateTelemetry(MissionTelemetry telemetry)
         {
-            if (telemetry == null)
-            {
-                return;
-            }
-
+            if (telemetry == null) return;
             _telemetry = telemetry;
             Invalidate();
         }
 
-        /// <summary>
-        /// Returns the physical client rectangle currently occupied
-        /// by the scaled 16:9 virtual canvas.
-        /// </summary>
         public RectangleF GetCanvasDestinationRectangle()
         {
-            Rectangle glassRectangle =
-                GetGlassRectangle();
+            RectangleF viewport = RectangleF.Inflate(
+                GetGlassRectangle(),
+                -GlassContentInsetX,
+                -GlassContentInsetY);
 
-            RectangleF viewport =
-                RectangleF.Inflate(
-                    glassRectangle,
-                    -GlassContentInsetX,
-                    -GlassContentInsetY);
-
-            return CalculateLetterboxRectangle(
-                viewport,
-                VirtualWidth,
-                VirtualHeight);
+            return CalculateCanvasLayout(viewport).DestinationRectangle;
         }
 
-        /// <summary>
-        /// Converts a physical mouse/control point into virtual
-        /// 1280 x 720 coordinates.
-        ///
-        /// Returns false when the point falls within a letterbox area.
-        /// </summary>
-        public bool TryClientToVirtual(
-            Point clientPoint,
-            out PointF virtualPoint)
+        public bool TryClientToVirtual(Point clientPoint, out PointF virtualPoint)
         {
-            RectangleF destination =
-                GetCanvasDestinationRectangle();
+            RectangleF viewport = RectangleF.Inflate(
+                GetGlassRectangle(),
+                -GlassContentInsetX,
+                -GlassContentInsetY);
+
+            CanvasLayout layout = CalculateCanvasLayout(viewport);
+            RectangleF destination = layout.DestinationRectangle;
 
             if (destination.Width <= 0.0f ||
                 destination.Height <= 0.0f ||
@@ -207,103 +165,66 @@ namespace KMC.MissionControl.Controls
                 return false;
             }
 
-            float normalizedX =
-                (clientPoint.X - destination.Left) /
-                destination.Width;
+            float normalizedX = (clientPoint.X - destination.Left) / destination.Width;
+            float normalizedY = (clientPoint.Y - destination.Top) / destination.Height;
 
-            float normalizedY =
-                (clientPoint.Y - destination.Top) /
-                destination.Height;
-
-            virtualPoint =
-                new PointF(
-                    normalizedX * VirtualWidth,
-                    normalizedY * VirtualHeight);
+            virtualPoint = new PointF(
+                normalizedX * layout.VirtualWidth,
+                normalizedY * VirtualHeight);
 
             return true;
         }
 
-        /// <summary>
-        /// Converts a point on the virtual canvas into physical
-        /// coordinates within this control.
-        /// </summary>
-        public PointF VirtualToClient(
-            PointF virtualPoint)
+        public PointF VirtualToClient(PointF virtualPoint)
         {
-            RectangleF destination =
-                GetCanvasDestinationRectangle();
+            RectangleF viewport = RectangleF.Inflate(
+                GetGlassRectangle(),
+                -GlassContentInsetX,
+                -GlassContentInsetY);
 
-            float x =
-                destination.Left +
-                virtualPoint.X /
-                VirtualWidth *
-                destination.Width;
+            CanvasLayout layout = CalculateCanvasLayout(viewport);
+            RectangleF destination = layout.DestinationRectangle;
 
-            float y =
-                destination.Top +
-                virtualPoint.Y /
-                VirtualHeight *
-                destination.Height;
+            float x = destination.Left +
+                virtualPoint.X / layout.VirtualWidth * destination.Width;
+
+            float y = destination.Top +
+                virtualPoint.Y / VirtualHeight * destination.Height;
 
             return new PointF(x, y);
         }
 
-        protected override void OnPaintBackground(
-            PaintEventArgs e)
+        protected override void OnPaintBackground(PaintEventArgs e)
         {
-            Color parentColor =
-                Parent != null
-                    ? Parent.BackColor
-                    : ApolloTheme.ConsoleFace;
+            Color parentColor = Parent != null
+                ? Parent.BackColor
+                : ApolloTheme.ConsoleFace;
 
             e.Graphics.Clear(parentColor);
         }
 
-        protected override void OnPaint(
-            PaintEventArgs e)
+        protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
 
-            if (Width < 8 ||
-                Height < 8)
-            {
-                return;
-            }
+            if (Width < 8 || Height < 8) return;
 
-            e.Graphics.SmoothingMode =
-                SmoothingMode.AntiAlias;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-            e.Graphics.PixelOffsetMode =
-                PixelOffsetMode.HighQuality;
+            Rectangle bezelRectangle = GetBezelRectangle();
+            Rectangle glassRectangle = GetGlassRectangle();
 
-            Rectangle bezelRectangle =
-                GetBezelRectangle();
-
-            Rectangle glassRectangle =
-                GetGlassRectangle();
-
-            DrawBezel(
-                e.Graphics,
-                bezelRectangle);
-
-            DrawGlass(
-                e.Graphics,
-                glassRectangle);
-
-            DrawVirtualCanvas(
-                e.Graphics,
-                glassRectangle);
+            DrawBezel(e.Graphics, bezelRectangle);
+            DrawGlass(e.Graphics, glassRectangle);
+            DrawVirtualCanvas(e.Graphics, glassRectangle);
 
             if (_showScanLines)
             {
-                DrawScanLines(
-                    e.Graphics,
-                    glassRectangle);
+                DrawScanLines(e.Graphics, glassRectangle);
             }
 
-            DrawGlassReflection(
-                e.Graphics,
-                glassRectangle);
+            DrawGlassReflection(e.Graphics, glassRectangle);
         }
 
         private Rectangle GetBezelRectangle()
@@ -320,92 +241,62 @@ namespace KMC.MissionControl.Controls
             return new Rectangle(
                 BezelInset,
                 BezelInset,
-                Math.Max(
-                    1,
-                    Width - BezelInset * 2 - 1),
-                Math.Max(
-                    1,
-                    Height - BezelInset * 2 - 1));
+                Math.Max(1, Width - BezelInset * 2 - 1),
+                Math.Max(1, Height - BezelInset * 2 - 1));
         }
 
-        private void DrawVirtualCanvas(
-            Graphics targetGraphics,
-            Rectangle glassRectangle)
+        private void DrawVirtualCanvas(Graphics targetGraphics, Rectangle glassRectangle)
         {
-            RectangleF viewport =
-                RectangleF.Inflate(
-                    glassRectangle,
-                    -GlassContentInsetX,
-                    -GlassContentInsetY);
+            RectangleF viewport = RectangleF.Inflate(
+                glassRectangle,
+                -GlassContentInsetX,
+                -GlassContentInsetY);
 
-            if (viewport.Width <= 1.0f ||
-                viewport.Height <= 1.0f)
+            if (viewport.Width <= 1.0f || viewport.Height <= 1.0f) return;
+
+            CanvasLayout layout = CalculateCanvasLayout(viewport);
+
+            if (layout.VirtualWidth <= 0 ||
+                layout.DestinationRectangle.Width <= 0.0f ||
+                layout.DestinationRectangle.Height <= 0.0f)
             {
                 return;
             }
 
-            RectangleF destinationRectangle =
-                CalculateLetterboxRectangle(
-                    viewport,
-                    VirtualWidth,
-                    VirtualHeight);
+            _currentVirtualWidth = layout.VirtualWidth;
 
-            using (Bitmap virtualCanvas =
-                new Bitmap(
-                    VirtualWidth,
-                    VirtualHeight,
-                    PixelFormat.Format32bppPArgb))
+            using (Bitmap virtualCanvas = new Bitmap(
+                layout.VirtualWidth,
+                VirtualHeight,
+                PixelFormat.Format32bppPArgb))
             {
-                virtualCanvas.SetResolution(
-                    96.0f,
-                    96.0f);
+                virtualCanvas.SetResolution(96.0f, 96.0f);
 
-                using (Graphics canvasGraphics =
-                    Graphics.FromImage(
-                        virtualCanvas))
+                using (Graphics canvasGraphics = Graphics.FromImage(virtualCanvas))
                 {
-                    ConfigureCanvasGraphics(
-                        canvasGraphics);
-
-                    DrawCanvasBackground(
-                        canvasGraphics);
-
-                    DrawMissionPage(
-                        canvasGraphics);
+                    ConfigureCanvasGraphics(canvasGraphics);
+                    DrawCanvasBackground(canvasGraphics, layout.VirtualWidth);
+                    DrawMissionPage(canvasGraphics, layout.VirtualWidth);
 
                     if (_showScalingDiagnostics)
                     {
-                        DrawDiagnostics(
-                            canvasGraphics,
-                            destinationRectangle);
+                        DrawDiagnostics(canvasGraphics, layout);
                     }
                 }
 
-                GraphicsState state =
-                    targetGraphics.Save();
+                GraphicsState state = targetGraphics.Save();
 
                 try
                 {
-                    targetGraphics.SetClip(
-                        glassRectangle);
-
-                    targetGraphics.InterpolationMode =
-                        InterpolationMode.HighQualityBicubic;
-
-                    targetGraphics.CompositingQuality =
-                        CompositingQuality.HighQuality;
-
-                    targetGraphics.PixelOffsetMode =
-                        PixelOffsetMode.HighQuality;
+                    targetGraphics.SetClip(glassRectangle);
+                    targetGraphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    targetGraphics.CompositingQuality = CompositingQuality.HighQuality;
+                    targetGraphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
                     targetGraphics.DrawImage(
                         virtualCanvas,
-                        destinationRectangle,
-                        new RectangleF(
-                            0.0f,
-                            0.0f,
-                            VirtualWidth,
-                            VirtualHeight),
+                        layout.DestinationRectangle,
+                        new RectangleF(0.0f, 0.0f, layout.VirtualWidth, VirtualHeight),
                         GraphicsUnit.Pixel);
                 }
                 finally
@@ -415,132 +306,69 @@ namespace KMC.MissionControl.Controls
             }
         }
 
-        private static void ConfigureCanvasGraphics(
-            Graphics graphics)
+        private static void ConfigureCanvasGraphics(Graphics graphics)
         {
-            graphics.Clear(
-                Color.Transparent);
-
-            graphics.SmoothingMode =
-                SmoothingMode.AntiAlias;
-
-            graphics.CompositingMode =
-                CompositingMode.SourceOver;
-
-            graphics.CompositingQuality =
-                CompositingQuality.HighQuality;
-
-            graphics.InterpolationMode =
-                InterpolationMode.HighQualityBicubic;
-
-            graphics.PixelOffsetMode =
-                PixelOffsetMode.HighQuality;
-
+            graphics.Clear(Color.Transparent);
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.CompositingMode = CompositingMode.SourceOver;
+            graphics.CompositingQuality = CompositingQuality.HighQuality;
+            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
             graphics.TextRenderingHint =
-                System.Drawing.Text
-                    .TextRenderingHint
-                    .SingleBitPerPixelGridFit;
+                System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;
         }
 
-        private static void DrawCanvasBackground(
-            Graphics graphics)
+        private static void DrawCanvasBackground(Graphics graphics, int virtualWidth)
         {
-            using (LinearGradientBrush brush =
-                new LinearGradientBrush(
-                    new Rectangle(
-                        0,
-                        0,
-                        VirtualWidth,
-                        VirtualHeight),
-                    Color.FromArgb(
-                        255,
-                        6,
-                        20,
-                        27),
-                    Color.FromArgb(
-                        255,
-                        2,
-                        10,
-                        14),
-                    LinearGradientMode.Vertical))
+            using (LinearGradientBrush brush = new LinearGradientBrush(
+                new Rectangle(0, 0, virtualWidth, VirtualHeight),
+                Color.FromArgb(255, 6, 20, 27),
+                Color.FromArgb(255, 2, 10, 14),
+                LinearGradientMode.Vertical))
             {
-                graphics.FillRectangle(
-                    brush,
-                    0,
-                    0,
-                    VirtualWidth,
-                    VirtualHeight);
+                graphics.FillRectangle(brush, 0, 0, virtualWidth, VirtualHeight);
             }
         }
 
-        private void DrawMissionPage(
-            Graphics graphics)
+        private void DrawMissionPage(Graphics graphics, int virtualWidth)
         {
-            Color phosphorColor =
-                GetPhosphorColor();
+            Color phosphorColor = GetPhosphorColor();
+            Color dimColor = Color.FromArgb(155, phosphorColor);
 
-            Color dimColor =
-                Color.FromArgb(
-                    155,
-                    phosphorColor);
+            Rectangle contentRectangle = new Rectangle(
+                42,
+                34,
+                MinimumVirtualWidth - 84,
+                VirtualHeight - 68);
 
-            Rectangle contentRectangle =
-                new Rectangle(
-                    42,
-                    34,
-                    VirtualWidth - 84,
-                    VirtualHeight - 68);
-
-            using (Font largeFont =
-                ApolloTheme.CreateConsoleFont(
-                    27.0f,
-                    FontStyle.Regular))
-            using (Font smallFont =
-                ApolloTheme.CreateConsoleFont(
-                    21.0f,
-                    FontStyle.Bold))
+            using (Font largeFont = ApolloTheme.CreateConsoleFont(27.0f, FontStyle.Regular))
+            using (Font smallFont = ApolloTheme.CreateConsoleFont(21.0f, FontStyle.Bold))
             {
-                MissionRenderContext context =
-                    new MissionRenderContext(
-                        graphics,
-                        contentRectangle,
-                        largeFont,
-                        smallFont,
-                        phosphorColor,
-                        dimColor,
-                        new Size(
-                            VirtualWidth,
-                            VirtualHeight));
+                MissionRenderContext context = new MissionRenderContext(
+                    graphics,
+                    contentRectangle,
+                    largeFont,
+                    smallFont,
+                    phosphorColor,
+                    dimColor,
+                    new Size(virtualWidth, VirtualHeight));
 
-                if (_missionPage != null &&
-                    _telemetry != null)
+                if (_missionPage != null && _telemetry != null)
                 {
-                    _missionPage.Draw(
-                        context,
-                        _telemetry);
+                    _missionPage.Draw(context, _telemetry);
                 }
             }
         }
 
-        private void DrawDiagnostics(
-            Graphics graphics,
-            RectangleF destinationRectangle)
+        private void DrawDiagnostics(Graphics graphics, CanvasLayout layout)
         {
             string diagnosticText =
-                "VIRTUAL 1280 X 720  |  DISPLAY "
-                + destinationRectangle.Width.ToString("0")
-                + " X "
-                + destinationRectangle.Height.ToString("0");
+                "VIRTUAL " + layout.VirtualWidth + " X " + VirtualHeight +
+                "  |  SCALE " + layout.Scale.ToString("0.000");
 
-            using (Font font =
-                ApolloTheme.CreateConsoleFont(
-                    16.0f,
-                    FontStyle.Regular))
-            using (SolidBrush brush =
-                new SolidBrush(
-                    Color.FromArgb(
-                        180,
-                        GetPhosphorColor())))
+            using (Font font = ApolloTheme.CreateConsoleFont(16.0f, FontStyle.Regular))
+            using (SolidBrush brush = new SolidBrush(
+                Color.FromArgb(180, GetPhosphorColor())))
             {
                 graphics.DrawString(
                     diagnosticText,
@@ -551,187 +379,128 @@ namespace KMC.MissionControl.Controls
             }
         }
 
-        private static RectangleF
-            CalculateLetterboxRectangle(
-                RectangleF viewport,
-                float sourceWidth,
-                float sourceHeight)
+        private static CanvasLayout CalculateCanvasLayout(RectangleF viewport)
         {
-            if (viewport.Width <= 0.0f ||
-                viewport.Height <= 0.0f ||
-                sourceWidth <= 0.0f ||
-                sourceHeight <= 0.0f)
+            CanvasLayout result = new CanvasLayout
             {
-                return RectangleF.Empty;
+                VirtualWidth = MinimumVirtualWidth,
+                DestinationRectangle = RectangleF.Empty,
+                Scale = 0.0f
+            };
+
+            if (viewport.Width <= 0.0f || viewport.Height <= 0.0f)
+            {
+                return result;
             }
 
-            float horizontalScale =
-                viewport.Width /
-                sourceWidth;
+            float minimumAspect = (float)MinimumVirtualWidth / VirtualHeight;
+            float viewportAspect = viewport.Width / viewport.Height;
 
-            float verticalScale =
-                viewport.Height /
-                sourceHeight;
+            if (viewportAspect <= minimumAspect)
+            {
+                float scale = Math.Min(
+                    viewport.Width / MinimumVirtualWidth,
+                    viewport.Height / VirtualHeight);
 
-            float scale =
-                Math.Min(
-                    horizontalScale,
-                    verticalScale);
+                float destinationWidth = MinimumVirtualWidth * scale;
+                float destinationHeight = VirtualHeight * scale;
 
-            float width =
-                sourceWidth * scale;
+                result.Scale = scale;
+                result.DestinationRectangle = new RectangleF(
+                    viewport.Left + (viewport.Width - destinationWidth) / 2.0f,
+                    viewport.Top + (viewport.Height - destinationHeight) / 2.0f,
+                    destinationWidth,
+                    destinationHeight);
 
-            float height =
-                sourceHeight * scale;
+                return result;
+            }
 
-            float left =
-                viewport.Left +
-                (viewport.Width - width) /
-                2.0f;
+            float wideScale = viewport.Height / VirtualHeight;
 
-            float top =
-                viewport.Top +
-                (viewport.Height - height) /
-                2.0f;
+            if (wideScale <= 0.0f)
+            {
+                return result;
+            }
 
-            return new RectangleF(
-                left,
-                top,
-                width,
-                height);
+            int expandedVirtualWidth = (int)Math.Ceiling(
+                viewport.Width / wideScale);
+
+            expandedVirtualWidth = Math.Max(
+                MinimumVirtualWidth,
+                expandedVirtualWidth);
+
+            expandedVirtualWidth = Math.Min(
+                MaximumVirtualWidth,
+                expandedVirtualWidth);
+
+            float renderedWidth = expandedVirtualWidth * wideScale;
+
+            result.VirtualWidth = expandedVirtualWidth;
+            result.Scale = wideScale;
+            result.DestinationRectangle = new RectangleF(
+                viewport.Left + (viewport.Width - renderedWidth) / 2.0f,
+                viewport.Top,
+                renderedWidth,
+                viewport.Height);
+
+            return result;
         }
 
-        private static void DrawBezel(
-            Graphics graphics,
-            Rectangle rectangle)
+        private static void DrawBezel(Graphics graphics, Rectangle rectangle)
         {
-            if (rectangle.Width <= 1 ||
-                rectangle.Height <= 1)
+            if (rectangle.Width <= 1 || rectangle.Height <= 1) return;
+
+            using (GraphicsPath path = CreateRoundedRectangle(rectangle, 28))
+            using (LinearGradientBrush brush = new LinearGradientBrush(
+                rectangle,
+                Color.FromArgb(78, 84, 79),
+                Color.FromArgb(25, 29, 28),
+                LinearGradientMode.Vertical))
+            using (Pen borderPen = new Pen(
+                Color.FromArgb(115, 121, 112),
+                2.0f))
             {
-                return;
+                graphics.FillPath(brush, path);
+                graphics.DrawPath(borderPen, path);
             }
 
-            using (GraphicsPath path =
-                CreateRoundedRectangle(
-                    rectangle,
-                    28))
-            using (LinearGradientBrush brush =
-                new LinearGradientBrush(
-                    rectangle,
-                    Color.FromArgb(
-                        78,
-                        84,
-                        79),
-                    Color.FromArgb(
-                        25,
-                        29,
-                        28),
-                    LinearGradientMode.Vertical))
-            using (Pen borderPen =
-                new Pen(
-                    Color.FromArgb(
-                        115,
-                        121,
-                        112),
-                    2.0f))
+            Rectangle innerBezel = Rectangle.Inflate(rectangle, -8, -8);
+
+            if (innerBezel.Width <= 1 || innerBezel.Height <= 1) return;
+
+            using (GraphicsPath path = CreateRoundedRectangle(innerBezel, 22))
+            using (Pen shadowPen = new Pen(Color.FromArgb(8, 10, 10), 4.0f))
             {
-                graphics.FillPath(
-                    brush,
-                    path);
-
-                graphics.DrawPath(
-                    borderPen,
-                    path);
-            }
-
-            Rectangle innerBezel =
-                Rectangle.Inflate(
-                    rectangle,
-                    -8,
-                    -8);
-
-            if (innerBezel.Width <= 1 ||
-                innerBezel.Height <= 1)
-            {
-                return;
-            }
-
-            using (GraphicsPath path =
-                CreateRoundedRectangle(
-                    innerBezel,
-                    22))
-            using (Pen shadowPen =
-                new Pen(
-                    Color.FromArgb(
-                        8,
-                        10,
-                        10),
-                    4.0f))
-            {
-                graphics.DrawPath(
-                    shadowPen,
-                    path);
+                graphics.DrawPath(shadowPen, path);
             }
         }
 
-        private static void DrawGlass(
-            Graphics graphics,
-            Rectangle rectangle)
+        private static void DrawGlass(Graphics graphics, Rectangle rectangle)
         {
-            if (rectangle.Width <= 1 ||
-                rectangle.Height <= 1)
-            {
-                return;
-            }
+            if (rectangle.Width <= 1 || rectangle.Height <= 1) return;
 
-            using (GraphicsPath path =
-                CreateRoundedRectangle(
-                    rectangle,
-                    20))
-            using (LinearGradientBrush brush =
-                new LinearGradientBrush(
-                    rectangle,
-                    Color.FromArgb(
-                        15,
-                        42,
-                        57),
-                    ApolloTheme.CrtBackground,
-                    LinearGradientMode.Vertical))
-            using (Pen rimPen =
-                new Pen(
-                    Color.FromArgb(
-                        48,
-                        73,
-                        82),
-                    2.0f))
+            using (GraphicsPath path = CreateRoundedRectangle(rectangle, 20))
+            using (LinearGradientBrush brush = new LinearGradientBrush(
+                rectangle,
+                Color.FromArgb(15, 42, 57),
+                ApolloTheme.CrtBackground,
+                LinearGradientMode.Vertical))
+            using (Pen rimPen = new Pen(Color.FromArgb(48, 73, 82), 2.0f))
             {
-                graphics.FillPath(
-                    brush,
-                    path);
-
-                graphics.DrawPath(
-                    rimPen,
-                    path);
+                graphics.FillPath(brush, path);
+                graphics.DrawPath(rimPen, path);
             }
         }
 
-        private static void DrawScanLines(
-            Graphics graphics,
-            Rectangle glassRectangle)
+        private static void DrawScanLines(Graphics graphics, Rectangle glassRectangle)
         {
-            using (Pen scanLinePen =
-                new Pen(
-                    Color.FromArgb(
-                        14,
-                        0,
-                        0,
-                        0),
-                    1.0f))
+            using (Pen scanLinePen = new Pen(
+                Color.FromArgb(14, 0, 0, 0),
+                1.0f))
             {
-                for (int y =
-                    glassRectangle.Top + 3;
-                    y < glassRectangle.Bottom - 2;
-                    y += 4)
+                for (int y = glassRectangle.Top + 3;
+                     y < glassRectangle.Bottom - 2;
+                     y += 4)
                 {
                     graphics.DrawLine(
                         scanLinePen,
@@ -747,39 +516,22 @@ namespace KMC.MissionControl.Controls
             Graphics graphics,
             Rectangle glassRectangle)
         {
-            Rectangle reflectionRectangle =
-                new Rectangle(
-                    glassRectangle.Left + 18,
-                    glassRectangle.Top + 10,
-                    Math.Max(
-                        1,
-                        glassRectangle.Width - 36),
-                    Math.Max(
-                        12,
-                        glassRectangle.Height / 5));
+            Rectangle reflectionRectangle = new Rectangle(
+                glassRectangle.Left + 18,
+                glassRectangle.Top + 10,
+                Math.Max(1, glassRectangle.Width - 36),
+                Math.Max(12, glassRectangle.Height / 5));
 
             using (GraphicsPath reflectionPath =
-                CreateRoundedRectangle(
-                    reflectionRectangle,
-                    12))
+                CreateRoundedRectangle(reflectionRectangle, 12))
             using (LinearGradientBrush reflectionBrush =
                 new LinearGradientBrush(
                     reflectionRectangle,
-                    Color.FromArgb(
-                        28,
-                        190,
-                        225,
-                        240),
-                    Color.FromArgb(
-                        0,
-                        190,
-                        225,
-                        240),
+                    Color.FromArgb(28, 190, 225, 240),
+                    Color.FromArgb(0, 190, 225, 240),
                     LinearGradientMode.Vertical))
             {
-                graphics.FillPath(
-                    reflectionBrush,
-                    reflectionPath);
+                graphics.FillPath(reflectionBrush, reflectionPath);
             }
         }
 
@@ -798,35 +550,26 @@ namespace KMC.MissionControl.Controls
             }
         }
 
-        private static GraphicsPath
-            CreateRoundedRectangle(
-                Rectangle rectangle,
-                int radius)
+        private static GraphicsPath CreateRoundedRectangle(
+            Rectangle rectangle,
+            int radius)
         {
-            GraphicsPath path =
-                new GraphicsPath();
+            GraphicsPath path = new GraphicsPath();
 
-            if (rectangle.Width <= 0 ||
-                rectangle.Height <= 0)
+            if (rectangle.Width <= 0 || rectangle.Height <= 0)
             {
                 return path;
             }
 
-            int maximumRadius =
-                Math.Min(
-                    rectangle.Width,
-                    rectangle.Height) /
-                2;
+            int maximumRadius = Math.Min(
+                rectangle.Width,
+                rectangle.Height) / 2;
 
-            int safeRadius =
-                Math.Max(
-                    1,
-                    Math.Min(
-                        radius,
-                        maximumRadius));
+            int safeRadius = Math.Max(
+                1,
+                Math.Min(radius, maximumRadius));
 
-            int diameter =
-                safeRadius * 2;
+            int diameter = safeRadius * 2;
 
             path.AddArc(
                 rectangle.Left,
@@ -861,7 +604,6 @@ namespace KMC.MissionControl.Controls
                 90);
 
             path.CloseFigure();
-
             return path;
         }
     }
