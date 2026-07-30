@@ -3,8 +3,19 @@ using System.Drawing;
 
 namespace KMC.MissionControl.Rendering
 {
+    /// <summary>
+    /// Standard Apollo-style text layout for mission pages.
+    ///
+    /// All values are expressed in virtual 1280 x 720 coordinates.
+    /// </summary>
     public sealed class MissionPageLayout
     {
+        private const int HorizontalMargin = 28;
+        private const int HeaderHeight = 62;
+        private const int RowHeight = 43;
+        private const int SectionGap = 28;
+        private const int ColumnGap = 34;
+
         private readonly MissionRenderContext _context;
         private readonly Rectangle _bounds;
 
@@ -14,12 +25,6 @@ namespace KMC.MissionControl.Rendering
         private readonly int _rightValueX;
 
         private int _currentY;
-
-        private const int HorizontalMargin = 14;
-        private const int LabelValueGap = 120;
-        private const int HeaderHeight = 34;
-        private const int RowHeight = 24;
-        private const int SectionGap = 18;
 
         public MissionPageLayout(
             MissionRenderContext context)
@@ -33,27 +38,51 @@ namespace KMC.MissionControl.Rendering
             _context = context;
             _bounds = context.ContentBounds;
 
+            int halfWidth =
+                _bounds.Width / 2;
+
+            int labelValueGap =
+                Math.Max(
+                    190,
+                    halfWidth / 3);
+
             _leftLabelX =
                 _bounds.Left +
                 HorizontalMargin;
 
             _leftValueX =
                 _leftLabelX +
-                LabelValueGap;
+                labelValueGap;
 
             _rightLabelX =
                 _bounds.Left +
-                (_bounds.Width / 2) +
-                8;
+                halfWidth +
+                ColumnGap;
 
             _rightValueX =
                 _rightLabelX +
-                LabelValueGap;
+                labelValueGap;
 
             _currentY =
                 _bounds.Top +
                 HeaderHeight +
                 SectionGap;
+        }
+
+        public int CurrentY
+        {
+            get
+            {
+                return _currentY;
+            }
+        }
+
+        public Rectangle ContentBounds
+        {
+            get
+            {
+                return _bounds;
+            }
         }
 
         public void DrawHeader(
@@ -75,7 +104,7 @@ namespace KMC.MissionControl.Rendering
                 HorizontalMargin;
 
             int top =
-                _bounds.Top + 4;
+                _bounds.Top + 5;
 
             using (SolidBrush brush =
                 new SolidBrush(
@@ -91,14 +120,14 @@ namespace KMC.MissionControl.Rendering
 
                 _context.Graphics.DrawString(
                     safeTitle,
-                    _context.LargeFont,
+                    _context.SmallFont,
                     brush,
                     left,
                     top);
 
                 _context.Graphics.DrawString(
                     safeChannel,
-                    _context.LargeFont,
+                    _context.SmallFont,
                     brush,
                     right,
                     top,
@@ -106,12 +135,12 @@ namespace KMC.MissionControl.Rendering
             }
 
             int dividerY =
-                _bounds.Top + 28;
+                _bounds.Top + 50;
 
             using (Pen pen =
                 new Pen(
                     _context.DimPhosphorColor,
-                    1f))
+                    2.0f))
             {
                 _context.Graphics.DrawLine(
                     pen,
@@ -142,7 +171,8 @@ namespace KMC.MissionControl.Rendering
                 _rightValueX,
                 _currentY);
 
-            _currentY += RowHeight;
+            _currentY +=
+                RowHeight;
         }
 
         public void Row(
@@ -156,12 +186,58 @@ namespace KMC.MissionControl.Rendering
                 _leftValueX,
                 _currentY);
 
-            _currentY += RowHeight;
+            _currentY +=
+                RowHeight;
         }
 
         public void Space()
         {
-            _currentY += SectionGap;
+            _currentY +=
+                SectionGap;
+        }
+
+        /// <summary>
+        /// Reserves a rectangular region beneath the current text row.
+        /// Future widgets can draw inside the returned rectangle.
+        /// </summary>
+        public Rectangle ReserveRegion(
+            int height)
+        {
+            int safeHeight =
+                Math.Max(
+                    0,
+                    height);
+
+            Rectangle region =
+                new Rectangle(
+                    _bounds.Left +
+                    HorizontalMargin,
+                    _currentY,
+                    Math.Max(
+                        0,
+                        _bounds.Width -
+                        HorizontalMargin * 2),
+                    safeHeight);
+
+            _currentY +=
+                safeHeight;
+
+            return region;
+        }
+
+        /// <summary>
+        /// Reserves a region and adds standard spacing after it.
+        /// </summary>
+        public Rectangle ReserveSection(
+            int height)
+        {
+            Rectangle region =
+                ReserveRegion(
+                    height);
+
+            Space();
+
+            return region;
         }
 
         private void DrawField(
@@ -177,21 +253,24 @@ namespace KMC.MissionControl.Rendering
             string safeValue =
                 FormatText(value);
 
-            using (SolidBrush brush =
+            using (SolidBrush labelBrush =
+                new SolidBrush(
+                    _context.DimPhosphorColor))
+            using (SolidBrush valueBrush =
                 new SolidBrush(
                     _context.PhosphorColor))
             {
                 _context.Graphics.DrawString(
                     safeLabel,
                     _context.LargeFont,
-                    brush,
+                    labelBrush,
                     labelX,
                     y);
 
                 _context.Graphics.DrawString(
                     safeValue,
                     _context.LargeFont,
-                    brush,
+                    valueBrush,
                     valueX,
                     y);
             }
