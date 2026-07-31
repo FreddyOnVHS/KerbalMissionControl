@@ -21,7 +21,7 @@ namespace KMC.Shared
          * fuel resource telemetry.
          */
 
-        public const string ProtocolId = "KMC5";
+        public const string ProtocolId = "KMC6";
 
         public const int TelemetryPort = 5055;
 
@@ -86,6 +86,29 @@ namespace KMC.Shared
         public double AverageSpecificImpulse { get; set; }
 
         public double TimeToApoapsis { get; set; }
+
+        /*
+ * Orbital-element telemetry.
+ *
+ * All angular values transmitted by KMC are expressed in degrees.
+ * Distances are expressed in meters and time values in seconds.
+ */
+
+        public double Eccentricity { get; set; }
+
+        public double SemiMajorAxis { get; set; }
+
+        public double TrueAnomalyDegrees { get; set; }
+
+        public double ArgumentOfPeriapsisDegrees { get; set; }
+
+        public double InclinationDegrees { get; set; }
+
+        public double LongitudeOfAscendingNodeDegrees { get; set; }
+
+        public double OrbitalPeriod { get; set; }
+
+        public double TimeToPeriapsis { get; set; }
 
         public double StageLiquidFuelAmount { get; set; }
 
@@ -174,6 +197,15 @@ namespace KMC.Shared
                 FormatDouble(AverageSpecificImpulse),
                 FormatDouble(TimeToApoapsis),
 
+                FormatDouble(Eccentricity),
+                FormatDouble(SemiMajorAxis),
+                FormatDouble(TrueAnomalyDegrees),
+                FormatDouble(ArgumentOfPeriapsisDegrees),
+                FormatDouble(InclinationDegrees),
+                FormatDouble(LongitudeOfAscendingNodeDegrees),
+                FormatDouble(OrbitalPeriod),
+                FormatDouble(TimeToPeriapsis),
+
                 FormatDouble(StageLiquidFuelAmount),
                 FormatDouble(StageLiquidFuelCapacity),
                 FormatDouble(StageOxidizerAmount),
@@ -208,7 +240,7 @@ namespace KMC.Shared
             string[] parts =
                 message.Split('|');
 
-            if (parts.Length != 44 ||
+            if (parts.Length != 52 ||
                 parts[0] != ProtocolId)
             {
                 return false;
@@ -269,6 +301,15 @@ namespace KMC.Shared
                 double averageSpecificImpulse;
                 double timeToApoapsis;
 
+                double eccentricity;
+                double semiMajorAxis;
+                double trueAnomalyDegrees;
+                double argumentOfPeriapsisDegrees;
+                double inclinationDegrees;
+                double longitudeOfAscendingNodeDegrees;
+                double orbitalPeriod;
+                double timeToPeriapsis;
+
                 double stageLiquidFuelAmount;
                 double stageLiquidFuelCapacity;
                 double stageOxidizerAmount;
@@ -309,9 +350,60 @@ namespace KMC.Shared
                     !TryReadInt(parts, ref index, out ignitedEngineCount) ||
                     !TryReadInt(parts, ref index, out producingThrustEngineCount) ||
                     !TryReadInt(parts, ref index, out flameoutEngineCount) ||
-                    !TryReadDouble(parts, ref index, out averageSpecificImpulse) ||
-                    !TryReadDouble(parts, ref index, out timeToApoapsis) ||
-                    !TryReadDouble(parts, ref index, out stageLiquidFuelAmount) ||
+                    !TryReadDouble(
+    parts,
+    ref index,
+    out averageSpecificImpulse) ||
+
+!TryReadDouble(
+    parts,
+    ref index,
+    out timeToApoapsis) ||
+
+!TryReadDouble(
+    parts,
+    ref index,
+    out eccentricity) ||
+
+!TryReadDouble(
+    parts,
+    ref index,
+    out semiMajorAxis) ||
+
+!TryReadDouble(
+    parts,
+    ref index,
+    out trueAnomalyDegrees) ||
+
+!TryReadDouble(
+    parts,
+    ref index,
+    out argumentOfPeriapsisDegrees) ||
+
+!TryReadDouble(
+    parts,
+    ref index,
+    out inclinationDegrees) ||
+
+!TryReadDouble(
+    parts,
+    ref index,
+    out longitudeOfAscendingNodeDegrees) ||
+
+!TryReadDouble(
+    parts,
+    ref index,
+    out orbitalPeriod) ||
+
+!TryReadDouble(
+    parts,
+    ref index,
+    out timeToPeriapsis) ||
+
+!TryReadDouble(
+    parts,
+    ref index,
+    out stageLiquidFuelAmount) ||
                     !TryReadDouble(parts, ref index, out stageLiquidFuelCapacity) ||
                     !TryReadDouble(parts, ref index, out stageOxidizerAmount) ||
                     !TryReadDouble(parts, ref index, out stageOxidizerCapacity) ||
@@ -429,6 +521,30 @@ namespace KMC.Shared
 
                         TimeToApoapsis =
                             timeToApoapsis,
+
+                        Eccentricity =
+                            eccentricity,
+
+                        SemiMajorAxis =
+                            semiMajorAxis,
+
+                        TrueAnomalyDegrees =
+                            trueAnomalyDegrees,
+
+                        ArgumentOfPeriapsisDegrees =
+                            argumentOfPeriapsisDegrees,
+
+                        InclinationDegrees =
+                            inclinationDegrees,
+
+                        LongitudeOfAscendingNodeDegrees =
+                            longitudeOfAscendingNodeDegrees,
+
+                        OrbitalPeriod =
+                            orbitalPeriod,
+
+                        TimeToPeriapsis =
+                            timeToPeriapsis,
 
                         StageLiquidFuelAmount =
                             stageLiquidFuelAmount,

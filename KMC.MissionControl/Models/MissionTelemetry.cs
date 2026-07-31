@@ -20,6 +20,30 @@
 
         public double TimeToApoapsis { get; set; }
 
+        public double TimeToPeriapsis { get; set; }
+
+        /*
+         * Keplerian orbital elements.
+         *
+         * Angular values are expressed in degrees.
+         * Distance values are expressed in meters.
+         * Time values are expressed in seconds.
+         */
+
+        public double Eccentricity { get; set; }
+
+        public double SemiMajorAxis { get; set; }
+
+        public double TrueAnomalyDegrees { get; set; }
+
+        public double ArgumentOfPeriapsisDegrees { get; set; }
+
+        public double InclinationDegrees { get; set; }
+
+        public double LongitudeOfAscendingNodeDegrees { get; set; }
+
+        public double OrbitalPeriod { get; set; }
+
         public double SurfaceSpeed { get; set; }
 
         public double HorizontalSpeed { get; set; }

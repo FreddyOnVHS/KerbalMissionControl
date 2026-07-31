@@ -542,6 +542,30 @@ namespace KMC.MissionControl
                 TimeToApoapsis =
                     packet.TimeToApoapsis,
 
+                TimeToPeriapsis =
+                    packet.TimeToPeriapsis,
+
+                Eccentricity =
+                    packet.Eccentricity,
+
+                SemiMajorAxis =
+                    packet.SemiMajorAxis,
+
+                TrueAnomalyDegrees =
+                    packet.TrueAnomalyDegrees,
+
+                ArgumentOfPeriapsisDegrees =
+                    packet.ArgumentOfPeriapsisDegrees,
+
+                InclinationDegrees =
+                    packet.InclinationDegrees,
+
+                LongitudeOfAscendingNodeDegrees =
+                    packet.LongitudeOfAscendingNodeDegrees,
+
+                OrbitalPeriod =
+                    packet.OrbitalPeriod,
+
                 SurfaceSpeed =
                     packet.SurfaceSpeed,
 

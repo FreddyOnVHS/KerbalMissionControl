@@ -160,6 +160,44 @@ namespace KMC.Plugin
                 TimeToApoapsis =
                     timeToApoapsis,
 
+                Eccentricity =
+                GetOrbitValue(
+                    vessel,
+                    orbit => orbit.eccentricity),
+
+                SemiMajorAxis =
+                GetOrbitValue(
+                    vessel,
+                    orbit => orbit.semiMajorAxis),
+
+                TrueAnomalyDegrees =
+                GetTrueAnomalyDegrees(
+                    vessel),
+
+                ArgumentOfPeriapsisDegrees =
+                GetOrbitValue(
+                    vessel,
+                    orbit => orbit.argumentOfPeriapsis),
+
+                InclinationDegrees =
+                GetOrbitValue(
+                    vessel,
+                    orbit => orbit.inclination),
+
+                LongitudeOfAscendingNodeDegrees =
+                GetOrbitValue(
+                    vessel,
+                    orbit => orbit.LAN),
+
+                OrbitalPeriod =
+                GetOrbitValue(
+                    vessel,
+                    orbit => orbit.period),
+
+                TimeToPeriapsis =
+                GetTimeToPeriapsis(
+                    vessel),
+
                 Throttle =
                     vessel.ctrlState != null
                         ? vessel.ctrlState.mainThrottle
@@ -331,6 +369,100 @@ namespace KMC.Plugin
             }
 
             return timeToApoapsis;
+        }
+
+        private static double GetOrbitValue(
+    Vessel vessel,
+    Func<Orbit, double> selector)
+        {
+            if (vessel == null ||
+                vessel.orbit == null ||
+                selector == null)
+            {
+                return 0.0;
+            }
+
+            double value;
+
+            try
+            {
+                value =
+                    selector(
+                        vessel.orbit);
+            }
+            catch
+            {
+                return 0.0;
+            }
+
+            if (!IsFinite(value))
+            {
+                return 0.0;
+            }
+
+            return value;
+        }
+
+        private static double GetTrueAnomalyDegrees(
+            Vessel vessel)
+        {
+            double trueAnomalyRadians =
+                GetOrbitValue(
+                    vessel,
+                    orbit => orbit.trueAnomaly);
+
+            double trueAnomalyDegrees =
+                trueAnomalyRadians *
+                180.0 /
+                Math.PI;
+
+            return NormalizeDegrees(
+                trueAnomalyDegrees);
+        }
+
+        private static double GetTimeToPeriapsis(
+            Vessel vessel)
+        {
+            double value =
+                GetOrbitValue(
+                    vessel,
+                    orbit => orbit.timeToPe);
+
+            if (value < 0.0)
+            {
+                return 0.0;
+            }
+
+            return value;
+        }
+
+        private static double NormalizeDegrees(
+            double value)
+        {
+            if (!IsFinite(value))
+            {
+                return 0.0;
+            }
+
+            double normalized =
+                value %
+                360.0;
+
+            if (normalized < 0.0)
+            {
+                normalized +=
+                    360.0;
+            }
+
+            return normalized;
+        }
+
+        private static bool IsFinite(
+            double value)
+        {
+            return
+                !double.IsNaN(value) &&
+                !double.IsInfinity(value);
         }
 
         private static EngineTelemetry
