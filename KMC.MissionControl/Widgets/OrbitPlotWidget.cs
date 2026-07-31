@@ -156,8 +156,8 @@ namespace KMC.MissionControl.Widgets
         }
 
         private static void DrawBackgroundGrid(
-    MissionRenderContext context,
-    Rectangle bounds)
+            MissionRenderContext context,
+            Rectangle bounds)
         {
             if (bounds.Width <= 0 ||
                 bounds.Height <= 0)
@@ -167,7 +167,7 @@ namespace KMC.MissionControl.Widgets
 
             Color majorGridColor =
                 Color.FromArgb(
-                    38,
+                    48,
                     context.DimPhosphorColor);
 
             Color minorGridColor =
@@ -312,8 +312,178 @@ namespace KMC.MissionControl.Widgets
                 context,
                 orbitBounds,
                 vesselPoint,
-                vesselAngle,
+                vesselAngle);
+
+            DrawOrbitLegend(
+                context,
+                plotBounds,
                 telemetry);
+        }
+
+        private static void DrawOrbitLegend(
+    MissionRenderContext context,
+    Rectangle plotBounds,
+    MissionTelemetry telemetry)
+        {
+            const int legendWidth = 230;
+            const int legendHeight = 88;
+            const int legendPadding = 10;
+            const int rowHeight = 24;
+            const int labelWidth = 82;
+
+            Rectangle legendBounds =
+                new Rectangle(
+                    plotBounds.Left +
+                    10,
+                    plotBounds.Bottom -
+                    legendHeight -
+                    10,
+                    legendWidth,
+                    legendHeight);
+
+            using (SolidBrush backgroundBrush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        175,
+                        2,
+                        13,
+                        18)))
+            using (Pen borderPen =
+                new Pen(
+                    Color.FromArgb(
+                        80,
+                        context.DimPhosphorColor),
+                    1.0f))
+            {
+                context.Graphics.FillRectangle(
+                    backgroundBrush,
+                    legendBounds);
+
+                context.Graphics.DrawRectangle(
+                    borderPen,
+                    legendBounds);
+            }
+
+            int labelX =
+                legendBounds.Left +
+                legendPadding;
+
+            int valueX =
+                labelX +
+                labelWidth;
+
+            int rowY =
+                legendBounds.Top +
+                7;
+
+            DrawLegendField(
+                context,
+                "BODY",
+                FormatBodyName(
+                    telemetry.BodyName),
+                labelX,
+                valueX,
+                rowY);
+
+            rowY +=
+                rowHeight;
+
+            DrawLegendField(
+                context,
+                "VESSEL",
+                FormatVesselName(
+                    telemetry.VesselName),
+                labelX,
+                valueX,
+                rowY);
+
+            rowY +=
+                rowHeight;
+
+            DrawLegendField(
+                context,
+                "TYPE",
+                GetOrbitType(
+                    telemetry),
+                labelX,
+                valueX,
+                rowY);
+        }
+
+        private static void DrawLegendField(
+            MissionRenderContext context,
+            string label,
+            string value,
+            int labelX,
+            int valueX,
+            int y)
+        {
+            using (SolidBrush labelBrush =
+                new SolidBrush(
+                    context.DimPhosphorColor))
+            using (SolidBrush valueBrush =
+                new SolidBrush(
+                    context.PhosphorColor))
+            {
+                context.Graphics.DrawString(
+                    label,
+                    context.SmallFont,
+                    labelBrush,
+                    labelX,
+                    y);
+
+                context.Graphics.DrawString(
+                    value,
+                    context.SmallFont,
+                    valueBrush,
+                    valueX,
+                    y);
+            }
+        }
+
+        private static string GetOrbitType(
+            MissionTelemetry telemetry)
+        {
+            if (!IsFinite(
+                    telemetry.Apoapsis) ||
+                !IsFinite(
+                    telemetry.Periapsis))
+            {
+                return "---";
+            }
+
+            if (telemetry.Periapsis < 0.0)
+            {
+                return "SUBORBITAL";
+            }
+
+            double maximumAltitude =
+                Math.Max(
+                    Math.Abs(
+                        telemetry.Apoapsis),
+                    Math.Abs(
+                        telemetry.Periapsis));
+
+            if (maximumAltitude <= 0.0)
+            {
+                return "---";
+            }
+
+            double difference =
+                Math.Abs(
+                    telemetry.Apoapsis -
+                    telemetry.Periapsis);
+
+            double circularity =
+                difference /
+                maximumAltitude;
+
+            if (circularity <= 0.03)
+            {
+                return "CIRCULAR";
+            }
+
+            return "ELLIPTICAL";
         }
 
         private static RectangleF CalculateOrbitBounds(
@@ -416,7 +586,8 @@ namespace KMC.MissionControl.Widgets
                 (float)(
                     orbitBounds.Width /
                     2.0 *
-                    eccentricity);
+                    eccentricity *
+                    0.82);
 
             return new PointF(
                 orbitBounds.Left +
@@ -469,15 +640,15 @@ namespace KMC.MissionControl.Widgets
             using (Pen glowPen =
                 new Pen(
                     Color.FromArgb(
-                        45,
+                        34,
                         context.PhosphorColor),
-                    7.0f))
+                    5.0f))
             using (Pen orbitPen =
                 new Pen(
                     Color.FromArgb(
-                        220,
+                        205,
                         context.PhosphorColor),
-                    2.0f))
+                    1.5f))
             {
                 context.Graphics.DrawEllipse(
                     glowPen,
@@ -591,8 +762,8 @@ namespace KMC.MissionControl.Widgets
 
                 format.Alignment =
                     placeRight
-                        ? StringAlignment.Near
-                        : StringAlignment.Far;
+                        ? StringAlignment.Far
+                        : StringAlignment.Near;
 
                 string text =
                     label +
@@ -600,15 +771,24 @@ namespace KMC.MissionControl.Widgets
                     FormatDistance(
                         altitude);
 
+                float textX =
+                    placeRight
+                        ? point.X - 190.0f
+                        : point.X + 12.0f;
+
+                float textY =
+                    placeRight
+                        ? point.Y -
+                          context.SmallFont.Height -
+                          14.0f
+                        : point.Y +
+                          12.0f;
+
                 RectangleF textBounds =
                     new RectangleF(
-                        placeRight
-                            ? point.X + 10.0f
-                            : point.X - 190.0f,
-                        point.Y -
-                        context.SmallFont.Height -
-                        4.0f,
-                        180.0f,
+                        textX,
+                        textY,
+                        178.0f,
                         context.SmallFont.Height +
                         8.0f);
 
@@ -625,94 +805,90 @@ namespace KMC.MissionControl.Widgets
             MissionRenderContext context,
             RectangleF orbitBounds,
             PointF vesselPoint,
-            double vesselAngle,
-            MissionTelemetry telemetry)
+            double vesselAngle)
         {
             PointF tangent =
                 CalculateTangent(
                     orbitBounds,
                     vesselAngle);
 
-            PointF normal =
+            PointF direction =
                 Normalize(
                     tangent);
 
-            float markerLength =
-                16.0f;
+            const float markerLength = 15.0f;
+            const float markerHalfWidth = 6.0f;
 
             PointF nose =
                 new PointF(
                     vesselPoint.X +
-                    normal.X *
+                    direction.X *
                     markerLength,
 
                     vesselPoint.Y +
-                    normal.Y *
+                    direction.Y *
                     markerLength);
 
             PointF perpendicular =
                 new PointF(
-                    -normal.Y,
-                    normal.X);
+                    -direction.Y,
+                    direction.X);
 
             PointF left =
                 new PointF(
                     vesselPoint.X -
-                    normal.X *
-                    7.0f +
+                    direction.X *
+                    6.0f +
                     perpendicular.X *
-                    7.0f,
+                    markerHalfWidth,
 
                     vesselPoint.Y -
-                    normal.Y *
-                    7.0f +
+                    direction.Y *
+                    6.0f +
                     perpendicular.Y *
-                    7.0f);
+                    markerHalfWidth);
 
             PointF right =
                 new PointF(
                     vesselPoint.X -
-                    normal.X *
-                    7.0f -
+                    direction.X *
+                    6.0f -
                     perpendicular.X *
-                    7.0f,
+                    markerHalfWidth,
 
                     vesselPoint.Y -
-                    normal.Y *
-                    7.0f -
+                    direction.Y *
+                    6.0f -
                     perpendicular.Y *
-                    7.0f);
+                    markerHalfWidth);
 
             using (GraphicsPath vesselPath =
                 new GraphicsPath())
             using (SolidBrush glowBrush =
                 new SolidBrush(
                     Color.FromArgb(
-                        70,
+                        65,
                         context.PhosphorColor)))
             using (SolidBrush vesselBrush =
-                new SolidBrush(
-                    context.PhosphorColor))
-            using (SolidBrush labelBrush =
                 new SolidBrush(
                     context.PhosphorColor))
             {
                 vesselPath.AddPolygon(
                     new[]
                     {
-                        nose,
-                        left,
-                        right
+                nose,
+                left,
+                right
                     });
 
                 RectangleF glowBounds =
                     new RectangleF(
                         vesselPoint.X -
-                        15.0f,
+                        14.0f,
                         vesselPoint.Y -
-                        15.0f,
-                        30.0f,
-                        30.0f);
+                        14.0f,
+                        28.0f,
+                        28.0f);
 
                 context.Graphics.FillEllipse(
                     glowBrush,
@@ -721,19 +897,6 @@ namespace KMC.MissionControl.Widgets
                 context.Graphics.FillPath(
                     vesselBrush,
                     vesselPath);
-
-                string vesselLabel =
-                    FormatVesselName(
-                        telemetry.VesselName);
-
-                context.Graphics.DrawString(
-                    vesselLabel,
-                    context.SmallFont,
-                    labelBrush,
-                    vesselPoint.X +
-                    14.0f,
-                    vesselPoint.Y +
-                    10.0f);
             }
         }
 
