@@ -110,35 +110,99 @@ namespace KMC.MissionControl.Pages
         }
 
         private static void DrawTelemetryPanel(
-            MissionRenderContext context,
-            Rectangle bounds,
-            MissionTelemetry telemetry)
+    MissionRenderContext context,
+    Rectangle bounds,
+    MissionTelemetry telemetry)
         {
             DrawPanelFrame(
                 context,
                 bounds,
-                "FLIGHT PARAMETERS");
+                "FDO ORBITAL DATA");
+
+            const int columnGap = 18;
+            const int columnLabelWidth = 104;
+
+            int innerLeft =
+                bounds.Left +
+                PanelPadding;
+
+            int innerRight =
+                bounds.Right -
+                PanelPadding;
+
+            int availableWidth =
+                innerRight -
+                innerLeft;
+
+            int columnWidth =
+                (availableWidth -
+                 columnGap) /
+                2;
+
+            int leftLabelX =
+                innerLeft;
+
+            int leftValueX =
+                leftLabelX +
+                columnLabelWidth;
+
+            int rightLabelX =
+                innerLeft +
+                columnWidth +
+                columnGap;
+
+            int rightValueX =
+                rightLabelX +
+                columnLabelWidth;
+
+            int dividerX =
+                innerLeft +
+                columnWidth +
+                columnGap /
+                2;
 
             int fieldTop =
                 bounds.Top +
                 PanelHeaderHeight +
                 13;
 
-            int labelX =
-                bounds.Left +
-                PanelPadding;
+            using (Pen dividerPen =
+                new Pen(
+                    Color.FromArgb(
+                        90,
+                        context.DimPhosphorColor),
+                    1.0f))
+            {
+                context.Graphics.DrawLine(
+                    dividerPen,
+                    dividerX,
+                    fieldTop - 4,
+                    dividerX,
+                    bounds.Bottom -
+                    PanelPadding);
+            }
 
-            int valueX =
-                labelX +
-                LabelWidth;
+            /*
+             * Left column:
+             * general flight and trajectory data.
+             */
 
             DrawField(
                 context,
                 "VESSEL",
                 FormatText(
                     telemetry.VesselName),
-                labelX,
-                valueX,
+                leftLabelX,
+                leftValueX,
+                fieldTop);
+
+            DrawField(
+                context,
+                "ECC",
+                FormatRatio(
+                    telemetry.Eccentricity),
+                rightLabelX,
+                rightValueX,
                 fieldTop);
 
             fieldTop +=
@@ -149,8 +213,17 @@ namespace KMC.MissionControl.Pages
                 "BODY",
                 FormatText(
                     telemetry.BodyName),
-                labelX,
-                valueX,
+                leftLabelX,
+                leftValueX,
+                fieldTop);
+
+            DrawField(
+                context,
+                "SMA",
+                FormatDistance(
+                    telemetry.SemiMajorAxis),
+                rightLabelX,
+                rightValueX,
                 fieldTop);
 
             fieldTop +=
@@ -158,11 +231,20 @@ namespace KMC.MissionControl.Pages
 
             DrawField(
                 context,
-                "MISSION TIME",
+                "MET",
                 FormatMissionTime(
                     telemetry.MissionTime),
-                labelX,
-                valueX,
+                leftLabelX,
+                leftValueX,
+                fieldTop);
+
+            DrawField(
+                context,
+                "INCL",
+                FormatOrbitAngle(
+                    telemetry.InclinationDegrees),
+                rightLabelX,
+                rightValueX,
                 fieldTop);
 
             fieldTop +=
@@ -173,64 +255,18 @@ namespace KMC.MissionControl.Pages
                 "STAGE",
                 telemetry.CurrentStage.ToString(
                     "00"),
-                labelX,
-                valueX,
+                leftLabelX,
+                leftValueX,
                 fieldTop);
-
-            fieldTop +=
-                FieldRowHeight;
-
-            DrawSectionDivider(
-                context,
-                bounds,
-                fieldTop - 3);
-
-            fieldTop +=
-                12;
 
             DrawField(
                 context,
-                "ALTITUDE",
-                FormatDistance(
-                    telemetry.Altitude),
-                labelX,
-                valueX,
-                fieldTop);
-
-            fieldTop +=
-                FieldRowHeight;
-
-            DrawField(
-                context,
-                "APOAPSIS",
-                FormatDistance(
-                    telemetry.Apoapsis),
-                labelX,
-                valueX,
-                fieldTop);
-
-            fieldTop +=
-                FieldRowHeight;
-
-            DrawField(
-                context,
-                "PERIAPSIS",
-                FormatDistance(
-                    telemetry.Periapsis),
-                labelX,
-                valueX,
-                fieldTop);
-
-            fieldTop +=
-                FieldRowHeight;
-
-            DrawField(
-                context,
-                "TIME TO AP",
-                FormatDuration(
-                    telemetry.TimeToApoapsis),
-                labelX,
-                valueX,
+                "LAN",
+                FormatOrbitAngle(
+                    telemetry
+                        .LongitudeOfAscendingNodeDegrees),
+                rightLabelX,
+                rightValueX,
                 fieldTop);
 
             fieldTop +=
@@ -246,11 +282,21 @@ namespace KMC.MissionControl.Pages
 
             DrawField(
                 context,
-                "ORBITAL VEL",
-                FormatSpeed(
-                    telemetry.OrbitalSpeed),
-                labelX,
-                valueX,
+                "ALT",
+                FormatDistance(
+                    telemetry.Altitude),
+                leftLabelX,
+                leftValueX,
+                fieldTop);
+
+            DrawField(
+                context,
+                "ARG PE",
+                FormatOrbitAngle(
+                    telemetry
+                        .ArgumentOfPeriapsisDegrees),
+                rightLabelX,
+                rightValueX,
                 fieldTop);
 
             fieldTop +=
@@ -258,11 +304,20 @@ namespace KMC.MissionControl.Pages
 
             DrawField(
                 context,
-                "VERTICAL VEL",
-                FormatSignedSpeed(
-                    telemetry.VerticalSpeed),
-                labelX,
-                valueX,
+                "AP",
+                FormatDistance(
+                    telemetry.Apoapsis),
+                leftLabelX,
+                leftValueX,
+                fieldTop);
+
+            DrawField(
+                context,
+                "TRUE AN",
+                FormatOrbitAngle(
+                    telemetry.TrueAnomalyDegrees),
+                rightLabelX,
+                rightValueX,
                 fieldTop);
 
             fieldTop +=
@@ -270,11 +325,41 @@ namespace KMC.MissionControl.Pages
 
             DrawField(
                 context,
-                "SURFACE VEL",
-                FormatSpeed(
-                    telemetry.SurfaceSpeed),
-                labelX,
-                valueX,
+                "PE",
+                FormatDistance(
+                    telemetry.Periapsis),
+                leftLabelX,
+                leftValueX,
+                fieldTop);
+
+            DrawField(
+                context,
+                "PERIOD",
+                FormatDuration(
+                    telemetry.OrbitalPeriod),
+                rightLabelX,
+                rightValueX,
+                fieldTop);
+
+            fieldTop +=
+                FieldRowHeight;
+
+            DrawField(
+                context,
+                "T TO AP",
+                FormatDuration(
+                    telemetry.TimeToApoapsis),
+                leftLabelX,
+                leftValueX,
+                fieldTop);
+
+            DrawField(
+                context,
+                "T TO PE",
+                FormatDuration(
+                    telemetry.TimeToPeriapsis),
+                rightLabelX,
+                rightValueX,
                 fieldTop);
 
             fieldTop +=
@@ -286,15 +371,24 @@ namespace KMC.MissionControl.Pages
                 fieldTop - 3);
 
             fieldTop +=
-                12;
+                8;
+
+            DrawField(
+                context,
+                "ORB VEL",
+                FormatSpeed(
+                    telemetry.OrbitalSpeed),
+                leftLabelX,
+                leftValueX,
+                fieldTop);
 
             DrawField(
                 context,
                 "PITCH",
                 FormatSignedAngle(
                     telemetry.Pitch),
-                labelX,
-                valueX,
+                rightLabelX,
+                rightValueX,
                 fieldTop);
 
             fieldTop +=
@@ -302,23 +396,41 @@ namespace KMC.MissionControl.Pages
 
             DrawField(
                 context,
-                "HEADING",
+                "VERT VEL",
+                FormatSignedSpeed(
+                    telemetry.VerticalSpeed),
+                leftLabelX,
+                leftValueX,
+                fieldTop);
+
+            DrawField(
+                context,
+                "HEAD",
                 FormatHeading(
                     telemetry.Heading),
-                labelX,
-                valueX,
+                rightLabelX,
+                rightValueX,
                 fieldTop);
 
             fieldTop +=
                 FieldRowHeight;
+
+            DrawField(
+                context,
+                "SURF VEL",
+                FormatSpeed(
+                    telemetry.SurfaceSpeed),
+                leftLabelX,
+                leftValueX,
+                fieldTop);
 
             DrawField(
                 context,
                 "ROLL",
                 FormatSignedAngle(
                     telemetry.Roll),
-                labelX,
-                valueX,
+                rightLabelX,
+                rightValueX,
                 fieldTop);
         }
 
@@ -430,6 +542,18 @@ namespace KMC.MissionControl.Pages
             }
         }
 
+        private static string FormatRatio(
+            double value)
+        {
+            if (!IsFinite(value))
+            {
+                return "---";
+            }
+
+            return value.ToString(
+                "0.00000");
+        }
+
         private static string FormatDistance(
             double value)
         {
@@ -493,6 +617,30 @@ namespace KMC.MissionControl.Pages
                 value.ToString(
                     "+0.0;-0.0;0.0") +
                 " M/S";
+        }
+
+        private static string FormatOrbitAngle(
+            double value)
+        {
+            if (!IsFinite(value))
+            {
+                return "---";
+            }
+
+            double normalized =
+                value %
+                360.0;
+
+            if (normalized < 0.0)
+            {
+                normalized +=
+                    360.0;
+            }
+
+            return
+                normalized.ToString(
+                    "000.00") +
+                "°";
         }
 
         private static string FormatSignedAngle(
