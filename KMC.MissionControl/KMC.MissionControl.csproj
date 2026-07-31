@@ -79,6 +79,7 @@
     <Compile Include="Themes\ApolloTheme.cs" />
     <Compile Include="Widgets\HorizontalResourceBarWidget.cs" />
     <Compile Include="Widgets\IMissionWidget.cs" />
+    <Compile Include="Widgets\OrbitPlotWidget.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\KMC.shared\KMC.Shared.csproj">
