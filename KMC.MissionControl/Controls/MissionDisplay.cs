@@ -27,13 +27,18 @@ namespace KMC.MissionControl.Controls
     public sealed class MissionDisplay : Control
     {
         public const int MinimumVirtualWidth = 1280;
-        public const int VirtualHeight = 720;
+        public const int MinimumVirtualHeight = 720;
+
+        // Compatibility aliases for existing code.
         public const int VirtualWidth = MinimumVirtualWidth;
+        public const int VirtualHeight = MinimumVirtualHeight;
 
         private const int BezelInset = 18;
         private const int GlassContentInsetX = 22;
         private const int GlassContentInsetY = 18;
         private const int MaximumVirtualWidth = 4096;
+        private const float MaximumCanvasScale = 0.625f;
+        private const int MaximumVirtualHeight = 2304;
 
         private IMissionPage _missionPage;
         private MissionTelemetry _telemetry;
@@ -42,10 +47,12 @@ namespace KMC.MissionControl.Controls
         private bool _showScanLines;
         private bool _showScalingDiagnostics;
         private int _currentVirtualWidth;
+        private int _currentVirtualHeight;
 
         private struct CanvasLayout
         {
             public int VirtualWidth;
+            public int VirtualHeight;
             public RectangleF DestinationRectangle;
             public float Scale;
         }
@@ -59,6 +66,7 @@ namespace KMC.MissionControl.Controls
             _showScanLines = true;
             _showScalingDiagnostics = false;
             _currentVirtualWidth = MinimumVirtualWidth;
+            _currentVirtualHeight = MinimumVirtualHeight;
 
             Width = 640;
             Height = 400;
@@ -120,7 +128,12 @@ namespace KMC.MissionControl.Controls
 
         public Size VirtualCanvasSize
         {
-            get { return new Size(_currentVirtualWidth, VirtualHeight); }
+            get
+            {
+                return new Size(
+                    _currentVirtualWidth,
+                    _currentVirtualHeight);
+            }
         }
 
         public void SetPage(IMissionPage page)
@@ -170,7 +183,7 @@ namespace KMC.MissionControl.Controls
 
             virtualPoint = new PointF(
                 normalizedX * layout.VirtualWidth,
-                normalizedY * VirtualHeight);
+                normalizedY * layout.VirtualHeight);
 
             return true;
         }
@@ -189,7 +202,9 @@ namespace KMC.MissionControl.Controls
                 virtualPoint.X / layout.VirtualWidth * destination.Width;
 
             float y = destination.Top +
-                virtualPoint.Y / VirtualHeight * destination.Height;
+                virtualPoint.Y /
+                layout.VirtualHeight *
+                destination.Height;
 
             return new PointF(x, y);
         }
@@ -273,11 +288,15 @@ namespace KMC.MissionControl.Controls
 
 
 
-            _currentVirtualWidth = layout.VirtualWidth;
+            _currentVirtualWidth =
+                layout.VirtualWidth;
+
+            _currentVirtualHeight =
+                layout.VirtualHeight;
 
             using (Bitmap virtualCanvas = new Bitmap(
                 layout.VirtualWidth,
-                VirtualHeight,
+                layout.VirtualHeight,
                 PixelFormat.Format32bppPArgb))
             {
                 virtualCanvas.SetResolution(96.0f, 96.0f);
@@ -286,8 +305,10 @@ namespace KMC.MissionControl.Controls
                 {
                     ConfigureCanvasGraphics(canvasGraphics);
 
-                    DrawMissionPage(canvasGraphics,
-                        layout.VirtualWidth);
+                    DrawMissionPage(
+                        canvasGraphics,
+                        layout.VirtualWidth,
+                        layout.VirtualHeight);
 
                     if (_showScalingDiagnostics)
                     {
@@ -307,7 +328,7 @@ namespace KMC.MissionControl.Controls
                     targetGraphics.DrawImage(
                         virtualCanvas,
                         layout.DestinationRectangle,
-                        new RectangleF(0.0f, 0.0f, layout.VirtualWidth, VirtualHeight),
+                        new RectangleF(0.0f, 0.0f, layout.VirtualWidth, layout.VirtualHeight),
                         GraphicsUnit.Pixel);
                 }
                 finally
@@ -375,16 +396,42 @@ namespace KMC.MissionControl.Controls
         }
 
 
-        private void DrawMissionPage(Graphics graphics, int virtualWidth)
+        private void DrawMissionPage(
+            Graphics graphics,int virtualWidth,int virtualHeight)
         {
-            Color phosphorColor = GetPhosphorColor();
-            Color dimColor = Color.FromArgb(155, phosphorColor);
+            Color phosphorColor =
+                GetPhosphorColor();
 
-            Rectangle contentRectangle = new Rectangle(
-                42,
-                34,
-                MinimumVirtualWidth - 84,
-                VirtualHeight - 68);
+            Color dimColor =
+                Color.FromArgb(
+                    155,
+                    phosphorColor);
+
+            /*
+             * Existing mission pages occupy a fixed 1280 x 720 baseline
+             * region. Resizing adds virtual space around that region
+             * instead of enlarging its contents.
+             */
+            int baselineLeft =
+                Math.Max(
+                    0,
+                    (virtualWidth -
+                     MinimumVirtualWidth) /
+                    2);
+
+            int baselineTop =
+                Math.Max(
+                    0,
+                    (virtualHeight -
+                     MinimumVirtualHeight) /
+                    2);
+
+            Rectangle contentRectangle =
+                new Rectangle(
+                    baselineLeft + 42,
+                    baselineTop + 34,
+                    MinimumVirtualWidth - 84,
+                    MinimumVirtualHeight - 68);
 
             using (Font largeFont = ApolloTheme.CreateConsoleFont(27.0f, FontStyle.Regular))
             using (Font smallFont = ApolloTheme.CreateConsoleFont(21.0f, FontStyle.Bold))
@@ -396,7 +443,7 @@ namespace KMC.MissionControl.Controls
                     smallFont,
                     phosphorColor,
                     dimColor,
-                    new Size(virtualWidth, VirtualHeight));
+                    new Size(virtualWidth, virtualHeight));
 
                 if (_missionPage != null && _telemetry != null)
                 {
@@ -408,7 +455,7 @@ namespace KMC.MissionControl.Controls
         private void DrawDiagnostics(Graphics graphics, CanvasLayout layout)
         {
             string diagnosticText =
-                "VIRTUAL " + layout.VirtualWidth + " X " + VirtualHeight +
+               "VIRTUAL " +layout.VirtualWidth +" X " +layout.VirtualHeight +
                 "  |  SCALE " + layout.Scale.ToString("0.000");
 
             using (Font font = ApolloTheme.CreateConsoleFont(16.0f, FontStyle.Regular))
@@ -420,73 +467,114 @@ namespace KMC.MissionControl.Controls
                     font,
                     brush,
                     42.0f,
-                    VirtualHeight - 28.0f);
+                    layout.VirtualHeight - 28.0f);
             }
         }
 
-        private static CanvasLayout CalculateCanvasLayout(RectangleF viewport)
+        private static CanvasLayout CalculateCanvasLayout(
+    RectangleF viewport)
         {
-            CanvasLayout result = new CanvasLayout
-            {
-                VirtualWidth = MinimumVirtualWidth,
-                DestinationRectangle = RectangleF.Empty,
-                Scale = 0.0f
-            };
+            CanvasLayout result =
+                new CanvasLayout
+                {
+                    VirtualWidth =
+                        MinimumVirtualWidth,
 
-            if (viewport.Width <= 0.0f || viewport.Height <= 0.0f)
+                    VirtualHeight =
+                        MinimumVirtualHeight,
+
+                    DestinationRectangle =
+                        RectangleF.Empty,
+
+                    Scale = 0.0f
+                };
+
+            if (viewport.Width <= 0.0f ||
+                viewport.Height <= 0.0f)
             {
                 return result;
             }
 
-            float minimumAspect = (float)MinimumVirtualWidth / VirtualHeight;
-            float viewportAspect = viewport.Width / viewport.Height;
+            /*
+             * The display may shrink below the baseline scale only when
+             * forced to do so. MainForm.MinimumSize should normally prevent
+             * that condition.
+             */
+            float widthScale =
+                viewport.Width /
+                MinimumVirtualWidth;
 
-            if (viewportAspect <= minimumAspect)
+            float heightScale =
+                viewport.Height /
+                MinimumVirtualHeight;
+
+            float scale =
+                Math.Min(
+                    MaximumCanvasScale,
+                    Math.Min(
+                        widthScale,
+                        heightScale));
+
+            if (scale <= 0.0f)
             {
-                float scale = Math.Min(
-                    viewport.Width / MinimumVirtualWidth,
-                    viewport.Height / VirtualHeight);
+                return result;
+            }
 
-                float destinationWidth = MinimumVirtualWidth * scale;
-                float destinationHeight = VirtualHeight * scale;
+            int virtualWidth =
+                (int)Math.Ceiling(
+                    viewport.Width /
+                    scale);
 
-                result.Scale = scale;
-                result.DestinationRectangle = new RectangleF(
-                    viewport.Left + (viewport.Width - destinationWidth) / 2.0f,
-                    viewport.Top + (viewport.Height - destinationHeight) / 2.0f,
+            int virtualHeight =
+                (int)Math.Ceiling(
+                    viewport.Height /
+                    scale);
+
+            virtualWidth =
+                Math.Max(
+                    MinimumVirtualWidth,
+                    Math.Min(
+                        MaximumVirtualWidth,
+                        virtualWidth));
+
+            virtualHeight =
+                Math.Max(
+                    MinimumVirtualHeight,
+                    Math.Min(
+                        MaximumVirtualHeight,
+                        virtualHeight));
+
+            float destinationWidth =
+                virtualWidth *
+                scale;
+
+            float destinationHeight =
+                virtualHeight *
+                scale;
+
+            result.VirtualWidth =
+                virtualWidth;
+
+            result.VirtualHeight =
+                virtualHeight;
+
+            result.Scale =
+                scale;
+
+            result.DestinationRectangle =
+                new RectangleF(
+                    viewport.Left +
+                    (viewport.Width -
+                     destinationWidth) /
+                    2.0f,
+
+                    viewport.Top +
+                    (viewport.Height -
+                     destinationHeight) /
+                    2.0f,
+
                     destinationWidth,
                     destinationHeight);
-
-                return result;
-            }
-
-            float wideScale = viewport.Height / VirtualHeight;
-
-            if (wideScale <= 0.0f)
-            {
-                return result;
-            }
-
-            int expandedVirtualWidth = (int)Math.Ceiling(
-                viewport.Width / wideScale);
-
-            expandedVirtualWidth = Math.Max(
-                MinimumVirtualWidth,
-                expandedVirtualWidth);
-
-            expandedVirtualWidth = Math.Min(
-                MaximumVirtualWidth,
-                expandedVirtualWidth);
-
-            float renderedWidth = expandedVirtualWidth * wideScale;
-
-            result.VirtualWidth = expandedVirtualWidth;
-            result.Scale = wideScale;
-            result.DestinationRectangle = new RectangleF(
-                viewport.Left + (viewport.Width - renderedWidth) / 2.0f,
-                viewport.Top,
-                renderedWidth,
-                viewport.Height);
 
             return result;
         }

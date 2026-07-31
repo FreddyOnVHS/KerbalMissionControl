@@ -40,14 +40,18 @@ namespace KMC.MissionControl
         {
             Text = "KMC - Kerbal Mission Control";
 
+            /*
+            * Baseline console size. Existing mission-page text and widgets
+            * are designed around the CRT area produced by this client size.
+            */
+            
             ClientSize = new Size(
-                1180,
-                900);
+                900,
+                1080);
 
-            MinimumSize = SizeFromClientSize(
-                new Size(
-                744,
-                1000));
+            MinimumSize =
+                SizeFromClientSize(
+                    ClientSize);
 
             StartPosition =
                 FormStartPosition.CenterScreen;
