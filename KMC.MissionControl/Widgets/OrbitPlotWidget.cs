@@ -147,13 +147,7 @@ namespace KMC.MissionControl.Widgets
                 new SolidBrush(
                     context.PhosphorColor))
             {
-                context.Graphics.FillRectangle(
-                    backgroundBrush,
-                    bounds);
-
-                context.Graphics.DrawRectangle(
-                    borderPen,
-                    bounds);
+                
 
                 context.Graphics.DrawString(
                     "ORBIT PLOT",
@@ -1127,42 +1121,36 @@ namespace KMC.MissionControl.Widgets
             const int verticalPadding = 5;
             const int sectionGap = 18;
             const int dividerGap = 10;
+            const int legendWidth = 260;
 
             int rowHeight =
-                context.SmallFont.Height +
+                context.TinyFont.Height +
                 2;
 
             int legendHeight =
                 verticalPadding * 2 +
                 rowHeight;
 
-            const int legendWidth = 235;
-
             Rectangle legendBounds =
-            new Rectangle(
-                plotBounds.Left +
-                (plotBounds.Width - legendWidth) / 2,
+                new Rectangle(
+                    plotBounds.Left +
+                    (plotBounds.Width -
+                     legendWidth) /
+                    2,
 
-                plotBounds.Bottom -
-                legendHeight -
-                10,
+                    plotBounds.Bottom -
+                    legendHeight -
+                    10,
 
-        legendWidth,
-        legendHeight);
+                    legendWidth,
+                    legendHeight);
 
-            using (SolidBrush backgroundBrush =
-                new SolidBrush(
-                    Color.FromArgb(
-                        2,
-                        13,
-                        18)))
-            using (Pen borderPen =
-                new Pen(
-                    Color.FromArgb(
-                        105,
-                        context.DimPhosphorColor),
-                    1.0f))
             using (Pen dividerPen =
+                new Pen(
+                Color.FromArgb(
+                    80,
+                context.DimPhosphorColor),
+                    1.0f))
                 new Pen(
                     Color.FromArgb(
                         80,
@@ -1185,37 +1173,36 @@ namespace KMC.MissionControl.Widgets
                     legendBounds.Left +
                     horizontalPadding;
 
-
                 currentX =
                     DrawCompactLegendField(
                         context,
-                        "VESSEL",
-                        FormatVesselName(
-                            telemetry.VesselName),
+                        "BODY",
+                        FormatBodyName(
+                            telemetry.BodyName),
                         currentX,
                         contentY,
                         rowHeight);
 
-                int secondDividerX =
+                int dividerX =
                     currentX +
                     dividerGap;
 
                 context.Graphics.DrawLine(
                     dividerPen,
-                    secondDividerX,
+                    dividerX,
                     legendBounds.Top +
                     4,
-                    secondDividerX,
+                    dividerX,
                     legendBounds.Bottom -
                     4);
 
                 currentX =
-                    secondDividerX +
+                    dividerX +
                     sectionGap;
 
                 DrawCompactLegendField(
                     context,
-                        "TYPE",
+                    "TYPE",
                     GetOrbitType(
                         telemetry),
                     currentX,
@@ -1225,24 +1212,27 @@ namespace KMC.MissionControl.Widgets
         }
 
         private static int DrawCompactLegendField(
-     MissionRenderContext context,
-     string label,
-     string value,
-     int x,
-     int y,
-     int rowHeight)
+    MissionRenderContext context,
+    string label,
+    string value,
+    int x,
+    int y,
+    int rowHeight)
         {
-            const int labelValueGap = 10;
+            const int labelValueGap = 8;
+
+            Font legendFont =
+                context.TinyFont;
 
             SizeF labelSize =
                 context.Graphics.MeasureString(
                     label,
-                    context.SmallFont);
+                    legendFont);
 
             SizeF valueSize =
                 context.Graphics.MeasureString(
                     value,
-                    context.SmallFont);
+                    legendFont);
 
             int labelWidth =
                 (int)Math.Ceiling(
@@ -1256,8 +1246,7 @@ namespace KMC.MissionControl.Widgets
                 new RectangleF(
                     x,
                     y,
-                    labelWidth +
-                    2,
+                    labelWidth + 2,
                     rowHeight);
 
             int valueX =
@@ -1269,8 +1258,7 @@ namespace KMC.MissionControl.Widgets
                 new RectangleF(
                     valueX,
                     y,
-                    valueWidth +
-                    4,
+                    valueWidth + 4,
                     rowHeight);
 
             using (SolidBrush labelBrush =
@@ -1293,14 +1281,14 @@ namespace KMC.MissionControl.Widgets
 
                 context.Graphics.DrawString(
                     label,
-                    context.SmallFont,
+                    legendFont,
                     labelBrush,
                     labelBounds,
                     format);
 
                 context.Graphics.DrawString(
                     value,
-                    context.SmallFont,
+                    legendFont,
                     valueBrush,
                     valueBounds,
                     format);
