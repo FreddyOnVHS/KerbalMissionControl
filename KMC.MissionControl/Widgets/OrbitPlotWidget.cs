@@ -901,21 +901,17 @@ namespace KMC.MissionControl.Widgets
         }
 
         private static void DrawCentralBody(
-            MissionRenderContext context,
-            PointF center,
-            float radius,
-            string bodyName)
+    MissionRenderContext context,
+    PointF center,
+    float radius,
+    string bodyName)
         {
             RectangleF bodyBounds =
                 new RectangleF(
-                    center.X -
-                    radius,
-                    center.Y -
-                    radius,
-                    radius *
-                    2.0f,
-                    radius *
-                    2.0f);
+                    center.X - radius,
+                    center.Y - radius,
+                    radius * 2.0f,
+                    radius * 2.0f);
 
             using (LinearGradientBrush bodyBrush =
                 new LinearGradientBrush(
@@ -931,15 +927,7 @@ namespace KMC.MissionControl.Widgets
                 new Pen(
                     context.PhosphorColor,
                     2.0f))
-            using (SolidBrush labelBrush =
-                new SolidBrush(
-                    context.DimPhosphorColor))
-            using (StringFormat format =
-                new StringFormat())
             {
-                format.Alignment =
-                    StringAlignment.Center;
-
                 context.Graphics.FillEllipse(
                     bodyBrush,
                     bodyBounds);
@@ -947,28 +935,6 @@ namespace KMC.MissionControl.Widgets
                 context.Graphics.DrawEllipse(
                     bodyPen,
                     bodyBounds);
-
-                RectangleF labelBounds =
-                    new RectangleF(
-                        center.X -
-                        100.0f,
-                        Math.Min(
-                            bodyBounds.Bottom +
-                            5.0f,
-                            center.Y +
-                            radius +
-                            5.0f),
-                        200.0f,
-                        context.SmallFont.Height +
-                        6.0f);
-
-                context.Graphics.DrawString(
-                    FormatBodyName(
-                        bodyName),
-                    context.SmallFont,
-                    labelBrush,
-                    labelBounds,
-                    format);
             }
         }
 
@@ -1153,11 +1119,11 @@ namespace KMC.MissionControl.Widgets
         }
 
         private static void DrawOrbitLegend(
-    MissionRenderContext context,
-    Rectangle plotBounds,
-    MissionTelemetry telemetry)
+     MissionRenderContext context,
+     Rectangle plotBounds,
+     MissionTelemetry telemetry)
         {
-            const int legendWidth = 300;
+            const int preferredLegendWidth = 330;
             const int horizontalPadding = 12;
             const int verticalPadding = 9;
             const int labelWidth = 92;
@@ -1171,35 +1137,41 @@ namespace KMC.MissionControl.Widgets
                 verticalPadding * 2 +
                 rowHeight * 3;
 
-            int safeLegendWidth =
+            int legendWidth =
                 Math.Min(
-                    legendWidth,
+                    preferredLegendWidth,
                     plotBounds.Width -
                     20);
 
             Rectangle legendBounds =
                 new Rectangle(
-                    plotBounds.Left +
+                    plotBounds.Right -
+                    legendWidth -
                     10,
 
                     plotBounds.Bottom -
                     legendHeight -
                     10,
 
-                    safeLegendWidth,
+                    legendWidth,
                     legendHeight);
 
+            /*
+             * Use an opaque background.
+             *
+             * The previous alpha value allowed the central-body label and
+             * orbit lines to remain visible behind the legend.
+             */
             using (SolidBrush backgroundBrush =
                 new SolidBrush(
                     Color.FromArgb(
-                        190,
                         2,
                         13,
                         18)))
             using (Pen borderPen =
                 new Pen(
                     Color.FromArgb(
-                        90,
+                        110,
                         context.DimPhosphorColor),
                     1.0f))
             {
@@ -1320,9 +1292,6 @@ namespace KMC.MissionControl.Widgets
                 labelFormat.FormatFlags =
                     StringFormatFlags.NoWrap;
 
-                labelFormat.Trimming =
-                    StringTrimming.None;
-
                 valueFormat.Alignment =
                     StringAlignment.Near;
 
@@ -1352,32 +1321,55 @@ namespace KMC.MissionControl.Widgets
         }
 
         private static void DrawGroundedState(
-            MissionRenderContext context,
-            Rectangle plotBounds,
-            MissionTelemetry telemetry)
+    MissionRenderContext context,
+    Rectangle plotBounds,
+    MissionTelemetry telemetry)
         {
+            float bodyRadius =
+                Math.Min(
+                    plotBounds.Width,
+                    plotBounds.Height) *
+                0.20f;
+
             PointF bodyPoint =
                 new PointF(
                     plotBounds.Left +
                     plotBounds.Width *
-                    0.30f,
+                    0.28f,
 
                     plotBounds.Top +
                     plotBounds.Height *
-                    0.50f);
+                    0.42f);
 
             DrawCentralBody(
                 context,
                 bodyPoint,
-                Math.Min(
-                    plotBounds.Width,
-                    plotBounds.Height) *
-                0.22f,
+                bodyRadius,
                 telemetry.BodyName);
+
+            Rectangle statusBounds =
+                new Rectangle(
+                    (int)(
+                        plotBounds.Left +
+                        plotBounds.Width *
+                        0.48f),
+
+                    (int)(
+                        plotBounds.Top +
+                        plotBounds.Height *
+                        0.32f),
+
+                    (int)(
+                        plotBounds.Width *
+                        0.47f),
+
+                    (int)(
+                        plotBounds.Height *
+                        0.30f));
 
             DrawCenteredStatus(
                 context,
-                plotBounds,
+                statusBounds,
                 "VESSEL GROUNDED",
                 "AWAITING ASCENT");
         }
@@ -1420,29 +1412,41 @@ namespace KMC.MissionControl.Widgets
         }
 
         private static void DrawCenteredStatus(
-            MissionRenderContext context,
-            Rectangle bounds,
-            string title,
-            string detail)
+    MissionRenderContext context,
+    Rectangle bounds,
+    string title,
+    string detail)
         {
+            int rowHeight =
+                context.SmallFont.Height +
+                8;
+
+            int totalHeight =
+                rowHeight *
+                2;
+
+            int startY =
+                bounds.Top +
+                Math.Max(
+                    0,
+                    (bounds.Height -
+                     totalHeight) /
+                    2);
+
             RectangleF titleBounds =
                 new RectangleF(
                     bounds.Left,
-                    bounds.Top +
-                    bounds.Height *
-                    0.70f,
+                    startY,
                     bounds.Width,
-                    context.SmallFont.Height +
-                    8.0f);
+                    rowHeight);
 
             RectangleF detailBounds =
                 new RectangleF(
                     bounds.Left,
-                    titleBounds.Bottom +
-                    2.0f,
+                    startY +
+                    rowHeight,
                     bounds.Width,
-                    context.SmallFont.Height +
-                    8.0f);
+                    rowHeight);
 
             using (SolidBrush titleBrush =
                 new SolidBrush(
@@ -1455,6 +1459,12 @@ namespace KMC.MissionControl.Widgets
             {
                 format.Alignment =
                     StringAlignment.Center;
+
+                format.LineAlignment =
+                    StringAlignment.Center;
+
+                format.FormatFlags =
+                    StringFormatFlags.NoWrap;
 
                 context.Graphics.DrawString(
                     title,
@@ -1593,12 +1603,12 @@ namespace KMC.MissionControl.Widgets
                     .ToUpperInvariant();
 
             if (result.Length >
-                18)
+                22)
             {
                 result =
                     result.Substring(
                         0,
-                        18);
+                        22);
             }
 
             return result;
