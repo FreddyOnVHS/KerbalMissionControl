@@ -252,7 +252,15 @@ namespace KMC.MissionControl.Controls
                 -GlassContentInsetX,
                 -GlassContentInsetY);
 
-            if (viewport.Width <= 1.0f || viewport.Height <= 1.0f) return;
+            if (viewport.Width <= 1.0f ||
+                viewport.Height <= 1.0f)
+            {
+                return;
+            }
+
+            DrawViewportBackground(
+                targetGraphics,
+                viewport);
 
             CanvasLayout layout = CalculateCanvasLayout(viewport);
 
@@ -262,6 +270,8 @@ namespace KMC.MissionControl.Controls
             {
                 return;
             }
+
+
 
             _currentVirtualWidth = layout.VirtualWidth;
 
@@ -275,8 +285,9 @@ namespace KMC.MissionControl.Controls
                 using (Graphics canvasGraphics = Graphics.FromImage(virtualCanvas))
                 {
                     ConfigureCanvasGraphics(canvasGraphics);
-                    DrawCanvasBackground(canvasGraphics, layout.VirtualWidth);
-                    DrawMissionPage(canvasGraphics, layout.VirtualWidth);
+
+                    DrawMissionPage(canvasGraphics,
+                        layout.VirtualWidth);
 
                     if (_showScalingDiagnostics)
                     {
@@ -318,17 +329,51 @@ namespace KMC.MissionControl.Controls
                 System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;
         }
 
-        private static void DrawCanvasBackground(Graphics graphics, int virtualWidth)
+        private static void DrawViewportBackground(
+             Graphics graphics,
+             RectangleF viewport)
         {
-            using (LinearGradientBrush brush = new LinearGradientBrush(
-                new Rectangle(0, 0, virtualWidth, VirtualHeight),
-                Color.FromArgb(255, 6, 20, 27),
-                Color.FromArgb(255, 2, 10, 14),
-                LinearGradientMode.Vertical))
+            if (viewport.Width <= 0.0f ||
+                viewport.Height <= 0.0f)
             {
-                graphics.FillRectangle(brush, 0, 0, virtualWidth, VirtualHeight);
+                return;
+            }
+
+            GraphicsState state =
+                graphics.Save();
+
+            try
+            {
+                graphics.SetClip(
+                    viewport);
+
+                using (LinearGradientBrush brush =
+                    new LinearGradientBrush(
+                        viewport,
+                        Color.FromArgb(
+                            255,
+                            6,
+                            20,
+                            27),
+                        Color.FromArgb(
+                            255,
+                            2,
+                            10,
+                            14),
+                        LinearGradientMode.Vertical))
+                {
+                    graphics.FillRectangle(
+                        brush,
+                        viewport);
+                }
+            }
+            finally
+            {
+                graphics.Restore(
+                    state);
             }
         }
+
 
         private void DrawMissionPage(Graphics graphics, int virtualWidth)
         {
