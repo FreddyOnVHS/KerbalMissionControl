@@ -325,21 +325,20 @@ namespace KMC.MissionControl.Widgets
     Rectangle plotBounds,
     MissionTelemetry telemetry)
         {
-            const int legendWidth = 230;
+            const int legendWidth = 270;
             const int legendHeight = 88;
             const int legendPadding = 10;
             const int rowHeight = 24;
-            const int labelWidth = 82;
+            const int labelWidth = 105;
 
             Rectangle legendBounds =
                 new Rectangle(
-                    plotBounds.Left +
-                    10,
-                    plotBounds.Bottom -
-                    legendHeight -
-                    10,
-                    legendWidth,
-                    legendHeight);
+                plotBounds.Left + 10,
+                plotBounds.Bottom - legendHeight - 10,
+                Math.Min(
+            legendWidth,
+            plotBounds.Width - 20),
+        legendHeight);
 
             using (SolidBrush backgroundBrush =
                 new SolidBrush(

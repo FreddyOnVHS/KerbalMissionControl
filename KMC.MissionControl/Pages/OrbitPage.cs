@@ -14,7 +14,7 @@ namespace KMC.MissionControl.Pages
         private const int LeftPanelWidth = 455;
         private const int PanelPadding = 18;
         private const int PanelHeaderHeight = 42;
-        private const int FieldRowHeight = 39;
+        private const int FieldRowHeight = 32;
         private const int LabelWidth = 205;
 
         private readonly OrbitPlotWidget _orbitPlotWidget;
@@ -242,7 +242,7 @@ namespace KMC.MissionControl.Pages
                 fieldTop - 3);
 
             fieldTop +=
-                12;
+                8;
 
             DrawField(
                 context,
