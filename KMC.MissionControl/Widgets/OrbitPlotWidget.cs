@@ -19,6 +19,12 @@ namespace KMC.MissionControl.Widgets
         private const int HeaderHeight = 42;
         private const int PlotPadding = 28;
         private const int OrbitSampleCount = 180;
+        private const double RotationLockAltitude = 10000.0;
+        private const double RotationBlendEndAltitude = 25000.0;
+        private const double CircularOrbitThreshold = 0.01;
+
+        private bool _hasPlotRotation;
+        private double _plotRotationDegrees;
 
         /*
          * The camera will not zoom closer than this many body radii.
@@ -64,8 +70,11 @@ namespace KMC.MissionControl.Widgets
                 plotBounds);
 
             if (IsGrounded(
-                    telemetry))
+                telemetry))
             {
+                _hasPlotRotation =
+                    false;
+
                 DrawGroundedState(
                     context,
                     plotBounds,
@@ -236,7 +245,7 @@ namespace KMC.MissionControl.Widgets
             }
         }
 
-        private static void DrawKeplerianOrbit(
+        private void DrawKeplerianOrbit(
             MissionRenderContext context,
             Rectangle plotBounds,
             MissionTelemetry telemetry)
@@ -250,10 +259,13 @@ namespace KMC.MissionControl.Widgets
             double semiMajorAxis =
                 telemetry.SemiMajorAxis;
 
+            double plotRotationDegrees =
+                ResolvePlotRotationDegrees(
+                telemetry);
+
             double rotationRadians =
                 DegreesToRadians(
-                    telemetry
-                        .ArgumentOfPeriapsisDegrees);
+                    plotRotationDegrees);
 
             double periapsisRadius =
                 semiMajorAxis *
@@ -395,6 +407,98 @@ namespace KMC.MissionControl.Widgets
                 context,
                 plotBounds,
                 telemetry);
+        }
+
+        private double ResolvePlotRotationDegrees(
+    MissionTelemetry telemetry)
+        {
+            double targetDegrees =
+                NormalizeDegrees(
+                    telemetry
+                        .ArgumentOfPeriapsisDegrees);
+
+            if (!_hasPlotRotation)
+            {
+                _plotRotationDegrees =
+                    targetDegrees;
+
+                _hasPlotRotation =
+                    true;
+
+                return _plotRotationDegrees;
+            }
+
+            /*
+             * Argument of periapsis becomes visually unstable for an almost
+             * circular orbit because the location of periapsis is poorly defined.
+             * Hold the last useful display orientation in that condition.
+             */
+            if (telemetry.Eccentricity <=
+                CircularOrbitThreshold)
+            {
+                return _plotRotationDegrees;
+            }
+
+            /*
+             * During the first portion of ascent, hold the orientation captured
+             * immediately after liftoff. KSP's orbital frame can rotate rapidly
+             * while the trajectory is still dominated by surface rotation,
+             * atmosphere, and continuous thrust.
+             */
+            if (telemetry.Altitude <=
+                RotationLockAltitude)
+            {
+                return _plotRotationDegrees;
+            }
+
+            double blend =
+                (telemetry.Altitude -
+                 RotationLockAltitude) /
+                (RotationBlendEndAltitude -
+                 RotationLockAltitude);
+
+            blend =
+                Clamp(
+                    blend,
+                    0.0,
+                    1.0);
+
+            /*
+             * Use shortest-angle interpolation so a transition such as
+             * 359 degrees to 1 degree moves two degrees rather than rotating
+             * backward through almost a complete circle.
+             */
+            double angleDifference =
+                GetShortestAngleDifference(
+                    _plotRotationDegrees,
+                    targetDegrees);
+
+            double interpolationAmount =
+                0.02 +
+                blend *
+                0.16;
+
+            double maximumStep =
+                0.5 +
+                blend *
+                7.5;
+
+            double requestedStep =
+                angleDifference *
+                interpolationAmount;
+
+            double appliedStep =
+                Clamp(
+                    requestedStep,
+                    -maximumStep,
+                    maximumStep);
+
+            _plotRotationDegrees =
+                NormalizeDegrees(
+                    _plotRotationDegrees +
+                    appliedStep);
+
+            return _plotRotationDegrees;
         }
 
         private static double EstimateBodyRadius(
@@ -1049,40 +1153,53 @@ namespace KMC.MissionControl.Widgets
         }
 
         private static void DrawOrbitLegend(
-            MissionRenderContext context,
-            Rectangle plotBounds,
-            MissionTelemetry telemetry)
+    MissionRenderContext context,
+    Rectangle plotBounds,
+    MissionTelemetry telemetry)
         {
-            const int legendWidth = 270;
-            const int legendHeight = 88;
-            const int legendPadding = 10;
-            const int labelWidth = 105;
-            const int rowHeight = 24;
+            const int legendWidth = 300;
+            const int horizontalPadding = 12;
+            const int verticalPadding = 9;
+            const int labelWidth = 92;
+            const int columnGap = 12;
+
+            int rowHeight =
+                context.SmallFont.Height +
+                6;
+
+            int legendHeight =
+                verticalPadding * 2 +
+                rowHeight * 3;
+
+            int safeLegendWidth =
+                Math.Min(
+                    legendWidth,
+                    plotBounds.Width -
+                    20);
 
             Rectangle legendBounds =
                 new Rectangle(
                     plotBounds.Left +
                     10,
+
                     plotBounds.Bottom -
                     legendHeight -
                     10,
-                    Math.Min(
-                        legendWidth,
-                        plotBounds.Width -
-                        20),
+
+                    safeLegendWidth,
                     legendHeight);
 
             using (SolidBrush backgroundBrush =
                 new SolidBrush(
                     Color.FromArgb(
-                        175,
+                        190,
                         2,
                         13,
                         18)))
             using (Pen borderPen =
                 new Pen(
                     Color.FromArgb(
-                        80,
+                        90,
                         context.DimPhosphorColor),
                     1.0f))
             {
@@ -1097,15 +1214,20 @@ namespace KMC.MissionControl.Widgets
 
             int labelX =
                 legendBounds.Left +
-                legendPadding;
+                horizontalPadding;
 
             int valueX =
                 labelX +
-                labelWidth;
+                labelWidth +
+                columnGap;
+
+            int valueRight =
+                legendBounds.Right -
+                horizontalPadding;
 
             int rowY =
                 legendBounds.Top +
-                7;
+                verticalPadding;
 
             DrawLegendField(
                 context,
@@ -1114,7 +1236,9 @@ namespace KMC.MissionControl.Widgets
                     telemetry.BodyName),
                 labelX,
                 valueX,
-                rowY);
+                valueRight,
+                rowY,
+                rowHeight);
 
             rowY +=
                 rowHeight;
@@ -1126,7 +1250,9 @@ namespace KMC.MissionControl.Widgets
                     telemetry.VesselName),
                 labelX,
                 valueX,
-                rowY);
+                valueRight,
+                rowY,
+                rowHeight);
 
             rowY +=
                 rowHeight;
@@ -1138,37 +1264,90 @@ namespace KMC.MissionControl.Widgets
                     telemetry),
                 labelX,
                 valueX,
-                rowY);
+                valueRight,
+                rowY,
+                rowHeight);
         }
 
         private static void DrawLegendField(
-            MissionRenderContext context,
-            string label,
-            string value,
-            int labelX,
-            int valueX,
-            int y)
+    MissionRenderContext context,
+    string label,
+    string value,
+    int labelX,
+    int valueX,
+    int valueRight,
+    int y,
+    int rowHeight)
         {
+            RectangleF labelBounds =
+                new RectangleF(
+                    labelX,
+                    y,
+                    Math.Max(
+                        1,
+                        valueX -
+                        labelX -
+                        8),
+                    rowHeight);
+
+            RectangleF valueBounds =
+                new RectangleF(
+                    valueX,
+                    y,
+                    Math.Max(
+                        1,
+                        valueRight -
+                        valueX),
+                    rowHeight);
+
             using (SolidBrush labelBrush =
                 new SolidBrush(
                     context.DimPhosphorColor))
             using (SolidBrush valueBrush =
                 new SolidBrush(
                     context.PhosphorColor))
+            using (StringFormat labelFormat =
+                new StringFormat())
+            using (StringFormat valueFormat =
+                new StringFormat())
             {
+                labelFormat.Alignment =
+                    StringAlignment.Near;
+
+                labelFormat.LineAlignment =
+                    StringAlignment.Center;
+
+                labelFormat.FormatFlags =
+                    StringFormatFlags.NoWrap;
+
+                labelFormat.Trimming =
+                    StringTrimming.None;
+
+                valueFormat.Alignment =
+                    StringAlignment.Near;
+
+                valueFormat.LineAlignment =
+                    StringAlignment.Center;
+
+                valueFormat.FormatFlags =
+                    StringFormatFlags.NoWrap;
+
+                valueFormat.Trimming =
+                    StringTrimming.EllipsisCharacter;
+
                 context.Graphics.DrawString(
                     label,
                     context.SmallFont,
                     labelBrush,
-                    labelX,
-                    y);
+                    labelBounds,
+                    labelFormat);
 
                 context.Graphics.DrawString(
                     value,
                     context.SmallFont,
                     valueBrush,
-                    valueX,
-                    y);
+                    valueBounds,
+                    valueFormat);
             }
         }
 
@@ -1477,6 +1656,32 @@ namespace KMC.MissionControl.Widgets
             }
 
             return normalized;
+        }
+
+        private static double GetShortestAngleDifference(
+    double fromDegrees,
+    double toDegrees)
+        {
+            double difference =
+                NormalizeDegrees(
+                    toDegrees) -
+                NormalizeDegrees(
+                    fromDegrees);
+
+            if (difference >
+                180.0)
+            {
+                difference -=
+                    360.0;
+            }
+            else if (difference <
+                     -180.0)
+            {
+                difference +=
+                    360.0;
+            }
+
+            return difference;
         }
 
         private static double Clamp(

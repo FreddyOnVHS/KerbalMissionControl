@@ -120,27 +120,24 @@ namespace KMC.MissionControl.Pages
                 "FDO ORBITAL DATA");
 
             const int compactRowHeight = 24;
-            const int labelValueGap = 14;
+            const int valueWidth = 122;
+            const int labelValueGap = 10;
 
             int labelX =
                 bounds.Left +
                 PanelPadding;
 
-            int measuredLabelWidth =
-                (int)Math.Ceiling(
-                    context.Graphics.MeasureString(
-                        "ORBITAL VELOCITY",
-                        context.SmallFont)
-                    .Width);
-
-            int valueX =
-                labelX +
-                measuredLabelWidth +
-                labelValueGap;
-
             int valueRight =
                 bounds.Right -
                 PanelPadding;
+
+            int valueX =
+                valueRight -
+                valueWidth;
+
+            int labelRight =
+                valueX -
+                labelValueGap;
 
             int fieldTop =
                 bounds.Top +
@@ -153,9 +150,10 @@ namespace KMC.MissionControl.Pages
                 FormatDistance(
                     telemetry.Apoapsis),
                 labelX,
+                labelRight,
                 valueX,
                 valueRight,
-            fieldTop);
+                fieldTop);
 
             fieldTop +=
                 compactRowHeight;
@@ -166,6 +164,7 @@ namespace KMC.MissionControl.Pages
                 FormatDistance(
                     telemetry.Periapsis),
                 labelX,
+                labelRight,
                 valueX,
                 valueRight,
                 fieldTop);
@@ -179,6 +178,7 @@ namespace KMC.MissionControl.Pages
                 FormatDuration(
                     telemetry.TimeToApoapsis),
                 labelX,
+                labelRight,
                 valueX,
                 valueRight,
                 fieldTop);
@@ -192,6 +192,7 @@ namespace KMC.MissionControl.Pages
                 FormatDuration(
                     telemetry.TimeToPeriapsis),
                 labelX,
+                labelRight,
                 valueX,
                 valueRight,
                 fieldTop);
@@ -213,6 +214,7 @@ namespace KMC.MissionControl.Pages
                 FormatRatio(
                     telemetry.Eccentricity),
                 labelX,
+                labelRight,
                 valueX,
                 valueRight,
                 fieldTop);
@@ -222,10 +224,11 @@ namespace KMC.MissionControl.Pages
 
             DrawField(
                 context,
-                "SEMI MAJOR AXIS",
+                "SEMI MAJOR",
                 FormatDistance(
                     telemetry.SemiMajorAxis),
                 labelX,
+                labelRight,
                 valueX,
                 valueRight,
                 fieldTop);
@@ -239,6 +242,7 @@ namespace KMC.MissionControl.Pages
                 FormatOrbitAngle(
                     telemetry.InclinationDegrees),
                 labelX,
+                labelRight,
                 valueX,
                 valueRight,
                 fieldTop);
@@ -248,11 +252,12 @@ namespace KMC.MissionControl.Pages
 
             DrawField(
                 context,
-                "ASCENDING NODE",
+                "ASC NODE",
                 FormatOrbitAngle(
                     telemetry
                         .LongitudeOfAscendingNodeDegrees),
                 labelX,
+                labelRight,
                 valueX,
                 valueRight,
                 fieldTop);
@@ -267,6 +272,7 @@ namespace KMC.MissionControl.Pages
                     telemetry
                         .ArgumentOfPeriapsisDegrees),
                 labelX,
+                labelRight,
                 valueX,
                 valueRight,
                 fieldTop);
@@ -280,6 +286,7 @@ namespace KMC.MissionControl.Pages
                 FormatOrbitAngle(
                     telemetry.TrueAnomalyDegrees),
                 labelX,
+                labelRight,
                 valueX,
                 valueRight,
                 fieldTop);
@@ -293,6 +300,7 @@ namespace KMC.MissionControl.Pages
                 FormatDuration(
                     telemetry.OrbitalPeriod),
                 labelX,
+                labelRight,
                 valueX,
                 valueRight,
                 fieldTop);
@@ -310,10 +318,11 @@ namespace KMC.MissionControl.Pages
 
             DrawField(
                 context,
-                "ORBITAL VELOCITY",
+                "ORBIT VELOCITY",
                 FormatSpeed(
                     telemetry.OrbitalSpeed),
                 labelX,
+                labelRight,
                 valueX,
                 valueRight,
                 fieldTop);
@@ -397,23 +406,60 @@ namespace KMC.MissionControl.Pages
         }
 
         private static void DrawField(
-    MissionRenderContext context,
-    string label,
-    string value,
-    int labelX,
-    int valueX,
-    int valueRight,
-    int y)
+            MissionRenderContext context,
+            string label,
+            string value,
+            int labelX,
+            int labelRight,
+            int valueX,
+            int valueRight,
+            int y)
         {
+            RectangleF labelBounds =
+                new RectangleF(
+                    labelX,
+                    y,
+                    Math.Max(
+                        1,
+                        labelRight -
+                        labelX),
+                    context.SmallFont.Height +
+                    4);
+
+            RectangleF valueBounds =
+                new RectangleF(
+                    valueX,
+                    y,
+                    Math.Max(
+                        1,
+                        valueRight -
+                        valueX),
+                    context.SmallFont.Height +
+                    4);
+
             using (SolidBrush labelBrush =
                 new SolidBrush(
                     context.DimPhosphorColor))
             using (SolidBrush valueBrush =
                 new SolidBrush(
                     context.PhosphorColor))
+            using (StringFormat labelFormat =
+                new StringFormat())
             using (StringFormat valueFormat =
                 new StringFormat())
             {
+                labelFormat.Alignment =
+                    StringAlignment.Near;
+
+                labelFormat.LineAlignment =
+                    StringAlignment.Near;
+
+                labelFormat.FormatFlags =
+                    StringFormatFlags.NoWrap;
+
+                labelFormat.Trimming =
+                    StringTrimming.EllipsisCharacter;
+
                 valueFormat.Alignment =
                     StringAlignment.Far;
 
@@ -424,25 +470,14 @@ namespace KMC.MissionControl.Pages
                     StringFormatFlags.NoWrap;
 
                 valueFormat.Trimming =
-                    StringTrimming.EllipsisCharacter;
+                    StringTrimming.None;
 
                 context.Graphics.DrawString(
                     label,
                     context.SmallFont,
                     labelBrush,
-                    labelX,
-                    y);
-
-                RectangleF valueBounds =
-                    new RectangleF(
-                        valueX,
-                        y,
-                        Math.Max(
-                            1,
-                            valueRight -
-                            valueX),
-                        context.SmallFont.Height +
-                        4);
+                    labelBounds,
+                    labelFormat);
 
                 context.Graphics.DrawString(
                     value,
