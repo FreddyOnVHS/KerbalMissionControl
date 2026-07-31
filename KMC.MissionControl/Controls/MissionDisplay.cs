@@ -546,7 +546,7 @@ namespace KMC.MissionControl.Controls
             }
         }
 
-        private void DrawDiagnostics(Graphics graphics,CanvasLayout layout)
+        private void DrawDiagnostics(Graphics graphics, CanvasLayout layout)
         {
             string diagnosticText =
                 "VIRTUAL " +
