@@ -1,11 +1,60 @@
 ﻿using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering;
+using KMC.MissionControl.Widgets;
 using System;
+using System.Drawing;
 
 namespace KMC.MissionControl.Pages
 {
+    /// <summary>
+    /// Hybrid propulsion display: precise engine and thrust values remain
+    /// text, while resource quantities use reusable horizontal bar widgets.
+    /// </summary>
     public sealed class PropulsionPage : IMissionPage
     {
+        private const int SectionGap = 28;
+        private const int RowHeight = 42;
+        private const int PanelPadding = 22;
+
+        private readonly IMissionWidget[] _resourceWidgets;
+
+        public PropulsionPage()
+        {
+            _resourceWidgets =
+                new IMissionWidget[]
+                {
+                    new HorizontalResourceBarWidget(
+                        "STAGE LIQUID FUEL",
+                        telemetry => telemetry.StageLiquidFuelAmount,
+                        telemetry => telemetry.StageLiquidFuelCapacity),
+
+                    new HorizontalResourceBarWidget(
+                        "STAGE OXIDIZER",
+                        telemetry => telemetry.StageOxidizerAmount,
+                        telemetry => telemetry.StageOxidizerCapacity),
+
+                    new HorizontalResourceBarWidget(
+                        "STAGE MONOPROP",
+                        telemetry => telemetry.StageMonopropellantAmount,
+                        telemetry => telemetry.StageMonopropellantCapacity),
+
+                    new HorizontalResourceBarWidget(
+                        "TOTAL LIQUID FUEL",
+                        telemetry => telemetry.TotalLiquidFuelAmount,
+                        telemetry => telemetry.TotalLiquidFuelCapacity),
+
+                    new HorizontalResourceBarWidget(
+                        "TOTAL OXIDIZER",
+                        telemetry => telemetry.TotalOxidizerAmount,
+                        telemetry => telemetry.TotalOxidizerCapacity),
+
+                    new HorizontalResourceBarWidget(
+                        "TOTAL MONOPROP",
+                        telemetry => telemetry.TotalMonopropellantAmount,
+                        telemetry => telemetry.TotalMonopropellantCapacity)
+                };
+        }
+
         public string Name
         {
             get { return "PROPULSION DATA"; }
@@ -26,117 +75,379 @@ namespace KMC.MissionControl.Pages
                 return;
             }
 
-            MissionPageLayout layout =
-                new MissionPageLayout(context);
+            MissionPageLayout pageLayout =
+                new MissionPageLayout(
+                    context);
 
-            layout.DrawHeader(
+            pageLayout.DrawHeader(
                 Name,
                 "CH 04");
 
-            layout.Row(
+            Rectangle workingBounds =
+                new Rectangle(
+                    context.ContentBounds.Left + 28,
+                    context.ContentBounds.Top + 92,
+                    context.ContentBounds.Width - 56,
+                    context.ContentBounds.Height - 112);
+
+            int columnGap = 34;
+
+            int leftWidth =
+                Math.Min(
+                    520,
+                    (workingBounds.Width - columnGap) / 2);
+
+            Rectangle leftPanel =
+                new Rectangle(
+                    workingBounds.Left,
+                    workingBounds.Top,
+                    leftWidth,
+                    workingBounds.Height);
+
+            Rectangle rightPanel =
+                new Rectangle(
+                    leftPanel.Right + columnGap,
+                    workingBounds.Top,
+                    Math.Max(
+                        0,
+                        workingBounds.Right -
+                        leftPanel.Right -
+                        columnGap),
+                    workingBounds.Height);
+
+            DrawEnginePanel(
+                context,
+                leftPanel,
+                telemetry);
+
+            DrawResourcePanel(
+                context,
+                rightPanel,
+                telemetry);
+        }
+
+        private static void DrawEnginePanel(
+            MissionRenderContext context,
+            Rectangle bounds,
+            MissionTelemetry telemetry)
+        {
+            DrawPanelFrame(
+                context,
+                bounds,
+                "ENGINE / THRUST");
+
+            int labelX =
+                bounds.Left + PanelPadding;
+
+            int valueX =
+                bounds.Left +
+                Math.Max(
+                    220,
+                    bounds.Width / 2);
+
+            int y =
+                bounds.Top + 58;
+
+            DrawTextRow(
+                context,
                 "STAGE",
                 telemetry.CurrentStage.ToString("00"),
+                labelX,
+                valueX,
+                y);
+
+            y += RowHeight;
+
+            DrawTextRow(
+                context,
                 "THROTTLE",
                 FormatPercent(
-                    telemetry.Throttle));
+                    telemetry.Throttle),
+                labelX,
+                valueX,
+                y);
 
-            layout.Row(
-                "MASS",
+            y += RowHeight;
+
+            DrawTextRow(
+                context,
+                "VESSEL MASS",
                 FormatMass(
                     telemetry.VesselMass),
+                labelX,
+                valueX,
+                y);
+
+            y += RowHeight;
+
+            DrawTextRow(
+                context,
                 "TWR",
                 FormatRatio(
-                    telemetry.ThrustToWeightRatio));
+                    telemetry.ThrustToWeightRatio),
+                labelX,
+                valueX,
+                y);
 
-            layout.Space();
+            y += RowHeight +
+                SectionGap;
 
-            layout.Row(
-                "CUR THRUST",
+            DrawTextRow(
+                context,
+                "CURRENT THRUST",
                 FormatThrust(
                     telemetry.CurrentThrust),
+                labelX,
+                valueX,
+                y);
+
+            y += RowHeight;
+
+            DrawTextRow(
+                context,
                 "MAX THRUST",
                 FormatThrust(
-                    telemetry.MaximumThrust));
+                    telemetry.MaximumThrust),
+                labelX,
+                valueX,
+                y);
 
-            layout.Row(
+            y += RowHeight;
+
+            DrawTextRow(
+                context,
                 "THRUST LOAD",
                 FormatThrustLoad(
                     telemetry.CurrentThrust,
                     telemetry.MaximumThrust),
-                "THR MARGIN",
+                labelX,
+                valueX,
+                y);
+
+            y += RowHeight;
+
+            DrawTextRow(
+                context,
+                "THRUST MARGIN",
                 FormatThrustMargin(
                     telemetry.CurrentThrust,
-                    telemetry.MaximumThrust));
+                    telemetry.MaximumThrust),
+                labelX,
+                valueX,
+                y);
 
-            layout.Space();
+            y += RowHeight +
+                SectionGap;
 
-            layout.Row(
-                "ENGINE COUNT",
+            DrawTextRow(
+                context,
+                "ENGINES",
                 telemetry.EngineCount.ToString("00"),
-                "ENG STATUS",
-                GetEngineStatus(
-                    telemetry));
+                labelX,
+                valueX,
+                y);
 
-            layout.Row(
+            y += RowHeight;
+
+            DrawTextRow(
+                context,
                 "IGNITED",
                 telemetry.IgnitedEngineCount.ToString("00"),
+                labelX,
+                valueX,
+                y);
+
+            y += RowHeight;
+
+            DrawTextRow(
+                context,
                 "PRODUCING",
                 telemetry
                     .ProducingThrustEngineCount
-                    .ToString("00"));
+                    .ToString("00"),
+                labelX,
+                valueX,
+                y);
 
-            layout.Row(
+            y += RowHeight;
+
+            DrawTextRow(
+                context,
                 "FLAMEOUTS",
                 telemetry.FlameoutEngineCount.ToString("00"),
+                labelX,
+                valueX,
+                y);
+
+            y += RowHeight;
+
+            DrawTextRow(
+                context,
                 "AVG ISP",
                 FormatSpecificImpulse(
-                    telemetry.AverageSpecificImpulse));
+                    telemetry.AverageSpecificImpulse),
+                labelX,
+                valueX,
+                y);
 
-            layout.Space();
+            y += RowHeight;
 
-            layout.Row(
-                "STAGE LF",
-                FormatResource(
-                    telemetry.StageLiquidFuelAmount,
-                    telemetry.StageLiquidFuelCapacity),
-                "TOTAL LF",
-                FormatResource(
-                    telemetry.TotalLiquidFuelAmount,
-                    telemetry.TotalLiquidFuelCapacity));
+            DrawTextRow(
+                context,
+                "ENGINE STATUS",
+                GetEngineStatus(
+                    telemetry),
+                labelX,
+                valueX,
+                y);
+        }
 
-            layout.Row(
-                "STAGE OX",
-                FormatResource(
-                    telemetry.StageOxidizerAmount,
-                    telemetry.StageOxidizerCapacity),
-                "TOTAL OX",
-                FormatResource(
-                    telemetry.TotalOxidizerAmount,
-                    telemetry.TotalOxidizerCapacity));
+        private void DrawResourcePanel(
+            MissionRenderContext context,
+            Rectangle bounds,
+            MissionTelemetry telemetry)
+        {
+            DrawPanelFrame(
+                context,
+                bounds,
+                "PROPELLANT");
 
-            layout.Row(
-                "STAGE MP",
-                FormatResource(
-                    telemetry.StageMonopropellantAmount,
-                    telemetry.StageMonopropellantCapacity),
-                "TOTAL MP",
-                FormatResource(
-                    telemetry.TotalMonopropellantAmount,
-                    telemetry.TotalMonopropellantCapacity));
+            Rectangle contentBounds =
+                new Rectangle(
+                    bounds.Left + PanelPadding,
+                    bounds.Top + 58,
+                    Math.Max(
+                        0,
+                        bounds.Width -
+                        PanelPadding * 2),
+                    Math.Max(
+                        0,
+                        bounds.Height - 78));
 
-            layout.Space();
+            if (contentBounds.Width <= 0 ||
+                contentBounds.Height <= 0)
+            {
+                return;
+            }
 
-            layout.Row(
-                "STAGE DELTA-V",
-                "---",
-                "TOTAL DELTA-V",
-                "---");
+            int widgetGap = 12;
 
-            layout.Row(
-                "REQ DELTA-V",
-                "---",
-                "BURN TIME",
-                "---");
+            int widgetHeight =
+                Math.Max(
+                    58,
+                    (contentBounds.Height -
+                     widgetGap *
+                     (_resourceWidgets.Length - 1)) /
+                    _resourceWidgets.Length);
+
+            int y =
+                contentBounds.Top;
+
+            foreach (IMissionWidget widget in
+                _resourceWidgets)
+            {
+                Rectangle widgetBounds =
+                    new Rectangle(
+                        contentBounds.Left,
+                        y,
+                        contentBounds.Width,
+                        widgetHeight);
+
+                widget.Draw(
+                    context,
+                    widgetBounds,
+                    telemetry);
+
+                y +=
+                    widgetHeight +
+                    widgetGap;
+            }
+        }
+
+        private static void DrawPanelFrame(
+            MissionRenderContext context,
+            Rectangle bounds,
+            string title)
+        {
+            if (bounds.Width <= 0 ||
+                bounds.Height <= 0)
+            {
+                return;
+            }
+
+            using (SolidBrush backgroundBrush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        72,
+                        3,
+                        18,
+                        23)))
+            using (Pen borderPen =
+                new Pen(
+                    Color.FromArgb(
+                        135,
+                        context.DimPhosphorColor),
+                    2.0f))
+            using (SolidBrush titleBrush =
+                new SolidBrush(
+                    context.PhosphorColor))
+            {
+                context.Graphics.FillRectangle(
+                    backgroundBrush,
+                    bounds);
+
+                context.Graphics.DrawRectangle(
+                    borderPen,
+                    bounds);
+
+                context.Graphics.DrawString(
+                    title,
+                    context.SmallFont,
+                    titleBrush,
+                    bounds.Left + PanelPadding,
+                    bounds.Top + 14);
+
+                int dividerY =
+                    bounds.Top + 48;
+
+                context.Graphics.DrawLine(
+                    borderPen,
+                    bounds.Left + PanelPadding,
+                    dividerY,
+                    bounds.Right - PanelPadding,
+                    dividerY);
+            }
+        }
+
+        private static void DrawTextRow(
+            MissionRenderContext context,
+            string label,
+            string value,
+            int labelX,
+            int valueX,
+            int y)
+        {
+            using (SolidBrush labelBrush =
+                new SolidBrush(
+                    context.DimPhosphorColor))
+            using (SolidBrush valueBrush =
+                new SolidBrush(
+                    context.PhosphorColor))
+            {
+                context.Graphics.DrawString(
+                    label,
+                    context.SmallFont,
+                    labelBrush,
+                    labelX,
+                    y);
+
+                context.Graphics.DrawString(
+                    value,
+                    context.SmallFont,
+                    valueBrush,
+                    valueX,
+                    y);
+            }
         }
 
         private static string GetEngineStatus(
@@ -181,36 +492,8 @@ namespace KMC.MissionControl.Pages
             }
 
             return
-                seconds.ToString("0.0")
-                + " S";
-        }
-
-        private static string FormatResource(
-            double amount,
-            double capacity)
-        {
-            if (!IsFinite(amount) ||
-                !IsFinite(capacity) ||
-                capacity <= 0.0)
-            {
-                return "---";
-            }
-
-            amount =
-                Math.Max(
-                    0.0,
-                    Math.Min(
-                        amount,
-                        capacity));
-
-            double percent =
-                amount /
-                capacity *
-                100.0;
-
-            return
-                percent.ToString("0")
-                + "%";
+                seconds.ToString("0.0") +
+                " S";
         }
 
         private static string FormatMass(
@@ -222,9 +505,11 @@ namespace KMC.MissionControl.Pages
             }
 
             return
-                Math.Max(0.0, tonnes)
-                .ToString("0.0")
-                + " T";
+                Math.Max(
+                    0.0,
+                    tonnes)
+                .ToString("0.0") +
+                " T";
         }
 
         private static string FormatThrust(
@@ -236,9 +521,11 @@ namespace KMC.MissionControl.Pages
             }
 
             return
-                Math.Max(0.0, kilonewtons)
-                .ToString("0.0")
-                + " KN";
+                Math.Max(
+                    0.0,
+                    kilonewtons)
+                .ToString("0.0") +
+                " KN";
         }
 
         private static string FormatRatio(
@@ -250,7 +537,9 @@ namespace KMC.MissionControl.Pages
             }
 
             return
-                Math.Max(0.0, value)
+                Math.Max(
+                    0.0,
+                    value)
                 .ToString("0.00");
         }
 
@@ -270,8 +559,8 @@ namespace KMC.MissionControl.Pages
                         fraction * 100.0));
 
             return
-                percent.ToString("0")
-                + "%";
+                percent.ToString("0") +
+                "%";
         }
 
         private static string FormatThrustLoad(
@@ -286,20 +575,17 @@ namespace KMC.MissionControl.Pages
             }
 
             double percent =
-                currentThrust /
-                maximumThrust *
-                100.0;
-
-            percent =
                 Math.Max(
                     0.0,
                     Math.Min(
                         100.0,
-                        percent));
+                        currentThrust /
+                        maximumThrust *
+                        100.0));
 
             return
-                percent.ToString("0.0")
-                + "%";
+                percent.ToString("0.0") +
+                "%";
         }
 
         private static string FormatThrustMargin(
@@ -319,8 +605,8 @@ namespace KMC.MissionControl.Pages
                     currentThrust);
 
             return
-                margin.ToString("0.0")
-                + " KN";
+                margin.ToString("0.0") +
+                " KN";
         }
 
         private static bool IsFinite(
