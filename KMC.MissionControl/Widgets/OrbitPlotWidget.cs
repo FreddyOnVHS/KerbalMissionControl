@@ -46,6 +46,10 @@ namespace KMC.MissionControl.Widgets
                 GetPlotBounds(
                     bounds);
 
+            DrawBackgroundGrid(
+                context,
+                plotBounds);
+
             if (plotBounds.Width <= 20 ||
                 plotBounds.Height <= 20)
             {
@@ -58,9 +62,10 @@ namespace KMC.MissionControl.Widgets
 
             if (!hasOrbitData)
             {
-                DrawNoDataMessage(
+                DrawPlaceholderOrbit(
                     context,
-                    plotBounds);
+                    plotBounds,
+                    telemetry);
 
                 return;
             }
@@ -147,6 +152,84 @@ namespace KMC.MissionControl.Widgets
                     bounds.Right -
                     PanelPadding,
                     dividerY);
+            }
+        }
+
+        private static void DrawBackgroundGrid(
+    MissionRenderContext context,
+    Rectangle bounds)
+        {
+            if (bounds.Width <= 0 ||
+                bounds.Height <= 0)
+            {
+                return;
+            }
+
+            Color majorGridColor =
+                Color.FromArgb(
+                    38,
+                    context.DimPhosphorColor);
+
+            Color minorGridColor =
+                Color.FromArgb(
+                    20,
+                    context.DimPhosphorColor);
+
+            using (Pen majorPen =
+                new Pen(
+                    majorGridColor,
+                    1.0f))
+            using (Pen minorPen =
+                new Pen(
+                    minorGridColor,
+                    1.0f))
+            {
+                majorPen.DashStyle =
+                    DashStyle.Dot;
+
+                minorPen.DashStyle =
+                    DashStyle.Dot;
+
+                const int minorSpacing = 36;
+                const int majorSpacing = 108;
+
+                for (int x = bounds.Left;
+                     x <= bounds.Right;
+                     x += minorSpacing)
+                {
+                    bool isMajor =
+                        (x - bounds.Left) %
+                        majorSpacing ==
+                        0;
+
+                    context.Graphics.DrawLine(
+                        isMajor
+                            ? majorPen
+                            : minorPen,
+                        x,
+                        bounds.Top,
+                        x,
+                        bounds.Bottom);
+                }
+
+                for (int y = bounds.Top;
+                     y <= bounds.Bottom;
+                     y += minorSpacing)
+                {
+                    bool isMajor =
+                        (y - bounds.Top) %
+                        majorSpacing ==
+                        0;
+
+                    context.Graphics.DrawLine(
+                        isMajor
+                            ? majorPen
+                            : minorPen,
+                        bounds.Left,
+                        y,
+                        bounds.Right,
+                        y);
+                }
             }
         }
 
@@ -794,11 +877,190 @@ namespace KMC.MissionControl.Widgets
                     length));
         }
 
-        private static void DrawNoDataMessage(
-            MissionRenderContext context,
-            Rectangle bounds)
+        private static void DrawPlaceholderOrbit(
+    MissionRenderContext context,
+    Rectangle bounds,
+    MissionTelemetry telemetry)
         {
-            using (SolidBrush brush =
+            RectangleF orbitBounds =
+                new RectangleF(
+                    bounds.Left +
+                    bounds.Width *
+                    0.08f,
+                    bounds.Top +
+                    bounds.Height *
+                    0.20f,
+                    bounds.Width *
+                    0.84f,
+                    bounds.Height *
+                    0.60f);
+
+            PointF bodyCenter =
+                new PointF(
+                    orbitBounds.Left +
+                    orbitBounds.Width *
+                    0.57f,
+                    orbitBounds.Top +
+                    orbitBounds.Height /
+                    2.0f);
+
+            float bodyRadius =
+                Math.Max(
+                    13.0f,
+                    Math.Min(
+                        bounds.Width,
+                        bounds.Height) *
+                    0.055f);
+
+            using (Pen orbitPen =
+                new Pen(
+                    Color.FromArgb(
+                        92,
+                        context.DimPhosphorColor),
+                    2.0f))
+            {
+                orbitPen.DashStyle =
+                    DashStyle.Dash;
+
+                context.Graphics.DrawEllipse(
+                    orbitPen,
+                    orbitBounds);
+            }
+
+            DrawCentralBody(
+                context,
+                bodyCenter,
+                bodyRadius,
+                telemetry.BodyName);
+
+            PointF periapsisPoint =
+                new PointF(
+                    orbitBounds.Left,
+                    orbitBounds.Top +
+                    orbitBounds.Height /
+                    2.0f);
+
+            PointF apoapsisPoint =
+                new PointF(
+                    orbitBounds.Right,
+                    orbitBounds.Top +
+                    orbitBounds.Height /
+                    2.0f);
+
+            DrawPlaceholderApsisMarker(
+                context,
+                periapsisPoint,
+                "PE",
+                false);
+
+            DrawPlaceholderApsisMarker(
+                context,
+                apoapsisPoint,
+                "AP",
+                true);
+
+            DrawNoOrbitSolutionLabel(
+                context,
+                bounds);
+        }
+
+        private static void DrawPlaceholderApsisMarker(
+    MissionRenderContext context,
+    PointF point,
+    string label,
+    bool placeRight)
+        {
+            const float markerRadius = 4.0f;
+
+            RectangleF markerBounds =
+                new RectangleF(
+                    point.X -
+                    markerRadius,
+                    point.Y -
+                    markerRadius,
+                    markerRadius *
+                    2.0f,
+                    markerRadius *
+                    2.0f);
+
+            using (SolidBrush markerBrush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        115,
+                        context.DimPhosphorColor)))
+            using (SolidBrush labelBrush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        135,
+                        context.DimPhosphorColor)))
+            using (StringFormat format =
+                new StringFormat())
+            {
+                format.Alignment =
+                    placeRight
+                        ? StringAlignment.Near
+                        : StringAlignment.Far;
+
+                context.Graphics.FillEllipse(
+                    markerBrush,
+                    markerBounds);
+
+                RectangleF labelBounds =
+                    new RectangleF(
+                        placeRight
+                            ? point.X + 10.0f
+                            : point.X - 80.0f,
+                        point.Y -
+                        context.SmallFont.Height -
+                        3.0f,
+                        70.0f,
+                        context.SmallFont.Height +
+                        6.0f);
+
+                context.Graphics.DrawString(
+                    label,
+                    context.SmallFont,
+                    labelBrush,
+                    labelBounds,
+                    format);
+            }
+        }
+
+        private static void DrawNoOrbitSolutionLabel(
+    MissionRenderContext context,
+    Rectangle bounds)
+        {
+            int labelWidth =
+                Math.Min(
+                    300,
+                    bounds.Width -
+                    20);
+
+            Rectangle labelBounds =
+                new Rectangle(
+                    bounds.Left +
+                    (bounds.Width -
+                     labelWidth) /
+                    2,
+                    bounds.Bottom -
+                    58,
+                    labelWidth,
+                    34);
+
+            using (SolidBrush backgroundBrush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        150,
+                        2,
+                        13,
+                        18)))
+            using (Pen borderPen =
+                new Pen(
+                    Color.FromArgb(
+                        90,
+                        context.DimPhosphorColor),
+                    1.0f))
+            using (SolidBrush textBrush =
                 new SolidBrush(
                     context.DimPhosphorColor))
             using (StringFormat format =
@@ -810,11 +1072,19 @@ namespace KMC.MissionControl.Widgets
                 format.LineAlignment =
                     StringAlignment.Center;
 
+                context.Graphics.FillRectangle(
+                    backgroundBrush,
+                    labelBounds);
+
+                context.Graphics.DrawRectangle(
+                    borderPen,
+                    labelBounds);
+
                 context.Graphics.DrawString(
-                    "ORBIT DATA UNAVAILABLE",
+                    "NO ORBIT SOLUTION",
                     context.SmallFont,
-                    brush,
-                    bounds,
+                    textBrush,
+                    labelBounds,
                     format);
             }
         }
