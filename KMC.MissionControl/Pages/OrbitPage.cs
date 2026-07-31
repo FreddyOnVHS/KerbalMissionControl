@@ -119,318 +119,179 @@ namespace KMC.MissionControl.Pages
                 bounds,
                 "FDO ORBITAL DATA");
 
-            const int columnGap = 18;
-            const int columnLabelWidth = 104;
+            const int compactRowHeight = 24;
+            const int compactLabelWidth = 145;
 
-            int innerLeft =
+            int labelX =
                 bounds.Left +
                 PanelPadding;
 
-            int innerRight =
-                bounds.Right -
-                PanelPadding;
-
-            int availableWidth =
-                innerRight -
-                innerLeft;
-
-            int columnWidth =
-                (availableWidth -
-                 columnGap) /
-                2;
-
-            int leftLabelX =
-                innerLeft;
-
-            int leftValueX =
-                leftLabelX +
-                columnLabelWidth;
-
-            int rightLabelX =
-                innerLeft +
-                columnWidth +
-                columnGap;
-
-            int rightValueX =
-                rightLabelX +
-                columnLabelWidth;
-
-            int dividerX =
-                innerLeft +
-                columnWidth +
-                columnGap /
-                2;
+            int valueX =
+                labelX +
+                compactLabelWidth;
 
             int fieldTop =
                 bounds.Top +
                 PanelHeaderHeight +
-                13;
-
-            using (Pen dividerPen =
-                new Pen(
-                    Color.FromArgb(
-                        90,
-                        context.DimPhosphorColor),
-                    1.0f))
-            {
-                context.Graphics.DrawLine(
-                    dividerPen,
-                    dividerX,
-                    fieldTop - 4,
-                    dividerX,
-                    bounds.Bottom -
-                    PanelPadding);
-            }
-
-            /*
-             * Left column:
-             * general flight and trajectory data.
-             */
+                11;
 
             DrawField(
                 context,
-                "VESSEL",
-                FormatText(
-                    telemetry.VesselName),
-                leftLabelX,
-                leftValueX,
+                "APOAPSIS",
+                FormatDistance(
+                    telemetry.Apoapsis),
+                labelX,
+                valueX,
                 fieldTop);
 
+            fieldTop +=
+                compactRowHeight;
+
             DrawField(
                 context,
-                "ECC",
+                "PERIAPSIS",
+                FormatDistance(
+                    telemetry.Periapsis),
+                labelX,
+                valueX,
+                fieldTop);
+
+            fieldTop +=
+                compactRowHeight;
+
+            DrawField(
+                context,
+                "TIME TO AP",
+                FormatDuration(
+                    telemetry.TimeToApoapsis),
+                labelX,
+                valueX,
+                fieldTop);
+
+            fieldTop +=
+                compactRowHeight;
+
+            DrawField(
+                context,
+                "TIME TO PE",
+                FormatDuration(
+                    telemetry.TimeToPeriapsis),
+                labelX,
+                valueX,
+                fieldTop);
+
+            fieldTop +=
+                compactRowHeight;
+
+            DrawSectionDivider(
+                context,
+                bounds,
+                fieldTop - 2);
+
+            fieldTop +=
+                7;
+
+            DrawField(
+                context,
+                "ECCENTRICITY",
                 FormatRatio(
                     telemetry.Eccentricity),
-                rightLabelX,
-                rightValueX,
+                labelX,
+                valueX,
                 fieldTop);
 
             fieldTop +=
-                FieldRowHeight;
+                compactRowHeight;
 
             DrawField(
                 context,
-                "BODY",
-                FormatText(
-                    telemetry.BodyName),
-                leftLabelX,
-                leftValueX,
-                fieldTop);
-
-            DrawField(
-                context,
-                "SMA",
+                "SEMI MAJOR AXIS",
                 FormatDistance(
                     telemetry.SemiMajorAxis),
-                rightLabelX,
-                rightValueX,
+                labelX,
+                valueX,
                 fieldTop);
 
             fieldTop +=
-                FieldRowHeight;
+                compactRowHeight;
 
             DrawField(
                 context,
-                "MET",
-                FormatMissionTime(
-                    telemetry.MissionTime),
-                leftLabelX,
-                leftValueX,
-                fieldTop);
-
-            DrawField(
-                context,
-                "INCL",
+                "INCLINATION",
                 FormatOrbitAngle(
                     telemetry.InclinationDegrees),
-                rightLabelX,
-                rightValueX,
+                labelX,
+                valueX,
                 fieldTop);
 
             fieldTop +=
-                FieldRowHeight;
+                compactRowHeight;
 
             DrawField(
                 context,
-                "STAGE",
-                telemetry.CurrentStage.ToString(
-                    "00"),
-                leftLabelX,
-                leftValueX,
-                fieldTop);
-
-            DrawField(
-                context,
-                "LAN",
+                "ASCENDING NODE",
                 FormatOrbitAngle(
                     telemetry
                         .LongitudeOfAscendingNodeDegrees),
-                rightLabelX,
-                rightValueX,
+                labelX,
+                valueX,
                 fieldTop);
 
             fieldTop +=
-                FieldRowHeight;
-
-            DrawSectionDivider(
-                context,
-                bounds,
-                fieldTop - 3);
-
-            fieldTop +=
-                8;
+                compactRowHeight;
 
             DrawField(
                 context,
-                "ALT",
-                FormatDistance(
-                    telemetry.Altitude),
-                leftLabelX,
-                leftValueX,
-                fieldTop);
-
-            DrawField(
-                context,
-                "ARG PE",
+                "ARG PERIAPSIS",
                 FormatOrbitAngle(
                     telemetry
                         .ArgumentOfPeriapsisDegrees),
-                rightLabelX,
-                rightValueX,
+                labelX,
+                valueX,
                 fieldTop);
 
             fieldTop +=
-                FieldRowHeight;
+                compactRowHeight;
 
             DrawField(
                 context,
-                "AP",
-                FormatDistance(
-                    telemetry.Apoapsis),
-                leftLabelX,
-                leftValueX,
-                fieldTop);
-
-            DrawField(
-                context,
-                "TRUE AN",
+                "TRUE ANOMALY",
                 FormatOrbitAngle(
                     telemetry.TrueAnomalyDegrees),
-                rightLabelX,
-                rightValueX,
+                labelX,
+                valueX,
                 fieldTop);
 
             fieldTop +=
-                FieldRowHeight;
+                compactRowHeight;
 
             DrawField(
                 context,
-                "PE",
-                FormatDistance(
-                    telemetry.Periapsis),
-                leftLabelX,
-                leftValueX,
-                fieldTop);
-
-            DrawField(
-                context,
-                "PERIOD",
+                "ORBIT PERIOD",
                 FormatDuration(
                     telemetry.OrbitalPeriod),
-                rightLabelX,
-                rightValueX,
+                labelX,
+                valueX,
                 fieldTop);
 
             fieldTop +=
-                FieldRowHeight;
-
-            DrawField(
-                context,
-                "T TO AP",
-                FormatDuration(
-                    telemetry.TimeToApoapsis),
-                leftLabelX,
-                leftValueX,
-                fieldTop);
-
-            DrawField(
-                context,
-                "T TO PE",
-                FormatDuration(
-                    telemetry.TimeToPeriapsis),
-                rightLabelX,
-                rightValueX,
-                fieldTop);
-
-            fieldTop +=
-                FieldRowHeight;
+                compactRowHeight;
 
             DrawSectionDivider(
                 context,
                 bounds,
-                fieldTop - 3);
+                fieldTop - 2);
 
             fieldTop +=
-                8;
+                7;
 
             DrawField(
                 context,
-                "ORB VEL",
+                "ORBITAL VELOCITY",
                 FormatSpeed(
                     telemetry.OrbitalSpeed),
-                leftLabelX,
-                leftValueX,
-                fieldTop);
-
-            DrawField(
-                context,
-                "PITCH",
-                FormatSignedAngle(
-                    telemetry.Pitch),
-                rightLabelX,
-                rightValueX,
-                fieldTop);
-
-            fieldTop +=
-                FieldRowHeight;
-
-            DrawField(
-                context,
-                "VERT VEL",
-                FormatSignedSpeed(
-                    telemetry.VerticalSpeed),
-                leftLabelX,
-                leftValueX,
-                fieldTop);
-
-            DrawField(
-                context,
-                "HEAD",
-                FormatHeading(
-                    telemetry.Heading),
-                rightLabelX,
-                rightValueX,
-                fieldTop);
-
-            fieldTop +=
-                FieldRowHeight;
-
-            DrawField(
-                context,
-                "SURF VEL",
-                FormatSpeed(
-                    telemetry.SurfaceSpeed),
-                leftLabelX,
-                leftValueX,
-                fieldTop);
-
-            DrawField(
-                context,
-                "ROLL",
-                FormatSignedAngle(
-                    telemetry.Roll),
-                rightLabelX,
-                rightValueX,
+                labelX,
+                valueX,
                 fieldTop);
         }
 
