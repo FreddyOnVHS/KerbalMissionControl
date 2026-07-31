@@ -334,71 +334,96 @@ namespace KMC.MissionControl.Controls
         }
 
         private void DrawRows(
-            Graphics graphics)
+    Graphics graphics)
         {
             Rectangle glassBounds =
                 GetGlassBounds();
 
-            int rowTop =
-                glassBounds.Top + 50;
+            const int rowCount = 7;
 
-            int rowHeight = 25;
+            int rowTop =
+                glassBounds.Top + 48;
+
+            int bottomPadding = 10;
+
+            int availableHeight =
+                Math.Max(
+                    rowCount,
+                    glassBounds.Bottom -
+                    bottomPadding -
+                    rowTop);
+
+            int rowHeight =
+                Math.Max(
+                    16,
+                    Math.Min(
+                        25,
+                        availableHeight /
+                        rowCount));
 
             DrawRow(
                 graphics,
                 "VESSEL",
                 FormatText(
                     _telemetry.VesselName),
-                rowTop + rowHeight * 0);
+                rowTop + rowHeight * 0,
+                rowHeight);
 
             DrawRow(
                 graphics,
                 "BODY",
                 FormatText(
                     _telemetry.BodyName),
-                rowTop + rowHeight * 1);
+                rowTop + rowHeight * 1,
+                rowHeight);
 
             DrawRow(
                 graphics,
                 "MET",
                 FormatMissionTime(
                     _telemetry.MissionTime),
-                rowTop + rowHeight * 2);
+                rowTop + rowHeight * 2,
+                rowHeight);
 
             DrawRow(
                 graphics,
                 "ALTITUDE",
                 FormatDistance(
                     _telemetry.Altitude),
-                rowTop + rowHeight * 3);
+                rowTop + rowHeight * 3,
+                rowHeight);
 
             DrawRow(
                 graphics,
                 "SURF SPEED",
                 FormatSpeed(
                     _telemetry.SurfaceSpeed),
-                rowTop + rowHeight * 4);
+                rowTop + rowHeight * 4,
+                rowHeight);
 
             DrawRow(
                 graphics,
                 "VERT SPEED",
                 FormatSignedSpeed(
                     _telemetry.VerticalSpeed),
-                rowTop + rowHeight * 5);
+                rowTop + rowHeight * 5,
+                rowHeight);
 
             DrawRow(
                 graphics,
                 "ORBIT SPEED",
                 FormatSpeed(
                     _telemetry.OrbitalSpeed),
-                rowTop + rowHeight * 6);
+                rowTop + rowHeight * 6,
+                rowHeight);
         }
 
         private void DrawRow(
-            Graphics graphics,
-            string label,
-            string value,
-            int top)
+    Graphics graphics,
+    string label,
+    string value,
+    int top,
+    int rowHeight)
         {
             Rectangle glassBounds =
                 GetGlassBounds();
@@ -408,14 +433,16 @@ namespace KMC.MissionControl.Controls
                     glassBounds.Left + 22,
                     top,
                     150,
-                    22);
+                    rowHeight);
 
             Rectangle valueBounds =
                 new Rectangle(
                     glassBounds.Left + 205,
                     top,
-                    glassBounds.Width - 230,
-                    22);
+                    Math.Max(
+                        1,
+                        glassBounds.Width - 230),
+                    rowHeight);
 
             Color labelColor =
                 Color.FromArgb(
@@ -437,13 +464,14 @@ namespace KMC.MissionControl.Controls
                 labelColor,
                 TextFormatFlags.Left |
                 TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding);
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
 
             DrawLeaderDots(
                 graphics,
                 labelBounds.Right,
                 valueBounds.Left,
-                top + 11);
+                top + rowHeight / 2);
 
             TextRenderer.DrawText(
                 graphics,
@@ -453,7 +481,8 @@ namespace KMC.MissionControl.Controls
                 valueColor,
                 TextFormatFlags.Left |
                 TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding);
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
         }
 
         private static void DrawLeaderDots(

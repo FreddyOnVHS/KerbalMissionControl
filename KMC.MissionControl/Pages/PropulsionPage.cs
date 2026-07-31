@@ -12,8 +12,8 @@ namespace KMC.MissionControl.Pages
     /// </summary>
     public sealed class PropulsionPage : IMissionPage
     {
-        private const int SectionGap = 28;
-        private const int RowHeight = 42;
+        private const int SectionGap = 14;
+        private const int RowHeight = 34;
         private const int PanelPadding = 22;
 
         private readonly IMissionWidget[] _resourceWidgets;
@@ -127,9 +127,9 @@ namespace KMC.MissionControl.Pages
         }
 
         private static void DrawEnginePanel(
-            MissionRenderContext context,
-            Rectangle bounds,
-            MissionTelemetry telemetry)
+    MissionRenderContext context,
+    Rectangle bounds,
+    MissionTelemetry telemetry)
         {
             DrawPanelFrame(
                 context,
@@ -145,8 +145,42 @@ namespace KMC.MissionControl.Pages
                     220,
                     bounds.Width / 2);
 
-            int y =
+            const int rowCount = 14;
+            const int sectionCount = 2;
+
+            int contentTop =
                 bounds.Top + 58;
+
+            int contentBottom =
+                bounds.Bottom - 18;
+
+            int availableHeight =
+                Math.Max(
+                    1,
+                    contentBottom - contentTop);
+
+            int sectionGap =
+                Math.Min(
+                    SectionGap,
+                    Math.Max(
+                        4,
+                        availableHeight / 30));
+
+            int availableRowHeight =
+                Math.Max(
+                    1,
+                    availableHeight -
+                    sectionGap * sectionCount);
+
+            int rowHeight =
+                Math.Max(
+                    1,
+                    Math.Min(
+                        RowHeight,
+                        availableRowHeight /
+                        rowCount));
+
+            int y = contentTop;
 
             DrawTextRow(
                 context,
@@ -156,7 +190,7 @@ namespace KMC.MissionControl.Pages
                 valueX,
                 y);
 
-            y += RowHeight;
+            y += rowHeight;
 
             DrawTextRow(
                 context,
@@ -167,7 +201,7 @@ namespace KMC.MissionControl.Pages
                 valueX,
                 y);
 
-            y += RowHeight;
+            y += rowHeight;
 
             DrawTextRow(
                 context,
@@ -178,7 +212,7 @@ namespace KMC.MissionControl.Pages
                 valueX,
                 y);
 
-            y += RowHeight;
+            y += rowHeight;
 
             DrawTextRow(
                 context,
@@ -189,8 +223,8 @@ namespace KMC.MissionControl.Pages
                 valueX,
                 y);
 
-            y += RowHeight +
-                SectionGap;
+            y += rowHeight +
+                sectionGap;
 
             DrawTextRow(
                 context,
@@ -201,7 +235,7 @@ namespace KMC.MissionControl.Pages
                 valueX,
                 y);
 
-            y += RowHeight;
+            y += rowHeight;
 
             DrawTextRow(
                 context,
@@ -212,7 +246,7 @@ namespace KMC.MissionControl.Pages
                 valueX,
                 y);
 
-            y += RowHeight;
+            y += rowHeight;
 
             DrawTextRow(
                 context,
@@ -224,7 +258,7 @@ namespace KMC.MissionControl.Pages
                 valueX,
                 y);
 
-            y += RowHeight;
+            y += rowHeight;
 
             DrawTextRow(
                 context,
@@ -236,8 +270,8 @@ namespace KMC.MissionControl.Pages
                 valueX,
                 y);
 
-            y += RowHeight +
-                SectionGap;
+            y += rowHeight +
+                sectionGap;
 
             DrawTextRow(
                 context,
@@ -247,7 +281,7 @@ namespace KMC.MissionControl.Pages
                 valueX,
                 y);
 
-            y += RowHeight;
+            y += rowHeight;
 
             DrawTextRow(
                 context,
@@ -257,7 +291,7 @@ namespace KMC.MissionControl.Pages
                 valueX,
                 y);
 
-            y += RowHeight;
+            y += rowHeight;
 
             DrawTextRow(
                 context,
@@ -269,7 +303,7 @@ namespace KMC.MissionControl.Pages
                 valueX,
                 y);
 
-            y += RowHeight;
+            y += rowHeight;
 
             DrawTextRow(
                 context,
@@ -279,7 +313,7 @@ namespace KMC.MissionControl.Pages
                 valueX,
                 y);
 
-            y += RowHeight;
+            y += rowHeight;
 
             DrawTextRow(
                 context,
@@ -290,7 +324,7 @@ namespace KMC.MissionControl.Pages
                 valueX,
                 y);
 
-            y += RowHeight;
+            y += rowHeight;
 
             DrawTextRow(
                 context,
@@ -330,28 +364,55 @@ namespace KMC.MissionControl.Pages
                 return;
             }
 
-            int widgetGap = 12;
+            int widgetGap =
+                Math.Min(
+                    12,
+                Math.Max(
+                    4,
+                contentBounds.Height / 50));
+
+            int availableWidgetHeight =
+                Math.Max(
+                    1,
+                    contentBounds.Height -
+                    widgetGap *
+                    (_resourceWidgets.Length - 1));
 
             int widgetHeight =
                 Math.Max(
-                    58,
-                    (contentBounds.Height -
-                     widgetGap *
-                     (_resourceWidgets.Length - 1)) /
+                    1,
+                    availableWidgetHeight /
                     _resourceWidgets.Length);
 
             int y =
                 contentBounds.Top;
 
-            foreach (IMissionWidget widget in
-                _resourceWidgets)
+            for (int index = 0;
+     index < _resourceWidgets.Length;
+     index++)
             {
+                IMissionWidget widget =
+                    _resourceWidgets[index];
+
+                int remainingHeight =
+                    Math.Max(
+                        1,
+                        contentBounds.Bottom - y);
+
+                int currentWidgetHeight =
+                    index ==
+                    _resourceWidgets.Length - 1
+                        ? remainingHeight
+                        : Math.Min(
+                            widgetHeight,
+                            remainingHeight);
+
                 Rectangle widgetBounds =
                     new Rectangle(
                         contentBounds.Left,
                         y,
                         contentBounds.Width,
-                        widgetHeight);
+                        currentWidgetHeight);
 
                 widget.Draw(
                     context,
@@ -359,7 +420,7 @@ namespace KMC.MissionControl.Pages
                     telemetry);
 
                 y +=
-                    widgetHeight +
+                    currentWidgetHeight +
                     widgetGap;
             }
         }

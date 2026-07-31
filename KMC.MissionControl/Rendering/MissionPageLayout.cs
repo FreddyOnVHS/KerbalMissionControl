@@ -43,7 +43,7 @@ namespace KMC.MissionControl.Rendering
 
             int labelValueGap =
                 Math.Max(
-                    190,
+                    220,
                     halfWidth / 3);
 
             _leftLabelX =
