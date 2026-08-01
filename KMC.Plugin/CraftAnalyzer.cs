@@ -815,7 +815,7 @@ namespace KMC.Plugin
                     activeParts,
                     activeEngines);
 
-            Dictionary<string, double> availableMassByResource =
+            IDictionary<string, double> availableMassByResource =
                 reachableInventory.MassByResource;
 
             topologyEvent.ReachableResourcePartCount =
