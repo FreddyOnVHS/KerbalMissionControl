@@ -55,30 +55,51 @@ namespace KMC.MissionControl.Pages
             DrawHeader(
                 context);
 
+            /*
+             * Large-format ascent layout:
+             *
+             *   Main ascent graph       Orbit inset
+             *                           Flight Director
+             *
+             *   Full-width telemetry strip
+             */
+
             Rectangle graphBounds =
                 context.GetRelativeRectangle(
-                    0.045f,
-                    0.135f,
-                    0.610f,
-                    0.675f);
+                    0.025f,
+                    0.105f,
+                    0.705f,
+                    0.735f);
+
+            Rectangle orbitInsetBounds =
+                context.GetRelativeRectangle(
+                    0.750f,
+                    0.105f,
+                    0.225f,
+                    0.245f);
 
             Rectangle statusBounds =
                 context.GetRelativeRectangle(
-                    0.675f,
-                    0.135f,
-                    0.285f,
-                    0.675f);
+                    0.750f,
+                    0.370f,
+                    0.225f,
+                    0.470f);
 
             Rectangle footerBounds =
                 context.GetRelativeRectangle(
-                    0.045f,
-                    0.835f,
-                    0.915f,
-                    0.115f);
+                    0.025f,
+                    0.860f,
+                    0.950f,
+                    0.105f);
 
             DrawAscentGraph(
                 context,
                 graphBounds,
+                telemetry);
+
+            DrawOrbitInset(
+                context,
+                orbitInsetBounds,
                 telemetry);
 
             DrawGuidancePanel(
@@ -220,10 +241,10 @@ namespace KMC.MissionControl.Pages
 
             Rectangle titleBounds =
                 context.GetRelativeRectangle(
-                    0.045f,
-                    0.035f,
-                    0.915f,
-                    0.070f);
+                    0.025f,
+                    0.025f,
+                    0.950f,
+                    0.060f);
 
             using (Pen linePen =
                 new Pen(
@@ -309,11 +330,11 @@ namespace KMC.MissionControl.Pages
                 Rectangle plot =
                     Rectangle.Inflate(
                         bounds,
-                        -44,
-                        -34);
+                        -48,
+                        -38);
 
-                plot.Y += 4;
-                plot.Height -= 10;
+                plot.Y += 10;
+                plot.Height -= 12;
 
                 DrawGrid(
                     graphics,
@@ -639,7 +660,7 @@ namespace KMC.MissionControl.Pages
             }
         }
 
-        private void DrawGuidancePanel(
+        private static void DrawOrbitInset(
             MissionRenderContext context,
             Rectangle bounds,
             MissionTelemetry telemetry)
@@ -651,186 +672,491 @@ namespace KMC.MissionControl.Pages
                 new Pen(
                     context.PhosphorColor,
                     1.0f))
+            using (Pen gridPen =
+                new Pen(
+                    Color.FromArgb(
+                        65,
+                        context.DimPhosphorColor),
+                    1.0f))
+            using (Pen orbitPen =
+                new Pen(
+                    context.DimPhosphorColor,
+                    1.5f))
             using (Brush titleBrush =
                 new SolidBrush(
                     context.PhosphorColor))
-            using (Brush valueBrush =
+            using (Brush bodyBrush =
                 new SolidBrush(
-                    context.DimPhosphorColor))
+                    Color.FromArgb(
+                        185,
+                        context.DimPhosphorColor)))
+            using (Brush vesselBrush =
+                new SolidBrush(
+                    context.PhosphorColor))
             {
                 graphics.DrawRectangle(
                     borderPen,
                     bounds);
 
                 graphics.DrawString(
-                    "FLIGHT DIRECTOR",
+                    "ORBIT TREND",
                     context.SmallFont,
                     titleBrush,
-                    bounds.Left + 10,
-                    bounds.Top + 10);
+                    bounds.Left + 8,
+                    bounds.Top + 6);
 
-                int y =
-                    bounds.Top + 42;
+                Rectangle plot =
+                    Rectangle.Inflate(
+                        bounds,
+                        -12,
+                        -26);
 
-                DrawPanelRow(
-                    context,
-                    bounds,
-                    ref y,
-                    "TARGET AP",
+                plot.Y += 8;
+                plot.Height -= 4;
+
+                for (int index = 1;
+                     index < 4;
+                     index++)
+                {
+                    int x =
+                        plot.Left +
+                        plot.Width *
+                        index /
+                        4;
+
+                    int y =
+                        plot.Top +
+                        plot.Height *
+                        index /
+                        4;
+
+                    graphics.DrawLine(
+                        gridPen,
+                        x,
+                        plot.Top,
+                        x,
+                        plot.Bottom);
+
+                    graphics.DrawLine(
+                        gridPen,
+                        plot.Left,
+                        y,
+                        plot.Right,
+                        y);
+                }
+
+                float centerX =
+                    plot.Left +
+                    plot.Width * 0.47f;
+
+                float centerY =
+                    plot.Top +
+                    plot.Height * 0.54f;
+
+                double eccentricity =
+                    IsFinite(
+                        telemetry.Eccentricity)
+                        ? Math.Max(
+                            0.0,
+                            Math.Min(
+                                0.92,
+                                telemetry.Eccentricity))
+                        : 0.0;
+
+                float semiMajor =
+                    plot.Width * 0.39f;
+
+                float semiMinor =
+                    semiMajor *
+                    (float)Math.Sqrt(
+                        Math.Max(
+                            0.15,
+                            1.0 -
+                            eccentricity *
+                            eccentricity));
+
+                RectangleF ellipse =
+                    new RectangleF(
+                        centerX - semiMajor,
+                        centerY - semiMinor,
+                        semiMajor * 2.0f,
+                        semiMinor * 2.0f);
+
+                graphics.DrawEllipse(
+                    orbitPen,
+                    ellipse);
+
+                float bodyRadius =
+                    Math.Max(
+                        5.0f,
+                        Math.Min(
+                            plot.Width,
+                            plot.Height) *
+                        0.055f);
+
+                graphics.FillEllipse(
+                    bodyBrush,
+                    centerX - bodyRadius,
+                    centerY - bodyRadius,
+                    bodyRadius * 2.0f,
+                    bodyRadius * 2.0f);
+
+                double anomalyRadians =
+                    telemetry.TrueAnomalyDegrees *
+                    Math.PI /
+                    180.0;
+
+                if (!IsFinite(
+                        anomalyRadians))
+                {
+                    anomalyRadians = 0.0;
+                }
+
+                float vesselX =
+                    centerX +
+                    semiMajor *
+                    (float)Math.Cos(
+                        anomalyRadians);
+
+                float vesselY =
+                    centerY -
+                    semiMinor *
+                    (float)Math.Sin(
+                        anomalyRadians);
+
+                graphics.FillEllipse(
+                    vesselBrush,
+                    vesselX - 3.0f,
+                    vesselY - 3.0f,
+                    6.0f,
+                    6.0f);
+
+                string apoapsisText =
+                    "AP " +
                     FormatDistance(
-                        DefaultTargetApoapsisMeters));
+                        telemetry.Apoapsis);
 
-                DrawPanelRow(
-                    context,
-                    bounds,
-                    ref y,
-                    "DOWNRANGE",
+                string periapsisText =
+                    "PE " +
                     FormatDistance(
-                        _downrangeMeters));
-
-                double targetAltitude =
-                    CalculateTargetAltitude(
-                        _downrangeMeters,
-                        telemetry);
-
-                DrawPanelRow(
-                    context,
-                    bounds,
-                    ref y,
-                    "TARGET ALT",
-                    FormatDistance(
-                        targetAltitude));
-
-                DrawPanelRow(
-                    context,
-                    bounds,
-                    ref y,
-                    "ACTUAL ALT",
-                    FormatDistance(
-                        telemetry.Altitude));
-
-                DrawPanelRow(
-                    context,
-                    bounds,
-                    ref y,
-                    "ALT ERROR",
-                    FormatSignedDistance(
-                        telemetry.Altitude -
-                        targetAltitude));
-
-                DrawPanelRow(
-                    context,
-                    bounds,
-                    ref y,
-                    "TARGET PITCH",
-                    FormatAngle(
-                        CalculateTargetPitch(
-                            _downrangeMeters,
-                            telemetry)));
-
-                DrawPanelRow(
-                    context,
-                    bounds,
-                    ref y,
-                    "ACTUAL PITCH",
-                    FormatAngle(
-                        telemetry.Pitch));
-
-                DrawPanelRow(
-                    context,
-                    bounds,
-                    ref y,
-                    "DYN Q",
-                    FormatPressure(
-                        telemetry.DynamicPressureKpa));
-
-                y += 8;
-
-                string guidance =
-                    DetermineGuidance(
-                        telemetry,
-                        targetAltitude);
+                        telemetry.Periapsis);
 
                 graphics.DrawString(
-                    "GUIDANCE",
+                    apoapsisText,
                     context.SmallFont,
                     titleBrush,
-                    bounds.Left + 10,
-                    y);
+                    plot.Left,
+                    plot.Bottom - 15);
 
-                Rectangle guidanceBounds =
-                    new Rectangle(
-                    bounds.Left + 10,
-                     y + 18,
-                    bounds.Width - 20,
-                    Math.Max(
-                        20,
-                        bounds.Bottom -
-                        y -
-                        24));
+                SizeF periapsisSize =
+                    graphics.MeasureString(
+                        periapsisText,
+                        context.SmallFont);
 
-                using (StringFormat format =
-                    new StringFormat())
-                {
-                    format.Trimming =
-                        StringTrimming.EllipsisWord;
-
-                    graphics.DrawString(
-                        guidance,
-                        context.SmallFont,
-                        valueBrush,
-                        guidanceBounds,
-                        format);
-                }
+                graphics.DrawString(
+                    periapsisText,
+                    context.SmallFont,
+                    titleBrush,
+                    plot.Right -
+                    periapsisSize.Width,
+                    plot.Bottom - 15);
             }
         }
 
-        private static void DrawPanelRow(
-    MissionRenderContext context,
-    Rectangle bounds,
-    ref int y,
-    string label,
-    string value)
+        private void DrawGuidancePanel(
+            MissionRenderContext context,
+            Rectangle bounds,
+            MissionTelemetry telemetry)
         {
             Graphics graphics =
                 context.Graphics;
 
-            int left =
-                bounds.Left + 10;
+            double targetAltitude =
+                CalculateTargetAltitude(
+                    _downrangeMeters,
+                    telemetry);
 
-            int availableWidth =
+            string guidance =
+                DetermineGuidance(
+                    telemetry,
+                    targetAltitude);
+
+            float compactSize =
                 Math.Max(
-                    20,
-                    bounds.Width - 20);
+                    6.0f,
+                    context.SmallFont.Size *
+                    0.78f);
 
-            Rectangle labelBounds =
-                new Rectangle(
-                    left,
-                    y,
-                    availableWidth,
-                    16);
-
-            Rectangle valueBounds =
-                new Rectangle(
-                    left,
-                    y + 14,
-                    availableWidth,
-                    18);
-
+            using (Font compactFont =
+                new Font(
+                    context.SmallFont.FontFamily,
+                    compactSize,
+                    context.SmallFont.Style,
+                    GraphicsUnit.Point))
+            using (Pen borderPen =
+                new Pen(
+                    context.PhosphorColor,
+                    1.0f))
+            using (Pen dividerPen =
+                new Pen(
+                    context.DimPhosphorColor,
+                    1.0f))
+            using (Brush titleBrush =
+                new SolidBrush(
+                    context.PhosphorColor))
             using (Brush labelBrush =
                 new SolidBrush(
                     context.DimPhosphorColor))
             using (Brush valueBrush =
                 new SolidBrush(
                     context.PhosphorColor))
+            {
+                graphics.DrawRectangle(
+                    borderPen,
+                    bounds);
+
+                int padding = 8;
+
+                graphics.DrawString(
+                    "FLIGHT DIRECTOR",
+                    compactFont,
+                    titleBrush,
+                    bounds.Left + padding,
+                    bounds.Top + 7);
+
+                int rowTop =
+                    bounds.Top + 31;
+
+                int guidanceHeight =
+                    Math.Max(
+                        62,
+                        bounds.Height / 4);
+
+                int guidanceTop =
+                    bounds.Bottom -
+                    guidanceHeight;
+
+                int availableMetricHeight =
+                    Math.Max(
+                        80,
+                        guidanceTop -
+                        rowTop -
+                        6);
+
+                int rowHeight =
+                    Math.Max(
+                        18,
+                        availableMetricHeight /
+                        8);
+
+                DrawCompactPanelRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref rowTop,
+                    rowHeight,
+                    "TGT AP",
+                    FormatDistance(
+                        DefaultTargetApoapsisMeters));
+
+                DrawCompactPanelRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref rowTop,
+                    rowHeight,
+                    "RANGE",
+                    FormatDistance(
+                        _downrangeMeters));
+
+                DrawCompactPanelRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref rowTop,
+                    rowHeight,
+                    "TGT ALT",
+                    FormatDistance(
+                        targetAltitude));
+
+                DrawCompactPanelRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref rowTop,
+                    rowHeight,
+                    "ALT",
+                    FormatDistance(
+                        telemetry.Altitude));
+
+                DrawCompactPanelRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref rowTop,
+                    rowHeight,
+                    "ALT ERR",
+                    FormatSignedDistance(
+                        telemetry.Altitude -
+                        targetAltitude));
+
+                DrawCompactPanelRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref rowTop,
+                    rowHeight,
+                    "TGT PITCH",
+                    FormatAngle(
+                        CalculateTargetPitch(
+                            _downrangeMeters,
+                            telemetry)));
+
+                DrawCompactPanelRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref rowTop,
+                    rowHeight,
+                    "PITCH",
+                    FormatAngle(
+                        telemetry.Pitch));
+
+                DrawCompactPanelRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref rowTop,
+                    rowHeight,
+                    "DYN Q",
+                    FormatPressure(
+                        telemetry.DynamicPressureKpa));
+
+                graphics.DrawLine(
+                    dividerPen,
+                    bounds.Left + padding,
+                    guidanceTop,
+                    bounds.Right - padding,
+                    guidanceTop);
+
+                graphics.DrawString(
+                    "GUIDANCE",
+                    compactFont,
+                    titleBrush,
+                    bounds.Left + padding,
+                    guidanceTop + 5);
+
+                Rectangle guidanceBounds =
+                    new Rectangle(
+                        bounds.Left + padding,
+                        guidanceTop + 22,
+                        bounds.Width -
+                        padding * 2,
+                        Math.Max(
+                            18,
+                            bounds.Bottom -
+                            guidanceTop -
+                            28));
+
+                using (StringFormat guidanceFormat =
+                    new StringFormat())
+                {
+                    guidanceFormat.Trimming =
+                        StringTrimming.EllipsisWord;
+
+                    guidanceFormat.FormatFlags =
+                        StringFormatFlags.LineLimit;
+
+                    graphics.DrawString(
+                        guidance,
+                        compactFont,
+                        valueBrush,
+                        guidanceBounds,
+                        guidanceFormat);
+                }
+            }
+        }
+
+        private static void DrawCompactPanelRow(
+            Graphics graphics,
+            Font font,
+            Brush labelBrush,
+            Brush valueBrush,
+            Rectangle panelBounds,
+            ref int y,
+            int rowHeight,
+            string label,
+            string value)
+        {
+            int padding = 8;
+
+            int left =
+                panelBounds.Left +
+                padding;
+
+            int right =
+                panelBounds.Right -
+                padding;
+
+            int availableWidth =
+                Math.Max(
+                    20,
+                    right - left);
+
+            Rectangle labelBounds =
+                new Rectangle(
+                    left,
+                    y,
+                    availableWidth / 2,
+                    rowHeight);
+
+            Rectangle valueBounds =
+                new Rectangle(
+                    left +
+                    availableWidth / 2,
+                    y,
+                    availableWidth -
+                    availableWidth / 2,
+                    rowHeight);
+
+            using (StringFormat labelFormat =
+                new StringFormat())
             using (StringFormat valueFormat =
                 new StringFormat())
             {
+                labelFormat.Alignment =
+                    StringAlignment.Near;
+
+                labelFormat.LineAlignment =
+                    StringAlignment.Center;
+
+                labelFormat.Trimming =
+                    StringTrimming.EllipsisCharacter;
+
+                labelFormat.FormatFlags =
+                    StringFormatFlags.NoWrap;
+
                 valueFormat.Alignment =
                     StringAlignment.Far;
 
                 valueFormat.LineAlignment =
-                    StringAlignment.Near;
+                    StringAlignment.Center;
 
                 valueFormat.Trimming =
                     StringTrimming.EllipsisCharacter;
@@ -840,19 +1166,20 @@ namespace KMC.MissionControl.Pages
 
                 graphics.DrawString(
                     label,
-                    context.SmallFont,
+                    font,
                     labelBrush,
-                    labelBounds);
+                    labelBounds,
+                    labelFormat);
 
                 graphics.DrawString(
                     value,
-                    context.SmallFont,
+                    font,
                     valueBrush,
                     valueBounds,
                     valueFormat);
             }
 
-            y += 34;
+            y += rowHeight;
         }
 
         private static void DrawFooter(
