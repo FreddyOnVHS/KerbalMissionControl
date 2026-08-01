@@ -51,6 +51,14 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CraftAnalyzer.cs" />
+    <Compile Include="Simulation\CraftSimulationBuilder.cs" />
+    <Compile Include="Simulation\CraftSimulationModel.cs" />
+    <Compile Include="Simulation\CraftSimulationReporter.cs" />
+    <Compile Include="Simulation\ResourceFlowCategory.cs" />
+    <Compile Include="Simulation\SimulatedEngine.cs" />
+    <Compile Include="Simulation\SimulatedPart.cs" />
+    <Compile Include="Simulation\SimulatedPropellant.cs" />
+    <Compile Include="Simulation\SimulatedResource.cs" />
     <Compile Include="TelemetrySender.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
