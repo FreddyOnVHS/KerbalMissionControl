@@ -1117,53 +1117,56 @@ namespace KMC.MissionControl.Widgets
     Rectangle plotBounds,
     MissionTelemetry telemetry)
         {
-            const int horizontalPadding = 12;
-            const int verticalPadding = 5;
-            const int sectionGap = 18;
-            const int dividerGap = 10;
-            const int legendWidth = 260;
+            const int horizontalPadding = 10;
+            const int verticalPadding = 3;
+            const int sectionGap = 14;
+            const int dividerGap = 8;
+            const int legendWidth = 240;
 
-            int rowHeight =
-                context.TinyFont.Height +
-                2;
+            /*
+             * MissionRenderContext does not currently expose TinyFont,
+             * so derive a smaller legend font from SmallFont.
+             */
+            float legendFontSize =
+                Math.Max(
+                    6.0f,
+                    context.SmallFont.Size -
+                    2.0f);
 
-            int legendHeight =
-                verticalPadding * 2 +
-                rowHeight;
-
-            Rectangle legendBounds =
-                new Rectangle(
-                    plotBounds.Left +
-                    (plotBounds.Width -
-                     legendWidth) /
-                    2,
-
-                    plotBounds.Bottom -
-                    legendHeight -
-                    10,
-
-                    legendWidth,
-                    legendHeight);
-
+            using (Font legendFont =
+                new Font(
+                    context.SmallFont.FontFamily,
+                    legendFontSize,
+                    context.SmallFont.Style,
+                    GraphicsUnit.Point))
             using (Pen dividerPen =
-                new Pen(
-                Color.FromArgb(
-                    80,
-                context.DimPhosphorColor),
-                    1.0f))
                 new Pen(
                     Color.FromArgb(
                         80,
                         context.DimPhosphorColor),
                     1.0f))
             {
-                context.Graphics.FillRectangle(
-                    backgroundBrush,
-                    legendBounds);
+                int rowHeight =
+                    legendFont.Height +
+                    2;
 
-                context.Graphics.DrawRectangle(
-                    borderPen,
-                    legendBounds);
+                int legendHeight =
+                    verticalPadding * 2 +
+                    rowHeight;
+
+                Rectangle legendBounds =
+                    new Rectangle(
+                        plotBounds.Left +
+                        (plotBounds.Width -
+                         legendWidth) /
+                        2,
+
+                        plotBounds.Bottom -
+                        legendHeight -
+                        6,
+
+                        legendWidth,
+                        legendHeight);
 
                 int contentY =
                     legendBounds.Top +
@@ -1176,6 +1179,7 @@ namespace KMC.MissionControl.Widgets
                 currentX =
                     DrawCompactLegendField(
                         context,
+                        legendFont,
                         "BODY",
                         FormatBodyName(
                             telemetry.BodyName),
@@ -1191,10 +1195,10 @@ namespace KMC.MissionControl.Widgets
                     dividerPen,
                     dividerX,
                     legendBounds.Top +
-                    4,
+                    2,
                     dividerX,
                     legendBounds.Bottom -
-                    4);
+                    2);
 
                 currentX =
                     dividerX +
@@ -1202,6 +1206,7 @@ namespace KMC.MissionControl.Widgets
 
                 DrawCompactLegendField(
                     context,
+                    legendFont,
                     "TYPE",
                     GetOrbitType(
                         telemetry),
@@ -1213,16 +1218,14 @@ namespace KMC.MissionControl.Widgets
 
         private static int DrawCompactLegendField(
     MissionRenderContext context,
+    Font legendFont,
     string label,
     string value,
     int x,
     int y,
     int rowHeight)
         {
-            const int labelValueGap = 8;
-
-            Font legendFont =
-                context.TinyFont;
+            const int labelValueGap = 7;
 
             SizeF labelSize =
                 context.Graphics.MeasureString(
@@ -1246,7 +1249,8 @@ namespace KMC.MissionControl.Widgets
                 new RectangleF(
                     x,
                     y,
-                    labelWidth + 2,
+                    labelWidth +
+                    2,
                     rowHeight);
 
             int valueX =
@@ -1258,7 +1262,8 @@ namespace KMC.MissionControl.Widgets
                 new RectangleF(
                     valueX,
                     y,
-                    valueWidth + 4,
+                    valueWidth +
+                    4,
                     rowHeight);
 
             using (SolidBrush labelBrush =
