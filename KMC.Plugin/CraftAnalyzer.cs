@@ -17,7 +17,6 @@ namespace KMC.Plugin
 
             analysis.VesselName = vessel.vesselName ?? string.Empty;
             analysis.VesselId = vessel.id.ToString();
-            analysis.TotalMassTonnes = SanitizeNonNegative(vessel.totalMass);
             analysis.PartCount = vessel.parts != null ? vessel.parts.Count : 0;
 
             Dictionary<int, StageAnalysis> stages =
@@ -67,7 +66,43 @@ namespace KMC.Plugin
                 analysis.TotalDryMassTonnes += stage.DryMassTonnes;
                 analysis.TotalResourceMassTonnes += stage.ResourceMassTonnes;
                 analysis.EngineCount += stage.EngineCount;
+
+                if (stage.EngineCount > 0)
+                {
+                    analysis.PropulsiveStageCount++;
+
+                    if (stage.StageNumber >
+                        analysis.InitialPropulsiveStageNumber)
+                    {
+                        analysis.InitialPropulsiveStageNumber =
+                            stage.StageNumber;
+
+                        analysis.InitialSeaLevelThrustKilonewtons =
+                            stage.SeaLevelThrustKilonewtons;
+
+                        analysis.InitialVacuumThrustKilonewtons =
+                            stage.VacuumThrustKilonewtons;
+                    }
+                }
             }
+
+            analysis.TotalMassTonnes =
+                analysis.TotalDryMassTonnes +
+                analysis.TotalResourceMassTonnes;
+
+            analysis.MassClass =
+                ClassifyMass(
+                    analysis.TotalMassTonnes);
+
+            analysis.InitialSeaLevelThrustToWeightRatio =
+                CalculateInitialThrustToWeightRatio(
+                    vessel,
+                    analysis.TotalMassTonnes,
+                    analysis.InitialSeaLevelThrustKilonewtons);
+
+            analysis.ThrustClass =
+                ClassifyThrust(
+                    analysis.InitialSeaLevelThrustToWeightRatio);
 
             return analysis;
         }
@@ -89,12 +124,31 @@ namespace KMC.Plugin
                     : analysis.VesselName);
 
             builder.AppendFormat(
-                "[KMC] Parts: {0}  Engines: {1}  Mass: {2:0.000} t  Dry: {3:0.000} t  Resources: {4:0.000} t",
+                "[KMC] Parts: {0}  Engines: {1}  Propulsive stages: {2}",
                 analysis.PartCount,
                 analysis.EngineCount,
+                analysis.PropulsiveStageCount);
+
+            builder.AppendLine();
+
+            builder.AppendFormat(
+                "[KMC] Launch mass: {0:0.000} t  Dry: {1:0.000} t  Resources: {2:0.000} t  Mass class: {3}",
                 analysis.TotalMassTonnes,
                 analysis.TotalDryMassTonnes,
-                analysis.TotalResourceMassTonnes);
+                analysis.TotalResourceMassTonnes,
+                FormatMassClass(
+                    analysis.MassClass));
+
+            builder.AppendLine();
+
+            builder.AppendFormat(
+                "[KMC] Initial propulsive stage: {0:00}  SL thrust: {1:0.0} kN  VAC thrust: {2:0.0} kN  Initial SL TWR: {3:0.00}  Thrust class: {4}",
+                analysis.InitialPropulsiveStageNumber,
+                analysis.InitialSeaLevelThrustKilonewtons,
+                analysis.InitialVacuumThrustKilonewtons,
+                analysis.InitialSeaLevelThrustToWeightRatio,
+                FormatThrustClass(
+                    analysis.ThrustClass));
 
             builder.AppendLine();
 
@@ -395,6 +449,111 @@ namespace KMC.Plugin
             return gravity;
         }
 
+
+        private static LaunchMassClass ClassifyMass(
+            double launchMassTonnes)
+        {
+            if (launchMassTonnes < 25.0)
+            {
+                return LaunchMassClass.Light;
+            }
+
+            if (launchMassTonnes < 100.0)
+            {
+                return LaunchMassClass.Medium;
+            }
+
+            if (launchMassTonnes < 400.0)
+            {
+                return LaunchMassClass.Heavy;
+            }
+
+            return LaunchMassClass.SuperHeavy;
+        }
+
+        private static ThrustClass ClassifyThrust(
+            double initialSeaLevelTwr)
+        {
+            if (initialSeaLevelTwr < 1.25)
+            {
+                return ThrustClass.Low;
+            }
+
+            if (initialSeaLevelTwr <= 1.75)
+            {
+                return ThrustClass.Standard;
+            }
+
+            return ThrustClass.High;
+        }
+
+        private static double CalculateInitialThrustToWeightRatio(
+            Vessel vessel,
+            double launchMassTonnes,
+            double seaLevelThrustKilonewtons)
+        {
+            if (launchMassTonnes <= 0.0 ||
+                seaLevelThrustKilonewtons <= 0.0)
+            {
+                return 0.0;
+            }
+
+            double gravity =
+                GetSurfaceGravity(
+                    vessel);
+
+            if (gravity <= 0.0)
+            {
+                return 0.0;
+            }
+
+            return
+                seaLevelThrustKilonewtons /
+                (launchMassTonnes *
+                 gravity);
+        }
+
+        private static string FormatMassClass(
+            LaunchMassClass value)
+        {
+            switch (value)
+            {
+                case LaunchMassClass.Light:
+                    return "LIGHT";
+
+                case LaunchMassClass.Medium:
+                    return "MEDIUM";
+
+                case LaunchMassClass.Heavy:
+                    return "HEAVY";
+
+                case LaunchMassClass.SuperHeavy:
+                    return "SUPER HEAVY";
+
+                default:
+                    return "UNKNOWN";
+            }
+        }
+
+        private static string FormatThrustClass(
+            ThrustClass value)
+        {
+            switch (value)
+            {
+                case ThrustClass.Low:
+                    return "LOW";
+
+                case ThrustClass.Standard:
+                    return "STANDARD";
+
+                case ThrustClass.High:
+                    return "HIGH";
+
+                default:
+                    return "UNKNOWN";
+            }
+        }
+
         private static double Clamp(
             double value,
             double minimum,
@@ -420,6 +579,22 @@ namespace KMC.Plugin
         }
     }
 
+
+    internal enum LaunchMassClass
+    {
+        Light,
+        Medium,
+        Heavy,
+        SuperHeavy
+    }
+
+    internal enum ThrustClass
+    {
+        Low,
+        Standard,
+        High
+    }
+
     internal sealed class CraftAnalysis
     {
         public CraftAnalysis()
@@ -431,9 +606,16 @@ namespace KMC.Plugin
         public string VesselName { get; set; }
         public int PartCount { get; set; }
         public int EngineCount { get; set; }
+        public int PropulsiveStageCount { get; set; }
+        public int InitialPropulsiveStageNumber { get; set; } = -1;
         public double TotalMassTonnes { get; set; }
         public double TotalDryMassTonnes { get; set; }
         public double TotalResourceMassTonnes { get; set; }
+        public double InitialSeaLevelThrustKilonewtons { get; set; }
+        public double InitialVacuumThrustKilonewtons { get; set; }
+        public double InitialSeaLevelThrustToWeightRatio { get; set; }
+        public LaunchMassClass MassClass { get; set; }
+        public ThrustClass ThrustClass { get; set; }
         public IList<StageAnalysis> Stages { get; private set; }
     }
 
