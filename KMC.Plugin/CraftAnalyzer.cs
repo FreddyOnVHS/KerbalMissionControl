@@ -164,16 +164,19 @@ namespace KMC.Plugin
                 analysis.StageTopology)
             {
                 builder.AppendFormat(
-                    "[KMC] Event {0:00}: pre-event mass={1:0.000} t, decouplers={2}, discarded={3:0.000} t, retained={4:0.000} t, ignition engines={5}, ignition mass={6:0.000} t, SL thrust={7:0.0} kN, ignition SL TWR={8:0.00}, unresolved={9}",
+                    "[KMC] Event {0:00}: pre={1:0.000} t, decouplers={2}, discarded mass={3:0.000} t, retained={4:0.000} t, engines igniting={5}, continuing={6}, discarded engines={7}, active={8}, ignition SL thrust={9:0.0} kN, active SL thrust={10:0.0} kN, active SL TWR={11:0.00}, unresolved={12}",
                     topologyEvent.StageNumber,
                     topologyEvent.PreEventMassTonnes,
                     topologyEvent.DecouplerCount,
                     topologyEvent.DiscardedMassTonnes,
                     topologyEvent.RetainedMassTonnes,
                     topologyEvent.IgnitingEngineCount,
-                    topologyEvent.IgnitionMassTonnes,
+                    topologyEvent.ContinuingEngineCount,
+                    topologyEvent.DiscardedEngineCount,
+                    topologyEvent.ActiveEngineCount,
                     topologyEvent.SeaLevelThrustKilonewtons,
-                    topologyEvent.IgnitionSeaLevelThrustToWeightRatio,
+                    topologyEvent.ActiveSeaLevelThrustKilonewtons,
+                    topologyEvent.ActiveSeaLevelThrustToWeightRatio,
                     topologyEvent.UnresolvedDecouplerCount);
 
                 builder.AppendLine();
@@ -506,6 +509,9 @@ namespace KMC.Plugin
             List<int> eventStages =
                 CollectEventStageNumbers(activeParts);
 
+            HashSet<ModuleEngines> activeEngines =
+                new HashSet<ModuleEngines>();
+
             double surfaceGravity =
                 GetSurfaceGravity(vessel);
 
@@ -536,6 +542,11 @@ namespace KMC.Plugin
                 topologyEvent.DiscardedMassTonnes =
                     GetPartsMassTonnes(detachedParts);
 
+                RemoveDetachedEngines(
+                    activeEngines,
+                    detachedParts,
+                    topologyEvent);
+
                 foreach (Part detachedPart in detachedParts)
                 {
                     activeParts.Remove(detachedPart);
@@ -547,9 +558,17 @@ namespace KMC.Plugin
                 topologyEvent.IgnitionMassTonnes =
                     topologyEvent.RetainedMassTonnes;
 
+                topologyEvent.ContinuingEngineCount =
+                    activeEngines.Count;
+
                 ReadIgnitingEngines(
                     activeParts,
+                    activeEngines,
                     stageNumber,
+                    topologyEvent);
+
+                ReadActiveEnginePerformance(
+                    activeEngines,
                     topologyEvent);
 
                 if (topologyEvent.IgnitionMassTonnes > 0.0 &&
@@ -558,6 +577,13 @@ namespace KMC.Plugin
                     topologyEvent
                         .IgnitionSeaLevelThrustToWeightRatio =
                         topologyEvent.SeaLevelThrustKilonewtons /
+                        (topologyEvent.IgnitionMassTonnes *
+                         surfaceGravity);
+
+                    topologyEvent
+                        .ActiveSeaLevelThrustToWeightRatio =
+                        topologyEvent
+                            .ActiveSeaLevelThrustKilonewtons /
                         (topologyEvent.IgnitionMassTonnes *
                          surfaceGravity);
                 }
@@ -603,6 +629,7 @@ namespace KMC.Plugin
 
         private static void ReadIgnitingEngines(
             IEnumerable<Part> activeParts,
+            ISet<ModuleEngines> activeEngines,
             int stageNumber,
             StageTopologyEvent topologyEvent)
         {
@@ -620,41 +647,134 @@ namespace KMC.Plugin
                     ModuleEngines engine =
                         module as ModuleEngines;
 
-                    if (engine == null)
+                    if (engine == null ||
+                        activeEngines.Contains(engine))
                     {
                         continue;
                     }
 
+                    activeEngines.Add(engine);
                     topologyEvent.IgnitingEngineCount++;
 
-                    double thrustLimit =
-                        Clamp(
-                            engine.thrustPercentage / 100.0,
-                            0.0,
-                            1.0);
-
-                    double vacuumThrust =
-                        SanitizeNonNegative(engine.maxThrust) *
-                        thrustLimit;
-
-                    double seaLevelIsp =
-                        EvaluateSpecificImpulse(engine, 1.0f);
-
-                    double vacuumIsp =
-                        EvaluateSpecificImpulse(engine, 0.0f);
+                    EnginePerformance performance =
+                        ReadEnginePerformance(engine);
 
                     topologyEvent
                         .SeaLevelThrustKilonewtons +=
-                        ConvertVacuumThrustToAmbientThrust(
-                            vacuumThrust,
-                            vacuumIsp,
-                            seaLevelIsp);
+                        performance
+                            .SeaLevelThrustKilonewtons;
 
                     topologyEvent
                         .VacuumThrustKilonewtons +=
-                        vacuumThrust;
+                        performance
+                            .VacuumThrustKilonewtons;
                 }
             }
+        }
+
+        private static void RemoveDetachedEngines(
+            ISet<ModuleEngines> activeEngines,
+            ISet<Part> detachedParts,
+            StageTopologyEvent topologyEvent)
+        {
+            if (activeEngines == null ||
+                detachedParts == null ||
+                detachedParts.Count == 0)
+            {
+                return;
+            }
+
+            List<ModuleEngines> enginesToRemove =
+                new List<ModuleEngines>();
+
+            foreach (ModuleEngines engine in activeEngines)
+            {
+                if (engine == null ||
+                    engine.part == null ||
+                    detachedParts.Contains(engine.part))
+                {
+                    enginesToRemove.Add(engine);
+                }
+            }
+
+            foreach (ModuleEngines engine in enginesToRemove)
+            {
+                activeEngines.Remove(engine);
+                topologyEvent.DiscardedEngineCount++;
+            }
+        }
+
+        private static void ReadActiveEnginePerformance(
+            IEnumerable<ModuleEngines> activeEngines,
+            StageTopologyEvent topologyEvent)
+        {
+            foreach (ModuleEngines engine in activeEngines)
+            {
+                if (engine == null)
+                {
+                    continue;
+                }
+
+                EnginePerformance performance =
+                    ReadEnginePerformance(engine);
+
+                topologyEvent.ActiveEngineCount++;
+
+                topologyEvent
+                    .ActiveSeaLevelThrustKilonewtons +=
+                    performance
+                        .SeaLevelThrustKilonewtons;
+
+                topologyEvent
+                    .ActiveVacuumThrustKilonewtons +=
+                    performance
+                        .VacuumThrustKilonewtons;
+            }
+        }
+
+        private static EnginePerformance ReadEnginePerformance(
+            ModuleEngines engine)
+        {
+            EnginePerformance performance =
+                new EnginePerformance();
+
+            if (engine == null)
+            {
+                return performance;
+            }
+
+            double thrustLimit =
+                Clamp(
+                    engine.thrustPercentage / 100.0,
+                    0.0,
+                    1.0);
+
+            double vacuumThrust =
+                SanitizeNonNegative(engine.maxThrust) *
+                thrustLimit;
+
+            double seaLevelIsp =
+                EvaluateSpecificImpulse(engine, 1.0f);
+
+            double vacuumIsp =
+                EvaluateSpecificImpulse(engine, 0.0f);
+
+            performance.VacuumThrustKilonewtons =
+                vacuumThrust;
+
+            performance.SeaLevelThrustKilonewtons =
+                ConvertVacuumThrustToAmbientThrust(
+                    vacuumThrust,
+                    vacuumIsp,
+                    seaLevelIsp);
+
+            performance.SeaLevelSpecificImpulse =
+                seaLevelIsp;
+
+            performance.VacuumSpecificImpulse =
+                vacuumIsp;
+
+            return performance;
         }
 
         private static HashSet<Part>
@@ -1220,6 +1340,9 @@ namespace KMC.Plugin
     {
         public int StageNumber { get; set; }
         public int IgnitingEngineCount { get; set; }
+        public int ContinuingEngineCount { get; set; }
+        public int DiscardedEngineCount { get; set; }
+        public int ActiveEngineCount { get; set; }
         public int DecouplerCount { get; set; }
         public int UnresolvedDecouplerCount { get; set; }
         public double PreEventMassTonnes { get; set; }
@@ -1228,6 +1351,8 @@ namespace KMC.Plugin
         public double DiscardedMassTonnes { get; set; }
         public double SeaLevelThrustKilonewtons { get; set; }
         public double VacuumThrustKilonewtons { get; set; }
+        public double ActiveSeaLevelThrustKilonewtons { get; set; }
+        public double ActiveVacuumThrustKilonewtons { get; set; }
 
         public double
             IgnitionSeaLevelThrustToWeightRatio
@@ -1235,6 +1360,21 @@ namespace KMC.Plugin
             get;
             set;
         }
+
+        public double
+            ActiveSeaLevelThrustToWeightRatio
+        {
+            get;
+            set;
+        }
+    }
+
+    internal sealed class EnginePerformance
+    {
+        public double SeaLevelThrustKilonewtons { get; set; }
+        public double VacuumThrustKilonewtons { get; set; }
+        public double SeaLevelSpecificImpulse { get; set; }
+        public double VacuumSpecificImpulse { get; set; }
     }
 
     internal sealed class SeparationEdge
