@@ -164,7 +164,7 @@ namespace KMC.Plugin
                 analysis.StageTopology)
             {
                 builder.AppendFormat(
-                    "[KMC] Event {0:00}: pre={1:0.000} t, decouplers={2}, discarded mass={3:0.000} t, retained={4:0.000} t, engines igniting={5}, continuing={6}, discarded engines={7}, active={8}, active SL thrust={9:0.0} kN, active SL TWR={10:0.00}, propellant={11:0.000} t, SL flow={12:0.0000} t/s, VAC flow={13:0.0000} t/s, burn SL={14:0.0} s, burn VAC={15:0.0} s, burnout={16:0.000} t, burnout SL TWR={17:0.00}, dV SL={18:0} m/s, dV VAC={19:0} m/s, limiting={20}, unresolved={21}",
+                    "[KMC] Event {0:00}: pre={1:0.000} t, decouplers={2}, discarded mass={3:0.000} t, retained={4:0.000} t, engines igniting={5}, continuing={6}, discarded engines={7}, active={8}, active SL thrust={9:0.0} kN, active SL TWR={10:0.00}, reachable propellant={11:0.000} t, resource parts={12}, fuel fallbacks={13}, SL flow={14:0.0000} t/s, VAC flow={15:0.0000} t/s, burn SL={16:0.0} s, burn VAC={17:0.0} s, burnout={18:0.000} t, burnout SL TWR={19:0.00}, dV SL={20:0} m/s, dV VAC={21:0} m/s, limiting={22}, unresolved={23}",
                     topologyEvent.StageNumber,
                     topologyEvent.PreEventMassTonnes,
                     topologyEvent.DecouplerCount,
@@ -177,6 +177,8 @@ namespace KMC.Plugin
                     topologyEvent.ActiveSeaLevelThrustKilonewtons,
                     topologyEvent.ActiveSeaLevelThrustToWeightRatio,
                     topologyEvent.AvailablePropellantMassTonnes,
+                    topologyEvent.ReachableResourcePartCount,
+                    topologyEvent.FuelNetworkFallbackCount,
                     topologyEvent.SeaLevelMassFlowTonnesPerSecond,
                     topologyEvent.VacuumMassFlowTonnesPerSecond,
                     topologyEvent.EstimatedSeaLevelBurnSeconds,
@@ -808,8 +810,19 @@ namespace KMC.Plugin
                 return;
             }
 
+            ReachableResourceInventory reachableInventory =
+                CollectReachableResourceMass(
+                    activeParts,
+                    activeEngines);
+
             Dictionary<string, double> availableMassByResource =
-                CollectResourceMassByName(activeParts);
+                reachableInventory.MassByResource;
+
+            topologyEvent.ReachableResourcePartCount =
+                reachableInventory.ResourcePartCount;
+
+            topologyEvent.FuelNetworkFallbackCount =
+                reachableInventory.FallbackCount;
 
             Dictionary<string, double> seaLevelFlowByResource =
                 new Dictionary<string, double>(
@@ -947,6 +960,447 @@ namespace KMC.Plugin
                         .EffectiveVacuumSpecificImpulse,
                     topologyEvent.IgnitionMassTonnes,
                     topologyEvent.EstimatedBurnoutMassTonnes);
+        }
+
+
+        private static ReachableResourceInventory
+            CollectReachableResourceMass(
+                IEnumerable<Part> activeParts,
+                IEnumerable<ModuleEngines> activeEngines)
+        {
+            ReachableResourceInventory inventory =
+                new ReachableResourceInventory();
+
+            HashSet<Part> activePartSet =
+                activeParts != null
+                    ? new HashSet<Part>(activeParts)
+                    : new HashSet<Part>();
+
+            HashSet<PartResource> uniqueResources =
+                new HashSet<PartResource>();
+
+            foreach (ModuleEngines engine in activeEngines)
+            {
+                if (engine == null ||
+                    engine.part == null ||
+                    engine.propellants == null)
+                {
+                    continue;
+                }
+
+                foreach (Propellant propellant in
+                    engine.propellants)
+                {
+                    if (propellant == null ||
+                        string.IsNullOrEmpty(
+                            propellant.name))
+                    {
+                        continue;
+                    }
+
+                    List<PartResource> connectedResources =
+                        new List<PartResource>();
+
+                    bool resolved =
+                        TryGetConnectedResources(
+                            engine.part,
+                            propellant,
+                            connectedResources);
+
+                    if (!resolved)
+                    {
+                        inventory.FallbackCount++;
+
+                        AddFallbackResources(
+                            activePartSet,
+                            propellant.name,
+                            connectedResources);
+                    }
+
+                    foreach (PartResource resource in
+                        connectedResources)
+                    {
+                        if (resource == null ||
+                            resource.info == null ||
+                            resource.part == null ||
+                            !activePartSet.Contains(
+                                resource.part))
+                        {
+                            continue;
+                        }
+
+                        uniqueResources.Add(
+                            resource);
+                    }
+                }
+            }
+
+            HashSet<Part> resourceParts =
+                new HashSet<Part>();
+
+            foreach (PartResource resource in
+                uniqueResources)
+            {
+                string resourceName =
+                    resource.info.name ??
+                    string.Empty;
+
+                double resourceMass =
+                    SanitizeNonNegative(
+                        resource.amount *
+                        resource.info.density);
+
+                AddValue(
+                    inventory.MassByResource,
+                    resourceName,
+                    resourceMass);
+
+                if (resource.part != null)
+                {
+                    resourceParts.Add(
+                        resource.part);
+                }
+            }
+
+            inventory.ResourcePartCount =
+                resourceParts.Count;
+
+            return inventory;
+        }
+
+        private static bool TryGetConnectedResources(
+            Part enginePart,
+            Propellant propellant,
+            IList<PartResource> output)
+        {
+            if (enginePart == null ||
+                propellant == null ||
+                output == null)
+            {
+                return false;
+            }
+
+            PartResourceDefinition definition =
+                PartResourceLibrary.Instance
+                    .GetDefinition(
+                        propellant.name);
+
+            if (definition == null)
+            {
+                return false;
+            }
+
+            MethodInfo[] methods =
+                enginePart.GetType().GetMethods(
+                    BindingFlags.Instance |
+                    BindingFlags.Public |
+                    BindingFlags.NonPublic);
+
+            foreach (MethodInfo method in methods)
+            {
+                if (!string.Equals(
+                        method.Name,
+                        "GetConnectedResources",
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                ParameterInfo[] parameters =
+                    method.GetParameters();
+
+                if (parameters.Length != 3)
+                {
+                    continue;
+                }
+
+                object resourceIdentifier =
+                    ConvertResourceIdentifier(
+                        definition,
+                        parameters[0].ParameterType);
+
+                object flowMode =
+                    ConvertFlowMode(
+                        definition,
+                        propellant,
+                        parameters[1].ParameterType);
+
+                object resourceCollection =
+                    CreateResourceCollectionArgument(
+                        parameters[2].ParameterType);
+
+                if (resourceIdentifier == null ||
+                    flowMode == null ||
+                    resourceCollection == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    method.Invoke(
+                        enginePart,
+                        new[]
+                        {
+                            resourceIdentifier,
+                            flowMode,
+                            resourceCollection
+                        });
+
+                    IEnumerable<PartResource> resources =
+                        resourceCollection as
+                            IEnumerable<PartResource>;
+
+                    if (resources == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (PartResource resource in
+                        resources)
+                    {
+                        if (resource != null)
+                        {
+                            output.Add(
+                                resource);
+                        }
+                    }
+
+                    return true;
+                }
+                catch
+                {
+                }
+            }
+
+            return false;
+        }
+
+        private static object ConvertResourceIdentifier(
+            PartResourceDefinition definition,
+            Type targetType)
+        {
+            if (definition == null ||
+                targetType == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (targetType == typeof(int))
+                {
+                    return definition.id;
+                }
+
+                if (targetType == typeof(string))
+                {
+                    return definition.name;
+                }
+
+                if (targetType.IsInstanceOfType(
+                        definition))
+                {
+                    return definition;
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private static object ConvertFlowMode(
+            PartResourceDefinition definition,
+            Propellant propellant,
+            Type targetType)
+        {
+            if (targetType == null)
+            {
+                return null;
+            }
+
+            object flowMode =
+                ReadMemberValue(
+                    propellant,
+                    "GetFlowMode");
+
+            if (flowMode == null)
+            {
+                flowMode =
+                    ReadMemberValue(
+                        propellant,
+                        "flowMode");
+            }
+
+            if (flowMode == null)
+            {
+                flowMode =
+                    ReadMemberValue(
+                        definition,
+                        "resourceFlowMode");
+            }
+
+            if (flowMode == null)
+            {
+                return null;
+            }
+
+            if (targetType.IsInstanceOfType(
+                    flowMode))
+            {
+                return flowMode;
+            }
+
+            try
+            {
+                if (targetType.IsEnum)
+                {
+                    return Enum.ToObject(
+                        targetType,
+                        Convert.ToInt32(
+                            flowMode));
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private static object CreateResourceCollectionArgument(
+            Type targetType)
+        {
+            if (targetType == null)
+            {
+                return null;
+            }
+
+            if (targetType.IsAssignableFrom(
+                    typeof(List<PartResource>)))
+            {
+                return new List<PartResource>();
+            }
+
+            try
+            {
+                return Activator.CreateInstance(
+                    targetType);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static object ReadMemberValue(
+            object instance,
+            string memberName)
+        {
+            if (instance == null ||
+                string.IsNullOrEmpty(
+                    memberName))
+            {
+                return null;
+            }
+
+            Type type =
+                instance.GetType();
+
+            try
+            {
+                MethodInfo method =
+                    type.GetMethod(
+                        memberName,
+                        BindingFlags.Instance |
+                        BindingFlags.Public |
+                        BindingFlags.NonPublic,
+                        null,
+                        Type.EmptyTypes,
+                        null);
+
+                if (method != null)
+                {
+                    return method.Invoke(
+                        instance,
+                        null);
+                }
+
+                FieldInfo field =
+                    type.GetField(
+                        memberName,
+                        BindingFlags.Instance |
+                        BindingFlags.Public |
+                        BindingFlags.NonPublic);
+
+                if (field != null)
+                {
+                    return field.GetValue(
+                        instance);
+                }
+
+                PropertyInfo property =
+                    type.GetProperty(
+                        memberName,
+                        BindingFlags.Instance |
+                        BindingFlags.Public |
+                        BindingFlags.NonPublic);
+
+                if (property != null &&
+                    property.CanRead)
+                {
+                    return property.GetValue(
+                        instance,
+                        null);
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private static void AddFallbackResources(
+            IEnumerable<Part> activeParts,
+            string resourceName,
+            ICollection<PartResource> output)
+        {
+            if (activeParts == null ||
+                string.IsNullOrEmpty(
+                    resourceName) ||
+                output == null)
+            {
+                return;
+            }
+
+            foreach (Part part in activeParts)
+            {
+                if (part == null ||
+                    part.Resources == null)
+                {
+                    continue;
+                }
+
+                foreach (PartResource resource in
+                    part.Resources)
+                {
+                    if (resource == null ||
+                        resource.info == null ||
+                        !string.Equals(
+                            resource.info.name,
+                            resourceName,
+                            StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    output.Add(
+                        resource);
+                }
+            }
         }
 
         private static Dictionary<string, double>
@@ -1824,6 +2278,8 @@ namespace KMC.Plugin
         public double SeaLevelMassFlowTonnesPerSecond { get; set; }
         public double VacuumMassFlowTonnesPerSecond { get; set; }
         public double AvailablePropellantMassTonnes { get; set; }
+        public int ReachableResourcePartCount { get; set; }
+        public int FuelNetworkFallbackCount { get; set; }
         public double EstimatedSeaLevelBurnSeconds { get; set; }
         public double EstimatedVacuumBurnSeconds { get; set; }
         public double EstimatedBurnoutMassTonnes { get; set; }
@@ -1847,6 +2303,28 @@ namespace KMC.Plugin
         }
     }
 
+
+
+    internal sealed class ReachableResourceInventory
+    {
+        public ReachableResourceInventory()
+        {
+            MassByResource =
+                new Dictionary<string, double>(
+                    StringComparer.Ordinal);
+        }
+
+        public IDictionary<string, double>
+            MassByResource
+        {
+            get;
+            private set;
+        }
+
+        public int ResourcePartCount { get; set; }
+
+        public int FallbackCount { get; set; }
+    }
 
     internal sealed class BurnLimit
     {
