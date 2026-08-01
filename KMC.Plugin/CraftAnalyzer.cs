@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
@@ -52,7 +52,7 @@ namespace KMC.Plugin
             }
 
             List<int> stageNumbers = new List<int>(stages.Keys);
-            stageNumbers.Sort(delegate (int left, int right)
+            stageNumbers.Sort(delegate(int left, int right)
             {
                 return right.CompareTo(left);
             });
@@ -109,6 +109,10 @@ namespace KMC.Plugin
                 vessel,
                 analysis);
 
+            analysis.SimulationModel =
+                Simulation.CraftSimulationBuilder.Build(
+                    vessel);
+
             return analysis;
         }
 
@@ -121,7 +125,7 @@ namespace KMC.Plugin
 
             StringBuilder builder = new StringBuilder();
 
-            builder.AppendLine("[KMC] Craft Analyzer Phase 1");
+            builder.AppendLine("[KMC] Craft Analyzer Phase 3B");
             builder.Append("[KMC] Vessel: ");
             builder.AppendLine(
                 string.IsNullOrEmpty(analysis.VesselName)
@@ -193,6 +197,14 @@ namespace KMC.Plugin
                     topologyEvent.UnresolvedDecouplerCount);
 
                 builder.AppendLine();
+            }
+
+            if (analysis.SimulationModel != null)
+            {
+                builder.Append(
+                    Simulation.CraftSimulationReporter
+                        .CreateReport(
+                            analysis.SimulationModel));
             }
 
             builder.AppendLine(
@@ -638,7 +650,7 @@ namespace KMC.Plugin
                 new List<int>(stageNumbers);
 
             orderedStages.Sort(
-                delegate (int left, int right)
+                delegate(int left, int right)
                 {
                     return right.CompareTo(left);
                 });
@@ -2252,6 +2264,13 @@ namespace KMC.Plugin
         {
             get;
             private set;
+        }
+
+        public Simulation.CraftSimulationModel
+            SimulationModel
+        {
+            get;
+            set;
         }
     }
 
