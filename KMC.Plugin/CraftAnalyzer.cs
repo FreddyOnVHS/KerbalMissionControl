@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Text;
 
 namespace KMC.Plugin
@@ -104,6 +105,10 @@ namespace KMC.Plugin
                 ClassifyThrust(
                     analysis.InitialSeaLevelThrustToWeightRatio);
 
+            AnalyzeStageTopology(
+                vessel,
+                analysis);
+
             return analysis;
         }
 
@@ -151,6 +156,30 @@ namespace KMC.Plugin
                     analysis.ThrustClass));
 
             builder.AppendLine();
+
+            builder.AppendLine(
+                "[KMC] Stage topology:");
+
+            foreach (StageTopologyEvent topologyEvent in
+                analysis.StageTopology)
+            {
+                builder.AppendFormat(
+                    "[KMC] Event {0:00}: ignition engines={1}, ignition mass={2:0.000} t, SL thrust={3:0.0} kN, ignition SL TWR={4:0.00}, decouplers={5}, discarded={6:0.000} t, retained={7:0.000} t, unresolved={8}",
+                    topologyEvent.StageNumber,
+                    topologyEvent.IgnitingEngineCount,
+                    topologyEvent.IgnitionMassTonnes,
+                    topologyEvent.SeaLevelThrustKilonewtons,
+                    topologyEvent.IgnitionSeaLevelThrustToWeightRatio,
+                    topologyEvent.DecouplerCount,
+                    topologyEvent.DiscardedMassTonnes,
+                    topologyEvent.RetainedMassTonnes,
+                    topologyEvent.UnresolvedDecouplerCount);
+
+                builder.AppendLine();
+            }
+
+            builder.AppendLine(
+                "[KMC] Assignment groups:");
 
             foreach (StageAnalysis stage in analysis.Stages)
             {
@@ -450,6 +479,547 @@ namespace KMC.Plugin
         }
 
 
+
+        private static void AnalyzeStageTopology(
+            Vessel vessel,
+            CraftAnalysis analysis)
+        {
+            if (vessel == null ||
+                analysis == null ||
+                vessel.parts == null)
+            {
+                return;
+            }
+
+            HashSet<Part> activeParts =
+                new HashSet<Part>();
+
+            foreach (Part part in vessel.parts)
+            {
+                if (part != null)
+                {
+                    activeParts.Add(part);
+                }
+            }
+
+            List<int> eventStages =
+                CollectEventStageNumbers(activeParts);
+
+            double surfaceGravity =
+                GetSurfaceGravity(vessel);
+
+            foreach (int stageNumber in eventStages)
+            {
+                StageTopologyEvent topologyEvent =
+                    new StageTopologyEvent
+                    {
+                        StageNumber = stageNumber,
+                        IgnitionMassTonnes =
+                            GetPartsMassTonnes(activeParts)
+                    };
+
+                ReadIgnitingEngines(
+                    activeParts,
+                    stageNumber,
+                    topologyEvent);
+
+                if (topologyEvent.IgnitionMassTonnes > 0.0 &&
+                    surfaceGravity > 0.0)
+                {
+                    topologyEvent
+                        .IgnitionSeaLevelThrustToWeightRatio =
+                        topologyEvent.SeaLevelThrustKilonewtons /
+                        (topologyEvent.IgnitionMassTonnes *
+                         surfaceGravity);
+                }
+
+                HashSet<Part> detachedParts =
+                    FindDetachedPartsForStage(
+                        vessel,
+                        activeParts,
+                        stageNumber,
+                        topologyEvent);
+
+                topologyEvent.DiscardedMassTonnes =
+                    GetPartsMassTonnes(detachedParts);
+
+                foreach (Part detachedPart in detachedParts)
+                {
+                    activeParts.Remove(detachedPart);
+                }
+
+                topologyEvent.RetainedMassTonnes =
+                    GetPartsMassTonnes(activeParts);
+
+                analysis.StageTopology.Add(topologyEvent);
+            }
+        }
+
+        private static List<int> CollectEventStageNumbers(
+            IEnumerable<Part> parts)
+        {
+            HashSet<int> stageNumbers =
+                new HashSet<int>();
+
+            foreach (Part part in parts)
+            {
+                if (part == null)
+                {
+                    continue;
+                }
+
+                if (!PartHasEngine(part) &&
+                    !PartHasDecoupler(part))
+                {
+                    continue;
+                }
+
+                stageNumbers.Add(
+                    Math.Max(0, part.inverseStage));
+            }
+
+            List<int> orderedStages =
+                new List<int>(stageNumbers);
+
+            orderedStages.Sort(
+                delegate (int left, int right)
+                {
+                    return right.CompareTo(left);
+                });
+
+            return orderedStages;
+        }
+
+        private static void ReadIgnitingEngines(
+            IEnumerable<Part> activeParts,
+            int stageNumber,
+            StageTopologyEvent topologyEvent)
+        {
+            foreach (Part part in activeParts)
+            {
+                if (part == null ||
+                    part.inverseStage != stageNumber ||
+                    part.Modules == null)
+                {
+                    continue;
+                }
+
+                foreach (PartModule module in part.Modules)
+                {
+                    ModuleEngines engine =
+                        module as ModuleEngines;
+
+                    if (engine == null)
+                    {
+                        continue;
+                    }
+
+                    topologyEvent.IgnitingEngineCount++;
+
+                    double thrustLimit =
+                        Clamp(
+                            engine.thrustPercentage / 100.0,
+                            0.0,
+                            1.0);
+
+                    double vacuumThrust =
+                        SanitizeNonNegative(engine.maxThrust) *
+                        thrustLimit;
+
+                    double seaLevelIsp =
+                        EvaluateSpecificImpulse(engine, 1.0f);
+
+                    double vacuumIsp =
+                        EvaluateSpecificImpulse(engine, 0.0f);
+
+                    topologyEvent
+                        .SeaLevelThrustKilonewtons +=
+                        ConvertVacuumThrustToAmbientThrust(
+                            vacuumThrust,
+                            vacuumIsp,
+                            seaLevelIsp);
+
+                    topologyEvent
+                        .VacuumThrustKilonewtons +=
+                        vacuumThrust;
+                }
+            }
+        }
+
+        private static HashSet<Part>
+            FindDetachedPartsForStage(
+                Vessel vessel,
+                HashSet<Part> activeParts,
+                int stageNumber,
+                StageTopologyEvent topologyEvent)
+        {
+            HashSet<Part> detachedParts =
+                new HashSet<Part>();
+
+            List<SeparationEdge> removedEdges =
+                new List<SeparationEdge>();
+
+            foreach (Part part in activeParts)
+            {
+                if (part == null ||
+                    part.inverseStage != stageNumber ||
+                    part.Modules == null)
+                {
+                    continue;
+                }
+
+                foreach (PartModule module in part.Modules)
+                {
+                    if (!IsDecouplerModule(module))
+                    {
+                        continue;
+                    }
+
+                    topologyEvent.DecouplerCount++;
+
+                    SeparationEdge edge =
+                        ResolveSeparationEdge(
+                            part,
+                            module,
+                            activeParts);
+
+                    if (edge == null)
+                    {
+                        topologyEvent
+                            .UnresolvedDecouplerCount++;
+
+                        continue;
+                    }
+
+                    removedEdges.Add(edge);
+                }
+            }
+
+            if (removedEdges.Count == 0)
+            {
+                return detachedParts;
+            }
+
+            HashSet<Part> retainedParts =
+                FindRootConnectedComponent(
+                    vessel,
+                    activeParts,
+                    removedEdges);
+
+            foreach (Part part in activeParts)
+            {
+                if (!retainedParts.Contains(part))
+                {
+                    detachedParts.Add(part);
+                }
+            }
+
+            return detachedParts;
+        }
+
+        private static HashSet<Part>
+            FindRootConnectedComponent(
+                Vessel vessel,
+                HashSet<Part> activeParts,
+                IList<SeparationEdge> removedEdges)
+        {
+            HashSet<Part> connected =
+                new HashSet<Part>();
+
+            Part root =
+                vessel != null
+                    ? vessel.rootPart
+                    : null;
+
+            if (root == null ||
+                !activeParts.Contains(root))
+            {
+                foreach (Part part in activeParts)
+                {
+                    root = part;
+                    break;
+                }
+            }
+
+            if (root == null)
+            {
+                return connected;
+            }
+
+            Queue<Part> pending =
+                new Queue<Part>();
+
+            connected.Add(root);
+            pending.Enqueue(root);
+
+            while (pending.Count > 0)
+            {
+                Part current =
+                    pending.Dequeue();
+
+                TryVisitConnectedPart(
+                    current,
+                    current.parent,
+                    activeParts,
+                    removedEdges,
+                    connected,
+                    pending);
+
+                if (current.children == null)
+                {
+                    continue;
+                }
+
+                foreach (Part child in current.children)
+                {
+                    TryVisitConnectedPart(
+                        current,
+                        child,
+                        activeParts,
+                        removedEdges,
+                        connected,
+                        pending);
+                }
+            }
+
+            return connected;
+        }
+
+        private static void TryVisitConnectedPart(
+            Part from,
+            Part candidate,
+            HashSet<Part> activeParts,
+            IList<SeparationEdge> removedEdges,
+            HashSet<Part> connected,
+            Queue<Part> pending)
+        {
+            if (candidate == null ||
+                !activeParts.Contains(candidate) ||
+                connected.Contains(candidate) ||
+                IsRemovedEdge(from, candidate, removedEdges))
+            {
+                return;
+            }
+
+            connected.Add(candidate);
+            pending.Enqueue(candidate);
+        }
+
+        private static bool IsRemovedEdge(
+            Part first,
+            Part second,
+            IList<SeparationEdge> removedEdges)
+        {
+            foreach (SeparationEdge edge in removedEdges)
+            {
+                bool forward =
+                    ReferenceEquals(edge.First, first) &&
+                    ReferenceEquals(edge.Second, second);
+
+                bool reverse =
+                    ReferenceEquals(edge.First, second) &&
+                    ReferenceEquals(edge.Second, first);
+
+                if (forward || reverse)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static SeparationEdge ResolveSeparationEdge(
+            Part decouplerPart,
+            PartModule module,
+            HashSet<Part> activeParts)
+        {
+            string explosiveNodeId =
+                ReadStringMember(
+                    module,
+                    "explosiveNodeID");
+
+            if (!string.IsNullOrEmpty(explosiveNodeId))
+            {
+                try
+                {
+                    AttachNode node =
+                        decouplerPart.FindAttachNode(
+                            explosiveNodeId);
+
+                    if (node != null &&
+                        node.attachedPart != null &&
+                        activeParts.Contains(node.attachedPart))
+                    {
+                        return new SeparationEdge(
+                            decouplerPart,
+                            node.attachedPart);
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            if (decouplerPart.parent != null &&
+                activeParts.Contains(decouplerPart.parent))
+            {
+                return new SeparationEdge(
+                    decouplerPart,
+                    decouplerPart.parent);
+            }
+
+            if (decouplerPart.children != null)
+            {
+                foreach (Part child in decouplerPart.children)
+                {
+                    if (child != null &&
+                        activeParts.Contains(child))
+                    {
+                        return new SeparationEdge(
+                            decouplerPart,
+                            child);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static string ReadStringMember(
+            object instance,
+            string memberName)
+        {
+            if (instance == null ||
+                string.IsNullOrEmpty(memberName))
+            {
+                return string.Empty;
+            }
+
+            Type type = instance.GetType();
+
+            try
+            {
+                FieldInfo field =
+                    type.GetField(
+                        memberName,
+                        BindingFlags.Instance |
+                        BindingFlags.Public |
+                        BindingFlags.NonPublic);
+
+                if (field != null)
+                {
+                    return field.GetValue(instance) as string ??
+                        string.Empty;
+                }
+
+                PropertyInfo property =
+                    type.GetProperty(
+                        memberName,
+                        BindingFlags.Instance |
+                        BindingFlags.Public |
+                        BindingFlags.NonPublic);
+
+                if (property != null &&
+                    property.CanRead)
+                {
+                    return property.GetValue(
+                        instance,
+                        null) as string ??
+                        string.Empty;
+                }
+            }
+            catch
+            {
+            }
+
+            return string.Empty;
+        }
+
+        private static bool PartHasEngine(Part part)
+        {
+            if (part == null ||
+                part.Modules == null)
+            {
+                return false;
+            }
+
+            foreach (PartModule module in part.Modules)
+            {
+                if (module is ModuleEngines)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool PartHasDecoupler(Part part)
+        {
+            if (part == null ||
+                part.Modules == null)
+            {
+                return false;
+            }
+
+            foreach (PartModule module in part.Modules)
+            {
+                if (IsDecouplerModule(module))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsDecouplerModule(
+            PartModule module)
+        {
+            if (module == null)
+            {
+                return false;
+            }
+
+            string moduleName =
+                module.moduleName ??
+                module.GetType().Name ??
+                string.Empty;
+
+            return
+                moduleName.IndexOf(
+                    "Decouple",
+                    StringComparison.OrdinalIgnoreCase) >= 0 ||
+                moduleName.IndexOf(
+                    "Separator",
+                    StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static double GetPartsMassTonnes(
+            IEnumerable<Part> parts)
+        {
+            double mass = 0.0;
+
+            if (parts == null)
+            {
+                return mass;
+            }
+
+            foreach (Part part in parts)
+            {
+                if (part == null)
+                {
+                    continue;
+                }
+
+                mass += GetPartDryMassTonnes(part);
+                mass += GetPartResourceMassTonnes(part);
+            }
+
+            return mass;
+        }
+
         private static LaunchMassClass ClassifyMass(
             double launchMassTonnes)
         {
@@ -599,7 +1169,11 @@ namespace KMC.Plugin
     {
         public CraftAnalysis()
         {
-            Stages = new List<StageAnalysis>();
+            Stages =
+                new List<StageAnalysis>();
+
+            StageTopology =
+                new List<StageTopologyEvent>();
         }
 
         public string VesselId { get; set; }
@@ -616,7 +1190,53 @@ namespace KMC.Plugin
         public double InitialSeaLevelThrustToWeightRatio { get; set; }
         public LaunchMassClass MassClass { get; set; }
         public ThrustClass ThrustClass { get; set; }
-        public IList<StageAnalysis> Stages { get; private set; }
+
+        public IList<StageAnalysis> Stages
+        {
+            get;
+            private set;
+        }
+
+        public IList<StageTopologyEvent> StageTopology
+        {
+            get;
+            private set;
+        }
+    }
+
+
+    internal sealed class StageTopologyEvent
+    {
+        public int StageNumber { get; set; }
+        public int IgnitingEngineCount { get; set; }
+        public int DecouplerCount { get; set; }
+        public int UnresolvedDecouplerCount { get; set; }
+        public double IgnitionMassTonnes { get; set; }
+        public double RetainedMassTonnes { get; set; }
+        public double DiscardedMassTonnes { get; set; }
+        public double SeaLevelThrustKilonewtons { get; set; }
+        public double VacuumThrustKilonewtons { get; set; }
+
+        public double
+            IgnitionSeaLevelThrustToWeightRatio
+        {
+            get;
+            set;
+        }
+    }
+
+    internal sealed class SeparationEdge
+    {
+        public SeparationEdge(
+            Part first,
+            Part second)
+        {
+            First = first;
+            Second = second;
+        }
+
+        public Part First { get; private set; }
+        public Part Second { get; private set; }
     }
 
     internal sealed class StageAnalysis
