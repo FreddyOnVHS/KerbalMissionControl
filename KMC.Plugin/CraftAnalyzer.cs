@@ -164,15 +164,16 @@ namespace KMC.Plugin
                 analysis.StageTopology)
             {
                 builder.AppendFormat(
-                    "[KMC] Event {0:00}: ignition engines={1}, ignition mass={2:0.000} t, SL thrust={3:0.0} kN, ignition SL TWR={4:0.00}, decouplers={5}, discarded={6:0.000} t, retained={7:0.000} t, unresolved={8}",
+                    "[KMC] Event {0:00}: pre-event mass={1:0.000} t, decouplers={2}, discarded={3:0.000} t, retained={4:0.000} t, ignition engines={5}, ignition mass={6:0.000} t, SL thrust={7:0.0} kN, ignition SL TWR={8:0.00}, unresolved={9}",
                     topologyEvent.StageNumber,
+                    topologyEvent.PreEventMassTonnes,
+                    topologyEvent.DecouplerCount,
+                    topologyEvent.DiscardedMassTonnes,
+                    topologyEvent.RetainedMassTonnes,
                     topologyEvent.IgnitingEngineCount,
                     topologyEvent.IgnitionMassTonnes,
                     topologyEvent.SeaLevelThrustKilonewtons,
                     topologyEvent.IgnitionSeaLevelThrustToWeightRatio,
-                    topologyEvent.DecouplerCount,
-                    topologyEvent.DiscardedMassTonnes,
-                    topologyEvent.RetainedMassTonnes,
                     topologyEvent.UnresolvedDecouplerCount);
 
                 builder.AppendLine();
@@ -514,25 +515,17 @@ namespace KMC.Plugin
                     new StageTopologyEvent
                     {
                         StageNumber = stageNumber,
-                        IgnitionMassTonnes =
+                        PreEventMassTonnes =
                             GetPartsMassTonnes(activeParts)
                     };
 
-                ReadIgnitingEngines(
-                    activeParts,
-                    stageNumber,
-                    topologyEvent);
-
-                if (topologyEvent.IgnitionMassTonnes > 0.0 &&
-                    surfaceGravity > 0.0)
-                {
-                    topologyEvent
-                        .IgnitionSeaLevelThrustToWeightRatio =
-                        topologyEvent.SeaLevelThrustKilonewtons /
-                        (topologyEvent.IgnitionMassTonnes *
-                         surfaceGravity);
-                }
-
+                /*
+                 * KSP activates every icon assigned to a staging event
+                 * together. When a decoupler and an upper-stage engine
+                 * share an inverseStage value, the engine belongs to the
+                 * retained vehicle and should be evaluated after the
+                 * separation topology has been applied.
+                 */
                 HashSet<Part> detachedParts =
                     FindDetachedPartsForStage(
                         vessel,
@@ -550,6 +543,24 @@ namespace KMC.Plugin
 
                 topologyEvent.RetainedMassTonnes =
                     GetPartsMassTonnes(activeParts);
+
+                topologyEvent.IgnitionMassTonnes =
+                    topologyEvent.RetainedMassTonnes;
+
+                ReadIgnitingEngines(
+                    activeParts,
+                    stageNumber,
+                    topologyEvent);
+
+                if (topologyEvent.IgnitionMassTonnes > 0.0 &&
+                    surfaceGravity > 0.0)
+                {
+                    topologyEvent
+                        .IgnitionSeaLevelThrustToWeightRatio =
+                        topologyEvent.SeaLevelThrustKilonewtons /
+                        (topologyEvent.IgnitionMassTonnes *
+                         surfaceGravity);
+                }
 
                 analysis.StageTopology.Add(topologyEvent);
             }
@@ -1211,6 +1222,7 @@ namespace KMC.Plugin
         public int IgnitingEngineCount { get; set; }
         public int DecouplerCount { get; set; }
         public int UnresolvedDecouplerCount { get; set; }
+        public double PreEventMassTonnes { get; set; }
         public double IgnitionMassTonnes { get; set; }
         public double RetainedMassTonnes { get; set; }
         public double DiscardedMassTonnes { get; set; }
