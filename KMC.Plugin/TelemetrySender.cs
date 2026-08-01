@@ -20,6 +20,11 @@ namespace KMC.Plugin
 
         private float _nextSendTime;
 
+        private string _lastAnalyzedVesselId;
+
+        private int _lastAnalyzedPartCount =
+            -1;
+
         public void Start()
         {
             try
@@ -64,12 +69,76 @@ namespace KMC.Plugin
                 FlightGlobals.ActiveVessel;
 
             if (vessel == null ||
-                _udpClient == null)
+               _udpClient == null)
             {
                 return;
             }
 
-            SendTelemetry(vessel);
+            AnalyzeCraftIfChanged(
+                vessel);
+
+            SendTelemetry(
+                vessel);
+        }
+
+        private void AnalyzeCraftIfChanged(
+    Vessel vessel)
+        {
+            if (vessel == null)
+            {
+                return;
+            }
+
+            string vesselId =
+                vessel.id.ToString();
+
+            int partCount =
+                vessel.parts != null
+                    ? vessel.parts.Count
+                    : 0;
+
+            bool vesselChanged =
+                !string.Equals(
+                    vesselId,
+                    _lastAnalyzedVesselId,
+                    StringComparison.Ordinal);
+
+            bool partCountChanged =
+                partCount !=
+                _lastAnalyzedPartCount;
+
+            if (!vesselChanged &&
+                !partCountChanged)
+            {
+                return;
+            }
+
+            _lastAnalyzedVesselId =
+                vesselId;
+
+            _lastAnalyzedPartCount =
+                partCount;
+
+            try
+            {
+                CraftAnalysis analysis =
+                    CraftAnalyzer.Analyze(
+                        vessel);
+
+                string report =
+                    CraftAnalyzer
+                        .CreateDiagnosticReport(
+                            analysis);
+
+                Debug.Log(
+                    report);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError(
+                    "[KMC] Craft analysis failed: " +
+                    ex);
+            }
         }
 
         private void SendTelemetry(

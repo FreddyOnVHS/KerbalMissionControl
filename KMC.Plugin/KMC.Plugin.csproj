@@ -50,6 +50,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CraftAnalyzer.cs" />
     <Compile Include="TelemetrySender.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
