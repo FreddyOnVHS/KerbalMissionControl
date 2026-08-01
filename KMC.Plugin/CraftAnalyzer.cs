@@ -164,7 +164,7 @@ namespace KMC.Plugin
                 analysis.StageTopology)
             {
                 builder.AppendFormat(
-                    "[KMC] Event {0:00}: pre={1:0.000} t, decouplers={2}, discarded mass={3:0.000} t, retained={4:0.000} t, engines igniting={5}, continuing={6}, discarded engines={7}, active={8}, ignition SL thrust={9:0.0} kN, active SL thrust={10:0.0} kN, active SL TWR={11:0.00}, unresolved={12}",
+                    "[KMC] Event {0:00}: pre={1:0.000} t, decouplers={2}, discarded mass={3:0.000} t, retained={4:0.000} t, engines igniting={5}, continuing={6}, discarded engines={7}, active={8}, active SL thrust={9:0.0} kN, active SL TWR={10:0.00}, propellant={11:0.000} t, SL flow={12:0.0000} t/s, VAC flow={13:0.0000} t/s, burn SL={14:0.0} s, burn VAC={15:0.0} s, burnout={16:0.000} t, burnout SL TWR={17:0.00}, dV SL={18:0} m/s, dV VAC={19:0} m/s, limiting={20}, unresolved={21}",
                     topologyEvent.StageNumber,
                     topologyEvent.PreEventMassTonnes,
                     topologyEvent.DecouplerCount,
@@ -174,9 +174,20 @@ namespace KMC.Plugin
                     topologyEvent.ContinuingEngineCount,
                     topologyEvent.DiscardedEngineCount,
                     topologyEvent.ActiveEngineCount,
-                    topologyEvent.SeaLevelThrustKilonewtons,
                     topologyEvent.ActiveSeaLevelThrustKilonewtons,
                     topologyEvent.ActiveSeaLevelThrustToWeightRatio,
+                    topologyEvent.AvailablePropellantMassTonnes,
+                    topologyEvent.SeaLevelMassFlowTonnesPerSecond,
+                    topologyEvent.VacuumMassFlowTonnesPerSecond,
+                    topologyEvent.EstimatedSeaLevelBurnSeconds,
+                    topologyEvent.EstimatedVacuumBurnSeconds,
+                    topologyEvent.EstimatedBurnoutMassTonnes,
+                    topologyEvent.BurnoutSeaLevelThrustToWeightRatio,
+                    topologyEvent.EstimatedSeaLevelDeltaVMetresPerSecond,
+                    topologyEvent.EstimatedVacuumDeltaVMetresPerSecond,
+                    string.IsNullOrEmpty(topologyEvent.LimitingPropellant)
+                        ? "---"
+                        : topologyEvent.LimitingPropellant,
                     topologyEvent.UnresolvedDecouplerCount);
 
                 builder.AppendLine();
@@ -571,6 +582,12 @@ namespace KMC.Plugin
                     activeEngines,
                     topologyEvent);
 
+                AnalyzeBurnPerformance(
+                    activeParts,
+                    activeEngines,
+                    surfaceGravity,
+                    topologyEvent);
+
                 if (topologyEvent.IgnitionMassTonnes > 0.0 &&
                     surfaceGravity > 0.0)
                 {
@@ -775,6 +792,455 @@ namespace KMC.Plugin
                 vacuumIsp;
 
             return performance;
+        }
+
+
+        private static void AnalyzeBurnPerformance(
+            IEnumerable<Part> activeParts,
+            IEnumerable<ModuleEngines> activeEngines,
+            double surfaceGravity,
+            StageTopologyEvent topologyEvent)
+        {
+            if (topologyEvent == null ||
+                topologyEvent.ActiveEngineCount <= 0 ||
+                topologyEvent.IgnitionMassTonnes <= 0.0)
+            {
+                return;
+            }
+
+            Dictionary<string, double> availableMassByResource =
+                CollectResourceMassByName(activeParts);
+
+            Dictionary<string, double> seaLevelFlowByResource =
+                new Dictionary<string, double>(
+                    StringComparer.Ordinal);
+
+            Dictionary<string, double> vacuumFlowByResource =
+                new Dictionary<string, double>(
+                    StringComparer.Ordinal);
+
+            double seaLevelMassFlow = 0.0;
+            double vacuumMassFlow = 0.0;
+
+            foreach (ModuleEngines engine in activeEngines)
+            {
+                if (engine == null)
+                {
+                    continue;
+                }
+
+                EnginePerformance performance =
+                    ReadEnginePerformance(engine);
+
+                double engineSeaLevelFlow =
+                    CalculateMassFlowTonnesPerSecond(
+                        performance.SeaLevelThrustKilonewtons,
+                        performance.SeaLevelSpecificImpulse);
+
+                double engineVacuumFlow =
+                    CalculateMassFlowTonnesPerSecond(
+                        performance.VacuumThrustKilonewtons,
+                        performance.VacuumSpecificImpulse);
+
+                seaLevelMassFlow += engineSeaLevelFlow;
+                vacuumMassFlow += engineVacuumFlow;
+
+                AddEnginePropellantFlows(
+                    engine,
+                    engineSeaLevelFlow,
+                    seaLevelFlowByResource);
+
+                AddEnginePropellantFlows(
+                    engine,
+                    engineVacuumFlow,
+                    vacuumFlowByResource);
+            }
+
+            topologyEvent.SeaLevelMassFlowTonnesPerSecond =
+                seaLevelMassFlow;
+
+            topologyEvent.VacuumMassFlowTonnesPerSecond =
+                vacuumMassFlow;
+
+            topologyEvent.EffectiveSeaLevelSpecificImpulse =
+                CalculateEffectiveSpecificImpulse(
+                    topologyEvent.ActiveSeaLevelThrustKilonewtons,
+                    seaLevelMassFlow);
+
+            topologyEvent.EffectiveVacuumSpecificImpulse =
+                CalculateEffectiveSpecificImpulse(
+                    topologyEvent.ActiveVacuumThrustKilonewtons,
+                    vacuumMassFlow);
+
+            BurnLimit seaLevelLimit =
+                CalculateBurnLimit(
+                    availableMassByResource,
+                    seaLevelFlowByResource);
+
+            BurnLimit vacuumLimit =
+                CalculateBurnLimit(
+                    availableMassByResource,
+                    vacuumFlowByResource);
+
+            topologyEvent.EstimatedSeaLevelBurnSeconds =
+                seaLevelLimit.DurationSeconds;
+
+            topologyEvent.EstimatedVacuumBurnSeconds =
+                vacuumLimit.DurationSeconds;
+
+            topologyEvent.LimitingPropellant =
+                !string.IsNullOrEmpty(
+                    seaLevelLimit.ResourceName)
+                    ? seaLevelLimit.ResourceName
+                    : vacuumLimit.ResourceName;
+
+            double usablePropellantMass =
+                CalculateConsumedMass(
+                    seaLevelFlowByResource,
+                    seaLevelLimit.DurationSeconds);
+
+            if (usablePropellantMass <= 0.0)
+            {
+                usablePropellantMass =
+                    CalculateConsumedMass(
+                        vacuumFlowByResource,
+                        vacuumLimit.DurationSeconds);
+            }
+
+            usablePropellantMass =
+                Math.Min(
+                    usablePropellantMass,
+                    topologyEvent.IgnitionMassTonnes);
+
+            topologyEvent.AvailablePropellantMassTonnes =
+                usablePropellantMass;
+
+            topologyEvent.EstimatedBurnoutMassTonnes =
+                Math.Max(
+                    0.001,
+                    topologyEvent.IgnitionMassTonnes -
+                    usablePropellantMass);
+
+            if (surfaceGravity > 0.0)
+            {
+                topologyEvent
+                    .BurnoutSeaLevelThrustToWeightRatio =
+                    topologyEvent
+                        .ActiveSeaLevelThrustKilonewtons /
+                    (topologyEvent
+                         .EstimatedBurnoutMassTonnes *
+                     surfaceGravity);
+            }
+
+            topologyEvent
+                .EstimatedSeaLevelDeltaVMetresPerSecond =
+                CalculateDeltaV(
+                    topologyEvent
+                        .EffectiveSeaLevelSpecificImpulse,
+                    topologyEvent.IgnitionMassTonnes,
+                    topologyEvent.EstimatedBurnoutMassTonnes);
+
+            topologyEvent
+                .EstimatedVacuumDeltaVMetresPerSecond =
+                CalculateDeltaV(
+                    topologyEvent
+                        .EffectiveVacuumSpecificImpulse,
+                    topologyEvent.IgnitionMassTonnes,
+                    topologyEvent.EstimatedBurnoutMassTonnes);
+        }
+
+        private static Dictionary<string, double>
+            CollectResourceMassByName(
+                IEnumerable<Part> parts)
+        {
+            Dictionary<string, double> values =
+                new Dictionary<string, double>(
+                    StringComparer.Ordinal);
+
+            if (parts == null)
+            {
+                return values;
+            }
+
+            foreach (Part part in parts)
+            {
+                if (part == null ||
+                    part.Resources == null)
+                {
+                    continue;
+                }
+
+                foreach (PartResource resource in
+                    part.Resources)
+                {
+                    if (resource == null ||
+                        resource.info == null)
+                    {
+                        continue;
+                    }
+
+                    string name =
+                        resource.info.name ??
+                        string.Empty;
+
+                    double mass =
+                        SanitizeNonNegative(
+                            resource.amount *
+                            resource.info.density);
+
+                    AddValue(
+                        values,
+                        name,
+                        mass);
+                }
+            }
+
+            return values;
+        }
+
+        private static void AddEnginePropellantFlows(
+            ModuleEngines engine,
+            double totalMassFlow,
+            IDictionary<string, double> flowByResource)
+        {
+            if (engine == null ||
+                engine.propellants == null ||
+                totalMassFlow <= 0.0)
+            {
+                return;
+            }
+
+            double weightedDensityTotal = 0.0;
+
+            foreach (Propellant propellant in
+                engine.propellants)
+            {
+                if (propellant == null)
+                {
+                    continue;
+                }
+
+                PartResourceDefinition definition =
+                    PartResourceLibrary.Instance
+                        .GetDefinition(
+                            propellant.name);
+
+                if (definition == null)
+                {
+                    continue;
+                }
+
+                weightedDensityTotal +=
+                    SanitizeNonNegative(
+                        propellant.ratio) *
+                    SanitizeNonNegative(
+                        definition.density);
+            }
+
+            if (weightedDensityTotal <= 0.0)
+            {
+                return;
+            }
+
+            foreach (Propellant propellant in
+                engine.propellants)
+            {
+                if (propellant == null)
+                {
+                    continue;
+                }
+
+                PartResourceDefinition definition =
+                    PartResourceLibrary.Instance
+                        .GetDefinition(
+                            propellant.name);
+
+                if (definition == null)
+                {
+                    continue;
+                }
+
+                double weightedDensity =
+                    SanitizeNonNegative(
+                        propellant.ratio) *
+                    SanitizeNonNegative(
+                        definition.density);
+
+                double resourceMassFlow =
+                    totalMassFlow *
+                    weightedDensity /
+                    weightedDensityTotal;
+
+                AddValue(
+                    flowByResource,
+                    propellant.name,
+                    resourceMassFlow);
+            }
+        }
+
+        private static BurnLimit CalculateBurnLimit(
+            IDictionary<string, double> availableMassByResource,
+            IDictionary<string, double> flowByResource)
+        {
+            BurnLimit result =
+                new BurnLimit();
+
+            if (flowByResource == null ||
+                flowByResource.Count == 0)
+            {
+                return result;
+            }
+
+            result.DurationSeconds =
+                double.MaxValue;
+
+            foreach (KeyValuePair<string, double> pair in
+                flowByResource)
+            {
+                if (pair.Value <= 0.0)
+                {
+                    continue;
+                }
+
+                double availableMass = 0.0;
+
+                availableMassByResource.TryGetValue(
+                    pair.Key,
+                    out availableMass);
+
+                double duration =
+                    availableMass /
+                    pair.Value;
+
+                if (duration <
+                    result.DurationSeconds)
+                {
+                    result.DurationSeconds =
+                        Math.Max(
+                            0.0,
+                            duration);
+
+                    result.ResourceName =
+                        pair.Key;
+                }
+            }
+
+            if (result.DurationSeconds ==
+                double.MaxValue)
+            {
+                result.DurationSeconds = 0.0;
+            }
+
+            return result;
+        }
+
+        private static double CalculateConsumedMass(
+            IDictionary<string, double> flowByResource,
+            double durationSeconds)
+        {
+            if (flowByResource == null ||
+                durationSeconds <= 0.0)
+            {
+                return 0.0;
+            }
+
+            double consumed = 0.0;
+
+            foreach (double flow in
+                flowByResource.Values)
+            {
+                if (flow > 0.0)
+                {
+                    consumed +=
+                        flow *
+                        durationSeconds;
+                }
+            }
+
+            return consumed;
+        }
+
+        private static double
+            CalculateMassFlowTonnesPerSecond(
+                double thrustKilonewtons,
+                double specificImpulseSeconds)
+        {
+            if (thrustKilonewtons <= 0.0 ||
+                specificImpulseSeconds <= 0.0)
+            {
+                return 0.0;
+            }
+
+            /*
+             * One kilonewton acting on one tonne has the same
+             * numerical acceleration as one newton acting on one
+             * kilogram, so kN / (Isp * g0) yields tonnes per second.
+             */
+            return
+                thrustKilonewtons /
+                (specificImpulseSeconds *
+                 9.80665);
+        }
+
+        private static double
+            CalculateEffectiveSpecificImpulse(
+                double thrustKilonewtons,
+                double massFlowTonnesPerSecond)
+        {
+            if (thrustKilonewtons <= 0.0 ||
+                massFlowTonnesPerSecond <= 0.0)
+            {
+                return 0.0;
+            }
+
+            return
+                thrustKilonewtons /
+                (massFlowTonnesPerSecond *
+                 9.80665);
+        }
+
+        private static double CalculateDeltaV(
+            double specificImpulseSeconds,
+            double ignitionMassTonnes,
+            double burnoutMassTonnes)
+        {
+            if (specificImpulseSeconds <= 0.0 ||
+                ignitionMassTonnes <= 0.0 ||
+                burnoutMassTonnes <= 0.0 ||
+                burnoutMassTonnes >= ignitionMassTonnes)
+            {
+                return 0.0;
+            }
+
+            return
+                specificImpulseSeconds *
+                9.80665 *
+                Math.Log(
+                    ignitionMassTonnes /
+                    burnoutMassTonnes);
+        }
+
+        private static void AddValue(
+            IDictionary<string, double> values,
+            string key,
+            double amount)
+        {
+            if (values == null ||
+                string.IsNullOrEmpty(key) ||
+                amount <= 0.0)
+            {
+                return;
+            }
+
+            double current = 0.0;
+
+            values.TryGetValue(
+                key,
+                out current);
+
+            values[key] =
+                current +
+                amount;
         }
 
         private static HashSet<Part>
@@ -1353,6 +1819,18 @@ namespace KMC.Plugin
         public double VacuumThrustKilonewtons { get; set; }
         public double ActiveSeaLevelThrustKilonewtons { get; set; }
         public double ActiveVacuumThrustKilonewtons { get; set; }
+        public double EffectiveSeaLevelSpecificImpulse { get; set; }
+        public double EffectiveVacuumSpecificImpulse { get; set; }
+        public double SeaLevelMassFlowTonnesPerSecond { get; set; }
+        public double VacuumMassFlowTonnesPerSecond { get; set; }
+        public double AvailablePropellantMassTonnes { get; set; }
+        public double EstimatedSeaLevelBurnSeconds { get; set; }
+        public double EstimatedVacuumBurnSeconds { get; set; }
+        public double EstimatedBurnoutMassTonnes { get; set; }
+        public double BurnoutSeaLevelThrustToWeightRatio { get; set; }
+        public double EstimatedSeaLevelDeltaVMetresPerSecond { get; set; }
+        public double EstimatedVacuumDeltaVMetresPerSecond { get; set; }
+        public string LimitingPropellant { get; set; }
 
         public double
             IgnitionSeaLevelThrustToWeightRatio
@@ -1367,6 +1845,14 @@ namespace KMC.Plugin
             get;
             set;
         }
+    }
+
+
+    internal sealed class BurnLimit
+    {
+        public string ResourceName { get; set; }
+
+        public double DurationSeconds { get; set; }
     }
 
     internal sealed class EnginePerformance
