@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering;
 
@@ -29,6 +30,18 @@ namespace KMC.MissionControl.Pages
 
         private double _downrangeMeters;
 
+        private double _planningTwr =
+            double.NaN;
+
+        private double _planningProfileScale =
+            double.NaN;
+
+        private int _initialStage =
+            -1;
+
+        private static readonly object DebugLogSync =
+            new object();
+
         public string Name
         {
             get { return "ASCENT GUIDANCE"; }
@@ -52,6 +65,12 @@ namespace KMC.MissionControl.Pages
             UpdateHistory(
                 telemetry);
 
+            CaptureLaunchPlan(
+                telemetry);
+
+            WriteAscentDebugSample(
+                telemetry);
+
             DrawHeader(
                 context);
 
@@ -66,30 +85,30 @@ namespace KMC.MissionControl.Pages
 
             Rectangle graphBounds =
                 context.GetRelativeRectangle(
-                    0.025f,
-                    0.105f,
-                    0.705f,
-                    0.735f);
+                    0.015f,
+                    0.090f,
+                    0.700f,
+                    0.755f);
 
             Rectangle orbitInsetBounds =
                 context.GetRelativeRectangle(
-                    0.750f,
-                    0.105f,
-                    0.225f,
-                    0.245f);
+                    0.730f,
+                    0.090f,
+                    0.255f,
+                    0.270f);
 
             Rectangle statusBounds =
                 context.GetRelativeRectangle(
-                    0.750f,
-                    0.370f,
-                    0.225f,
+                    0.730f,
+                    0.375f,
+                    0.255f,
                     0.470f);
 
             Rectangle footerBounds =
                 context.GetRelativeRectangle(
-                    0.025f,
-                    0.860f,
-                    0.950f,
+                    0.015f,
+                    0.865f,
+                    0.970f,
                     0.105f);
 
             DrawAscentGraph(
@@ -231,6 +250,169 @@ namespace KMC.MissionControl.Pages
                 double.NaN;
 
             _downrangeMeters = 0.0;
+
+            _planningTwr =
+                double.NaN;
+
+            _planningProfileScale =
+                double.NaN;
+
+            _initialStage =
+                -1;
+        }
+
+        private void CaptureLaunchPlan(
+            MissionTelemetry telemetry)
+        {
+            if (telemetry == null)
+            {
+                return;
+            }
+
+            if (IsFinite(
+                    _planningProfileScale))
+            {
+                return;
+            }
+
+            double twr =
+                telemetry.ThrustToWeightRatio;
+
+            /*
+             * Do not lock the ascent plan while telemetry is still
+             * reporting zero thrust on the launchpad.
+             */
+            if (!IsFinite(twr) ||
+                twr < 1.0)
+            {
+                return;
+            }
+
+            _planningTwr =
+                Math.Max(
+                    0.8,
+                    Math.Min(
+                        3.0,
+                        twr));
+
+            _planningProfileScale =
+                CalculateProfileScaleFromTwr(
+                    _planningTwr);
+
+            _initialStage =
+                telemetry.CurrentStage;
+        }
+
+        private void WriteAscentDebugSample(
+            MissionTelemetry telemetry)
+        {
+            if (telemetry == null ||
+                _samples.Count == 0)
+            {
+                return;
+            }
+
+            AscentSample sample =
+                _samples[_samples.Count - 1];
+
+            /*
+             * Only write once per stored ascent sample. The sample cadence
+             * is already limited by MinimumSampleIntervalSeconds.
+             */
+            if (sample.DebugWritten)
+            {
+                return;
+            }
+
+            sample.DebugWritten = true;
+
+            double profileScale =
+                GetPlanningProfileScale(
+                    telemetry);
+
+            double targetAltitude =
+                CalculateTargetAltitude(
+                    sample.DownrangeMeters,
+                    telemetry);
+
+            double targetPitch =
+                CalculateTargetPitch(
+                    sample.DownrangeMeters,
+                    telemetry);
+
+            try
+            {
+                string directory =
+                    Path.Combine(
+                        Environment.GetFolderPath(
+                            Environment.SpecialFolder
+                                .LocalApplicationData),
+                        "KMC");
+
+                Directory.CreateDirectory(
+                    directory);
+
+                string path =
+                    Path.Combine(
+                        directory,
+                        "ascent-debug.csv");
+
+                lock (DebugLogSync)
+                {
+                    bool writeHeader =
+                        !File.Exists(path);
+
+                    using (StreamWriter writer =
+                        new StreamWriter(
+                            path,
+                            true))
+                    {
+                        if (writeHeader)
+                        {
+                            writer.WriteLine(
+                                "MET,Stage,InitialStage,AltitudeM," +
+                                "DownrangeM,LiveTWR,PlanningTWR," +
+                                "ProfileScaleM,TargetAltitudeM," +
+                                "TargetPitchDeg,ActualPitchDeg," +
+                                "ApoapsisM");
+                        }
+
+                        writer.WriteLine(
+                            string.Join(
+                                ",",
+                                telemetry.MissionTime
+                                    .ToString("0.000"),
+                                telemetry.CurrentStage,
+                                _initialStage,
+                                telemetry.Altitude
+                                    .ToString("0.000"),
+                                sample.DownrangeMeters
+                                    .ToString("0.000"),
+                                telemetry.ThrustToWeightRatio
+                                    .ToString("0.000"),
+                                IsFinite(_planningTwr)
+                                    ? _planningTwr
+                                        .ToString("0.000")
+                                    : string.Empty,
+                                profileScale
+                                    .ToString("0.000"),
+                                targetAltitude
+                                    .ToString("0.000"),
+                                targetPitch
+                                    .ToString("0.000"),
+                                telemetry.Pitch
+                                    .ToString("0.000"),
+                                telemetry.Apoapsis
+                                    .ToString("0.000")));
+                    }
+                }
+            }
+            catch
+            {
+                /*
+                 * Diagnostics must never interrupt the mission display.
+                 */
+            }
         }
 
         private static void DrawHeader(
@@ -241,10 +423,10 @@ namespace KMC.MissionControl.Pages
 
             Rectangle titleBounds =
                 context.GetRelativeRectangle(
-                    0.025f,
-                    0.025f,
-                    0.950f,
-                    0.060f);
+                    0.015f,
+                    0.018f,
+                    0.970f,
+                    0.055f);
 
             using (Pen linePen =
                 new Pen(
@@ -668,6 +850,18 @@ namespace KMC.MissionControl.Pages
             Graphics graphics =
                 context.Graphics;
 
+            float compactSize =
+                Math.Max(
+                    6.0f,
+                    context.SmallFont.Size *
+                    0.74f);
+
+            using (Font compactFont =
+                new Font(
+                    context.SmallFont.FontFamily,
+                    compactSize,
+                    FontStyle.Regular,
+                    GraphicsUnit.Point))
             using (Pen borderPen =
                 new Pen(
                     context.PhosphorColor,
@@ -675,7 +869,7 @@ namespace KMC.MissionControl.Pages
             using (Pen gridPen =
                 new Pen(
                     Color.FromArgb(
-                        65,
+                        60,
                         context.DimPhosphorColor),
                     1.0f))
             using (Pen orbitPen =
@@ -693,26 +887,47 @@ namespace KMC.MissionControl.Pages
             using (Brush vesselBrush =
                 new SolidBrush(
                     context.PhosphorColor))
+            using (StringFormat rightFormat =
+                new StringFormat())
             {
+                rightFormat.Alignment =
+                    StringAlignment.Far;
+
+                rightFormat.LineAlignment =
+                    StringAlignment.Center;
+
+                rightFormat.Trimming =
+                    StringTrimming.EllipsisCharacter;
+
+                rightFormat.FormatFlags =
+                    StringFormatFlags.NoWrap;
+
                 graphics.DrawRectangle(
                     borderPen,
                     bounds);
 
+                int padding = 8;
+                int titleHeight = 20;
+                int dataHeight = 38;
+
                 graphics.DrawString(
                     "ORBIT TREND",
-                    context.SmallFont,
+                    compactFont,
                     titleBrush,
-                    bounds.Left + 8,
-                    bounds.Top + 6);
+                    bounds.Left + padding,
+                    bounds.Top + 5);
 
                 Rectangle plot =
-                    Rectangle.Inflate(
-                        bounds,
-                        -12,
-                        -26);
-
-                plot.Y += 8;
-                plot.Height -= 4;
+                    new Rectangle(
+                        bounds.Left + padding,
+                        bounds.Top + titleHeight + 5,
+                        bounds.Width - padding * 2,
+                        Math.Max(
+                            30,
+                            bounds.Height -
+                            titleHeight -
+                            dataHeight -
+                            12));
 
                 for (int index = 1;
                      index < 4;
@@ -747,11 +962,11 @@ namespace KMC.MissionControl.Pages
 
                 float centerX =
                     plot.Left +
-                    plot.Width * 0.47f;
+                    plot.Width * 0.50f;
 
                 float centerY =
                     plot.Top +
-                    plot.Height * 0.54f;
+                    plot.Height * 0.50f;
 
                 double eccentricity =
                     IsFinite(
@@ -767,13 +982,15 @@ namespace KMC.MissionControl.Pages
                     plot.Width * 0.39f;
 
                 float semiMinor =
-                    semiMajor *
-                    (float)Math.Sqrt(
-                        Math.Max(
-                            0.15,
-                            1.0 -
-                            eccentricity *
-                            eccentricity));
+                    Math.Min(
+                        plot.Height * 0.39f,
+                        semiMajor *
+                        (float)Math.Sqrt(
+                            Math.Max(
+                                0.15,
+                                1.0 -
+                                eccentricity *
+                                eccentricity)));
 
                 RectangleF ellipse =
                     new RectangleF(
@@ -788,7 +1005,7 @@ namespace KMC.MissionControl.Pages
 
                 float bodyRadius =
                     Math.Max(
-                        5.0f,
+                        4.0f,
                         Math.Min(
                             plot.Width,
                             plot.Height) *
@@ -831,35 +1048,70 @@ namespace KMC.MissionControl.Pages
                     6.0f,
                     6.0f);
 
-                string apoapsisText =
-                    "AP " +
-                    FormatDistance(
-                        telemetry.Apoapsis);
+                int dataTop =
+                    bounds.Bottom -
+                    dataHeight -
+                    3;
 
-                string periapsisText =
-                    "PE " +
-                    FormatDistance(
-                        telemetry.Periapsis);
+                Rectangle apLabelBounds =
+                    new Rectangle(
+                        bounds.Left + padding,
+                        dataTop,
+                        26,
+                        17);
+
+                Rectangle apValueBounds =
+                    new Rectangle(
+                        bounds.Left + padding + 28,
+                        dataTop,
+                        bounds.Width -
+                        padding * 2 -
+                        28,
+                        17);
+
+                Rectangle peLabelBounds =
+                    new Rectangle(
+                        bounds.Left + padding,
+                        dataTop + 17,
+                        26,
+                        17);
+
+                Rectangle peValueBounds =
+                    new Rectangle(
+                        bounds.Left + padding + 28,
+                        dataTop + 17,
+                        bounds.Width -
+                        padding * 2 -
+                        28,
+                        17);
 
                 graphics.DrawString(
-                    apoapsisText,
-                    context.SmallFont,
+                    "AP",
+                    compactFont,
                     titleBrush,
-                    plot.Left,
-                    plot.Bottom - 15);
-
-                SizeF periapsisSize =
-                    graphics.MeasureString(
-                        periapsisText,
-                        context.SmallFont);
+                    apLabelBounds);
 
                 graphics.DrawString(
-                    periapsisText,
-                    context.SmallFont,
+                    FormatDistance(
+                        telemetry.Apoapsis),
+                    compactFont,
                     titleBrush,
-                    plot.Right -
-                    periapsisSize.Width,
-                    plot.Bottom - 15);
+                    apValueBounds,
+                    rightFormat);
+
+                graphics.DrawString(
+                    "PE",
+                    compactFont,
+                    titleBrush,
+                    peLabelBounds);
+
+                graphics.DrawString(
+                    FormatDistance(
+                        telemetry.Periapsis),
+                    compactFont,
+                    titleBrush,
+                    peValueBounds,
+                    rightFormat);
             }
         }
 
@@ -1316,7 +1568,7 @@ namespace KMC.MissionControl.Pages
                     _downrangeMeters);
 
             double profileScale =
-                CalculateProfileScale(
+                GetPlanningProfileScale(
                     telemetry);
 
             return Math.Max(
@@ -1326,12 +1578,12 @@ namespace KMC.MissionControl.Pages
                     profileScale * 4.5));
         }
 
-        private static double CalculateTargetAltitude(
+        private double CalculateTargetAltitude(
             double downrangeMeters,
             MissionTelemetry telemetry)
         {
             double profileScale =
-                CalculateProfileScale(
+                GetPlanningProfileScale(
                     telemetry);
 
             double normalized =
@@ -1353,12 +1605,12 @@ namespace KMC.MissionControl.Pages
                     altitude));
         }
 
-        private static double CalculateTargetPitch(
+        private double CalculateTargetPitch(
             double downrangeMeters,
             MissionTelemetry telemetry)
         {
             double scale =
-                CalculateProfileScale(
+                GetPlanningProfileScale(
                     telemetry);
 
             double slope =
@@ -1387,16 +1639,30 @@ namespace KMC.MissionControl.Pages
                     flightPathAngle));
         }
 
-        private static double CalculateProfileScale(
+        private double GetPlanningProfileScale(
             MissionTelemetry telemetry)
         {
-            double twr =
+            if (IsFinite(
+                    _planningProfileScale))
+            {
+                return _planningProfileScale;
+            }
+
+            double fallbackTwr =
+                telemetry != null &&
                 IsFinite(
                     telemetry.ThrustToWeightRatio)
                     ? telemetry
                         .ThrustToWeightRatio
                     : 1.5;
 
+            return CalculateProfileScaleFromTwr(
+                fallbackTwr);
+        }
+
+        private static double CalculateProfileScaleFromTwr(
+            double twr)
+        {
             twr =
                 Math.Max(
                     0.8,
@@ -1416,7 +1682,7 @@ namespace KMC.MissionControl.Pages
                     scale));
         }
 
-        private static string DetermineGuidance(
+        private string DetermineGuidance(
             MissionTelemetry telemetry,
             double targetAltitude)
         {
@@ -1731,6 +1997,8 @@ namespace KMC.MissionControl.Pages
             public double PitchDegrees { get; set; }
 
             public double DynamicPressureKpa { get; set; }
+
+            public bool DebugWritten { get; set; }
         }
     }
 }

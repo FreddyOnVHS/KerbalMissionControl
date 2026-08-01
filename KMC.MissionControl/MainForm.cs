@@ -17,8 +17,8 @@ namespace KMC.MissionControl
         private const int HeaderHeight = 42;
         private const int SectionSpacing = 16;
         private const int NavigationHeight = 44;
-        private const int NormalSummaryHeight = 250;
-        private const int CompactSummaryHeight = 190;
+        private const int NormalSummaryHeight = 220;
+        private const int CompactSummaryHeight = 170;
 
         private const int CompactHeightBreakpoint = 820;
         private const int HideSummaryHeightBreakpoint = 700;
@@ -44,14 +44,23 @@ namespace KMC.MissionControl
             * Baseline console size. Existing mission-page text and widgets
             * are designed around the CRT area produced by this client size.
             */
-            
-            ClientSize = new Size(
-                900,
-                1080);
+
+            Size preferredClientSize =
+                new Size(
+                    1280,
+                    1180);
+
+            Size minimumClientSize =
+                new Size(
+                    1180,
+                    980);
+
+            ClientSize =
+                preferredClientSize;
 
             MinimumSize =
                 SizeFromClientSize(
-                    ClientSize);
+                    minimumClientSize);
 
             StartPosition =
                 FormStartPosition.CenterScreen;
