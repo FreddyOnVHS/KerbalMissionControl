@@ -16,6 +16,9 @@ namespace KMC.MissionControl.Guidance
 
         public double ThrottleCommandPercent { get; set; }
 
+        /*
+         * CircularizationDeltaV now represents remaining delta-v.
+         */
         public double CircularizationDeltaV { get; set; }
 
         public double CircularizationBurnTimeSeconds { get; set; }
@@ -23,6 +26,22 @@ namespace KMC.MissionControl.Guidance
         public double CircularizationIgnitionInSeconds { get; set; }
 
         public double CircularizationPeriapsisErrorMeters { get; set; }
+
+        public double CurrentSpecificOrbitalEnergy { get; set; }
+
+        public double TargetSpecificOrbitalEnergy { get; set; }
+
+        public double OrbitalEnergyError { get; set; }
+
+        public double InitialCircularizationDeltaV { get; set; }
+
+        public double BurnCompletionPercent { get; set; }
+
+        public double PredictedShutdownApoapsisMeters { get; set; }
+
+        public double PredictedShutdownPeriapsisMeters { get; set; }
+
+        public double PredictedOrbitErrorMeters { get; set; }
 
         public string FlightPhase { get; set; }
 

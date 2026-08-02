@@ -4,22 +4,21 @@ using KMC.MissionControl.Models;
 namespace KMC.MissionControl.Guidance
 {
     /// <summary>
-    /// Phase 6C recovery-aware ascent and circularization flight director.
+    /// Phase 7 orbital guidance computer.
     ///
-    /// This planner is advisory only. It does not control the vehicle.
+    /// The ascent and circularization sequence is still advisory only.
+    /// This class does not control the vehicle.
     ///
-    /// Phase sequence:
-    /// PRELAUNCH
-    /// ASCENT
-    /// TARGET APPROACH
-    /// MECO
-    /// COAST TO APOAPSIS
-    /// CIRCULARIZATION READY
-    /// CIRCULARIZATION BURN
-    /// ORBIT ACHIEVED
+    /// The circularization burn is no longer terminated from periapsis
+    /// alone. Guidance now evaluates:
     ///
-    /// The first implementation uses Kerbin's radius and gravitational
-    /// parameter for the circularization estimate.
+    /// - current specific orbital energy
+    /// - target circular-orbit energy
+    /// - remaining prograde delta-v
+    /// - predicted shutdown apoapsis and periapsis
+    /// - estimated engine shutdown response
+    ///
+    /// Kerbin constants are used in this build.
     /// </summary>
     public sealed class MissionPlanner
     {
@@ -35,7 +34,7 @@ namespace KMC.MissionControl.Guidance
         private const double TargetApproachBandMeters =
             12000.0;
 
-        private const double CutoffToleranceMeters =
+        private const double AscentCutoffToleranceMeters =
             250.0;
 
         private const double SteeringDeadbandDegrees =
@@ -59,11 +58,24 @@ namespace KMC.MissionControl.Guidance
         private const double CircularizationReadyLeadSeconds =
             8.0;
 
-        private const double CircularizationCutoffToleranceMeters =
-            250.0;
+        /*
+         * The engine is assumed to keep producing meaningful impulse
+         * briefly after the pilot receives a cutoff command.
+         */
+        private const double ShutdownResponseSeconds =
+            0.55;
 
-        private const double OrbitToleranceMeters =
-            2000.0;
+        private const double OrbitNominalToleranceMeters =
+            3000.0;
+
+        private const double MaximumAllowedOrbitErrorMeters =
+            7500.0;
+
+        private const double RemainingDeltaVCutoffMetersPerSecond =
+            1.25;
+
+        private const double EnergyCutoffToleranceJoulesPerKilogram =
+            3000.0;
 
         private string _flightPhase =
             "PRELAUNCH";
@@ -74,11 +86,14 @@ namespace KMC.MissionControl.Guidance
         private double _lastRecommendedPitch =
             double.NaN;
 
+        private double _initialCircularizationDeltaV =
+            double.NaN;
+
         private bool _ascentMecoLatched;
 
         private bool _circularizationStarted;
 
-        private bool _orbitAchieved;
+        private bool _orbitCutoffLatched;
 
         public MissionPlannerResult CreatePlan(
             MissionTelemetry telemetry,
@@ -102,19 +117,19 @@ namespace KMC.MissionControl.Guidance
                 CalculateDeltaTime(
                     telemetry.MissionTime);
 
-            CircularizationSolution circularization =
-                CalculateCircularizationSolution(
+            OrbitalGuidanceSolution guidance =
+                CalculateOrbitalGuidance(
                     telemetry,
                     targetApoapsisMeters);
 
             UpdateFlightPhase(
                 telemetry,
                 targetApoapsisMeters,
-                circularization);
+                guidance);
 
-            PopulateCircularizationResult(
+            PopulateOrbitalGuidanceResult(
                 result,
-                circularization,
+                guidance,
                 telemetry,
                 targetApoapsisMeters);
 
@@ -165,7 +180,7 @@ namespace KMC.MissionControl.Guidance
                 ConfigureCoast(
                     result,
                     telemetry,
-                    circularization);
+                    guidance);
 
                 SavePlannerState(
                     telemetry,
@@ -179,7 +194,7 @@ namespace KMC.MissionControl.Guidance
                 ConfigureCircularizationReady(
                     result,
                     telemetry,
-                    circularization);
+                    guidance);
 
                 SavePlannerState(
                     telemetry,
@@ -193,7 +208,7 @@ namespace KMC.MissionControl.Guidance
                 ConfigureCircularizationBurn(
                     result,
                     telemetry,
-                    targetApoapsisMeters);
+                    guidance);
 
                 SavePlannerState(
                     telemetry,
@@ -206,7 +221,8 @@ namespace KMC.MissionControl.Guidance
             {
                 ConfigureOrbitAchieved(
                     result,
-                    telemetry);
+                    telemetry,
+                    guidance);
 
                 SavePlannerState(
                     telemetry,
@@ -254,7 +270,7 @@ namespace KMC.MissionControl.Guidance
                     "THROTTLE HOLD",
 
                 Status =
-                    "PLANNER WAITING",
+                    "GUIDANCE WAITING",
 
                 NextEvent =
                     "---",
@@ -287,13 +303,16 @@ namespace KMC.MissionControl.Guidance
             _lastRecommendedPitch =
                 double.NaN;
 
+            _initialCircularizationDeltaV =
+                double.NaN;
+
             _ascentMecoLatched =
                 false;
 
             _circularizationStarted =
                 false;
 
-            _orbitAchieved =
+            _orbitCutoffLatched =
                 false;
         }
 
@@ -322,10 +341,10 @@ namespace KMC.MissionControl.Guidance
 
         private void UpdateFlightPhase(
             MissionTelemetry telemetry,
-            double targetApoapsisMeters,
-            CircularizationSolution solution)
+            double targetOrbitMeters,
+            OrbitalGuidanceSolution guidance)
         {
-            if (_orbitAchieved)
+            if (_orbitCutoffLatched)
             {
                 _flightPhase =
                     "ORBIT ACHIEVED";
@@ -335,11 +354,12 @@ namespace KMC.MissionControl.Guidance
 
             if (_circularizationStarted)
             {
-                if (telemetry.Periapsis >=
-                    targetApoapsisMeters -
-                    CircularizationCutoffToleranceMeters)
+                if (ShouldCommandOrbitCutoff(
+                        telemetry,
+                        guidance,
+                        targetOrbitMeters))
                 {
-                    _orbitAchieved =
+                    _orbitCutoffLatched =
                         true;
 
                     _flightPhase =
@@ -356,19 +376,28 @@ namespace KMC.MissionControl.Guidance
 
             if (_ascentMecoLatched)
             {
-                bool plannedIgnitionWindow =
-                    solution.IsAvailable &&
-                    solution.IgnitionInSeconds <= 0.0;
+                bool ignitionDue =
+                    guidance.IsAvailable &&
+                    guidance.IgnitionInSeconds <= 0.0;
 
-                bool engineProducingThrust =
-                    telemetry.CurrentThrust > 0.1 ||
-                    telemetry.ProducingThrustEngineCount > 0;
+                bool producingThrust =
+                    IsProducingThrust(
+                        telemetry);
 
-                if (plannedIgnitionWindow &&
-                    engineProducingThrust)
+                if (ignitionDue &&
+                    producingThrust)
                 {
                     _circularizationStarted =
                         true;
+
+                    if (!IsFinite(
+                            _initialCircularizationDeltaV))
+                    {
+                        _initialCircularizationDeltaV =
+                            Math.Max(
+                                guidance.RemainingDeltaV,
+                                0.1);
+                    }
 
                     _flightPhase =
                         "CIRCULARIZATION BURN";
@@ -376,8 +405,8 @@ namespace KMC.MissionControl.Guidance
                     return;
                 }
 
-                if (solution.IsAvailable &&
-                    solution.IgnitionInSeconds <=
+                if (guidance.IsAvailable &&
+                    guidance.IgnitionInSeconds <=
                     CircularizationReadyLeadSeconds)
                 {
                     _flightPhase =
@@ -406,8 +435,8 @@ namespace KMC.MissionControl.Guidance
             }
 
             if (telemetry.Apoapsis >=
-                targetApoapsisMeters -
-                CutoffToleranceMeters)
+                targetOrbitMeters -
+                AscentCutoffToleranceMeters)
             {
                 _ascentMecoLatched =
                     true;
@@ -419,7 +448,7 @@ namespace KMC.MissionControl.Guidance
             }
 
             if (telemetry.Apoapsis >=
-                targetApoapsisMeters -
+                targetOrbitMeters -
                 TargetApproachBandMeters)
             {
                 _flightPhase =
@@ -432,111 +461,396 @@ namespace KMC.MissionControl.Guidance
                 "ASCENT";
         }
 
-        private static CircularizationSolution
-            CalculateCircularizationSolution(
+        private bool ShouldCommandOrbitCutoff(
+            MissionTelemetry telemetry,
+            OrbitalGuidanceSolution guidance,
+            double targetOrbitMeters)
+        {
+            if (!guidance.IsAvailable)
+            {
+                return false;
+            }
+
+            bool energySatisfied =
+                guidance.PredictedEnergyError <=
+                EnergyCutoffToleranceJoulesPerKilogram;
+
+            bool deltaVSatisfied =
+                guidance.RemainingDeltaV <=
+                RemainingDeltaVCutoffMetersPerSecond;
+
+            bool predictedOrbitNominal =
+                guidance.PredictedOrbitError <=
+                OrbitNominalToleranceMeters;
+
+            bool predictedOrbitTooHigh =
+                guidance.PredictedApoapsis >
+                    targetOrbitMeters +
+                    MaximumAllowedOrbitErrorMeters ||
+                guidance.PredictedPeriapsis >
+                    targetOrbitMeters +
+                    MaximumAllowedOrbitErrorMeters;
+
+            /*
+             * Primary cutoff:
+             * predicted shutdown orbit is close to target and the
+             * remaining energy correction is very small.
+             *
+             * Protective cutoff:
+             * predicted orbit is already becoming too energetic.
+             */
+            return
+                (predictedOrbitNominal &&
+                 (energySatisfied ||
+                  deltaVSatisfied)) ||
+                predictedOrbitTooHigh;
+        }
+
+        private OrbitalGuidanceSolution
+            CalculateOrbitalGuidance(
                 MissionTelemetry telemetry,
                 double targetOrbitMeters)
         {
-            CircularizationSolution result =
-                new CircularizationSolution();
+            OrbitalGuidanceSolution result =
+                new OrbitalGuidanceSolution();
 
-            if (telemetry == null ||
-                telemetry.Apoapsis <= 0.0 ||
-                !IsFinite(
-                    telemetry.TimeToApoapsis))
-            {
-                return result;
-            }
-
-            double apoapsisRadius =
+            double radius =
                 KerbinRadiusMeters +
                 Math.Max(
                     0.0,
-                    telemetry.Apoapsis);
-
-            double periapsisRadius =
-                KerbinRadiusMeters +
-                telemetry.Periapsis;
-
-            /*
-             * Keep the osculating orbit calculation numerically safe when
-             * periapsis is still below the surface.
-             */
-            periapsisRadius =
-                Math.Max(
-                    KerbinRadiusMeters *
-                    0.10,
-                    periapsisRadius);
-
-            double semiMajorAxis =
-                (apoapsisRadius +
-                 periapsisRadius) /
-                2.0;
-
-            if (semiMajorAxis <= 0.0)
-            {
-                return result;
-            }
-
-            double currentApoapsisVelocityTerm =
-                KerbinGravitationalParameter *
-                (2.0 /
-                 apoapsisRadius -
-                 1.0 /
-                 semiMajorAxis);
-
-            if (currentApoapsisVelocityTerm <= 0.0)
-            {
-                return result;
-            }
-
-            double currentApoapsisVelocity =
-                Math.Sqrt(
-                    currentApoapsisVelocityTerm);
+                    telemetry.Altitude);
 
             double targetRadius =
                 KerbinRadiusMeters +
                 Math.Max(
-                    targetOrbitMeters,
-                    telemetry.Apoapsis);
-
-            double circularVelocity =
-                Math.Sqrt(
-                    KerbinGravitationalParameter /
-                    targetRadius);
-
-            double deltaV =
-                Math.Max(
                     0.0,
-                    circularVelocity -
-                    currentApoapsisVelocity);
+                    targetOrbitMeters);
 
-            double burnTime =
-                EstimateBurnTime(
-                    telemetry,
-                    deltaV);
-
-            if (!IsFinite(burnTime) ||
-                burnTime < 0.0)
+            if (radius <= 0.0 ||
+                targetRadius <= 0.0)
             {
                 return result;
             }
 
-            result.IsAvailable =
-                true;
+            double currentSpeed =
+                Math.Max(
+                    0.0,
+                    telemetry.OrbitalSpeed);
 
-            result.DeltaV =
-                deltaV;
+            double radialSpeed =
+                telemetry.VerticalSpeed;
+
+            if (!IsFinite(currentSpeed) ||
+                !IsFinite(radialSpeed))
+            {
+                return result;
+            }
+
+            radialSpeed =
+                Clamp(
+                    radialSpeed,
+                    -currentSpeed,
+                    currentSpeed);
+
+            double tangentialSpeedSquared =
+                Math.Max(
+                    0.0,
+                    currentSpeed *
+                    currentSpeed -
+                    radialSpeed *
+                    radialSpeed);
+
+            double tangentialSpeed =
+                Math.Sqrt(
+                    tangentialSpeedSquared);
+
+            double currentEnergy =
+                0.5 *
+                currentSpeed *
+                currentSpeed -
+                KerbinGravitationalParameter /
+                radius;
+
+            double targetEnergy =
+                -KerbinGravitationalParameter /
+                (2.0 *
+                 targetRadius);
+
+            double targetSpeedSquared =
+                2.0 *
+                (targetEnergy +
+                 KerbinGravitationalParameter /
+                 radius);
+
+            if (targetSpeedSquared < 0.0)
+            {
+                return result;
+            }
+
+            double targetSpeed =
+                Math.Sqrt(
+                    targetSpeedSquared);
+
+            double remainingDeltaV =
+                Math.Max(
+                    0.0,
+                    targetSpeed -
+                    currentSpeed);
+
+            double burnTime =
+                EstimateBurnTime(
+                    telemetry,
+                    remainingDeltaV);
+
+            if (!IsFinite(burnTime))
+            {
+                burnTime =
+                    0.0;
+            }
+
+            double ignitionIn =
+                IsFinite(
+                    telemetry.TimeToApoapsis)
+                    ? telemetry.TimeToApoapsis -
+                      burnTime /
+                      2.0
+                    : double.NaN;
+
+            double throttleFraction =
+                DetermineCircularizationThrottleFraction(
+                    remainingDeltaV);
+
+            double shutdownDeltaV =
+                EstimateShutdownDeltaV(
+                    telemetry,
+                    throttleFraction);
+
+            OrbitalState predicted =
+                PredictOrbitAfterProgradeDeltaV(
+                    radius,
+                    radialSpeed,
+                    tangentialSpeed,
+                    shutdownDeltaV);
+
+            result.IsAvailable =
+                predicted.IsValid;
+
+            result.CurrentEnergy =
+                currentEnergy;
+
+            result.TargetEnergy =
+                targetEnergy;
+
+            result.EnergyError =
+                targetEnergy -
+                currentEnergy;
+
+            result.PredictedEnergyError =
+                targetEnergy -
+                predicted.SpecificEnergy;
+
+            result.RemainingDeltaV =
+                remainingDeltaV;
 
             result.BurnTimeSeconds =
                 burnTime;
 
             result.IgnitionInSeconds =
-                telemetry.TimeToApoapsis -
-                burnTime /
-                2.0;
+                ignitionIn;
+
+            result.PredictedApoapsis =
+                predicted.ApoapsisMeters;
+
+            result.PredictedPeriapsis =
+                predicted.PeriapsisMeters;
+
+            result.PredictedOrbitError =
+                Math.Max(
+                    Math.Abs(
+                        predicted.ApoapsisMeters -
+                        targetOrbitMeters),
+                    Math.Abs(
+                        predicted.PeriapsisMeters -
+                        targetOrbitMeters));
+
+            if (!IsFinite(
+                    _initialCircularizationDeltaV) &&
+                _ascentMecoLatched &&
+                remainingDeltaV > 0.1)
+            {
+                _initialCircularizationDeltaV =
+                    remainingDeltaV;
+            }
+
+            result.InitialDeltaV =
+                IsFinite(
+                    _initialCircularizationDeltaV)
+                    ? _initialCircularizationDeltaV
+                    : remainingDeltaV;
+
+            result.BurnCompletionPercent =
+                result.InitialDeltaV > 0.1
+                    ? Clamp(
+                        100.0 *
+                        (1.0 -
+                         remainingDeltaV /
+                         result.InitialDeltaV),
+                        0.0,
+                        100.0)
+                    : 100.0;
 
             return result;
+        }
+
+        private static double EstimateShutdownDeltaV(
+            MissionTelemetry telemetry,
+            double throttleFraction)
+        {
+            double massKilograms =
+                Math.Max(
+                    0.0,
+                    telemetry.VesselMass) *
+                1000.0;
+
+            double thrustKilonewtons =
+                Math.Max(
+                    telemetry.CurrentThrust,
+                    telemetry.MaximumThrust *
+                    throttleFraction);
+
+            double thrustNewtons =
+                Math.Max(
+                    0.0,
+                    thrustKilonewtons) *
+                1000.0;
+
+            if (massKilograms <= 0.0 ||
+                thrustNewtons <= 0.0)
+            {
+                return 0.0;
+            }
+
+            double acceleration =
+                thrustNewtons /
+                massKilograms;
+
+            return
+                acceleration *
+                ShutdownResponseSeconds;
+        }
+
+        private static OrbitalState
+            PredictOrbitAfterProgradeDeltaV(
+                double radius,
+                double radialSpeed,
+                double tangentialSpeed,
+                double progradeDeltaV)
+        {
+            OrbitalState result =
+                new OrbitalState();
+
+            double predictedTangentialSpeed =
+                Math.Max(
+                    0.0,
+                    tangentialSpeed +
+                    Math.Max(
+                        0.0,
+                        progradeDeltaV));
+
+            double speedSquared =
+                radialSpeed *
+                radialSpeed +
+                predictedTangentialSpeed *
+                predictedTangentialSpeed;
+
+            double energy =
+                0.5 *
+                speedSquared -
+                KerbinGravitationalParameter /
+                radius;
+
+            if (energy >= 0.0)
+            {
+                return result;
+            }
+
+            double angularMomentum =
+                radius *
+                predictedTangentialSpeed;
+
+            double semiMajorAxis =
+                -KerbinGravitationalParameter /
+                (2.0 *
+                 energy);
+
+            double eccentricityTerm =
+                1.0 +
+                2.0 *
+                energy *
+                angularMomentum *
+                angularMomentum /
+                (KerbinGravitationalParameter *
+                 KerbinGravitationalParameter);
+
+            double eccentricity =
+                Math.Sqrt(
+                    Math.Max(
+                        0.0,
+                        eccentricityTerm));
+
+            double apoapsisRadius =
+                semiMajorAxis *
+                (1.0 +
+                 eccentricity);
+
+            double periapsisRadius =
+                semiMajorAxis *
+                (1.0 -
+                 eccentricity);
+
+            result.IsValid =
+                IsFinite(apoapsisRadius) &&
+                IsFinite(periapsisRadius);
+
+            result.SpecificEnergy =
+                energy;
+
+            result.ApoapsisMeters =
+                apoapsisRadius -
+                KerbinRadiusMeters;
+
+            result.PeriapsisMeters =
+                periapsisRadius -
+                KerbinRadiusMeters;
+
+            return result;
+        }
+
+        private static double DetermineCircularizationThrottleFraction(
+            double remainingDeltaV)
+        {
+            if (remainingDeltaV > 45.0)
+            {
+                return 1.00;
+            }
+
+            if (remainingDeltaV > 18.0)
+            {
+                return 0.60;
+            }
+
+            if (remainingDeltaV > 6.0)
+            {
+                return 0.30;
+            }
+
+            if (remainingDeltaV >
+                RemainingDeltaVCutoffMetersPerSecond)
+            {
+                return 0.10;
+            }
+
+            return 0.0;
         }
 
         private static double EstimateBurnTime(
@@ -613,27 +927,51 @@ namespace KMC.MissionControl.Guidance
             return double.NaN;
         }
 
-        private static void PopulateCircularizationResult(
+        private static void PopulateOrbitalGuidanceResult(
             MissionPlannerResult result,
-            CircularizationSolution solution,
+            OrbitalGuidanceSolution guidance,
             MissionTelemetry telemetry,
             double targetOrbitMeters)
         {
             result.CircularizationAvailable =
-                solution.IsAvailable;
+                guidance.IsAvailable;
 
             result.CircularizationDeltaV =
-                solution.DeltaV;
+                guidance.RemainingDeltaV;
 
             result.CircularizationBurnTimeSeconds =
-                solution.BurnTimeSeconds;
+                guidance.BurnTimeSeconds;
 
             result.CircularizationIgnitionInSeconds =
-                solution.IgnitionInSeconds;
+                guidance.IgnitionInSeconds;
 
             result.CircularizationPeriapsisErrorMeters =
                 targetOrbitMeters -
                 telemetry.Periapsis;
+
+            result.CurrentSpecificOrbitalEnergy =
+                guidance.CurrentEnergy;
+
+            result.TargetSpecificOrbitalEnergy =
+                guidance.TargetEnergy;
+
+            result.OrbitalEnergyError =
+                guidance.EnergyError;
+
+            result.InitialCircularizationDeltaV =
+                guidance.InitialDeltaV;
+
+            result.BurnCompletionPercent =
+                guidance.BurnCompletionPercent;
+
+            result.PredictedShutdownApoapsisMeters =
+                guidance.PredictedApoapsis;
+
+            result.PredictedShutdownPeriapsisMeters =
+                guidance.PredictedPeriapsis;
+
+            result.PredictedOrbitErrorMeters =
+                guidance.PredictedOrbitError;
         }
 
         private static void ConfigurePrelaunch(
@@ -668,9 +1006,6 @@ namespace KMC.MissionControl.Guidance
                     MinimumPitchDegrees,
                     MaximumPitchDegrees);
 
-            result.PitchCorrectionDegrees =
-                0.0;
-
             result.ThrottleCommandPercent =
                 0.0;
 
@@ -686,8 +1021,8 @@ namespace KMC.MissionControl.Guidance
             result.IsTargetAchievable =
                 true;
 
-            if (telemetry.CurrentThrust > 0.1 ||
-                telemetry.Throttle > 0.01)
+            if (IsProducingThrust(
+                    telemetry))
             {
                 result.Command =
                     "MECO NOW";
@@ -711,7 +1046,7 @@ namespace KMC.MissionControl.Guidance
         private static void ConfigureCoast(
             MissionPlannerResult result,
             MissionTelemetry telemetry,
-            CircularizationSolution solution)
+            OrbitalGuidanceSolution guidance)
         {
             result.RecommendedPitchDegrees =
                 0.0;
@@ -731,7 +1066,8 @@ namespace KMC.MissionControl.Guidance
             result.IsTargetAchievable =
                 true;
 
-            if (telemetry.CurrentThrust > 0.1)
+            if (IsProducingThrust(
+                    telemetry))
             {
                 result.Command =
                     "MECO - EARLY IGNITION";
@@ -746,17 +1082,17 @@ namespace KMC.MissionControl.Guidance
             }
 
             result.NextEvent =
-                solution.IsAvailable
+                guidance.IsAvailable
                     ? "IGNITION T-" +
                       FormatCountdown(
-                          solution.IgnitionInSeconds)
+                          guidance.IgnitionInSeconds)
                     : "BURN SOLUTION WAIT";
         }
 
         private static void ConfigureCircularizationReady(
             MissionPlannerResult result,
             MissionTelemetry telemetry,
-            CircularizationSolution solution)
+            OrbitalGuidanceSolution guidance)
         {
             result.RecommendedPitchDegrees =
                 0.0;
@@ -770,7 +1106,7 @@ namespace KMC.MissionControl.Guidance
             result.IsTargetAchievable =
                 true;
 
-            if (solution.IgnitionInSeconds > 0.0)
+            if (guidance.IgnitionInSeconds > 0.0)
             {
                 result.ThrottleCommandPercent =
                     0.0;
@@ -784,7 +1120,7 @@ namespace KMC.MissionControl.Guidance
                 result.NextEvent =
                     "IGNITE T-" +
                     FormatCountdown(
-                        solution.IgnitionInSeconds);
+                        guidance.IgnitionInSeconds);
             }
             else
             {
@@ -801,20 +1137,25 @@ namespace KMC.MissionControl.Guidance
                     "CIRCULARIZATION GO";
 
                 result.NextEvent =
-                    "CIRC BURN " +
-                    FormatCountdown(
-                        solution.BurnTimeSeconds);
+                    "DV " +
+                    guidance.RemainingDeltaV
+                        .ToString("0.0") +
+                    " M/S";
             }
         }
 
         private static void ConfigureCircularizationBurn(
             MissionPlannerResult result,
             MissionTelemetry telemetry,
-            double targetOrbitMeters)
+            OrbitalGuidanceSolution guidance)
         {
-            double periapsisError =
-                targetOrbitMeters -
-                telemetry.Periapsis;
+            double throttleFraction =
+                DetermineCircularizationThrottleFraction(
+                    guidance.RemainingDeltaV);
+
+            double throttlePercent =
+                throttleFraction *
+                100.0;
 
             result.RecommendedPitchDegrees =
                 0.0;
@@ -827,32 +1168,6 @@ namespace KMC.MissionControl.Guidance
 
             result.IsTargetAchievable =
                 true;
-
-            double throttlePercent;
-
-            if (periapsisError <=
-                CircularizationCutoffToleranceMeters)
-            {
-                throttlePercent =
-                    0.0;
-            }
-            else if (periapsisError <
-                3000.0)
-            {
-                throttlePercent =
-                    25.0;
-            }
-            else if (periapsisError <
-                10000.0)
-            {
-                throttlePercent =
-                    55.0;
-            }
-            else
-            {
-                throttlePercent =
-                    100.0;
-            }
 
             result.ThrottleCommandPercent =
                 throttlePercent;
@@ -872,9 +1187,10 @@ namespace KMC.MissionControl.Guidance
                     true;
 
                 result.Status =
-                    "ORBIT TARGET REACHED";
+                    "ENERGY TARGET REACHED";
             }
-            else if (telemetry.CurrentThrust <= 0.1)
+            else if (!IsProducingThrust(
+                         telemetry))
             {
                 result.Command =
                     "IGNITE NOW";
@@ -885,18 +1201,20 @@ namespace KMC.MissionControl.Guidance
             else
             {
                 result.Status =
-                    "RAISE PERIAPSIS";
+                    "ORBITAL ENERGY BUILD";
             }
 
             result.NextEvent =
-                "PE ERR " +
-                FormatSignedDistance(
-                    periapsisError);
+                "DV LEFT " +
+                guidance.RemainingDeltaV
+                    .ToString("0.0") +
+                " M/S";
         }
 
         private static void ConfigureOrbitAchieved(
             MissionPlannerResult result,
-            MissionTelemetry telemetry)
+            MissionTelemetry telemetry,
+            OrbitalGuidanceSolution guidance)
         {
             result.RecommendedPitchDegrees =
                 0.0;
@@ -908,7 +1226,8 @@ namespace KMC.MissionControl.Guidance
                 "THROTTLE 0%";
 
             result.CutoffRequired =
-                telemetry.CurrentThrust > 0.1 ||
+                IsProducingThrust(
+                    telemetry) ||
                 telemetry.Throttle > 0.01;
 
             result.CoastLockoutActive =
@@ -922,13 +1241,27 @@ namespace KMC.MissionControl.Guidance
                     ? "CUTOFF NOW"
                     : "HOLD PROGRADE";
 
-            result.Status =
-                result.CutoffRequired
-                    ? "ORBIT CUTOFF"
-                    : "ORBIT NOMINAL";
+            if (guidance.PredictedOrbitError <=
+                OrbitNominalToleranceMeters)
+            {
+                result.Status =
+                    result.CutoffRequired
+                        ? "ORBIT CUTOFF"
+                        : "ORBIT NOMINAL";
+            }
+            else
+            {
+                result.Status =
+                    result.CutoffRequired
+                        ? "PROTECTIVE CUTOFF"
+                        : "ORBIT ENERGY SET";
+            }
 
             result.NextEvent =
-                "MISSION ORBIT";
+                "PRED " +
+                FormatOrbitPair(
+                    guidance.PredictedApoapsis,
+                    guidance.PredictedPeriapsis);
         }
 
         private void ConfigurePoweredAscent(
@@ -1403,18 +1736,24 @@ namespace KMC.MissionControl.Guidance
                 return true;
             }
 
-            if (telemetry.CurrentThrust <=
-                    0.1 &&
-                telemetry.VerticalSpeed <=
-                    0.0 &&
-                apoapsisError >
-                    5000.0)
+            if (!IsProducingThrust(
+                    telemetry) &&
+                telemetry.VerticalSpeed <= 0.0 &&
+                apoapsisError > 5000.0)
             {
                 return false;
             }
 
             return recoveryAuthorityPercent >=
                 28.0;
+        }
+
+        private static bool IsProducingThrust(
+            MissionTelemetry telemetry)
+        {
+            return
+                telemetry.CurrentThrust > 0.1 ||
+                telemetry.ProducingThrustEngineCount > 0;
         }
 
         private static string FormatCountdown(
@@ -1449,18 +1788,22 @@ namespace KMC.MissionControl.Guidance
                 remainingSeconds);
         }
 
-        private static string FormatSignedDistance(
-            double meters)
+        private static string FormatOrbitPair(
+            double apoapsis,
+            double periapsis)
         {
-            if (!IsFinite(meters))
+            if (!IsFinite(apoapsis) ||
+                !IsFinite(periapsis))
             {
                 return "---";
             }
 
             return
-                (meters / 1000.0)
-                .ToString(
-                    "+0.0;-0.0;0.0") +
+                (apoapsis / 1000.0)
+                    .ToString("0.0") +
+                " X " +
+                (periapsis / 1000.0)
+                    .ToString("0.0") +
                 " KM";
         }
 
@@ -1484,15 +1827,44 @@ namespace KMC.MissionControl.Guidance
                     value));
         }
 
-        private sealed class CircularizationSolution
+        private sealed class OrbitalGuidanceSolution
         {
             public bool IsAvailable { get; set; }
 
-            public double DeltaV { get; set; }
+            public double CurrentEnergy { get; set; }
+
+            public double TargetEnergy { get; set; }
+
+            public double EnergyError { get; set; }
+
+            public double PredictedEnergyError { get; set; }
+
+            public double RemainingDeltaV { get; set; }
+
+            public double InitialDeltaV { get; set; }
+
+            public double BurnCompletionPercent { get; set; }
 
             public double BurnTimeSeconds { get; set; }
 
             public double IgnitionInSeconds { get; set; }
+
+            public double PredictedApoapsis { get; set; }
+
+            public double PredictedPeriapsis { get; set; }
+
+            public double PredictedOrbitError { get; set; }
+        }
+
+        private sealed class OrbitalState
+        {
+            public bool IsValid { get; set; }
+
+            public double SpecificEnergy { get; set; }
+
+            public double ApoapsisMeters { get; set; }
+
+            public double PeriapsisMeters { get; set; }
         }
     }
 }
