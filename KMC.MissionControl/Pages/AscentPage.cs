@@ -1215,7 +1215,7 @@ namespace KMC.MissionControl.Pages
                 Math.Max(
                     7.0f,
                     context.SmallFont.Size *
-                    0.80f);
+                    0.76f);
 
             using (Font panelFont =
                 new Font(
@@ -1266,7 +1266,7 @@ namespace KMC.MissionControl.Pages
 
                 int dividerX =
                     content.Left +
-                    content.Width * 54 /
+                    content.Width * 56 /
                     100;
 
                 graphics.DrawLine(
@@ -1327,9 +1327,9 @@ namespace KMC.MissionControl.Pages
                         telemetry.DynamicPressureKpa)
                 };
 
-                int rowHeight =
+                int metricRowHeight =
                     Math.Max(
-                        19,
+                        18,
                         metricsBounds.Height /
                         labels.Length);
 
@@ -1344,57 +1344,56 @@ namespace KMC.MissionControl.Pages
                         valueBrush,
                         metricsBounds,
                         index,
-                        rowHeight,
+                        metricRowHeight,
                         labels[index],
                         values[index]);
                 }
 
-                int commandY =
-                    commandBounds.Top;
-
-                DrawCommandBlock(
-                    graphics,
-                    panelFont,
-                    labelBrush,
-                    valueBrush,
-                    commandBounds,
-                    ref commandY,
+                string[] commandLabels =
+                {
                     "GUIDANCE",
-                    FormatAngle(
-                        targetPitch));
-
-                DrawCommandBlock(
-                    graphics,
-                    panelFont,
-                    labelBrush,
-                    valueBrush,
-                    commandBounds,
-                    ref commandY,
                     "STEERING",
+                    "THROTTLE",
+                    "STATUS"
+                };
+
+                string[] commandValues =
+                {
+                    FormatAngle(
+                        targetPitch),
+
                     GetSteeringCommand(
                         telemetry,
-                        targetPitch));
+                        targetPitch),
 
-                DrawCommandBlock(
-                    graphics,
-                    panelFont,
-                    labelBrush,
-                    valueBrush,
-                    commandBounds,
-                    ref commandY,
-                    "THROTTLE",
                     FormatThrottle(
-                        telemetry.Throttle));
+                        telemetry.Throttle),
 
-                DrawCommandBlock(
-                    graphics,
-                    panelFont,
-                    labelBrush,
-                    valueBrush,
-                    commandBounds,
-                    ref commandY,
-                    "STATUS",
-                    guidance);
+                    GetCompactGuidanceStatus(
+                        guidance)
+                };
+
+                int commandRowHeight =
+                    Math.Max(
+                        24,
+                        commandBounds.Height /
+                        commandLabels.Length);
+
+                for (int index = 0;
+                     index < commandLabels.Length;
+                     index++)
+                {
+                    DrawCommandRow(
+                        graphics,
+                        panelFont,
+                        labelBrush,
+                        valueBrush,
+                        commandBounds,
+                        index,
+                        commandRowHeight,
+                        commandLabels[index],
+                        commandValues[index]);
+                }
             }
         }
 
@@ -1415,7 +1414,7 @@ namespace KMC.MissionControl.Pages
                 rowHeight;
 
             int labelWidth =
-                bounds.Width * 52 /
+                bounds.Width * 54 /
                 100;
 
             Rectangle labelBounds =
@@ -1432,30 +1431,33 @@ namespace KMC.MissionControl.Pages
                     bounds.Width - labelWidth,
                     rowHeight);
 
-            using (StringFormat left =
+            using (StringFormat labelFormat =
                 new StringFormat())
-            using (StringFormat right =
+            using (StringFormat valueFormat =
                 new StringFormat())
             {
-                left.LineAlignment =
+                labelFormat.Alignment =
+                    StringAlignment.Near;
+
+                labelFormat.LineAlignment =
                     StringAlignment.Center;
 
-                left.Trimming =
+                labelFormat.Trimming =
                     StringTrimming.EllipsisCharacter;
 
-                left.FormatFlags =
+                labelFormat.FormatFlags =
                     StringFormatFlags.NoWrap;
 
-                right.Alignment =
+                valueFormat.Alignment =
                     StringAlignment.Far;
 
-                right.LineAlignment =
+                valueFormat.LineAlignment =
                     StringAlignment.Center;
 
-                right.Trimming =
+                valueFormat.Trimming =
                     StringTrimming.EllipsisCharacter;
 
-                right.FormatFlags =
+                valueFormat.FormatFlags =
                     StringFormatFlags.NoWrap;
 
                 graphics.DrawString(
@@ -1463,65 +1465,7 @@ namespace KMC.MissionControl.Pages
                     font,
                     labelBrush,
                     labelBounds,
-                    left);
-
-                graphics.DrawString(
-                    value,
-                    font,
-                    valueBrush,
-                    valueBounds,
-                    right);
-            }
-        }
-
-        private static void DrawCommandBlock(
-            Graphics graphics,
-            Font font,
-            Brush labelBrush,
-            Brush valueBrush,
-            Rectangle bounds,
-            ref int y,
-            string label,
-            string value)
-        {
-            int remainingHeight =
-                Math.Max(
-                    1,
-                    bounds.Bottom - y);
-
-            int blockHeight =
-                Math.Max(
-                    32,
-                    remainingHeight / 4);
-
-            Rectangle labelBounds =
-                new Rectangle(
-                    bounds.Left,
-                    y,
-                    bounds.Width,
-                    17);
-
-            Rectangle valueBounds =
-                new Rectangle(
-                    bounds.Left,
-                    y + 17,
-                    bounds.Width,
-                    blockHeight - 17);
-
-            using (StringFormat valueFormat =
-                new StringFormat())
-            {
-                valueFormat.Trimming =
-                    StringTrimming.EllipsisWord;
-
-                valueFormat.FormatFlags =
-                    StringFormatFlags.LineLimit;
-
-                graphics.DrawString(
-                    label,
-                    font,
-                    labelBrush,
-                    labelBounds);
+                    labelFormat);
 
                 graphics.DrawString(
                     value,
@@ -1530,8 +1474,129 @@ namespace KMC.MissionControl.Pages
                     valueBounds,
                     valueFormat);
             }
+        }
 
-            y += blockHeight;
+        private static void DrawCommandRow(
+            Graphics graphics,
+            Font font,
+            Brush labelBrush,
+            Brush valueBrush,
+            Rectangle bounds,
+            int index,
+            int rowHeight,
+            string label,
+            string value)
+        {
+            int top =
+                bounds.Top +
+                index *
+                rowHeight;
+
+            Rectangle labelBounds =
+                new Rectangle(
+                    bounds.Left,
+                    top,
+                    bounds.Width,
+                    Math.Max(
+                        13,
+                        rowHeight / 2));
+
+            Rectangle valueBounds =
+                new Rectangle(
+                    bounds.Left,
+                    labelBounds.Bottom,
+                    bounds.Width,
+                    Math.Max(
+                        13,
+                        rowHeight -
+                        labelBounds.Height));
+
+            using (StringFormat labelFormat =
+                new StringFormat())
+            using (StringFormat valueFormat =
+                new StringFormat())
+            {
+                labelFormat.Alignment =
+                    StringAlignment.Near;
+
+                labelFormat.LineAlignment =
+                    StringAlignment.Center;
+
+                labelFormat.Trimming =
+                    StringTrimming.EllipsisCharacter;
+
+                labelFormat.FormatFlags =
+                    StringFormatFlags.NoWrap;
+
+                valueFormat.Alignment =
+                    StringAlignment.Near;
+
+                valueFormat.LineAlignment =
+                    StringAlignment.Center;
+
+                valueFormat.Trimming =
+                    StringTrimming.EllipsisCharacter;
+
+                valueFormat.FormatFlags =
+                    StringFormatFlags.NoWrap;
+
+                graphics.DrawString(
+                    label,
+                    font,
+                    labelBrush,
+                    labelBounds,
+                    labelFormat);
+
+                graphics.DrawString(
+                    value,
+                    font,
+                    valueBrush,
+                    valueBounds,
+                    valueFormat);
+            }
+        }
+
+        private static string GetCompactGuidanceStatus(
+            string guidance)
+        {
+            if (string.IsNullOrWhiteSpace(
+                    guidance))
+            {
+                return "---";
+            }
+
+            switch (guidance)
+            {
+                case "HOLD: INSUFFICIENT LAUNCH TWR":
+                    return "LOW LAUNCH TWR";
+
+                case "HIGH DYNAMIC PRESSURE - LIMIT PITCH RATE":
+                    return "HIGH DYN Q";
+
+                case "PROFILE HIGH - PITCH DOWN GRADUALLY":
+                    return "PROFILE HIGH";
+
+                case "PROFILE LOW - HOLD VERTICAL COMPONENT":
+                    return "PROFILE LOW";
+
+                case "PITCH HIGH - INCREASE GRAVITY TURN":
+                    return "PITCH HIGH";
+
+                case "PITCH LOW - REDUCE TURN RATE":
+                    return "PITCH LOW";
+
+                case "TARGET APOAPSIS ACHIEVED - PREPARE MECO":
+                    return "PREPARE MECO";
+
+                case "ASCENT PROFILE NOMINAL":
+                    return "NOMINAL";
+
+                case "AWAITING ASCENT":
+                    return "AWAIT ASCENT";
+
+                default:
+                    return guidance;
+            }
         }
 
         private static string GetSteeringCommand(
@@ -1552,7 +1617,7 @@ namespace KMC.MissionControl.Pages
                 return "PITCH UP";
             }
 
-            return "HOLD ATTITUDE";
+            return "HOLD";
         }
 
         private static string FormatThrottle(
