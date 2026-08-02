@@ -17,11 +17,14 @@ namespace KMC.MissionControl
         private const int HeaderHeight = 42;
         private const int SectionSpacing = 16;
         private const int NavigationHeight = 44;
-        private const int NormalSummaryHeight = 190;
-        private const int CompactSummaryHeight = 150;
+        private const int NormalSummaryHeight = 110;
+        private const int CompactSummaryHeight = 0;
 
-        private const int CompactHeightBreakpoint = 900;
-        private const int HideSummaryHeightBreakpoint = 760;
+
+        private const int CompactHeightBreakpoint = 1050;
+        private const int HideSummaryHeightBreakpoint = 950;
+
+
 
         private readonly TableLayoutPanel _rootLayout;
 
@@ -47,13 +50,13 @@ namespace KMC.MissionControl
 
             Size preferredClientSize =
                 new Size(
-                    1600,
-                    1000);
+                    1920,
+                    1080);
 
             Size minimumClientSize =
                 new Size(
-                    1280,
-                    850);
+                    1440,
+                    900);
 
             ClientSize =
                 preferredClientSize;
@@ -67,6 +70,7 @@ namespace KMC.MissionControl
 
             WindowState =
                 FormWindowState.Maximized;
+
 
             BackColor =
                 ApolloTheme.WindowBackground;

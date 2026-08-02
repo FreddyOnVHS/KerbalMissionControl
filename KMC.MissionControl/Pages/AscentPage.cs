@@ -83,40 +83,46 @@ namespace KMC.MissionControl.Pages
              *   Full-width telemetry strip
              */
 
+            /*
+             * Phase 5 approved widescreen layout.
+             *
+             * The panel allocations intentionally include generous
+             * spacing so future data does not overlap or clip.
+             */
             Rectangle graphBounds =
                 context.GetRelativeRectangle(
-                    0.012f,
-                    0.082f,
-                    0.650f,
-                    0.770f);
+                    0.008f,
+                    0.070f,
+                    0.600f,
+                    0.765f);
 
             Rectangle orbitInsetBounds =
                 context.GetRelativeRectangle(
-                    0.677f,
-                    0.082f,
-                    0.311f,
-                    0.225f);
+                    0.620f,
+                    0.070f,
+                    0.372f,
+                    0.220f);
 
             Rectangle statusBounds =
                 context.GetRelativeRectangle(
-                    0.677f,
-                    0.320f,
-                    0.311f,
-                    0.300f);
+                    0.620f,
+                    0.302f,
+                    0.372f,
+                    0.325f);
 
             Rectangle predictionBounds =
                 context.GetRelativeRectangle(
-                    0.677f,
-                    0.633f,
-                    0.311f,
-                    0.219f);
+                    0.620f,
+                    0.639f,
+                    0.372f,
+                    0.196f);
 
             Rectangle footerBounds =
                 context.GetRelativeRectangle(
-                    0.012f,
-                    0.870f,
-                    0.976f,
-                    0.100f);
+                    0.008f,
+                    0.850f,
+                    0.984f,
+                    0.140f);
 
             DrawAscentGraph(
                 context,
@@ -542,11 +548,11 @@ namespace KMC.MissionControl.Pages
                 Rectangle plot =
                     Rectangle.Inflate(
                         bounds,
-                        -48,
-                        -38);
+                        -64,
+                        -54);
 
-                plot.Y += 10;
-                plot.Height -= 12;
+                plot.Y += 18;
+                plot.Height -= 18;
 
                 DrawGrid(
                     graphics,
@@ -880,16 +886,16 @@ namespace KMC.MissionControl.Pages
             Graphics graphics =
                 context.Graphics;
 
-            float compactSize =
+            float panelFontSize =
                 Math.Max(
-                    6.0f,
+                    7.0f,
                     context.SmallFont.Size *
-                    0.74f);
+                    0.82f);
 
-            using (Font compactFont =
+            using (Font panelFont =
                 new Font(
                     context.SmallFont.FontFamily,
-                    compactSize,
+                    panelFontSize,
                     FontStyle.Regular,
                     GraphicsUnit.Point))
             using (Pen borderPen =
@@ -899,104 +905,118 @@ namespace KMC.MissionControl.Pages
             using (Pen gridPen =
                 new Pen(
                     Color.FromArgb(
-                        60,
+                        62,
                         context.DimPhosphorColor),
                     1.0f))
             using (Pen orbitPen =
                 new Pen(
-                    context.DimPhosphorColor,
-                    1.5f))
-            using (Brush titleBrush =
+                    context.PhosphorColor,
+                    1.4f))
+            using (Pen dividerPen =
+                new Pen(
+                    context.PhosphorColor,
+                    1.0f))
+            using (Brush textBrush =
                 new SolidBrush(
                     context.PhosphorColor))
+            using (Brush dimBrush =
+                new SolidBrush(
+                    context.DimPhosphorColor))
             using (Brush bodyBrush =
                 new SolidBrush(
-                    Color.FromArgb(
-                        185,
-                        context.DimPhosphorColor)))
-            using (Brush vesselBrush =
-                new SolidBrush(
                     context.PhosphorColor))
-            using (StringFormat rightFormat =
-                new StringFormat())
             {
-                rightFormat.Alignment =
-                    StringAlignment.Far;
-
-                rightFormat.LineAlignment =
-                    StringAlignment.Center;
-
-                rightFormat.Trimming =
-                    StringTrimming.EllipsisCharacter;
-
-                rightFormat.FormatFlags =
-                    StringFormatFlags.NoWrap;
-
                 graphics.DrawRectangle(
                     borderPen,
                     bounds);
 
-                int padding = 8;
-                int titleHeight = 20;
-                int dataHeight = 38;
+                int padding = 10;
+                int titleHeight = 25;
 
                 graphics.DrawString(
                     "ORBIT TREND",
-                    compactFont,
-                    titleBrush,
+                    panelFont,
+                    textBrush,
                     bounds.Left + padding,
-                    bounds.Top + 5);
+                    bounds.Top + 7);
 
-                Rectangle plot =
+                Rectangle content =
                     new Rectangle(
                         bounds.Left + padding,
-                        bounds.Top + titleHeight + 5,
+                        bounds.Top + titleHeight + 4,
                         bounds.Width - padding * 2,
-                        Math.Max(
-                            30,
-                            bounds.Height -
-                            titleHeight -
-                            dataHeight -
-                            12));
+                        bounds.Height -
+                        titleHeight -
+                        padding - 5);
+
+                int dataWidth =
+                    Math.Max(
+                        135,
+                        content.Width * 34 / 100);
+
+                Rectangle orbitArea =
+                    new Rectangle(
+                        content.Left,
+                        content.Top,
+                        content.Width -
+                        dataWidth -
+                        10,
+                        content.Height);
+
+                Rectangle dataArea =
+                    new Rectangle(
+                        orbitArea.Right + 10,
+                        content.Top,
+                        dataWidth,
+                        content.Height);
+
+                graphics.DrawLine(
+                    dividerPen,
+                    dataArea.Left,
+                    dataArea.Top,
+                    dataArea.Left,
+                    dataArea.Bottom);
+
+                Rectangle orbitPlot =
+                    Rectangle.Inflate(
+                        orbitArea,
+                        -10,
+                        -10);
 
                 for (int index = 1;
                      index < 4;
                      index++)
                 {
                     int x =
-                        plot.Left +
-                        plot.Width *
-                        index /
-                        4;
-
-                    int y =
-                        plot.Top +
-                        plot.Height *
+                        orbitPlot.Left +
+                        orbitPlot.Width *
                         index /
                         4;
 
                     graphics.DrawLine(
                         gridPen,
                         x,
-                        plot.Top,
+                        orbitPlot.Top,
                         x,
-                        plot.Bottom);
-
-                    graphics.DrawLine(
-                        gridPen,
-                        plot.Left,
-                        y,
-                        plot.Right,
-                        y);
+                        orbitPlot.Bottom);
                 }
 
+                graphics.DrawLine(
+                    gridPen,
+                    orbitPlot.Left,
+                    orbitPlot.Top +
+                    orbitPlot.Height / 2,
+                    orbitPlot.Right,
+                    orbitPlot.Top +
+                    orbitPlot.Height / 2);
+
                 float centerX =
-                    plot.Left +
-                    plot.Width * 0.50f;
+                    orbitPlot.Left +
+                    orbitPlot.Width * 0.52f;
 
                 float centerY =
-                    plot.Top +
-                    plot.Height * 0.50f;
+                    orbitPlot.Top +
+                    orbitPlot.Height * 0.50f;
 
                 double eccentricity =
                     IsFinite(
@@ -1004,144 +1024,167 @@ namespace KMC.MissionControl.Pages
                         ? Math.Max(
                             0.0,
                             Math.Min(
-                                0.92,
+                                0.94,
                                 telemetry.Eccentricity))
                         : 0.0;
 
                 float semiMajor =
-                    plot.Width * 0.39f;
+                    orbitPlot.Width * 0.43f;
 
                 float semiMinor =
                     Math.Min(
-                        plot.Height * 0.39f,
+                        orbitPlot.Height * 0.37f,
                         semiMajor *
                         (float)Math.Sqrt(
                             Math.Max(
-                                0.15,
+                                0.12,
                                 1.0 -
                                 eccentricity *
                                 eccentricity)));
 
-                RectangleF ellipse =
-                    new RectangleF(
-                        centerX - semiMajor,
-                        centerY - semiMinor,
-                        semiMajor * 2.0f,
-                        semiMinor * 2.0f);
-
                 graphics.DrawEllipse(
                     orbitPen,
-                    ellipse);
-
-                float bodyRadius =
-                    Math.Max(
-                        4.0f,
-                        Math.Min(
-                            plot.Width,
-                            plot.Height) *
-                        0.055f);
+                    centerX - semiMajor,
+                    centerY - semiMinor,
+                    semiMajor * 2.0f,
+                    semiMinor * 2.0f);
 
                 graphics.FillEllipse(
                     bodyBrush,
-                    centerX - bodyRadius,
-                    centerY - bodyRadius,
-                    bodyRadius * 2.0f,
-                    bodyRadius * 2.0f);
+                    centerX - 4.0f,
+                    centerY - 4.0f,
+                    8.0f,
+                    8.0f);
 
-                double anomalyRadians =
-                    telemetry.TrueAnomalyDegrees *
-                    Math.PI /
-                    180.0;
-
-                if (!IsFinite(
-                        anomalyRadians))
-                {
-                    anomalyRadians = 0.0;
-                }
+                double anomaly =
+                    IsFinite(
+                        telemetry.TrueAnomalyDegrees)
+                        ? telemetry.TrueAnomalyDegrees *
+                          Math.PI /
+                          180.0
+                        : 0.0;
 
                 float vesselX =
                     centerX +
                     semiMajor *
                     (float)Math.Cos(
-                        anomalyRadians);
+                        anomaly);
 
                 float vesselY =
                     centerY -
                     semiMinor *
                     (float)Math.Sin(
-                        anomalyRadians);
+                        anomaly);
 
                 graphics.FillEllipse(
-                    vesselBrush,
+                    dimBrush,
                     vesselX - 3.0f,
                     vesselY - 3.0f,
                     6.0f,
                     6.0f);
 
-                int dataTop =
-                    bounds.Bottom -
-                    dataHeight -
-                    3;
-
-                Rectangle apLabelBounds =
-                    new Rectangle(
-                        bounds.Left + padding,
-                        dataTop,
+                int rowHeight =
+                    Math.Max(
                         26,
-                        17);
+                        dataArea.Height / 3);
 
-                Rectangle apValueBounds =
-                    new Rectangle(
-                        bounds.Left + padding + 28,
-                        dataTop,
-                        bounds.Width -
-                        padding * 2 -
-                        28,
-                        17);
-
-                Rectangle peLabelBounds =
-                    new Rectangle(
-                        bounds.Left + padding,
-                        dataTop + 17,
-                        26,
-                        17);
-
-                Rectangle peValueBounds =
-                    new Rectangle(
-                        bounds.Left + padding + 28,
-                        dataTop + 17,
-                        bounds.Width -
-                        padding * 2 -
-                        28,
-                        17);
-
-                graphics.DrawString(
-                    "AP",
-                    compactFont,
-                    titleBrush,
-                    apLabelBounds);
-
-                graphics.DrawString(
+                DrawOrbitDataRow(
+                    graphics,
+                    panelFont,
+                    dimBrush,
+                    textBrush,
+                    dataArea,
+                    0,
+                    rowHeight,
+                    "APOAPSIS",
                     FormatDistance(
-                        telemetry.Apoapsis),
-                    compactFont,
-                    titleBrush,
-                    apValueBounds,
-                    rightFormat);
+                        telemetry.Apoapsis));
 
-                graphics.DrawString(
-                    "PE",
-                    compactFont,
-                    titleBrush,
-                    peLabelBounds);
-
-                graphics.DrawString(
+                DrawOrbitDataRow(
+                    graphics,
+                    panelFont,
+                    dimBrush,
+                    textBrush,
+                    dataArea,
+                    1,
+                    rowHeight,
+                    "PERIAPSIS",
                     FormatDistance(
-                        telemetry.Periapsis),
-                    compactFont,
-                    titleBrush,
-                    peValueBounds,
-                    rightFormat);
+                        telemetry.Periapsis));
+
+                DrawOrbitDataRow(
+                    graphics,
+                    panelFont,
+                    dimBrush,
+                    textBrush,
+                    dataArea,
+                    2,
+                    rowHeight,
+                    "INCLINATION",
+                    FormatAngle(
+                        telemetry.InclinationDegrees));
+            }
+        }
+
+        private static void DrawOrbitDataRow(
+            Graphics graphics,
+            Font font,
+            Brush labelBrush,
+            Brush valueBrush,
+            Rectangle bounds,
+            int index,
+            int rowHeight,
+            string label,
+            string value)
+        {
+            int top =
+                bounds.Top +
+                index *
+                rowHeight;
+
+            Rectangle labelBounds =
+                new Rectangle(
+                    bounds.Left + 10,
+                    top,
+                    bounds.Width - 20,
+                    rowHeight / 2);
+
+            Rectangle valueBounds =
+                new Rectangle(
+                    bounds.Left + 10,
+                    top + rowHeight / 2,
+                    bounds.Width - 20,
+                    rowHeight -
+                    rowHeight / 2);
+
+            using (StringFormat format =
+                new StringFormat())
+            {
+                format.Alignment =
+                    StringAlignment.Center;
+
+                format.LineAlignment =
+                    StringAlignment.Center;
+
+                format.Trimming =
+                    StringTrimming.EllipsisCharacter;
+
+                format.FormatFlags =
+                    StringFormatFlags.NoWrap;
+
+                graphics.DrawString(
+                    label,
+                    font,
+                    labelBrush,
+                    labelBounds,
+                    format);
+
+                graphics.DrawString(
+                    value,
+                    font,
+                    valueBrush,
+                    valueBounds,
+                    format);
             }
         }
 
@@ -1158,22 +1201,27 @@ namespace KMC.MissionControl.Pages
                     _downrangeMeters,
                     telemetry);
 
+            double targetPitch =
+                CalculateTargetPitch(
+                    _downrangeMeters,
+                    telemetry);
+
             string guidance =
                 DetermineGuidance(
                     telemetry,
                     targetAltitude);
 
-            float compactSize =
+            float panelFontSize =
                 Math.Max(
-                    6.0f,
+                    7.0f,
                     context.SmallFont.Size *
-                    0.78f);
+                    0.80f);
 
-            using (Font compactFont =
+            using (Font panelFont =
                 new Font(
                     context.SmallFont.FontFamily,
-                    compactSize,
-                    context.SmallFont.Style,
+                    panelFontSize,
+                    FontStyle.Regular,
                     GraphicsUnit.Point))
             using (Pen borderPen =
                 new Pen(
@@ -1181,7 +1229,7 @@ namespace KMC.MissionControl.Pages
                     1.0f))
             using (Pen dividerPen =
                 new Pen(
-                    context.DimPhosphorColor,
+                    context.PhosphorColor,
                     1.0f))
             using (Brush titleBrush =
                 new SolidBrush(
@@ -1197,253 +1245,217 @@ namespace KMC.MissionControl.Pages
                     borderPen,
                     bounds);
 
-                int padding = 8;
+                int padding = 10;
+                int titleHeight = 28;
 
                 graphics.DrawString(
                     "FLIGHT DIRECTOR",
-                    compactFont,
+                    panelFont,
                     titleBrush,
                     bounds.Left + padding,
                     bounds.Top + 7);
 
-                int rowTop =
-                    bounds.Top + 31;
+                Rectangle content =
+                    new Rectangle(
+                        bounds.Left + padding,
+                        bounds.Top + titleHeight + 4,
+                        bounds.Width - padding * 2,
+                        bounds.Height -
+                        titleHeight -
+                        padding - 4);
 
-                int guidanceHeight =
-                    Math.Max(
-                        62,
-                        bounds.Height / 4);
-
-                int guidanceTop =
-                    bounds.Bottom -
-                    guidanceHeight;
-
-                int availableMetricHeight =
-                    Math.Max(
-                        80,
-                        guidanceTop -
-                        rowTop -
-                        6);
-
-                int rowHeight =
-                    Math.Max(
-                        18,
-                        availableMetricHeight /
-                        8);
-
-                DrawCompactPanelRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref rowTop,
-                    rowHeight,
-                    "TGT AP",
-                    FormatDistance(
-                        DefaultTargetApoapsisMeters));
-
-                DrawCompactPanelRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref rowTop,
-                    rowHeight,
-                    "RANGE",
-                    FormatDistance(
-                        _downrangeMeters));
-
-                DrawCompactPanelRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref rowTop,
-                    rowHeight,
-                    "TGT ALT",
-                    FormatDistance(
-                        targetAltitude));
-
-                DrawCompactPanelRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref rowTop,
-                    rowHeight,
-                    "ALT",
-                    FormatDistance(
-                        telemetry.Altitude));
-
-                DrawCompactPanelRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref rowTop,
-                    rowHeight,
-                    "ALT ERR",
-                    FormatSignedDistance(
-                        telemetry.Altitude -
-                        targetAltitude));
-
-                DrawCompactPanelRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref rowTop,
-                    rowHeight,
-                    "TGT PITCH",
-                    FormatAngle(
-                        CalculateTargetPitch(
-                            _downrangeMeters,
-                            telemetry)));
-
-                DrawCompactPanelRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref rowTop,
-                    rowHeight,
-                    "PITCH",
-                    FormatAngle(
-                        telemetry.Pitch));
-
-                DrawCompactPanelRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref rowTop,
-                    rowHeight,
-                    "DYN Q",
-                    FormatPressure(
-                        telemetry.DynamicPressureKpa));
+                int dividerX =
+                    content.Left +
+                    content.Width * 54 /
+                    100;
 
                 graphics.DrawLine(
                     dividerPen,
-                    bounds.Left + padding,
-                    guidanceTop,
-                    bounds.Right - padding,
-                    guidanceTop);
+                    dividerX,
+                    content.Top,
+                    dividerX,
+                    content.Bottom);
 
-                graphics.DrawString(
-                    "GUIDANCE",
-                    compactFont,
-                    titleBrush,
-                    bounds.Left + padding,
-                    guidanceTop + 5);
-
-                Rectangle guidanceBounds =
+                Rectangle metricsBounds =
                     new Rectangle(
-                        bounds.Left + padding,
-                        guidanceTop + 22,
-                        bounds.Width -
-                        padding * 2,
-                        Math.Max(
-                            18,
-                            bounds.Bottom -
-                            guidanceTop -
-                            28));
+                        content.Left,
+                        content.Top,
+                        dividerX -
+                        content.Left -
+                        12,
+                        content.Height);
 
-                using (StringFormat guidanceFormat =
-                    new StringFormat())
+                Rectangle commandBounds =
+                    new Rectangle(
+                        dividerX + 12,
+                        content.Top,
+                        content.Right -
+                        dividerX -
+                        12,
+                        content.Height);
+
+                string[] labels =
                 {
-                    guidanceFormat.Trimming =
-                        StringTrimming.EllipsisWord;
+                    "TGT AP",
+                    "RANGE",
+                    "TGT ALT",
+                    "ALT",
+                    "ALT ERR",
+                    "TGT PITCH",
+                    "PITCH",
+                    "DYN Q"
+                };
 
-                    guidanceFormat.FormatFlags =
-                        StringFormatFlags.LineLimit;
+                string[] values =
+                {
+                    FormatDistance(
+                        DefaultTargetApoapsisMeters),
+                    FormatDistance(
+                        _downrangeMeters),
+                    FormatDistance(
+                        targetAltitude),
+                    FormatDistance(
+                        telemetry.Altitude),
+                    FormatSignedDistance(
+                        telemetry.Altitude -
+                        targetAltitude),
+                    FormatAngle(
+                        targetPitch),
+                    FormatAngle(
+                        telemetry.Pitch),
+                    FormatPressure(
+                        telemetry.DynamicPressureKpa)
+                };
 
-                    graphics.DrawString(
-                        guidance,
-                        compactFont,
+                int rowHeight =
+                    Math.Max(
+                        19,
+                        metricsBounds.Height /
+                        labels.Length);
+
+                for (int index = 0;
+                     index < labels.Length;
+                     index++)
+                {
+                    DrawSafeDataRow(
+                        graphics,
+                        panelFont,
+                        labelBrush,
                         valueBrush,
-                        guidanceBounds,
-                        guidanceFormat);
+                        metricsBounds,
+                        index,
+                        rowHeight,
+                        labels[index],
+                        values[index]);
                 }
+
+                int commandY =
+                    commandBounds.Top;
+
+                DrawCommandBlock(
+                    graphics,
+                    panelFont,
+                    labelBrush,
+                    valueBrush,
+                    commandBounds,
+                    ref commandY,
+                    "GUIDANCE",
+                    FormatAngle(
+                        targetPitch));
+
+                DrawCommandBlock(
+                    graphics,
+                    panelFont,
+                    labelBrush,
+                    valueBrush,
+                    commandBounds,
+                    ref commandY,
+                    "STEERING",
+                    GetSteeringCommand(
+                        telemetry,
+                        targetPitch));
+
+                DrawCommandBlock(
+                    graphics,
+                    panelFont,
+                    labelBrush,
+                    valueBrush,
+                    commandBounds,
+                    ref commandY,
+                    "THROTTLE",
+                    FormatThrottle(
+                        telemetry.Throttle));
+
+                DrawCommandBlock(
+                    graphics,
+                    panelFont,
+                    labelBrush,
+                    valueBrush,
+                    commandBounds,
+                    ref commandY,
+                    "STATUS",
+                    guidance);
             }
         }
 
-        private static void DrawCompactPanelRow(
+        private static void DrawSafeDataRow(
             Graphics graphics,
             Font font,
             Brush labelBrush,
             Brush valueBrush,
-            Rectangle panelBounds,
-            ref int y,
+            Rectangle bounds,
+            int index,
             int rowHeight,
             string label,
             string value)
         {
-            int padding = 8;
+            int top =
+                bounds.Top +
+                index *
+                rowHeight;
 
-            int left =
-                panelBounds.Left +
-                padding;
-
-            int right =
-                panelBounds.Right -
-                padding;
-
-            int availableWidth =
-                Math.Max(
-                    20,
-                    right - left);
+            int labelWidth =
+                bounds.Width * 52 /
+                100;
 
             Rectangle labelBounds =
                 new Rectangle(
-                    left,
-                    y,
-                    availableWidth / 2,
+                    bounds.Left,
+                    top,
+                    labelWidth,
                     rowHeight);
 
             Rectangle valueBounds =
                 new Rectangle(
-                    left +
-                    availableWidth / 2,
-                    y,
-                    availableWidth -
-                    availableWidth / 2,
+                    bounds.Left + labelWidth,
+                    top,
+                    bounds.Width - labelWidth,
                     rowHeight);
 
-            using (StringFormat labelFormat =
+            using (StringFormat left =
                 new StringFormat())
-            using (StringFormat valueFormat =
+            using (StringFormat right =
                 new StringFormat())
             {
-                labelFormat.Alignment =
-                    StringAlignment.Near;
-
-                labelFormat.LineAlignment =
+                left.LineAlignment =
                     StringAlignment.Center;
 
-                labelFormat.Trimming =
+                left.Trimming =
                     StringTrimming.EllipsisCharacter;
 
-                labelFormat.FormatFlags =
+                left.FormatFlags =
                     StringFormatFlags.NoWrap;
 
-                valueFormat.Alignment =
+                right.Alignment =
                     StringAlignment.Far;
 
-                valueFormat.LineAlignment =
+                right.LineAlignment =
                     StringAlignment.Center;
 
-                valueFormat.Trimming =
+                right.Trimming =
                     StringTrimming.EllipsisCharacter;
 
-                valueFormat.FormatFlags =
+                right.FormatFlags =
                     StringFormatFlags.NoWrap;
 
                 graphics.DrawString(
@@ -1451,7 +1463,65 @@ namespace KMC.MissionControl.Pages
                     font,
                     labelBrush,
                     labelBounds,
-                    labelFormat);
+                    left);
+
+                graphics.DrawString(
+                    value,
+                    font,
+                    valueBrush,
+                    valueBounds,
+                    right);
+            }
+        }
+
+        private static void DrawCommandBlock(
+            Graphics graphics,
+            Font font,
+            Brush labelBrush,
+            Brush valueBrush,
+            Rectangle bounds,
+            ref int y,
+            string label,
+            string value)
+        {
+            int remainingHeight =
+                Math.Max(
+                    1,
+                    bounds.Bottom - y);
+
+            int blockHeight =
+                Math.Max(
+                    32,
+                    remainingHeight / 4);
+
+            Rectangle labelBounds =
+                new Rectangle(
+                    bounds.Left,
+                    y,
+                    bounds.Width,
+                    17);
+
+            Rectangle valueBounds =
+                new Rectangle(
+                    bounds.Left,
+                    y + 17,
+                    bounds.Width,
+                    blockHeight - 17);
+
+            using (StringFormat valueFormat =
+                new StringFormat())
+            {
+                valueFormat.Trimming =
+                    StringTrimming.EllipsisWord;
+
+                valueFormat.FormatFlags =
+                    StringFormatFlags.LineLimit;
+
+                graphics.DrawString(
+                    label,
+                    font,
+                    labelBrush,
+                    labelBounds);
 
                 graphics.DrawString(
                     value,
@@ -1461,7 +1531,47 @@ namespace KMC.MissionControl.Pages
                     valueFormat);
             }
 
-            y += rowHeight;
+            y += blockHeight;
+        }
+
+        private static string GetSteeringCommand(
+            MissionTelemetry telemetry,
+            double targetPitch)
+        {
+            double error =
+                telemetry.Pitch -
+                targetPitch;
+
+            if (error > 5.0)
+            {
+                return "PITCH DOWN";
+            }
+
+            if (error < -5.0)
+            {
+                return "PITCH UP";
+            }
+
+            return "HOLD ATTITUDE";
+        }
+
+        private static string FormatThrottle(
+            double throttle)
+        {
+            if (!IsFinite(throttle))
+            {
+                return "---";
+            }
+
+            return
+                (Math.Max(
+                    0.0,
+                    Math.Min(
+                        1.0,
+                        throttle)) *
+                 100.0)
+                .ToString("0") +
+                " %";
         }
 
         private void DrawPredictivePanel(
@@ -1476,16 +1586,16 @@ namespace KMC.MissionControl.Pages
                 CalculateBurnoutPrediction(
                     telemetry);
 
-            float compactSize =
+            float panelFontSize =
                 Math.Max(
-                    6.2f,
+                    7.0f,
                     context.SmallFont.Size *
-                    0.76f);
+                    0.82f);
 
-            using (Font compactFont =
+            using (Font panelFont =
                 new Font(
                     context.SmallFont.FontFamily,
-                    compactSize,
+                    panelFontSize,
                     FontStyle.Regular,
                     GraphicsUnit.Point))
             using (Pen borderPen =
@@ -1506,175 +1616,82 @@ namespace KMC.MissionControl.Pages
                     borderPen,
                     bounds);
 
+                int padding = 10;
+                int titleHeight = 28;
+
                 graphics.DrawString(
                     "PREDICTED BURNOUT",
-                    compactFont,
+                    panelFont,
                     titleBrush,
-                    bounds.Left + 8,
-                    bounds.Top + 6);
+                    bounds.Left + padding,
+                    bounds.Top + 7);
 
-                int y =
-                    bounds.Top + 28;
+                Rectangle content =
+                    new Rectangle(
+                        bounds.Left + padding,
+                        bounds.Top + titleHeight + 3,
+                        bounds.Width - padding * 2,
+                        bounds.Height -
+                        titleHeight -
+                        padding - 3);
 
-                int rowHeight =
-                    Math.Max(
-                        18,
-                        (bounds.Height - 42) /
-                        6);
-
-                DrawPredictionRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref y,
-                    rowHeight,
+                string[] labels =
+                {
                     "BURN TIME",
+                    "BURNOUT VEL",
+                    "PREDICTED AP",
+                    "TARGET ERR",
+                    "FUEL TREND",
+                    "RESULT"
+                };
+
+                string[] values =
+                {
                     prediction.IsAvailable
                         ? FormatDurationCompact(
                             prediction.TimeRemainingSeconds)
-                        : "---");
-
-                DrawPredictionRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref y,
-                    rowHeight,
-                    "BURNOUT VEL",
+                        : "---",
                     prediction.IsAvailable
                         ? FormatSpeed(
                             prediction.BurnoutVelocityMetersPerSecond)
-                        : "---");
-
-                DrawPredictionRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref y,
-                    rowHeight,
-                    "PREDICTED AP",
+                        : "---",
                     prediction.IsAvailable
                         ? FormatDistance(
                             prediction.PredictedApoapsisMeters)
-                        : "---");
-
-                DrawPredictionRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref y,
-                    rowHeight,
-                    "TARGET ERR",
+                        : "---",
                     prediction.IsAvailable
                         ? FormatSignedDistance(
                             prediction.PredictedApoapsisMeters -
                             DefaultTargetApoapsisMeters)
-                        : "---");
-
-                DrawPredictionRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref y,
-                    rowHeight,
-                    "FUEL TREND",
+                        : "---",
                     prediction.HasFuelTrend
                         ? "STABLE"
-                        : "WAITING");
+                        : "WAITING",
+                    prediction.Status
+                };
 
-                DrawPredictionRow(
-                    graphics,
-                    compactFont,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    ref y,
-                    rowHeight,
-                    "RESULT",
-                    prediction.Status);
+                int rowHeight =
+                    Math.Max(
+                        20,
+                        content.Height /
+                        labels.Length);
+
+                for (int index = 0;
+                     index < labels.Length;
+                     index++)
+                {
+                    DrawSafeDataRow(
+                        graphics,
+                        panelFont,
+                        labelBrush,
+                        valueBrush,
+                        content,
+                        index,
+                        rowHeight,
+                        labels[index],
+                        values[index]);
+                }
             }
-        }
-
-        private static void DrawPredictionRow(
-            Graphics graphics,
-            Font font,
-            Brush labelBrush,
-            Brush valueBrush,
-            Rectangle panelBounds,
-            ref int y,
-            int rowHeight,
-            string label,
-            string value)
-        {
-            int padding = 8;
-            int left =
-                panelBounds.Left +
-                padding;
-            int width =
-                panelBounds.Width -
-                padding * 2;
-
-            Rectangle labelBounds =
-                new Rectangle(
-                    left,
-                    y,
-                    width / 2,
-                    rowHeight);
-
-            Rectangle valueBounds =
-                new Rectangle(
-                    left + width / 2,
-                    y,
-                    width - width / 2,
-                    rowHeight);
-
-            using (StringFormat leftFormat =
-                new StringFormat())
-            using (StringFormat rightFormat =
-                new StringFormat())
-            {
-                leftFormat.LineAlignment =
-                    StringAlignment.Center;
-                leftFormat.Trimming =
-                    StringTrimming.EllipsisCharacter;
-                leftFormat.FormatFlags =
-                    StringFormatFlags.NoWrap;
-
-                rightFormat.Alignment =
-                    StringAlignment.Far;
-                rightFormat.LineAlignment =
-                    StringAlignment.Center;
-                rightFormat.Trimming =
-                    StringTrimming.EllipsisCharacter;
-                rightFormat.FormatFlags =
-                    StringFormatFlags.NoWrap;
-
-                graphics.DrawString(
-                    label,
-                    font,
-                    labelBrush,
-                    labelBounds,
-                    leftFormat);
-
-                graphics.DrawString(
-                    value,
-                    font,
-                    valueBrush,
-                    valueBounds,
-                    rightFormat);
-            }
-
-            y += rowHeight;
         }
 
         private BurnoutPrediction CalculateBurnoutPrediction(
@@ -1707,7 +1724,8 @@ namespace KMC.MissionControl.Pages
                 AscentSample candidate =
                     _samples[index];
 
-                oldest = candidate;
+                oldest =
+                    candidate;
 
                 if (newest.MissionTime -
                     candidate.MissionTime >= 3.0)
@@ -1792,10 +1810,12 @@ namespace KMC.MissionControl.Pages
             result.HasFuelTrend = true;
             result.TimeRemainingSeconds =
                 timeRemaining;
+
             result.PredictedApoapsisMeters =
                 Math.Max(
                     newest.ApoapsisMeters,
                     predictedApoapsis);
+
             result.BurnoutVelocityMetersPerSecond =
                 Math.Max(
                     0.0,
@@ -1842,6 +1862,7 @@ namespace KMC.MissionControl.Pages
 
             int minutes =
                 (int)(totalSeconds / 60.0);
+
             int seconds =
                 (int)(totalSeconds % 60.0);
 
@@ -1851,13 +1872,25 @@ namespace KMC.MissionControl.Pages
                 seconds);
         }
 
-        private static void DrawFooter(
+        private void DrawFooter(
             MissionRenderContext context,
             Rectangle bounds,
             MissionTelemetry telemetry)
         {
             Graphics graphics =
                 context.Graphics;
+
+            double fuelPercent =
+                CalculateStageFuelPercent(
+                    telemetry);
+
+            string status =
+                telemetry.MissionTime < 1.0
+                    ? "PAD"
+                    : telemetry.Apoapsis >=
+                      DefaultTargetApoapsisMeters
+                        ? "TARGET AP"
+                        : "ASCENT";
 
             using (Pen borderPen =
                 new Pen(
@@ -1874,106 +1907,191 @@ namespace KMC.MissionControl.Pages
                     borderPen,
                     bounds);
 
-                DrawFooterValue(
-                    graphics,
-                    context,
-                    bounds,
-                    0,
+                string[] labels =
+                {
                     "MET",
+                    "STAGE",
+                    "ALTITUDE",
+                    "DOWNRANGE",
+                    "VERT VEL",
+                    "HORZ VEL",
+                    "TWR",
+                    "G FORCE",
+                    "APOAPSIS",
+                    "FUEL",
+                    "STATUS"
+                };
+
+                string[] values =
+                {
                     FormatMissionTime(
                         telemetry.MissionTime),
-                    labelBrush,
-                    valueBrush);
-
-                DrawFooterValue(
-                    graphics,
-                    context,
-                    bounds,
-                    1,
-                    "STAGE",
                     telemetry.CurrentStage
                         .ToString("00"),
-                    labelBrush,
-                    valueBrush);
-
-                DrawFooterValue(
-                    graphics,
-                    context,
-                    bounds,
-                    2,
-                    "VERT VEL",
+                    FormatDistance(
+                        telemetry.Altitude),
+                    FormatDistance(
+                        _downrangeMeters),
                     FormatSignedSpeed(
                         telemetry.VerticalSpeed),
-                    labelBrush,
-                    valueBrush);
-
-                DrawFooterValue(
-                    graphics,
-                    context,
-                    bounds,
-                    3,
-                    "HORIZ VEL",
                     FormatSpeed(
                         telemetry.HorizontalSpeed),
-                    labelBrush,
-                    valueBrush);
-
-                DrawFooterValue(
-                    graphics,
-                    context,
-                    bounds,
-                    4,
-                    "TWR",
                     FormatRatio(
                         telemetry.ThrustToWeightRatio),
-                    labelBrush,
-                    valueBrush);
-
-                DrawFooterValue(
-                    graphics,
-                    context,
-                    bounds,
-                    5,
-                    "APOAPSIS",
+                    FormatGForceCompact(
+                        telemetry.GForce),
                     FormatDistance(
                         telemetry.Apoapsis),
-                    labelBrush,
-                    valueBrush);
+                    IsFinite(fuelPercent)
+                        ? fuelPercent
+                            .ToString("0") +
+                          " %"
+                        : "---",
+                    status
+                };
+
+                int count =
+                    labels.Length;
+
+                int cellWidth =
+                    bounds.Width /
+                    count;
+
+                for (int index = 0;
+                     index < count;
+                     index++)
+                {
+                    int left =
+                        bounds.Left +
+                        index *
+                        cellWidth;
+
+                    int width =
+                        index ==
+                        count - 1
+                            ? bounds.Right -
+                              left
+                            : cellWidth;
+
+                    DrawFooterCell(
+                        graphics,
+                        context,
+                        new Rectangle(
+                            left,
+                            bounds.Top,
+                            width,
+                            bounds.Height),
+                        labels[index],
+                        values[index],
+                        labelBrush,
+                        valueBrush);
+                }
             }
         }
 
-        private static void DrawFooterValue(
+        private static void DrawFooterCell(
             Graphics graphics,
             MissionRenderContext context,
             Rectangle bounds,
-            int index,
             string label,
             string value,
             Brush labelBrush,
             Brush valueBrush)
         {
-            int cellWidth =
-                bounds.Width / 6;
+            Rectangle labelBounds =
+                new Rectangle(
+                    bounds.Left + 4,
+                    bounds.Top + 8,
+                    bounds.Width - 8,
+                    Math.Max(
+                        16,
+                        bounds.Height / 3));
 
-            int x =
-                bounds.Left +
-                cellWidth *
-                index +
-                10;
+            Rectangle valueBounds =
+                new Rectangle(
+                    bounds.Left + 4,
+                    labelBounds.Bottom,
+                    bounds.Width - 8,
+                    bounds.Bottom -
+                    labelBounds.Bottom -
+                    5);
 
-            graphics.DrawString(
-                label,
-                context.SmallFont,
-                labelBrush,
-                x,
-                bounds.Top + 10);
+            using (StringFormat format =
+                new StringFormat())
+            {
+                format.Alignment =
+                    StringAlignment.Center;
 
-            graphics.DrawString(
-                value,
-                context.SmallFont,
-                valueBrush,
-                x,
-                bounds.Top + 36);
+                format.LineAlignment =
+                    StringAlignment.Center;
+
+                format.Trimming =
+                    StringTrimming.EllipsisCharacter;
+
+                format.FormatFlags =
+                    StringFormatFlags.NoWrap;
+
+                graphics.DrawString(
+                    label,
+                    context.SmallFont,
+                    labelBrush,
+                    labelBounds,
+                    format);
+
+                graphics.DrawString(
+                    value,
+                    context.SmallFont,
+                    valueBrush,
+                    valueBounds,
+                    format);
+            }
+        }
+
+        private static double CalculateStageFuelPercent(
+            MissionTelemetry telemetry)
+        {
+            double amount =
+                Math.Max(
+                    0.0,
+                    telemetry.StageLiquidFuelAmount) +
+                Math.Max(
+                    0.0,
+                    telemetry.StageOxidizerAmount);
+
+            double capacity =
+                Math.Max(
+                    0.0,
+                    telemetry.StageLiquidFuelCapacity) +
+                Math.Max(
+                    0.0,
+                    telemetry.StageOxidizerCapacity);
+
+            if (capacity <= 0.0)
+            {
+                return double.NaN;
+            }
+
+            return
+                Math.Max(
+                    0.0,
+                    Math.Min(
+                        100.0,
+                        amount /
+                        capacity *
+                        100.0));
+        }
+
+        private static string FormatGForceCompact(
+            double value)
+        {
+            if (!IsFinite(value))
+            {
+                return "---";
+            }
+
+            return
+                value.ToString("0.00") +
+                " G";
         }
 
         private double CalculateGraphDownrangeLimit(

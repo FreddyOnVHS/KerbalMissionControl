@@ -479,7 +479,10 @@ namespace KMC.MissionControl.Controls
         }
 
 
-        private void DrawMissionPage(Graphics graphics, int virtualWidth, int virtualHeight)
+        private void DrawMissionPage(
+    Graphics graphics,
+    int virtualWidth,
+    int virtualHeight)
         {
             Color phosphorColor =
                 GetPhosphorColor();
@@ -490,30 +493,83 @@ namespace KMC.MissionControl.Controls
                     phosphorColor);
 
             /*
-             * Existing mission pages occupy a fixed 1280 x 720 baseline
-             * region. Resizing adds virtual space around that region
-             * instead of enlarging its contents.
+             * Mission pages previously remained inside a fixed
+             * 1280 x 720 baseline, even when the CRT became larger.
+             *
+             * Increase the usable mission-page rectangle by 30 percent.
+             * The font sizes intentionally remain unchanged. This creates
+             * real additional room for panels, labels, and values instead
+             * of merely magnifying the same cramped layout.
              */
-            int baselineLeft =
+            const float PageExpansionFactor =
+                1.30f;
+
+            int baselineContentWidth =
+                MinimumVirtualWidth -
+                84;
+
+            int baselineContentHeight =
+                MinimumVirtualHeight -
+                68;
+
+            int requestedContentWidth =
+                (int)Math.Round(
+                    baselineContentWidth *
+                    PageExpansionFactor);
+
+            int requestedContentHeight =
+                (int)Math.Round(
+                    baselineContentHeight *
+                    PageExpansionFactor);
+
+            int horizontalMargin =
+                28;
+
+            int verticalMargin =
+                24;
+
+            int availableWidth =
                 Math.Max(
-                    0,
+                    1,
+                    virtualWidth -
+                    horizontalMargin * 2);
+
+            int availableHeight =
+                Math.Max(
+                    1,
+                    virtualHeight -
+                    verticalMargin * 2);
+
+            int contentWidth =
+                Math.Min(
+                    requestedContentWidth,
+                    availableWidth);
+
+            int contentHeight =
+                Math.Min(
+                    requestedContentHeight,
+                    availableHeight);
+
+            int contentLeft =
+                Math.Max(
+                    horizontalMargin,
                     (virtualWidth -
-                     MinimumVirtualWidth) /
+                     contentWidth) /
                     2);
 
-            int baselineTop =
+            int contentTop =
                 Math.Max(
-                    0,
+                    verticalMargin,
                     (virtualHeight -
-                     MinimumVirtualHeight) /
+                     contentHeight) /
                     2);
 
             Rectangle contentRectangle =
                 new Rectangle(
-                    baselineLeft + 42,
-                    baselineTop + 34,
-                    MinimumVirtualWidth - 84,
-                    MinimumVirtualHeight - 68);
+                    contentLeft,
+                    contentTop,
+                    contentWidth,
+                    contentHeight);
 
             using (Font largeFont =
                 ApolloTheme.CreateConsoleFont(
@@ -545,6 +601,7 @@ namespace KMC.MissionControl.Controls
                 }
             }
         }
+
 
         private void DrawDiagnostics(Graphics graphics, CanvasLayout layout)
         {
