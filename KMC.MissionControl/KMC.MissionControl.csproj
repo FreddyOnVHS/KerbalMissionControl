@@ -62,10 +62,12 @@
       <SubType>UserControl</SubType>
     </Compile>
     <Compile Include="MainForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="MissionControlReceiver.cs" />
-    <Compile Include="Models\MissionTelemetry.cs" />
+  <SubType>Form</SubType>
+</Compile>
+<Compile Include="MissionControlReceiver.cs" />
+<Compile Include="Guidance\MissionPlanner.cs" />
+<Compile Include="Guidance\MissionPlannerResult.cs" />
+<Compile Include="Models\MissionTelemetry.cs" />
     <Compile Include="Pages\AscentPage.cs" />
     <Compile Include="Pages\IMissionPage.cs" />
     <Compile Include="Pages\OrbitPage.cs" />

@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using KMC.MissionControl.Guidance;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering;
 
@@ -44,6 +45,9 @@ namespace KMC.MissionControl.Pages
 
         private double _predictionStageStartTime =
             double.NaN;
+
+        private readonly MissionPlanner _missionPlanner =
+            new MissionPlanner();
 
         private static readonly object DebugLogSync =
             new object();
@@ -407,6 +411,13 @@ namespace KMC.MissionControl.Pages
                 CalculateBurnoutPrediction(
                     telemetry);
 
+            MissionPlannerResult missionPlan =
+                _missionPlanner.CreatePlan(
+                    telemetry,
+                    targetAltitude,
+                    targetPitch,
+                    DefaultTargetApoapsisMeters);
+
             try
             {
                 string directory =
@@ -451,7 +462,14 @@ namespace KMC.MissionControl.Pages
                                 "PredictedApoapsisM," +
                                 "PredictionTargetErrorM," +
                                 "PredictionConfidencePercent," +
-                                "PredictionStatus");
+                                "PredictionStatus," +
+                                "PlannerNominalPitchDeg," +
+                                "PlannerRecommendedPitchDeg," +
+                                "PlannerPitchCorrectionDeg," +
+                                "PlannerRecoveryAuthorityPercent," +
+                                "PlannerTargetAchievable," +
+                                "PlannerCommand," +
+                                "PlannerStatus");
                         }
 
                         writer.WriteLine(
@@ -508,7 +526,27 @@ namespace KMC.MissionControl.Pages
                                         .ToString("0.000")
                                     : string.Empty,
                                 EscapeCsvField(
-                                    prediction.Status)));
+                                    prediction.Status),
+                                missionPlan
+                                    .NominalPitchDegrees
+                                    .ToString("0.000"),
+                                missionPlan
+                                    .RecommendedPitchDegrees
+                                    .ToString("0.000"),
+                                missionPlan
+                                    .PitchCorrectionDegrees
+                                    .ToString("0.000"),
+                                missionPlan
+                                    .RecoveryAuthorityPercent
+                                    .ToString("0.000"),
+                                missionPlan
+                                    .IsTargetAchievable
+                                    ? "1"
+                                    : "0",
+                                EscapeCsvField(
+                                    missionPlan.Command),
+                                EscapeCsvField(
+                                    missionPlan.Status)));
                     }
                 }
             }
@@ -1303,10 +1341,15 @@ namespace KMC.MissionControl.Pages
                     _downrangeMeters,
                     telemetry);
 
-            string guidance =
-                DetermineGuidance(
+            MissionPlannerResult missionPlan =
+                _missionPlanner.CreatePlan(
                     telemetry,
-                    targetAltitude);
+                    targetAltitude,
+                    targetPitch,
+                    DefaultTargetApoapsisMeters);
+
+            string guidance =
+                missionPlan.Status;
 
             float panelFontSize =
                 Math.Max(
@@ -1417,7 +1460,8 @@ namespace KMC.MissionControl.Pages
                         telemetry.Altitude -
                         targetAltitude),
                     FormatAngle(
-                        targetPitch),
+                        missionPlan
+                            .RecommendedPitchDegrees),
                     FormatAngle(
                         telemetry.Pitch),
                     FormatPressure(
@@ -1457,11 +1501,10 @@ namespace KMC.MissionControl.Pages
                 string[] commandValues =
                 {
                     FormatAngle(
-                        targetPitch),
+                        missionPlan
+                            .RecommendedPitchDegrees),
 
-                    GetSteeringCommand(
-                        telemetry,
-                        targetPitch),
+                    missionPlan.Command,
 
                     FormatThrottle(
                         telemetry.Throttle),
