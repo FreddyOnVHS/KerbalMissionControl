@@ -85,31 +85,38 @@ namespace KMC.MissionControl.Pages
 
             Rectangle graphBounds =
                 context.GetRelativeRectangle(
-                    0.015f,
-                    0.090f,
-                    0.700f,
-                    0.755f);
+                    0.012f,
+                    0.082f,
+                    0.650f,
+                    0.770f);
 
             Rectangle orbitInsetBounds =
                 context.GetRelativeRectangle(
-                    0.730f,
-                    0.090f,
-                    0.255f,
-                    0.270f);
+                    0.677f,
+                    0.082f,
+                    0.311f,
+                    0.225f);
 
             Rectangle statusBounds =
                 context.GetRelativeRectangle(
-                    0.730f,
-                    0.375f,
-                    0.255f,
-                    0.470f);
+                    0.677f,
+                    0.320f,
+                    0.311f,
+                    0.300f);
+
+            Rectangle predictionBounds =
+                context.GetRelativeRectangle(
+                    0.677f,
+                    0.633f,
+                    0.311f,
+                    0.219f);
 
             Rectangle footerBounds =
                 context.GetRelativeRectangle(
-                    0.015f,
-                    0.865f,
-                    0.970f,
-                    0.105f);
+                    0.012f,
+                    0.870f,
+                    0.976f,
+                    0.100f);
 
             DrawAscentGraph(
                 context,
@@ -124,6 +131,11 @@ namespace KMC.MissionControl.Pages
             DrawGuidancePanel(
                 context,
                 statusBounds,
+                telemetry);
+
+            DrawPredictivePanel(
+                context,
+                predictionBounds,
                 telemetry);
 
             DrawFooter(
@@ -223,7 +235,25 @@ namespace KMC.MissionControl.Pages
                             telemetry.Pitch,
 
                         DynamicPressureKpa =
-                            telemetry.DynamicPressureKpa
+                            telemetry.DynamicPressureKpa,
+
+                        StageLiquidFuelAmount =
+                            telemetry.StageLiquidFuelAmount,
+
+                        StageOxidizerAmount =
+                            telemetry.StageOxidizerAmount,
+
+                        OrbitalSpeedMetersPerSecond =
+                            telemetry.OrbitalSpeed,
+
+                        VesselMassTonnes =
+                            telemetry.VesselMass,
+
+                        CurrentThrustKilonewtons =
+                            telemetry.CurrentThrust,
+
+                        AverageSpecificImpulseSeconds =
+                            telemetry.AverageSpecificImpulse
                     });
 
                 while (_samples.Count >
@@ -1434,6 +1464,393 @@ namespace KMC.MissionControl.Pages
             y += rowHeight;
         }
 
+        private void DrawPredictivePanel(
+            MissionRenderContext context,
+            Rectangle bounds,
+            MissionTelemetry telemetry)
+        {
+            Graphics graphics =
+                context.Graphics;
+
+            BurnoutPrediction prediction =
+                CalculateBurnoutPrediction(
+                    telemetry);
+
+            float compactSize =
+                Math.Max(
+                    6.2f,
+                    context.SmallFont.Size *
+                    0.76f);
+
+            using (Font compactFont =
+                new Font(
+                    context.SmallFont.FontFamily,
+                    compactSize,
+                    FontStyle.Regular,
+                    GraphicsUnit.Point))
+            using (Pen borderPen =
+                new Pen(
+                    context.PhosphorColor,
+                    1.0f))
+            using (Brush titleBrush =
+                new SolidBrush(
+                    context.PhosphorColor))
+            using (Brush labelBrush =
+                new SolidBrush(
+                    context.DimPhosphorColor))
+            using (Brush valueBrush =
+                new SolidBrush(
+                    context.PhosphorColor))
+            {
+                graphics.DrawRectangle(
+                    borderPen,
+                    bounds);
+
+                graphics.DrawString(
+                    "PREDICTED BURNOUT",
+                    compactFont,
+                    titleBrush,
+                    bounds.Left + 8,
+                    bounds.Top + 6);
+
+                int y =
+                    bounds.Top + 28;
+
+                int rowHeight =
+                    Math.Max(
+                        18,
+                        (bounds.Height - 42) /
+                        6);
+
+                DrawPredictionRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref y,
+                    rowHeight,
+                    "BURN TIME",
+                    prediction.IsAvailable
+                        ? FormatDurationCompact(
+                            prediction.TimeRemainingSeconds)
+                        : "---");
+
+                DrawPredictionRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref y,
+                    rowHeight,
+                    "BURNOUT VEL",
+                    prediction.IsAvailable
+                        ? FormatSpeed(
+                            prediction.BurnoutVelocityMetersPerSecond)
+                        : "---");
+
+                DrawPredictionRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref y,
+                    rowHeight,
+                    "PREDICTED AP",
+                    prediction.IsAvailable
+                        ? FormatDistance(
+                            prediction.PredictedApoapsisMeters)
+                        : "---");
+
+                DrawPredictionRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref y,
+                    rowHeight,
+                    "TARGET ERR",
+                    prediction.IsAvailable
+                        ? FormatSignedDistance(
+                            prediction.PredictedApoapsisMeters -
+                            DefaultTargetApoapsisMeters)
+                        : "---");
+
+                DrawPredictionRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref y,
+                    rowHeight,
+                    "FUEL TREND",
+                    prediction.HasFuelTrend
+                        ? "STABLE"
+                        : "WAITING");
+
+                DrawPredictionRow(
+                    graphics,
+                    compactFont,
+                    labelBrush,
+                    valueBrush,
+                    bounds,
+                    ref y,
+                    rowHeight,
+                    "RESULT",
+                    prediction.Status);
+            }
+        }
+
+        private static void DrawPredictionRow(
+            Graphics graphics,
+            Font font,
+            Brush labelBrush,
+            Brush valueBrush,
+            Rectangle panelBounds,
+            ref int y,
+            int rowHeight,
+            string label,
+            string value)
+        {
+            int padding = 8;
+            int left =
+                panelBounds.Left +
+                padding;
+            int width =
+                panelBounds.Width -
+                padding * 2;
+
+            Rectangle labelBounds =
+                new Rectangle(
+                    left,
+                    y,
+                    width / 2,
+                    rowHeight);
+
+            Rectangle valueBounds =
+                new Rectangle(
+                    left + width / 2,
+                    y,
+                    width - width / 2,
+                    rowHeight);
+
+            using (StringFormat leftFormat =
+                new StringFormat())
+            using (StringFormat rightFormat =
+                new StringFormat())
+            {
+                leftFormat.LineAlignment =
+                    StringAlignment.Center;
+                leftFormat.Trimming =
+                    StringTrimming.EllipsisCharacter;
+                leftFormat.FormatFlags =
+                    StringFormatFlags.NoWrap;
+
+                rightFormat.Alignment =
+                    StringAlignment.Far;
+                rightFormat.LineAlignment =
+                    StringAlignment.Center;
+                rightFormat.Trimming =
+                    StringTrimming.EllipsisCharacter;
+                rightFormat.FormatFlags =
+                    StringFormatFlags.NoWrap;
+
+                graphics.DrawString(
+                    label,
+                    font,
+                    labelBrush,
+                    labelBounds,
+                    leftFormat);
+
+                graphics.DrawString(
+                    value,
+                    font,
+                    valueBrush,
+                    valueBounds,
+                    rightFormat);
+            }
+
+            y += rowHeight;
+        }
+
+        private BurnoutPrediction CalculateBurnoutPrediction(
+            MissionTelemetry telemetry)
+        {
+            BurnoutPrediction result =
+                new BurnoutPrediction
+                {
+                    Status =
+                        "COLLECTING DATA"
+                };
+
+            if (telemetry == null ||
+                _samples.Count < 3)
+            {
+                return result;
+            }
+
+            AscentSample newest =
+                _samples[_samples.Count - 1];
+
+            AscentSample oldest =
+                newest;
+
+            for (int index =
+                    _samples.Count - 2;
+                 index >= 0;
+                 index--)
+            {
+                AscentSample candidate =
+                    _samples[index];
+
+                oldest = candidate;
+
+                if (newest.MissionTime -
+                    candidate.MissionTime >= 3.0)
+                {
+                    break;
+                }
+            }
+
+            double elapsed =
+                newest.MissionTime -
+                oldest.MissionTime;
+
+            if (elapsed < 0.75)
+            {
+                return result;
+            }
+
+            double liquidFuelRate =
+                Math.Max(
+                    0.0,
+                    (oldest.StageLiquidFuelAmount -
+                     newest.StageLiquidFuelAmount) /
+                    elapsed);
+
+            double oxidizerRate =
+                Math.Max(
+                    0.0,
+                    (oldest.StageOxidizerAmount -
+                     newest.StageOxidizerAmount) /
+                    elapsed);
+
+            double liquidFuelTime =
+                liquidFuelRate > 0.0001
+                    ? newest.StageLiquidFuelAmount /
+                      liquidFuelRate
+                    : double.PositiveInfinity;
+
+            double oxidizerTime =
+                oxidizerRate > 0.0001
+                    ? newest.StageOxidizerAmount /
+                      oxidizerRate
+                    : double.PositiveInfinity;
+
+            double timeRemaining =
+                Math.Min(
+                    liquidFuelTime,
+                    oxidizerTime);
+
+            if (!IsFinite(timeRemaining) ||
+                timeRemaining <= 0.0 ||
+                timeRemaining > 1800.0)
+            {
+                result.Status =
+                    telemetry.CurrentThrust > 0.1
+                        ? "FUEL TREND UNAVAILABLE"
+                        : "ENGINE OFF";
+
+                return result;
+            }
+
+            double apoapsisRate =
+                (newest.ApoapsisMeters -
+                 oldest.ApoapsisMeters) /
+                elapsed;
+
+            double speedRate =
+                (newest.OrbitalSpeedMetersPerSecond -
+                 oldest.OrbitalSpeedMetersPerSecond) /
+                elapsed;
+
+            double predictedApoapsis =
+                newest.ApoapsisMeters +
+                apoapsisRate *
+                timeRemaining;
+
+            double predictedVelocity =
+                newest.OrbitalSpeedMetersPerSecond +
+                speedRate *
+                timeRemaining;
+
+            result.IsAvailable = true;
+            result.HasFuelTrend = true;
+            result.TimeRemainingSeconds =
+                timeRemaining;
+            result.PredictedApoapsisMeters =
+                Math.Max(
+                    newest.ApoapsisMeters,
+                    predictedApoapsis);
+            result.BurnoutVelocityMetersPerSecond =
+                Math.Max(
+                    0.0,
+                    predictedVelocity);
+
+            double targetError =
+                result.PredictedApoapsisMeters -
+                DefaultTargetApoapsisMeters;
+
+            if (targetError < -5000.0)
+            {
+                result.Status =
+                    "TARGET AT RISK";
+            }
+            else if (targetError > 8000.0)
+            {
+                result.Status =
+                    "OVERSHOOT LIKELY";
+            }
+            else
+            {
+                result.Status =
+                    "TARGET ACHIEVABLE";
+            }
+
+            return result;
+        }
+
+        private static string FormatDurationCompact(
+            double totalSeconds)
+        {
+            if (!IsFinite(totalSeconds) ||
+                totalSeconds < 0.0)
+            {
+                return "---";
+            }
+
+            if (totalSeconds < 100.0)
+            {
+                return
+                    totalSeconds.ToString("0.0") +
+                    " S";
+            }
+
+            int minutes =
+                (int)(totalSeconds / 60.0);
+            int seconds =
+                (int)(totalSeconds % 60.0);
+
+            return string.Format(
+                "{0:00}:{1:00}",
+                minutes,
+                seconds);
+        }
+
         private static void DrawFooter(
             MissionRenderContext context,
             Rectangle bounds,
@@ -1998,7 +2415,34 @@ namespace KMC.MissionControl.Pages
 
             public double DynamicPressureKpa { get; set; }
 
+            public double StageLiquidFuelAmount { get; set; }
+
+            public double StageOxidizerAmount { get; set; }
+
+            public double OrbitalSpeedMetersPerSecond { get; set; }
+
+            public double VesselMassTonnes { get; set; }
+
+            public double CurrentThrustKilonewtons { get; set; }
+
+            public double AverageSpecificImpulseSeconds { get; set; }
+
             public bool DebugWritten { get; set; }
+        }
+
+        private sealed class BurnoutPrediction
+        {
+            public bool IsAvailable { get; set; }
+
+            public bool HasFuelTrend { get; set; }
+
+            public double TimeRemainingSeconds { get; set; }
+
+            public double BurnoutVelocityMetersPerSecond { get; set; }
+
+            public double PredictedApoapsisMeters { get; set; }
+
+            public string Status { get; set; }
         }
     }
 }
