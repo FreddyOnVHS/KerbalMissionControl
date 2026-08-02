@@ -468,8 +468,19 @@ namespace KMC.MissionControl.Pages
                                 "PlannerPitchCorrectionDeg," +
                                 "PlannerRecoveryAuthorityPercent," +
                                 "PlannerTargetAchievable," +
+                                "PlannerFlightPhase," +
+                                "PlannerThrottleCommandPercent," +
+                                "PlannerCutoffRequired," +
+                                "PlannerCoastLockoutActive," +
                                 "PlannerCommand," +
-                                "PlannerStatus");
+                                "PlannerThrottleCommand," +
+                                "PlannerStatus," +
+                                "PlannerNextEvent," +
+                                "CircularizationAvailable," +
+                                "CircularizationDeltaV," +
+                                "CircularizationBurnTimeS," +
+                                "CircularizationIgnitionInS," +
+                                "CircularizationPeriapsisErrorM");
                         }
 
                         writer.WriteLine(
@@ -544,9 +555,42 @@ namespace KMC.MissionControl.Pages
                                     ? "1"
                                     : "0",
                                 EscapeCsvField(
+                                    missionPlan.FlightPhase),
+                                missionPlan
+                                    .ThrottleCommandPercent
+                                    .ToString("0.000"),
+                                missionPlan
+                                    .CutoffRequired
+                                    ? "1"
+                                    : "0",
+                                missionPlan
+                                    .CoastLockoutActive
+                                    ? "1"
+                                    : "0",
+                                EscapeCsvField(
                                     missionPlan.Command),
                                 EscapeCsvField(
-                                    missionPlan.Status)));
+                                    missionPlan.ThrottleCommand),
+                                EscapeCsvField(
+                                    missionPlan.Status),
+                                EscapeCsvField(
+                                    missionPlan.NextEvent),
+                                missionPlan
+                                    .CircularizationAvailable
+                                    ? "1"
+                                    : "0",
+                                missionPlan
+                                    .CircularizationDeltaV
+                                    .ToString("0.000"),
+                                missionPlan
+                                    .CircularizationBurnTimeSeconds
+                                    .ToString("0.000"),
+                                missionPlan
+                                    .CircularizationIgnitionInSeconds
+                                    .ToString("0.000"),
+                                missionPlan
+                                    .CircularizationPeriapsisErrorMeters
+                                    .ToString("0.000")));
                     }
                 }
             }
@@ -1498,16 +1542,21 @@ namespace KMC.MissionControl.Pages
                     "STATUS"
                 };
 
+                string guidanceValue =
+                    IsPostMecoPhase(
+                        missionPlan.FlightPhase)
+                        ? missionPlan.NextEvent
+                        : FormatAngle(
+                            missionPlan
+                                .RecommendedPitchDegrees);
+
                 string[] commandValues =
                 {
-                    FormatAngle(
-                        missionPlan
-                            .RecommendedPitchDegrees),
+                    guidanceValue,
 
                     missionPlan.Command,
 
-                    FormatThrottle(
-                        telemetry.Throttle),
+                    missionPlan.ThrottleCommand,
 
                     GetCompactGuidanceStatus(
                         guidance)
@@ -1696,6 +1745,32 @@ namespace KMC.MissionControl.Pages
             }
         }
 
+        private static bool IsPostMecoPhase(
+            string flightPhase)
+        {
+            return
+                string.Equals(
+                    flightPhase,
+                    "MECO",
+                    StringComparison.Ordinal) ||
+                string.Equals(
+                    flightPhase,
+                    "COAST TO APOAPSIS",
+                    StringComparison.Ordinal) ||
+                string.Equals(
+                    flightPhase,
+                    "CIRCULARIZATION READY",
+                    StringComparison.Ordinal) ||
+                string.Equals(
+                    flightPhase,
+                    "CIRCULARIZATION BURN",
+                    StringComparison.Ordinal) ||
+                string.Equals(
+                    flightPhase,
+                    "ORBIT ACHIEVED",
+                    StringComparison.Ordinal);
+        }
+
         private static string GetCompactGuidanceStatus(
             string guidance)
         {
@@ -1733,6 +1808,48 @@ namespace KMC.MissionControl.Pages
 
                 case "AWAITING ASCENT":
                     return "AWAIT ASCENT";
+
+                case "CUTOFF REQUIRED":
+                    return "MECO NOW";
+
+                case "COAST - NO REIGNITION":
+                    return "COAST LOCKED";
+
+                case "TARGET APPROACH":
+                    return "TARGET APPROACH";
+
+                case "AWAIT LIFTOFF":
+                    return "AWAIT LIFTOFF";
+
+                case "MECO CONFIRMED":
+                    return "COAST SETUP";
+
+                case "PREPARE CIRCULARIZATION":
+                    return "PREP CIRC BURN";
+
+                case "IGNITION APPROACHING":
+                    return "IGNITION SOON";
+
+                case "CIRCULARIZATION GO":
+                    return "IGNITE NOW";
+
+                case "RAISE PERIAPSIS":
+                    return "CIRC BURN";
+
+                case "CIRC BURN REQUIRED":
+                    return "IGNITE NOW";
+
+                case "ORBIT TARGET REACHED":
+                    return "CUTOFF NOW";
+
+                case "ORBIT CUTOFF":
+                    return "CUTOFF NOW";
+
+                case "ORBIT NOMINAL":
+                    return "ORBIT NOMINAL";
+
+                case "UNPLANNED IGNITION":
+                    return "EARLY IGNITION";
 
                 default:
                     return guidance;

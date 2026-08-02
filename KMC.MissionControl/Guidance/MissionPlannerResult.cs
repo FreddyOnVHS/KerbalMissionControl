@@ -14,10 +14,32 @@ namespace KMC.MissionControl.Guidance
 
         public double RecoveryAuthorityPercent { get; set; }
 
+        public double ThrottleCommandPercent { get; set; }
+
+        public double CircularizationDeltaV { get; set; }
+
+        public double CircularizationBurnTimeSeconds { get; set; }
+
+        public double CircularizationIgnitionInSeconds { get; set; }
+
+        public double CircularizationPeriapsisErrorMeters { get; set; }
+
+        public string FlightPhase { get; set; }
+
         public string Command { get; set; }
+
+        public string ThrottleCommand { get; set; }
 
         public string Status { get; set; }
 
+        public string NextEvent { get; set; }
+
         public bool IsTargetAchievable { get; set; }
+
+        public bool CutoffRequired { get; set; }
+
+        public bool CoastLockoutActive { get; set; }
+
+        public bool CircularizationAvailable { get; set; }
     }
 }
