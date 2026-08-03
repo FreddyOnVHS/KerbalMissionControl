@@ -77,6 +77,12 @@ namespace KMC.MissionControl.Guidance
 
         public double PeriapsisRecoveryThrottlePercent { get; set; }
 
+        public double PeriapsisRecoveryDesiredThrottlePercent { get; set; }
+
+        public double PeriapsisRecoveryCommandAgeSeconds { get; set; }
+
+        public bool PeriapsisRecoveryCommandHeld { get; set; }
+
         public bool PeriapsisRecoveryCutoff { get; set; }
 
         public string PeriapsisRecoveryReason { get; set; }

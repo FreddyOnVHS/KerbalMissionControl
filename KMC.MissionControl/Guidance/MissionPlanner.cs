@@ -1710,6 +1710,9 @@ namespace KMC.MissionControl.Guidance
                 _periapsisRecoveryController.Calculate(
                     new PeriapsisRecoveryInput
                     {
+                        MissionTimeSeconds =
+                            telemetry.MissionTime,
+
                         ActualApoapsisMeters =
                             telemetry.Apoapsis,
 
@@ -1741,6 +1744,15 @@ namespace KMC.MissionControl.Guidance
 
             result.PeriapsisRecoveryThrottlePercent =
                 recovery.ThrottlePercent;
+
+            result.PeriapsisRecoveryDesiredThrottlePercent =
+                recovery.DesiredThrottlePercent;
+
+            result.PeriapsisRecoveryCommandAgeSeconds =
+                recovery.CommandAgeSeconds;
+
+            result.PeriapsisRecoveryCommandHeld =
+                recovery.CommandHeldByHysteresis;
 
             result.PeriapsisRecoveryCutoff =
                 recovery.CutoffRequired;

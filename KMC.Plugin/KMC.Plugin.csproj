@@ -69,6 +69,10 @@
     <Compile Include="Simulation\SimulatedResource.cs" />
     <Compile Include="TelemetrySender.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Topology\VesselTopologyBuilder.cs" />
+    <Compile Include="Topology\VesselTopologyService.cs" />
+    <Compile Include="Topology\VesselTopologyDiagnostics.cs" />
+
 
     <!--
       Compile the shared telemetry contract into the plugin.

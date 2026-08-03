@@ -78,6 +78,9 @@ namespace KMC.MissionControl.Diagnostics
             "PeriapsisRecoveryActive," +
             "PeriapsisRecoveryErrorM," +
             "PeriapsisRecoveryThrottlePercent," +
+            "PeriapsisRecoveryDesiredThrottlePercent," +
+            "PeriapsisRecoveryCommandAgeS," +
+            "PeriapsisRecoveryCommandHeld," +
             "PeriapsisRecoveryCutoff," +
             "PeriapsisRecoveryReason";
 
@@ -296,6 +299,13 @@ namespace KMC.MissionControl.Diagnostics
                     .ToString("0.000"),
                 plan.PeriapsisRecoveryThrottlePercent
                     .ToString("0.000"),
+                plan.PeriapsisRecoveryDesiredThrottlePercent
+                    .ToString("0.000"),
+                plan.PeriapsisRecoveryCommandAgeSeconds
+                    .ToString("0.000"),
+                plan.PeriapsisRecoveryCommandHeld
+                    ? "1"
+                    : "0",
                 plan.PeriapsisRecoveryCutoff
                     ? "1"
                     : "0",
