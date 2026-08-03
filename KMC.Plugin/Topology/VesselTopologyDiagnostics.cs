@@ -19,35 +19,28 @@ namespace KMC.Plugin.Topology
                 new StringBuilder();
 
             builder.AppendLine(
-                "[KMC] Vessel Topology Phase 2A");
+                "[KMC] Vessel Topology Phase 2B");
 
             builder.AppendFormat(
-                "[KMC] Vessel: {0}  ID: {1}  Revision: {2}",
-                string.IsNullOrEmpty(
-                    topology.VesselName)
-                    ? "---"
-                    : topology.VesselName,
-                string.IsNullOrEmpty(
-                    topology.VesselId)
-                    ? "---"
-                    : topology.VesselId,
-                topology.Revision);
+                "[KMC] Vessel: {0}  Revision: {1}  Parts: {2}",
+                topology.VesselName,
+                topology.Revision,
+                topology.PartCount);
 
             builder.AppendLine();
 
             builder.AppendFormat(
-                "[KMC] Parts: {0}  Root: {1}  Max inverse stage: {2}",
-                topology.PartCount,
+                "[KMC] Root: {0}  Current stage: {1}  Next stage: {2}  Branches: {3}  Symmetry groups: {4}  Separation boundaries: {5}",
                 topology.HasRootPart
                     ? topology.RootPartId.ToString()
                     : "---",
-                topology.MaximumInverseStage);
+                topology.CurrentStage,
+                topology.NextStage,
+                topology.StructuralBranchCount,
+                topology.SymmetryGroupCount,
+                topology.SeparationBoundaryCount);
 
             builder.AppendLine();
-
-            AppendCategorySummary(
-                builder,
-                topology.Nodes);
 
             List<VesselTopologyNode> ordered =
                 new List<VesselTopologyNode>(
@@ -58,12 +51,12 @@ namespace KMC.Plugin.Topology
                     VesselTopologyNode left,
                     VesselTopologyNode right)
                 {
-                    int stageCompare =
-                        right.InverseStage.CompareTo(
-                            left.InverseStage);
+                    int depthCompare =
+                        left.StructuralDepth.CompareTo(
+                            right.StructuralDepth);
 
-                    return stageCompare != 0
-                        ? stageCompare
+                    return depthCompare != 0
+                        ? depthCompare
                         : left.PartId.CompareTo(
                             right.PartId);
                 });
@@ -76,28 +69,33 @@ namespace KMC.Plugin.Topology
                     ordered[index];
 
                 builder.AppendFormat(
-                    "[KMC] Part {0}: category={1}, roles=[{2}], resources=[{3}], stage={4}, parent={5}, attach={6}, children=[{7}], symmetry=[{8}], title=\"{9}\", mass={10:0.000}+{11:0.000}t, pos=({12:0.00},{13:0.00},{14:0.00})",
+                    "[KMC] Part {0}: category={1}, depth={2}, branch={3}, parent={4}, attach={5}, stackChildren=[{6}], surfaceChildren=[{7}], symmetryGroup={8}, activationStage={9}, separationStage={10}, boundary={11}, survivesNext={12}, title=\"{13}\"",
                     node.PartId,
                     node.Category,
-                    FormatRoles(
-                        node.Roles),
-                    JoinStrings(
-                        node.StoredResourceNames),
-                    node.InverseStage,
+                    node.StructuralDepth,
+                    node.BranchRootPartId,
                     node.HasParent
                         ? node.ParentPartId.ToString()
                         : "---",
                     node.AttachmentType,
                     JoinIds(
-                        node.ChildPartIds),
+                        node.StackChildPartIds),
                     JoinIds(
-                        node.SymmetryPartIds),
-                    node.PartTitle,
-                    node.DryMassTonnes,
-                    node.ResourceMassTonnes,
-                    node.VesselX,
-                    node.VesselY,
-                    node.VesselZ);
+                        node.SurfaceChildPartIds),
+                    node.SymmetryGroupId == 0
+                        ? "---"
+                        : node.SymmetryGroupId.ToString(),
+                    FormatStage(
+                        node.ActivationStage),
+                    FormatStage(
+                        node.SeparationStage),
+                    node.IsSeparationBoundary
+                        ? "YES"
+                        : "NO",
+                    node.SurvivesNextStage
+                        ? "YES"
+                        : "NO",
+                    node.PartTitle);
 
                 builder.AppendLine();
             }
@@ -105,85 +103,12 @@ namespace KMC.Plugin.Topology
             return builder.ToString();
         }
 
-        private static void AppendCategorySummary(
-            StringBuilder builder,
-            IList<VesselTopologyNode> nodes)
+        private static string FormatStage(
+            int stage)
         {
-            Dictionary<VesselNodeCategory, int> counts =
-                new Dictionary<VesselNodeCategory, int>();
-
-            for (int index = 0;
-                 index < nodes.Count;
-                 index++)
-            {
-                VesselNodeCategory category =
-                    nodes[index].Category;
-
-                int count;
-
-                counts.TryGetValue(
-                    category,
-                    out count);
-
-                counts[category] =
-                    count + 1;
-            }
-
-            builder.Append(
-                "[KMC] Categories:");
-
-            Array categories =
-                Enum.GetValues(
-                    typeof(VesselNodeCategory));
-
-            for (int index = 0;
-                 index < categories.Length;
-                 index++)
-            {
-                VesselNodeCategory category =
-                    (VesselNodeCategory)
-                    categories.GetValue(index);
-
-                int count;
-
-                if (!counts.TryGetValue(
-                        category,
-                        out count) ||
-                    count <= 0)
-                {
-                    continue;
-                }
-
-                builder.AppendFormat(
-                    " {0}={1}",
-                    category,
-                    count);
-            }
-
-            builder.AppendLine();
-        }
-
-        private static string FormatRoles(
-            VesselNodeRole roles)
-        {
-            return roles == VesselNodeRole.None
-                ? string.Empty
-                : roles.ToString();
-        }
-
-        private static string JoinStrings(
-            IList<string> values)
-        {
-            if (values == null ||
-                values.Count == 0)
-            {
-                return string.Empty;
-            }
-
-            return string.Join(
-                ",",
-                new List<string>(
-                    values).ToArray());
+            return stage >= 0
+                ? stage.ToString("00")
+                : "--";
         }
 
         private static string JoinIds(

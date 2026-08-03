@@ -5,10 +5,6 @@ using UnityEngine;
 
 namespace KMC.Plugin.Topology
 {
-    /// <summary>
-    /// Converts the live KSP Part tree into a KSP-independent topology
-    /// snapshot suitable for diagnostics, rendering, and future networking.
-    /// </summary>
     internal sealed class VesselTopologyBuilder
     {
         public VesselTopology Build(
@@ -33,6 +29,11 @@ namespace KMC.Plugin.Topology
             topology.VesselName =
                 vessel.vesselName ??
                 string.Empty;
+
+            topology.CurrentStage =
+                Math.Max(
+                    0,
+                    vessel.currentStage);
 
             IList<Part> parts =
                 vessel.parts;
@@ -126,6 +127,9 @@ namespace KMC.Plugin.Topology
                     topology);
             }
 
+            VesselTopologyAnalyzer.Analyze(
+                topology);
+
             return topology;
         }
 
@@ -185,6 +189,10 @@ namespace KMC.Plugin.Topology
                 node.PartTitle =
                     node.PartName;
             }
+
+            VesselPartClassifier.Classify(
+                part,
+                node);
 
             ReadVesselPosition(
                 vessel,
@@ -291,10 +299,6 @@ namespace KMC.Plugin.Topology
             }
             catch
             {
-                /*
-                 * Position is only a layout hint. A missing transform must
-                 * never prevent the topology tree from being built.
-                 */
             }
         }
 
@@ -355,8 +359,7 @@ namespace KMC.Plugin.Topology
                         dryMass +=
                             modifier.GetModuleMass(
                                 part.mass,
-                                ModifierStagingSituation
-                                    .CURRENT);
+                                ModifierStagingSituation.CURRENT);
                     }
                     catch
                     {
