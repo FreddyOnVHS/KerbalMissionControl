@@ -56,6 +56,9 @@ namespace KMC.MissionControl.Pages
         private readonly PredictionRenderer _predictionRenderer =
             new PredictionRenderer();
 
+        private readonly OrbitTrendRenderer _orbitTrendRenderer =
+            new OrbitTrendRenderer();
+
         private static readonly object DebugLogSync =
             new object();
 
@@ -1092,314 +1095,34 @@ namespace KMC.MissionControl.Pages
             }
         }
 
-        private static void DrawOrbitInset(
+        private void DrawOrbitInset(
             MissionRenderContext context,
             Rectangle bounds,
             MissionTelemetry telemetry)
         {
-            Graphics graphics =
-                context.Graphics;
-
-            float panelFontSize =
-                Math.Max(
-                    7.0f,
-                    context.SmallFont.Size *
-                    0.82f);
-
-            using (Font panelFont =
-                new Font(
-                    context.SmallFont.FontFamily,
-                    panelFontSize,
-                    FontStyle.Regular,
-                    GraphicsUnit.Point))
-            using (Pen borderPen =
-                new Pen(
-                    context.PhosphorColor,
-                    1.0f))
-            using (Pen gridPen =
-                new Pen(
-                    Color.FromArgb(
-                        62,
-                        context.DimPhosphorColor),
-                    1.0f))
-            using (Pen orbitPen =
-                new Pen(
-                    context.PhosphorColor,
-                    1.4f))
-            using (Pen dividerPen =
-                new Pen(
-                    context.PhosphorColor,
-                    1.0f))
-            using (Brush textBrush =
-                new SolidBrush(
-                    context.PhosphorColor))
-            using (Brush dimBrush =
-                new SolidBrush(
-                    context.DimPhosphorColor))
-            using (Brush bodyBrush =
-                new SolidBrush(
-                    context.PhosphorColor))
-            {
-                graphics.DrawRectangle(
-                    borderPen,
-                    bounds);
-
-                int padding = 10;
-                int titleHeight = 25;
-
-                graphics.DrawString(
-                    "ORBIT TREND",
-                    panelFont,
-                    textBrush,
-                    bounds.Left + padding,
-                    bounds.Top + 7);
-
-                Rectangle content =
-                    new Rectangle(
-                        bounds.Left + padding,
-                        bounds.Top + titleHeight + 4,
-                        bounds.Width - padding * 2,
-                        bounds.Height -
-                        titleHeight -
-                        padding - 5);
-
-                int dataWidth =
-                    Math.Max(
-                        135,
-                        content.Width * 34 / 100);
-
-                Rectangle orbitArea =
-                    new Rectangle(
-                        content.Left,
-                        content.Top,
-                        content.Width -
-                        dataWidth -
-                        10,
-                        content.Height);
-
-                Rectangle dataArea =
-                    new Rectangle(
-                        orbitArea.Right + 10,
-                        content.Top,
-                        dataWidth,
-                        content.Height);
-
-                graphics.DrawLine(
-                    dividerPen,
-                    dataArea.Left,
-                    dataArea.Top,
-                    dataArea.Left,
-                    dataArea.Bottom);
-
-                Rectangle orbitPlot =
-                    Rectangle.Inflate(
-                        orbitArea,
-                        -10,
-                        -10);
-
-                for (int index = 1;
-                     index < 4;
-                     index++)
+            OrbitTrendRenderModel model =
+                new OrbitTrendRenderModel
                 {
-                    int x =
-                        orbitPlot.Left +
-                        orbitPlot.Width *
-                        index /
-                        4;
+                    Eccentricity =
+                        telemetry.Eccentricity,
 
-                    graphics.DrawLine(
-                        gridPen,
-                        x,
-                        orbitPlot.Top,
-                        x,
-                        orbitPlot.Bottom);
-                }
+                    TrueAnomalyDegrees =
+                        telemetry.TrueAnomalyDegrees,
 
-                graphics.DrawLine(
-                    gridPen,
-                    orbitPlot.Left,
-                    orbitPlot.Top +
-                    orbitPlot.Height / 2,
-                    orbitPlot.Right,
-                    orbitPlot.Top +
-                    orbitPlot.Height / 2);
+                    ApoapsisMeters =
+                        telemetry.Apoapsis,
 
-                float centerX =
-                    orbitPlot.Left +
-                    orbitPlot.Width * 0.52f;
+                    PeriapsisMeters =
+                        telemetry.Periapsis,
 
-                float centerY =
-                    orbitPlot.Top +
-                    orbitPlot.Height * 0.50f;
+                    InclinationDegrees =
+                        telemetry.InclinationDegrees
+                };
 
-                double eccentricity =
-                    IsFinite(
-                        telemetry.Eccentricity)
-                        ? Math.Max(
-                            0.0,
-                            Math.Min(
-                                0.94,
-                                telemetry.Eccentricity))
-                        : 0.0;
-
-                float semiMajor =
-                    orbitPlot.Width * 0.43f;
-
-                float semiMinor =
-                    Math.Min(
-                        orbitPlot.Height * 0.37f,
-                        semiMajor *
-                        (float)Math.Sqrt(
-                            Math.Max(
-                                0.12,
-                                1.0 -
-                                eccentricity *
-                                eccentricity)));
-
-                graphics.DrawEllipse(
-                    orbitPen,
-                    centerX - semiMajor,
-                    centerY - semiMinor,
-                    semiMajor * 2.0f,
-                    semiMinor * 2.0f);
-
-                graphics.FillEllipse(
-                    bodyBrush,
-                    centerX - 4.0f,
-                    centerY - 4.0f,
-                    8.0f,
-                    8.0f);
-
-                double anomaly =
-                    IsFinite(
-                        telemetry.TrueAnomalyDegrees)
-                        ? telemetry.TrueAnomalyDegrees *
-                          Math.PI /
-                          180.0
-                        : 0.0;
-
-                float vesselX =
-                    centerX +
-                    semiMajor *
-                    (float)Math.Cos(
-                        anomaly);
-
-                float vesselY =
-                    centerY -
-                    semiMinor *
-                    (float)Math.Sin(
-                        anomaly);
-
-                graphics.FillEllipse(
-                    dimBrush,
-                    vesselX - 3.0f,
-                    vesselY - 3.0f,
-                    6.0f,
-                    6.0f);
-
-                int rowHeight =
-                    Math.Max(
-                        26,
-                        dataArea.Height / 3);
-
-                DrawOrbitDataRow(
-                    graphics,
-                    panelFont,
-                    dimBrush,
-                    textBrush,
-                    dataArea,
-                    0,
-                    rowHeight,
-                    "APOAPSIS",
-                    FormatDistance(
-                        telemetry.Apoapsis));
-
-                DrawOrbitDataRow(
-                    graphics,
-                    panelFont,
-                    dimBrush,
-                    textBrush,
-                    dataArea,
-                    1,
-                    rowHeight,
-                    "PERIAPSIS",
-                    FormatDistance(
-                        telemetry.Periapsis));
-
-                DrawOrbitDataRow(
-                    graphics,
-                    panelFont,
-                    dimBrush,
-                    textBrush,
-                    dataArea,
-                    2,
-                    rowHeight,
-                    "INCLINATION",
-                    FormatAngle(
-                        telemetry.InclinationDegrees));
-            }
-        }
-
-        private static void DrawOrbitDataRow(
-            Graphics graphics,
-            Font font,
-            Brush labelBrush,
-            Brush valueBrush,
-            Rectangle bounds,
-            int index,
-            int rowHeight,
-            string label,
-            string value)
-        {
-            int top =
-                bounds.Top +
-                index *
-                rowHeight;
-
-            Rectangle labelBounds =
-                new Rectangle(
-                    bounds.Left + 10,
-                    top,
-                    bounds.Width - 20,
-                    rowHeight / 2);
-
-            Rectangle valueBounds =
-                new Rectangle(
-                    bounds.Left + 10,
-                    top + rowHeight / 2,
-                    bounds.Width - 20,
-                    rowHeight -
-                    rowHeight / 2);
-
-            using (StringFormat format =
-                new StringFormat())
-            {
-                format.Alignment =
-                    StringAlignment.Center;
-
-                format.LineAlignment =
-                    StringAlignment.Center;
-
-                format.Trimming =
-                    StringTrimming.EllipsisCharacter;
-
-                format.FormatFlags =
-                    StringFormatFlags.NoWrap;
-
-                graphics.DrawString(
-                    label,
-                    font,
-                    labelBrush,
-                    labelBounds,
-                    format);
-
-                graphics.DrawString(
-                    value,
-                    font,
-                    valueBrush,
-                    valueBounds,
-                    format);
-            }
+            _orbitTrendRenderer.Draw(
+                context,
+                bounds,
+                model);
         }
 
         private void DrawGuidancePanel(
