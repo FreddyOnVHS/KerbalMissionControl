@@ -46,6 +46,8 @@
     <Compile Include="Topology\VesselAttachmentType.cs" />
     <Compile Include="Topology\VesselNodeCategory.cs" />
     <Compile Include="Topology\VesselNodeRole.cs" />
+    <Compile Include="Topology\VesselResourceState.cs" />
+    <Compile Include="Topology\VesselPropellantRequirement.cs" />
     <Compile Include="Topology\VesselTopologyNode.cs" />
     <Compile Include="Topology\VesselTopology.cs" />
   </ItemGroup>

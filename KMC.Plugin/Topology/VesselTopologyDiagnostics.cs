@@ -15,89 +15,105 @@ namespace KMC.Plugin.Topology
                 return "[KMC] Vessel topology unavailable.";
             }
 
-            StringBuilder builder =
-                new StringBuilder();
+            StringBuilder builder = new StringBuilder();
 
-            builder.AppendLine(
-                "[KMC] Vessel Topology Phase 2B");
-
+            builder.AppendLine("[KMC] Vessel Topology Phase 2C");
             builder.AppendFormat(
-                "[KMC] Vessel: {0}  Revision: {1}  Parts: {2}",
+                "[KMC] Vessel: {0}  Revision: {1}  Parts: {2}  Current stage: {3}  Next stage: {4}",
                 topology.VesselName,
                 topology.Revision,
-                topology.PartCount);
-
-            builder.AppendLine();
-
-            builder.AppendFormat(
-                "[KMC] Root: {0}  Current stage: {1}  Next stage: {2}  Branches: {3}  Symmetry groups: {4}  Separation boundaries: {5}",
-                topology.HasRootPart
-                    ? topology.RootPartId.ToString()
-                    : "---",
+                topology.PartCount,
                 topology.CurrentStage,
-                topology.NextStage,
-                topology.StructuralBranchCount,
-                topology.SymmetryGroupCount,
-                topology.SeparationBoundaryCount);
-
+                topology.NextStage);
             builder.AppendLine();
-
-            List<VesselTopologyNode> ordered =
-                new List<VesselTopologyNode>(
-                    topology.Nodes);
-
-            ordered.Sort(
-                delegate(
-                    VesselTopologyNode left,
-                    VesselTopologyNode right)
-                {
-                    int depthCompare =
-                        left.StructuralDepth.CompareTo(
-                            right.StructuralDepth);
-
-                    return depthCompare != 0
-                        ? depthCompare
-                        : left.PartId.CompareTo(
-                            right.PartId);
-                });
 
             for (int index = 0;
-                 index < ordered.Count;
+                 index < topology.Nodes.Count;
                  index++)
             {
-                VesselTopologyNode node =
-                    ordered[index];
+                VesselTopologyNode node = topology.Nodes[index];
 
                 builder.AppendFormat(
-                    "[KMC] Part {0}: category={1}, depth={2}, branch={3}, parent={4}, attach={5}, stackChildren=[{6}], surfaceChildren=[{7}], symmetryGroup={8}, activationStage={9}, separationStage={10}, boundary={11}, survivesNext={12}, title=\"{13}\"",
+                    "[KMC] Part {0}: category={1}, depth={2}, branch={3}, activation={4}, separation={5}, crossfeed={6}, resources=[{7}], propellants=[{8}], title=\"{9}\"",
                     node.PartId,
                     node.Category,
                     node.StructuralDepth,
                     node.BranchRootPartId,
-                    node.HasParent
-                        ? node.ParentPartId.ToString()
-                        : "---",
-                    node.AttachmentType,
-                    JoinIds(
-                        node.StackChildPartIds),
-                    JoinIds(
-                        node.SurfaceChildPartIds),
-                    node.SymmetryGroupId == 0
-                        ? "---"
-                        : node.SymmetryGroupId.ToString(),
-                    FormatStage(
-                        node.ActivationStage),
-                    FormatStage(
-                        node.SeparationStage),
-                    node.IsSeparationBoundary
-                        ? "YES"
-                        : "NO",
-                    node.SurvivesNextStage
-                        ? "YES"
-                        : "NO",
+                    FormatStage(node.ActivationStage),
+                    FormatStage(node.SeparationStage),
+                    node.AllowsCrossFeed ? "YES" : "NO",
+                    FormatResources(node.Resources),
+                    FormatPropellants(node.PropellantRequirements),
                     node.PartTitle);
-
                 builder.AppendLine();
+            }
+
+            return builder.ToString();
+        }
+
+        private static string FormatResources(
+            IList<VesselResourceState> resources)
+        {
+            if (resources == null ||
+                resources.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            StringBuilder builder = new StringBuilder();
+
+            for (int index = 0;
+                 index < resources.Count;
+                 index++)
+            {
+                if (index > 0)
+                {
+                    builder.Append("; ");
+                }
+
+                VesselResourceState resource = resources[index];
+
+                builder.AppendFormat(
+                    "{0}={1:0.###}/{2:0.###} ({3:0}%) flow={4}",
+                    resource.Name,
+                    resource.Amount,
+                    resource.Capacity,
+                    resource.FillFraction * 100.0,
+                    resource.FlowEnabled ? "ON" : "OFF");
+            }
+
+            return builder.ToString();
+        }
+
+        private static string FormatPropellants(
+            IList<VesselPropellantRequirement> requirements)
+        {
+            if (requirements == null ||
+                requirements.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            StringBuilder builder = new StringBuilder();
+
+            for (int index = 0;
+                 index < requirements.Count;
+                 index++)
+            {
+                if (index > 0)
+                {
+                    builder.Append("; ");
+                }
+
+                VesselPropellantRequirement requirement =
+                    requirements[index];
+
+                builder.AppendFormat(
+                    "{0} ratio={1:0.###} mode={2} sources=[{3}]",
+                    requirement.Name,
+                    requirement.Ratio,
+                    requirement.RawFlowMode,
+                    JoinIds(requirement.ReachableSourcePartIds));
             }
 
             return builder.ToString();
@@ -120,8 +136,7 @@ namespace KMC.Plugin.Topology
                 return string.Empty;
             }
 
-            StringBuilder builder =
-                new StringBuilder();
+            StringBuilder builder = new StringBuilder();
 
             for (int index = 0;
                  index < values.Count;
@@ -132,8 +147,7 @@ namespace KMC.Plugin.Topology
                     builder.Append(',');
                 }
 
-                builder.Append(
-                    values[index]);
+                builder.Append(values[index]);
             }
 
             return builder.ToString();

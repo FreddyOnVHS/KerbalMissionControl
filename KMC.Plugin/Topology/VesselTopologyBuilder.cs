@@ -130,6 +130,10 @@ namespace KMC.Plugin.Topology
             VesselTopologyAnalyzer.Analyze(
                 topology);
 
+            VesselResourceAnalyzer.Analyze(
+                vessel,
+                topology);
+
             return topology;
         }
 

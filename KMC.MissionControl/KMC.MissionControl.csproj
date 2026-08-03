@@ -150,6 +150,14 @@
       <Link>Shared\Topology\VesselNodeRole.cs</Link>
     </Compile>
 
+    <Compile Include="..\KMC.shared\Topology\VesselResourceState.cs">
+      <Link>Shared\Topology\VesselResourceState.cs</Link>
+    </Compile>
+
+    <Compile Include="..\KMC.shared\Topology\VesselPropellantRequirement.cs">
+      <Link>Shared\Topology\VesselPropellantRequirement.cs</Link>
+    </Compile>
+
     <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs">
       <Link>Shared\Topology\VesselTopologyNode.cs</Link>
     </Compile>
