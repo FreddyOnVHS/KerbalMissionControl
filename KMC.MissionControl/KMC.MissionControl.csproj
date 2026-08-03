@@ -68,6 +68,7 @@
       <SubType>UserControl</SubType>
     </Compile>
 
+
     <Compile Include="Guidance\MissionPlanner.cs" />
     <Compile Include="Guidance\MissionPlannerResult.cs" />
 
@@ -77,26 +78,29 @@
 
     <Compile Include="MissionControlReceiver.cs" />
     <Compile Include="Models\MissionTelemetry.cs" />
+
     <Compile Include="Pages\AscentPage.cs" />
     <Compile Include="Pages\IMissionPage.cs" />
     <Compile Include="Pages\OrbitPage.cs" />
     <Compile Include="Pages\PropulsionPage.cs" />
+
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+
+
+    <Compile Include="Rendering\Ascent\FlightDirectorRenderModel.cs" />
+    <Compile Include="Rendering\Ascent\FlightDirectorRenderer.cs" />
     <Compile Include="Rendering\DisplayDrawing.cs" />
     <Compile Include="Rendering\DisplayLayout.cs" />
     <Compile Include="Rendering\MissionPageLayout.cs" />
     <Compile Include="Rendering\MissionRenderContext.cs" />
+
     <Compile Include="Themes\ApolloTheme.cs" />
+
     <Compile Include="Widgets\HorizontalResourceBarWidget.cs" />
     <Compile Include="Widgets\IMissionWidget.cs" />
     <Compile Include="Widgets\OrbitPlotWidget.cs" />
 
-    <!--
-      Compile the shared telemetry contract into this EXE.
-      Link keeps it visually grouped under Shared in Solution Explorer.
-      No KMC.Shared.dll is required at runtime.
-    -->
     <Compile Include="..\KMC.shared\TelemetryPacket.cs">
       <Link>Shared\TelemetryPacket.cs</Link>
     </Compile>

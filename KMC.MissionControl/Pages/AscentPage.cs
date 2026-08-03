@@ -6,6 +6,7 @@ using System.IO;
 using KMC.MissionControl.Guidance;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering;
+using KMC.MissionControl.Rendering.Ascent;
 
 namespace KMC.MissionControl.Pages
 {
@@ -48,6 +49,9 @@ namespace KMC.MissionControl.Pages
 
         private readonly MissionPlanner _missionPlanner =
             new MissionPlanner();
+
+        private readonly FlightDirectorRenderer _flightDirectorRenderer =
+            new FlightDirectorRenderer();
 
         private static readonly object DebugLogSync =
             new object();
@@ -1133,8 +1137,6 @@ namespace KMC.MissionControl.Pages
                 new SolidBrush(
                     context.PhosphorColor))
             {
-                
-
                 graphics.DrawRectangle(
                     borderPen,
                     bounds);
@@ -1402,9 +1404,6 @@ namespace KMC.MissionControl.Pages
             Rectangle bounds,
             MissionTelemetry telemetry)
         {
-            Graphics graphics =
-                context.Graphics;
-
             double targetAltitude =
                 CalculateTargetAltitude(
                     _downrangeMeters,
@@ -1422,519 +1421,38 @@ namespace KMC.MissionControl.Pages
                     targetPitch,
                     DefaultTargetApoapsisMeters);
 
-            string guidance =
-                missionPlan.Status;
-
-            float panelFontSize =
-                Math.Max(
-                    7.0f,
-                    context.SmallFont.Size *
-                    0.72f);
-
-            using (Font panelFont =
-                new Font(
-                    context.SmallFont.FontFamily,
-                    panelFontSize,
-                    FontStyle.Regular,
-                    GraphicsUnit.Point))
-            using (Pen borderPen =
-                new Pen(
-                    context.PhosphorColor,
-                    1.0f))
-            using (Pen dividerPen =
-                new Pen(
-                    context.PhosphorColor,
-                    1.0f))
-            using (Brush titleBrush =
-                new SolidBrush(
-                    context.PhosphorColor))
-            using (Brush labelBrush =
-                new SolidBrush(
-                    context.DimPhosphorColor))
-            using (Brush valueBrush =
-                new SolidBrush(
-                    context.PhosphorColor))
-            {
-                graphics.DrawRectangle(
-                    borderPen,
-                    bounds);
-
-                int padding = 10;
-                int titleHeight = 28;
-
-                graphics.DrawString(
-                    "FLIGHT DIRECTOR",
-                    panelFont,
-                    titleBrush,
-                    bounds.Left + padding,
-                    bounds.Top + 7);
-
-                Rectangle content =
-                    new Rectangle(
-                        bounds.Left + padding,
-                        bounds.Top + titleHeight + 4,
-                        bounds.Width - padding * 2,
-                        bounds.Height -
-                        titleHeight -
-                        padding - 4);
-
-                int dividerX =
-                    content.Left +
-                    content.Width * 50 /
-                    100;
-
-                graphics.DrawLine(
-                    dividerPen,
-                    dividerX,
-                    content.Top,
-                    dividerX,
-                    content.Bottom);
-
-                Rectangle metricsBounds =
-                    new Rectangle(
-                        content.Left,
-                        content.Top,
-                        dividerX -
-                        content.Left -
-                        12,
-                        content.Height);
-
-                Rectangle commandBounds =
-                    new Rectangle(
-                        dividerX + 12,
-                        content.Top,
-                        content.Right -
-                        dividerX -
-                        12,
-                        content.Height);
-
-                string[] labels =
+            FlightDirectorRenderModel model =
+                new FlightDirectorRenderModel
                 {
-                    "TGT AP",
-                    "RANGE",
-                    "TGT ALT",
-                    "ALT",
-                    "ALT ERR",
-                    "TGT PITCH",
-                    "PITCH",
-                    "DYN Q"
-                };
+                    TargetApoapsisMeters =
+                        DefaultTargetApoapsisMeters,
 
-                string[] values =
-                {
-                    FormatDistance(
-                        DefaultTargetApoapsisMeters),
-                    FormatDistance(
-                        _downrangeMeters),
-                    FormatDistance(
-                        targetAltitude),
-                    FormatDistance(
-                        telemetry.Altitude),
-                    FormatSignedDistance(
-                        telemetry.Altitude -
-                        targetAltitude),
-                    FormatAngle(
+                    DownrangeMeters =
+                        _downrangeMeters,
+
+                    TargetAltitudeMeters =
+                        targetAltitude,
+
+                    ActualAltitudeMeters =
+                        telemetry.Altitude,
+
+                    ActualPitchDegrees =
+                        telemetry.Pitch,
+
+                    DynamicPressureKpa =
+                        telemetry.DynamicPressureKpa,
+
+                    MissionTimeSeconds =
+                        telemetry.MissionTime,
+
+                    Plan =
                         missionPlan
-                            .RecommendedPitchDegrees),
-                    FormatAngle(
-                        telemetry.Pitch),
-                    FormatPressure(
-                        telemetry.DynamicPressureKpa)
                 };
 
-                int metricRowHeight =
-                    Math.Max(
-                        18,
-                        metricsBounds.Height /
-                        labels.Length);
-
-                for (int index = 0;
-                     index < labels.Length;
-                     index++)
-                {
-                    DrawSafeDataRow(
-                        graphics,
-                        panelFont,
-                        labelBrush,
-                        valueBrush,
-                        metricsBounds,
-                        index,
-                        metricRowHeight,
-                        labels[index],
-                        values[index]);
-                }
-
-                string[] commandLabels =
-                {
-                    "GUIDANCE",
-                    "STEERING",
-                    "THROTTLE",
-                    "STATUS"
-                };
-
-                string guidanceValue =
-                    IsPostMecoPhase(
-                        missionPlan.FlightPhase) ||
-                    string.Equals(
-                        missionPlan.FlightPhase,
-                        "MECO COUNTDOWN",
-                        StringComparison.Ordinal)
-                        ? missionPlan.NextEvent
-                        : FormatAngle(
-                            missionPlan
-                                .RecommendedPitchDegrees);
-
-                string[] commandValues =
-                {
-                    guidanceValue,
-
-                    missionPlan.Command,
-
-                    missionPlan.ThrottleCommand,
-
-                    GetCompactGuidanceStatus(
-                        guidance)
-                };
-
-                int commandRowHeight =
-                    Math.Max(
-                        24,
-                        commandBounds.Height /
-                        commandLabels.Length);
-
-                for (int index = 0;
-                     index < commandLabels.Length;
-                     index++)
-                {
-                    DrawCommandRow(
-                        graphics,
-                        panelFont,
-                        labelBrush,
-                        valueBrush,
-                        commandBounds,
-                        index,
-                        commandRowHeight,
-                        commandLabels[index],
-                        commandValues[index]);
-                }
-            }
-        }
-
-        private static void DrawSafeDataRow(
-            Graphics graphics,
-            Font font,
-            Brush labelBrush,
-            Brush valueBrush,
-            Rectangle bounds,
-            int index,
-            int rowHeight,
-            string label,
-            string value)
-        {
-            int top =
-                bounds.Top +
-                index *
-                rowHeight;
-
-            int labelWidth =
-                bounds.Width * 54 /
-                100;
-
-            Rectangle labelBounds =
-                new Rectangle(
-                    bounds.Left,
-                    top,
-                    labelWidth,
-                    rowHeight);
-
-            Rectangle valueBounds =
-                new Rectangle(
-                    bounds.Left + labelWidth,
-                    top,
-                    bounds.Width - labelWidth,
-                    rowHeight);
-
-            using (StringFormat labelFormat =
-                new StringFormat())
-            using (StringFormat valueFormat =
-                new StringFormat())
-            {
-                labelFormat.Alignment =
-                    StringAlignment.Near;
-
-                labelFormat.LineAlignment =
-                    StringAlignment.Center;
-
-                labelFormat.Trimming =
-                    StringTrimming.EllipsisCharacter;
-
-                labelFormat.FormatFlags =
-                    StringFormatFlags.NoWrap;
-
-                valueFormat.Alignment =
-                    StringAlignment.Far;
-
-                valueFormat.LineAlignment =
-                    StringAlignment.Center;
-
-                valueFormat.Trimming =
-                    StringTrimming.EllipsisCharacter;
-
-                valueFormat.FormatFlags =
-                    StringFormatFlags.NoWrap;
-
-                graphics.DrawString(
-                    label,
-                    font,
-                    labelBrush,
-                    labelBounds,
-                    labelFormat);
-
-                graphics.DrawString(
-                    value,
-                    font,
-                    valueBrush,
-                    valueBounds,
-                    valueFormat);
-            }
-        }
-
-        private static void DrawCommandRow(
-            Graphics graphics,
-            Font font,
-            Brush labelBrush,
-            Brush valueBrush,
-            Rectangle bounds,
-            int index,
-            int rowHeight,
-            string label,
-            string value)
-        {
-            int top =
-                bounds.Top +
-                index *
-                rowHeight;
-
-            Rectangle labelBounds =
-                new Rectangle(
-                    bounds.Left,
-                    top,
-                    bounds.Width,
-                    Math.Max(
-                        13,
-                        rowHeight / 2));
-
-            Rectangle valueBounds =
-                new Rectangle(
-                    bounds.Left,
-                    labelBounds.Bottom,
-                    bounds.Width,
-                    Math.Max(
-                        13,
-                        rowHeight -
-                        labelBounds.Height));
-
-            using (StringFormat labelFormat =
-                new StringFormat())
-            using (StringFormat valueFormat =
-                new StringFormat())
-            {
-                labelFormat.Alignment =
-                    StringAlignment.Near;
-
-                labelFormat.LineAlignment =
-                    StringAlignment.Center;
-
-                labelFormat.Trimming =
-                    StringTrimming.EllipsisCharacter;
-
-                labelFormat.FormatFlags =
-                    StringFormatFlags.NoWrap;
-
-                valueFormat.Alignment =
-                    StringAlignment.Near;
-
-                valueFormat.LineAlignment =
-                    StringAlignment.Center;
-
-                valueFormat.Trimming =
-                    StringTrimming.EllipsisCharacter;
-
-                valueFormat.FormatFlags =
-                    StringFormatFlags.NoWrap;
-
-                graphics.DrawString(
-                    label,
-                    font,
-                    labelBrush,
-                    labelBounds,
-                    labelFormat);
-
-                graphics.DrawString(
-                    value,
-                    font,
-                    valueBrush,
-                    valueBounds,
-                    valueFormat);
-            }
-        }
-
-        private static bool IsPostMecoPhase(
-            string flightPhase)
-        {
-            return
-                string.Equals(
-                    flightPhase,
-                    "MECO",
-                    StringComparison.Ordinal) ||
-                string.Equals(
-                    flightPhase,
-                    "COAST TO APOAPSIS",
-                    StringComparison.Ordinal) ||
-                string.Equals(
-                    flightPhase,
-                    "CIRCULARIZATION READY",
-                    StringComparison.Ordinal) ||
-                string.Equals(
-                    flightPhase,
-                    "CIRCULARIZATION BURN",
-                    StringComparison.Ordinal) ||
-                string.Equals(
-                    flightPhase,
-                    "ORBIT ACHIEVED",
-                    StringComparison.Ordinal);
-        }
-
-        private static string GetCompactGuidanceStatus(
-            string guidance)
-        {
-            if (string.IsNullOrWhiteSpace(
-                    guidance))
-            {
-                return "---";
-            }
-
-            switch (guidance)
-            {
-                case "HOLD: INSUFFICIENT LAUNCH TWR":
-                    return "LOW LAUNCH TWR";
-
-                case "HIGH DYNAMIC PRESSURE - LIMIT PITCH RATE":
-                    return "HIGH DYN Q";
-
-                case "PROFILE HIGH - PITCH DOWN GRADUALLY":
-                    return "PROFILE HIGH";
-
-                case "PROFILE LOW - HOLD VERTICAL COMPONENT":
-                    return "PROFILE LOW";
-
-                case "PITCH HIGH - INCREASE GRAVITY TURN":
-                    return "PITCH HIGH";
-
-                case "PITCH LOW - REDUCE TURN RATE":
-                    return "PITCH LOW";
-
-                case "TARGET APOAPSIS ACHIEVED - PREPARE MECO":
-                    return "PREPARE MECO";
-
-                case "ASCENT PROFILE NOMINAL":
-                    return "NOMINAL";
-
-                case "AWAITING ASCENT":
-                    return "AWAIT ASCENT";
-
-                case "PREPARE FOR MECO 5":
-                case "PREPARE FOR MECO 4":
-                case "PREPARE FOR MECO 3":
-                case "PREPARE FOR MECO 2":
-                case "PREPARE FOR MECO 1":
-                    return guidance;
-
-                case "CUTOFF REQUIRED":
-                    return "MECO";
-
-                case "COAST - NO REIGNITION":
-                    return "COAST LOCKED";
-
-                case "TARGET APPROACH":
-                    return "TARGET APPROACH";
-
-                case "AWAIT LIFTOFF":
-                    return "AWAIT LIFTOFF";
-
-                case "MECO CONFIRMED":
-                    return "COAST SETUP";
-
-                case "PREPARE CIRCULARIZATION":
-                    return "PREP CIRC BURN";
-
-                case "IGNITION APPROACHING":
-                    return "IGNITION SOON";
-
-                case "CIRCULARIZATION GO":
-                    return "IGNITE NOW";
-
-                case "RAISE PERIAPSIS":
-                    return "CIRC BURN";
-
-                case "CIRC BURN REQUIRED":
-                    return "IGNITE NOW";
-
-                case "ORBIT TARGET REACHED":
-                    return "CUTOFF NOW";
-
-                case "ORBIT CUTOFF":
-                    return "CUTOFF NOW";
-
-                case "ORBIT NOMINAL":
-                    return "ORBIT NOMINAL";
-
-                case "UNPLANNED IGNITION":
-                    return "EARLY IGNITION";
-
-                default:
-                    return guidance;
-            }
-        }
-
-        private static string GetSteeringCommand(
-            MissionTelemetry telemetry,
-            double targetPitch)
-        {
-            double error =
-                telemetry.Pitch -
-                targetPitch;
-
-            if (error > 5.0)
-            {
-                return "PITCH DOWN";
-            }
-
-            if (error < -5.0)
-            {
-                return "PITCH UP";
-            }
-
-            return "HOLD";
-        }
-
-        private static string FormatThrottle(
-            double throttle)
-        {
-            if (!IsFinite(throttle))
-            {
-                return "---";
-            }
-
-            return
-                (Math.Max(
-                    0.0,
-                    Math.Min(
-                        1.0,
-                        throttle)) *
-                 100.0)
-                .ToString("0") +
-                " %";
+            _flightDirectorRenderer.Draw(
+                context,
+                bounds,
+                model);
         }
 
         private void DrawPredictivePanel(
