@@ -62,6 +62,9 @@ namespace KMC.MissionControl.Pages
         private readonly FooterRenderer _footerRenderer =
             new FooterRenderer();
 
+        private readonly AscentHeaderRenderer _headerRenderer =
+            new AscentHeaderRenderer();
+
         private static readonly object DebugLogSync =
             new object();
 
@@ -94,7 +97,7 @@ namespace KMC.MissionControl.Pages
             WriteAscentDebugSample(
                 telemetry);
 
-            DrawHeader(
+            _headerRenderer.Draw(
                 context);
 
             /*
@@ -112,64 +115,33 @@ namespace KMC.MissionControl.Pages
              * The panel allocations intentionally include generous
              * spacing so future data does not overlap or clip.
              */
-            Rectangle graphBounds =
-                context.GetRelativeRectangle(
-                    0.008f,
-                    0.070f,
-                    0.555f,
-                    0.765f);
-
-            Rectangle orbitInsetBounds =
-                context.GetRelativeRectangle(
-                    0.575f,
-                    0.070f,
-                    0.417f,
-                    0.220f);
-
-            Rectangle statusBounds =
-                context.GetRelativeRectangle(
-                    0.575f,
-                    0.302f,
-                    0.417f,
-                    0.325f);
-
-            Rectangle predictionBounds =
-                context.GetRelativeRectangle(
-                    0.575f,
-                    0.639f,
-                    0.417f,
-                    0.196f);
-
-            Rectangle footerBounds =
-                context.GetRelativeRectangle(
-                    0.008f,
-                    0.850f,
-                    0.984f,
-                    0.140f);
+            AscentLayout layout =
+                AscentLayout.Create(
+                    context);
 
             DrawAscentGraph(
                 context,
-                graphBounds,
+                layout.Graph,
                 telemetry);
 
             DrawOrbitInset(
                 context,
-                orbitInsetBounds,
+                layout.OrbitTrend,
                 telemetry);
 
             DrawGuidancePanel(
                 context,
-                statusBounds,
+                layout.FlightDirector,
                 telemetry);
 
             DrawPredictivePanel(
                 context,
-                predictionBounds,
+                layout.Prediction,
                 telemetry);
 
             DrawFooter(
                 context,
-                footerBounds,
+                layout.Footer,
                 telemetry);
         }
 
@@ -669,62 +641,6 @@ namespace KMC.MissionControl.Pages
                     "\"",
                     "\"\"") +
                 "\"";
-        }
-
-        private static void DrawHeader(
-            MissionRenderContext context)
-        {
-            Graphics graphics =
-                context.Graphics;
-
-            Rectangle titleBounds =
-                context.GetRelativeRectangle(
-                    0.015f,
-                    0.018f,
-                    0.970f,
-                    0.055f);
-
-            using (Pen linePen =
-                new Pen(
-                    context.PhosphorColor,
-                    1.0f))
-            {
-                graphics.DrawLine(
-                    linePen,
-                    titleBounds.Left,
-                    titleBounds.Bottom,
-                    titleBounds.Right,
-                    titleBounds.Bottom);
-            }
-
-            graphics.DrawString(
-                "ASCENT GUIDANCE",
-                context.LargeFont,
-                new SolidBrush(
-                    context.PhosphorColor),
-                titleBounds.Left,
-                titleBounds.Top);
-
-            string channel =
-                "CH 02";
-
-            SizeF channelSize =
-                graphics.MeasureString(
-                    channel,
-                    context.LargeFont);
-
-            using (Brush brush =
-                new SolidBrush(
-                    context.PhosphorColor))
-            {
-                graphics.DrawString(
-                    channel,
-                    context.LargeFont,
-                    brush,
-                    titleBounds.Right -
-                    channelSize.Width,
-                    titleBounds.Top);
-            }
         }
 
         private void DrawAscentGraph(
