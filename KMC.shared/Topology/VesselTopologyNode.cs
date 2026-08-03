@@ -18,11 +18,20 @@ namespace KMC.Shared.Topology
             SymmetryPartIds =
                 new List<uint>();
 
+            StoredResourceNames =
+                new List<string>();
+
             PartName =
                 string.Empty;
 
             PartTitle =
                 string.Empty;
+
+            Category =
+                VesselNodeCategory.Unknown;
+
+            Roles =
+                VesselNodeRole.None;
         }
 
         public uint PartId { get; set; }
@@ -39,15 +48,14 @@ namespace KMC.Shared.Topology
 
         public VesselAttachmentType AttachmentType { get; set; }
 
+        public VesselNodeCategory Category { get; set; }
+
+        public VesselNodeRole Roles { get; set; }
+
         public double DryMassTonnes { get; set; }
 
         public double ResourceMassTonnes { get; set; }
 
-        /// <summary>
-        /// Position in vessel-reference coordinates. These values are
-        /// diagnostic hints only; the future schematic layout engine will
-        /// primarily use the topology tree.
-        /// </summary>
         public double VesselX { get; set; }
 
         public double VesselY { get; set; }
@@ -57,5 +65,19 @@ namespace KMC.Shared.Topology
         public List<uint> ChildPartIds { get; private set; }
 
         public List<uint> SymmetryPartIds { get; private set; }
+
+        /// <summary>
+        /// Resource names stored by the part. Amounts and capacities will be
+        /// added to the live-state packet in a later phase.
+        /// </summary>
+        public List<string> StoredResourceNames { get; private set; }
+
+        public bool HasRole(
+            VesselNodeRole role)
+        {
+            return
+                (Roles & role) ==
+                role;
+        }
     }
 }

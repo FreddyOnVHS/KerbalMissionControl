@@ -44,6 +44,8 @@
     <Compile Include="TelemetryPacket.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Topology\VesselAttachmentType.cs" />
+    <Compile Include="Topology\VesselNodeCategory.cs" />
+    <Compile Include="Topology\VesselNodeRole.cs" />
     <Compile Include="Topology\VesselTopologyNode.cs" />
     <Compile Include="Topology\VesselTopology.cs" />
   </ItemGroup>

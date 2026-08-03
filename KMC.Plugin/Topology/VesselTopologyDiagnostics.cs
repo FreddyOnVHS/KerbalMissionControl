@@ -19,7 +19,7 @@ namespace KMC.Plugin.Topology
                 new StringBuilder();
 
             builder.AppendLine(
-                "[KMC] Vessel Topology Phase 1");
+                "[KMC] Vessel Topology Phase 2A");
 
             builder.AppendFormat(
                 "[KMC] Vessel: {0}  ID: {1}  Revision: {2}",
@@ -39,12 +39,15 @@ namespace KMC.Plugin.Topology
                 "[KMC] Parts: {0}  Root: {1}  Max inverse stage: {2}",
                 topology.PartCount,
                 topology.HasRootPart
-                    ? topology.RootPartId
-                        .ToString()
+                    ? topology.RootPartId.ToString()
                     : "---",
                 topology.MaximumInverseStage);
 
             builder.AppendLine();
+
+            AppendCategorySummary(
+                builder,
+                topology.Nodes);
 
             List<VesselTopologyNode> ordered =
                 new List<VesselTopologyNode>(
@@ -73,12 +76,16 @@ namespace KMC.Plugin.Topology
                     ordered[index];
 
                 builder.AppendFormat(
-                    "[KMC] Part {0}: stage={1}, parent={2}, attach={3}, children=[{4}], symmetry=[{5}], title=\"{6}\", mass={7:0.000}+{8:0.000}t, pos=({9:0.00},{10:0.00},{11:0.00})",
+                    "[KMC] Part {0}: category={1}, roles=[{2}], resources=[{3}], stage={4}, parent={5}, attach={6}, children=[{7}], symmetry=[{8}], title=\"{9}\", mass={10:0.000}+{11:0.000}t, pos=({12:0.00},{13:0.00},{14:0.00})",
                     node.PartId,
+                    node.Category,
+                    FormatRoles(
+                        node.Roles),
+                    JoinStrings(
+                        node.StoredResourceNames),
                     node.InverseStage,
                     node.HasParent
-                        ? node.ParentPartId
-                            .ToString()
+                        ? node.ParentPartId.ToString()
                         : "---",
                     node.AttachmentType,
                     JoinIds(
@@ -96,6 +103,87 @@ namespace KMC.Plugin.Topology
             }
 
             return builder.ToString();
+        }
+
+        private static void AppendCategorySummary(
+            StringBuilder builder,
+            IList<VesselTopologyNode> nodes)
+        {
+            Dictionary<VesselNodeCategory, int> counts =
+                new Dictionary<VesselNodeCategory, int>();
+
+            for (int index = 0;
+                 index < nodes.Count;
+                 index++)
+            {
+                VesselNodeCategory category =
+                    nodes[index].Category;
+
+                int count;
+
+                counts.TryGetValue(
+                    category,
+                    out count);
+
+                counts[category] =
+                    count + 1;
+            }
+
+            builder.Append(
+                "[KMC] Categories:");
+
+            Array categories =
+                Enum.GetValues(
+                    typeof(VesselNodeCategory));
+
+            for (int index = 0;
+                 index < categories.Length;
+                 index++)
+            {
+                VesselNodeCategory category =
+                    (VesselNodeCategory)
+                    categories.GetValue(index);
+
+                int count;
+
+                if (!counts.TryGetValue(
+                        category,
+                        out count) ||
+                    count <= 0)
+                {
+                    continue;
+                }
+
+                builder.AppendFormat(
+                    " {0}={1}",
+                    category,
+                    count);
+            }
+
+            builder.AppendLine();
+        }
+
+        private static string FormatRoles(
+            VesselNodeRole roles)
+        {
+            return roles == VesselNodeRole.None
+                ? string.Empty
+                : roles.ToString();
+        }
+
+        private static string JoinStrings(
+            IList<string> values)
+        {
+            if (values == null ||
+                values.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            return string.Join(
+                ",",
+                new List<string>(
+                    values).ToArray());
         }
 
         private static string JoinIds(
@@ -116,8 +204,7 @@ namespace KMC.Plugin.Topology
             {
                 if (index > 0)
                 {
-                    builder.Append(
-                        ',');
+                    builder.Append(',');
                 }
 
                 builder.Append(

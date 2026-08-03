@@ -82,6 +82,7 @@
     <Compile Include="TelemetrySender.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
 
+    <Compile Include="Topology\VesselPartClassifier.cs" />
     <Compile Include="Topology\VesselTopologyBuilder.cs" />
     <Compile Include="Topology\VesselTopologyService.cs" />
     <Compile Include="Topology\VesselTopologyDiagnostics.cs" />
@@ -92,6 +93,12 @@
     </Compile>
     <Compile Include="..\KMC.shared\Topology\VesselAttachmentType.cs">
       <Link>Shared\Topology\VesselAttachmentType.cs</Link>
+    </Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselNodeCategory.cs">
+      <Link>Shared\Topology\VesselNodeCategory.cs</Link>
+    </Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselNodeRole.cs">
+      <Link>Shared\Topology\VesselNodeRole.cs</Link>
     </Compile>
     <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs">
       <Link>Shared\Topology\VesselTopologyNode.cs</Link>
