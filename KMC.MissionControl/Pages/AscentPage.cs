@@ -65,6 +65,9 @@ namespace KMC.MissionControl.Pages
         private readonly AscentHeaderRenderer _headerRenderer =
             new AscentHeaderRenderer();
 
+        private readonly AscentGraphRenderer _ascentGraphRenderer =
+            new AscentGraphRenderer();
+
         private static readonly object DebugLogSync =
             new object();
 
@@ -648,247 +651,54 @@ namespace KMC.MissionControl.Pages
             Rectangle bounds,
             MissionTelemetry telemetry)
         {
-            Graphics graphics =
-                context.Graphics;
-
-            using (Pen borderPen =
-                new Pen(
-                    context.PhosphorColor,
-                    1.0f))
-            using (Pen gridPen =
-                new Pen(
-                    Color.FromArgb(
-                        70,
-                        context.DimPhosphorColor),
-                    1.0f))
-            using (Pen targetPen =
-                new Pen(
-                    context.DimPhosphorColor,
-                    2.0f))
-            using (Pen actualPen =
-                new Pen(
-                    Color.FromArgb(
-                        230,
-                        255,
-                        90,
-                        80),
-                    2.2f))
-            {
-                targetPen.DashStyle =
-                    DashStyle.Dash;
-
-                graphics.DrawRectangle(
-                    borderPen,
-                    bounds);
-
-                Rectangle plot =
-                    Rectangle.Inflate(
-                        bounds,
-                        -64,
-                        -54);
-
-                plot.Y += 18;
-                plot.Height -= 18;
-
-                DrawGrid(
-                    graphics,
-                    plot,
-                    gridPen);
-
-                DrawAxisLabels(
-                    context,
-                    plot);
-
-                double maxDownrange =
-                    CalculateGraphDownrangeLimit(
-                        telemetry);
-
-                double maxAltitude =
-                    Math.Max(
-                        DefaultTargetApoapsisMeters *
-                        1.15,
-                        GetMaximumActualAltitude() *
-                        1.10);
-
-                DrawTargetCurve(
-                    graphics,
-                    plot,
-                    targetPen,
-                    maxDownrange,
-                    maxAltitude,
+            double maxDownrange =
+                CalculateGraphDownrangeLimit(
                     telemetry);
 
-                DrawActualCurve(
-                    graphics,
-                    plot,
-                    actualPen,
-                    maxDownrange,
-                    maxAltitude);
+            double maxAltitude =
+                Math.Max(
+                    DefaultTargetApoapsisMeters *
+                    1.15,
+                    GetMaximumActualAltitude() *
+                    1.10);
 
-                DrawCurrentMarker(
-                    context,
-                    plot,
-                    maxDownrange,
-                    maxAltitude,
-                    telemetry);
+            const int targetPointCount =
+                120;
 
-                using (Brush labelBrush =
-                    new SolidBrush(
-                        context.PhosphorColor))
-                {
-                    graphics.DrawString(
-                        "ALTITUDE VS DOWNRANGE",
-                        context.SmallFont,
-                        labelBrush,
-                        bounds.Left + 10,
-                        bounds.Top + 8);
-                }
-
-                DrawLegend(
-                    context,
-                    bounds);
-            }
-        }
-
-        private static void DrawGrid(
-            Graphics graphics,
-            Rectangle plot,
-            Pen gridPen)
-        {
-            const int verticalDivisions = 8;
-            const int horizontalDivisions = 6;
+            AscentGraphPoint[] targetPoints =
+                new AscentGraphPoint[
+                    targetPointCount];
 
             for (int index = 0;
-                 index <= verticalDivisions;
-                 index++)
-            {
-                int x =
-                    plot.Left +
-                    plot.Width *
-                    index /
-                    verticalDivisions;
-
-                graphics.DrawLine(
-                    gridPen,
-                    x,
-                    plot.Top,
-                    x,
-                    plot.Bottom);
-            }
-
-            for (int index = 0;
-                 index <= horizontalDivisions;
-                 index++)
-            {
-                int y =
-                    plot.Top +
-                    plot.Height *
-                    index /
-                    horizontalDivisions;
-
-                graphics.DrawLine(
-                    gridPen,
-                    plot.Left,
-                    y,
-                    plot.Right,
-                    y);
-            }
-        }
-
-        private static void DrawAxisLabels(
-            MissionRenderContext context,
-            Rectangle plot)
-        {
-            Graphics graphics =
-                context.Graphics;
-
-            using (Brush brush =
-                new SolidBrush(
-                    context.DimPhosphorColor))
-            {
-                graphics.DrawString(
-                    "ALT",
-                    context.SmallFont,
-                    brush,
-                    plot.Left - 34,
-                    plot.Top - 4);
-
-                string rangeLabel =
-                    "DOWNRANGE";
-
-                SizeF size =
-                    graphics.MeasureString(
-                        rangeLabel,
-                        context.SmallFont);
-
-                graphics.DrawString(
-                    rangeLabel,
-                    context.SmallFont,
-                    brush,
-                    plot.Right -
-                    size.Width,
-                    plot.Bottom + 7);
-            }
-        }
-
-        private void DrawTargetCurve(
-            Graphics graphics,
-            Rectangle plot,
-            Pen pen,
-            double maxDownrange,
-            double maxAltitude,
-            MissionTelemetry telemetry)
-        {
-            const int pointCount = 120;
-
-            PointF[] points =
-                new PointF[pointCount];
-
-            for (int index = 0;
-                 index < pointCount;
+                 index < targetPointCount;
                  index++)
             {
                 double fraction =
                     index /
-                    (double)(pointCount - 1);
+                    (double)(
+                        targetPointCount -
+                        1);
 
                 double downrange =
                     maxDownrange *
                     fraction;
 
-                double altitude =
-                    CalculateTargetAltitude(
-                        downrange,
-                        telemetry);
+                targetPoints[index] =
+                    new AscentGraphPoint
+                    {
+                        DownrangeMeters =
+                            downrange,
 
-                points[index] =
-                    MapPoint(
-                        plot,
-                        downrange,
-                        altitude,
-                        maxDownrange,
-                        maxAltitude);
+                        AltitudeMeters =
+                            CalculateTargetAltitude(
+                                downrange,
+                                telemetry)
+                    };
             }
 
-            graphics.DrawLines(
-                pen,
-                points);
-        }
-
-        private void DrawActualCurve(
-            Graphics graphics,
-            Rectangle plot,
-            Pen pen,
-            double maxDownrange,
-            double maxAltitude)
-        {
-            if (_samples.Count < 2)
-            {
-                return;
-            }
-
-            PointF[] points =
-                new PointF[_samples.Count];
+            AscentGraphPoint[] actualPoints =
+                new AscentGraphPoint[
+                    _samples.Count];
 
             for (int index = 0;
                  index < _samples.Count;
@@ -897,121 +707,37 @@ namespace KMC.MissionControl.Pages
                 AscentSample sample =
                     _samples[index];
 
-                points[index] =
-                    MapPoint(
-                        plot,
-                        sample.DownrangeMeters,
-                        sample.AltitudeMeters,
+                actualPoints[index] =
+                    new AscentGraphPoint
+                    {
+                        DownrangeMeters =
+                            sample.DownrangeMeters,
+
+                        AltitudeMeters =
+                            sample.AltitudeMeters
+                    };
+            }
+
+            AscentGraphRenderModel model =
+                new AscentGraphRenderModel
+                {
+                    MaximumDownrangeMeters =
                         maxDownrange,
-                        maxAltitude);
-            }
 
-            graphics.DrawLines(
-                pen,
-                points);
-        }
+                    MaximumAltitudeMeters =
+                        maxAltitude,
 
-        private void DrawCurrentMarker(
-            MissionRenderContext context,
-            Rectangle plot,
-            double maxDownrange,
-            double maxAltitude,
-            MissionTelemetry telemetry)
-        {
-            if (_samples.Count == 0)
-            {
-                return;
-            }
+                    TargetPoints =
+                        targetPoints,
 
-            AscentSample sample =
-                _samples[_samples.Count - 1];
+                    ActualPoints =
+                        actualPoints
+                };
 
-            PointF point =
-                MapPoint(
-                    plot,
-                    sample.DownrangeMeters,
-                    sample.AltitudeMeters,
-                    maxDownrange,
-                    maxAltitude);
-
-            RectangleF marker =
-                new RectangleF(
-                    point.X - 4.0f,
-                    point.Y - 4.0f,
-                    8.0f,
-                    8.0f);
-
-            using (Brush brush =
-                new SolidBrush(
-                    Color.FromArgb(
-                        240,
-                        255,
-                        110,
-                        90)))
-            {
-                context.Graphics.FillEllipse(
-                    brush,
-                    marker);
-            }
-        }
-
-        private static void DrawLegend(
-            MissionRenderContext context,
-            Rectangle bounds)
-        {
-            Graphics graphics =
-                context.Graphics;
-
-            int y =
-                bounds.Bottom - 22;
-
-            using (Pen targetPen =
-                new Pen(
-                    context.DimPhosphorColor,
-                    2.0f))
-            using (Pen actualPen =
-                new Pen(
-                    Color.FromArgb(
-                        230,
-                        255,
-                        90,
-                        80),
-                    2.0f))
-            using (Brush textBrush =
-                new SolidBrush(
-                    context.DimPhosphorColor))
-            {
-                targetPen.DashStyle =
-                    DashStyle.Dash;
-
-                graphics.DrawLine(
-                    targetPen,
-                    bounds.Left + 12,
-                    y,
-                    bounds.Left + 42,
-                    y);
-
-                graphics.DrawString(
-                    "TARGET",
-                    context.SmallFont,
-                    textBrush,
-                    bounds.Left + 48,
-                    y - 8);
-
-                graphics.DrawLine(
-                    actualPen,
-                    bounds.Left + 128,
-                    y,
-                    bounds.Left + 158,
-                    y);
-
-                graphics.DrawString(
-                    "ACTUAL",
-                    context.SmallFont,
-                    textBrush,
-                    bounds.Left + 164,
-                    y - 8);
-            }
+            _ascentGraphRenderer.Draw(
+                context,
+                bounds,
+                model);
         }
 
         private void DrawOrbitInset(
@@ -1944,48 +1670,6 @@ namespace KMC.MissionControl.Pages
             }
 
             return maximum;
-        }
-
-        private static PointF MapPoint(
-            Rectangle plot,
-            double downrange,
-            double altitude,
-            double maxDownrange,
-            double maxAltitude)
-        {
-            double xFraction =
-                maxDownrange > 0.0
-                    ? downrange /
-                      maxDownrange
-                    : 0.0;
-
-            double yFraction =
-                maxAltitude > 0.0
-                    ? altitude /
-                      maxAltitude
-                    : 0.0;
-
-            xFraction =
-                Math.Max(
-                    0.0,
-                    Math.Min(
-                        1.0,
-                        xFraction));
-
-            yFraction =
-                Math.Max(
-                    0.0,
-                    Math.Min(
-                        1.0,
-                        yFraction));
-
-            return new PointF(
-                plot.Left +
-                (float)(plot.Width *
-                        xFraction),
-                plot.Bottom -
-                (float)(plot.Height *
-                        yFraction));
         }
 
         private static string FormatDistance(
