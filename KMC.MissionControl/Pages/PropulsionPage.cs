@@ -126,8 +126,8 @@ namespace KMC.MissionControl.Pages
                 "TWR",
                 "ISP",
                 "ENGINES",
-                "FUEL",
-                "OX",
+                "ACTIVE LF",
+                "ACTIVE OX",
                 "GRAPH REV"
             };
 
@@ -156,15 +156,15 @@ namespace KMC.MissionControl.Pages
                 Percent(
                     Fraction(
                         telemetry
-                            .TotalLiquidFuelAmount,
+                            .StageLiquidFuelAmount,
                         telemetry
-                            .TotalLiquidFuelCapacity)),
+                            .StageLiquidFuelCapacity)),
                 Percent(
                     Fraction(
                         telemetry
-                            .TotalOxidizerAmount,
+                            .StageOxidizerAmount,
                         telemetry
-                            .TotalOxidizerCapacity)),
+                            .StageOxidizerCapacity)),
                 graph != null
                     ? graph.TopologyRevision
                         .ToString()

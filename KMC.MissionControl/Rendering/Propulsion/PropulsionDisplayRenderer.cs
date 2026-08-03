@@ -68,8 +68,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 int gap = 14;
                 int upperHeight =
                     Math.Max(
-                        210,
-                        bounds.Height * 47 / 100);
+                        190,
+                        bounds.Height * 36 / 100);
 
                 Rectangle clusterPanel =
                     new Rectangle(
@@ -571,6 +571,35 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 labelFont,
                 dimPhosphor,
                 stateColor);
+
+            bool activeFuelEmpty =
+                telemetry != null &&
+                telemetry.StageLiquidFuelCapacity > 0.0 &&
+                telemetry.StageLiquidFuelAmount <= 0.0001;
+
+            bool activeOxEmpty =
+                telemetry != null &&
+                telemetry.StageOxidizerCapacity > 0.0 &&
+                telemetry.StageOxidizerAmount <= 0.0001;
+
+            if (activeFuelEmpty ||
+                activeOxEmpty)
+            {
+                DrawValueRow(
+                    graphics,
+                    bounds,
+                    ref y,
+                    row,
+                    "ACTIVE FEED",
+                    "NO USABLE PROPELLANT",
+                    labelFont,
+                    dimPhosphor,
+                    Color.FromArgb(
+                        255,
+                        255,
+                        75,
+                        55));
+            }
         }
 
         private static void DrawSystemFlow(
@@ -611,16 +640,16 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Rectangle lfTank =
                 new Rectangle(
                     bounds.Left + 16,
-                    bounds.Top + 36,
-                    132,
-                    72);
+                    bounds.Top + 28,
+                    166,
+                    118);
 
             Rectangle oxTank =
                 new Rectangle(
-                    bounds.Right - 148,
-                    bounds.Top + 36,
-                    132,
-                    72);
+                    bounds.Right - 182,
+                    bounds.Top + 28,
+                    166,
+                    118);
 
             Rectangle mixer =
                 new Rectangle(
@@ -643,10 +672,19 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     124,
                     48);
 
-            DrawTank(
+            DrawSplitTank(
                 graphics,
                 lfTank,
                 "LIQUID FUEL",
+                Fraction(
+                    telemetry != null
+                        ? telemetry
+                            .StageLiquidFuelAmount
+                        : 0.0,
+                    telemetry != null
+                        ? telemetry
+                            .StageLiquidFuelCapacity
+                        : 0.0),
                 Fraction(
                     telemetry != null
                         ? telemetry
@@ -660,10 +698,19 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 labelFont,
                 smallFont);
 
-            DrawTank(
+            DrawSplitTank(
                 graphics,
                 oxTank,
                 "OXIDIZER",
+                Fraction(
+                    telemetry != null
+                        ? telemetry
+                            .StageOxidizerAmount
+                        : 0.0,
+                    telemetry != null
+                        ? telemetry
+                            .StageOxidizerCapacity
+                        : 0.0),
                 Fraction(
                     telemetry != null
                         ? telemetry
@@ -751,15 +798,24 @@ namespace KMC.MissionControl.Rendering.Propulsion
             {
                 Rectangle monoTank =
                     new Rectangle(
-                        bounds.Right - 148,
-                        chamber.Top,
-                        132,
-                        62);
+                        bounds.Right - 182,
+                        chamber.Top - 6,
+                        166,
+                        104);
 
-                DrawTank(
+                DrawSplitTank(
                     graphics,
                     monoTank,
                     "MONOPROP",
+                    Fraction(
+                        telemetry != null
+                            ? telemetry
+                                .StageMonopropellantAmount
+                            : 0.0,
+                        telemetry != null
+                            ? telemetry
+                                .StageMonopropellantCapacity
+                            : 0.0),
                     Fraction(
                         telemetry != null
                             ? telemetry
@@ -950,6 +1006,176 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         bounds.Width + 24,
                         18),
                     centered);
+            }
+        }
+
+        private static void DrawSplitTank(
+            Graphics graphics,
+            Rectangle bounds,
+            string title,
+            double activeFraction,
+            double totalFraction,
+            Color color,
+            Font titleFont,
+            Font detailFont)
+        {
+            using (SolidBrush fill =
+                new SolidBrush(
+                    Color.FromArgb(
+                        180,
+                        3,
+                        16,
+                        22)))
+            using (Pen pen =
+                new Pen(color, 1.7f))
+            using (SolidBrush titleBrush =
+                new SolidBrush(color))
+            using (SolidBrush labelBrush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        180,
+                        color)))
+            using (StringFormat centered =
+                new StringFormat
+                {
+                    Alignment =
+                        StringAlignment.Center,
+                    LineAlignment =
+                        StringAlignment.Center
+                })
+            {
+                graphics.FillRectangle(
+                    fill,
+                    bounds);
+
+                graphics.DrawRectangle(
+                    pen,
+                    bounds);
+
+                graphics.DrawString(
+                    title,
+                    titleFont,
+                    titleBrush,
+                    new Rectangle(
+                        bounds.Left + 3,
+                        bounds.Top + 5,
+                        bounds.Width - 6,
+                        22),
+                    centered);
+
+                int dividerY =
+                    bounds.Top + 31;
+
+                graphics.DrawLine(
+                    pen,
+                    bounds.Left + 8,
+                    dividerY,
+                    bounds.Right - 8,
+                    dividerY);
+
+                Rectangle activeBar =
+                    new Rectangle(
+                        bounds.Left + 10,
+                        bounds.Top + 54,
+                        bounds.Width - 20,
+                        13);
+
+                Rectangle totalBar =
+                    new Rectangle(
+                        bounds.Left + 10,
+                        bounds.Top + 91,
+                        bounds.Width - 20,
+                        10);
+
+                DrawLevelBar(
+                    graphics,
+                    activeBar,
+                    activeFraction,
+                    color,
+                    90);
+
+                DrawLevelBar(
+                    graphics,
+                    totalBar,
+                    totalFraction,
+                    color,
+                    45);
+
+                graphics.DrawString(
+                    "ACTIVE  " +
+                    (activeFraction * 100.0)
+                        .ToString("0") +
+                    "%",
+                    detailFont,
+                    activeFraction <= 0.0001
+                        ? Brushes.Red
+                        : titleBrush,
+                    new Rectangle(
+                        bounds.Left + 7,
+                        bounds.Top + 33,
+                        bounds.Width - 14,
+                        20),
+                    centered);
+
+                graphics.DrawString(
+                    "TOTAL   " +
+                    (totalFraction * 100.0)
+                        .ToString("0") +
+                    "%",
+                    detailFont,
+                    labelBrush,
+                    new Rectangle(
+                        bounds.Left + 7,
+                        bounds.Top + 70,
+                        bounds.Width - 14,
+                        19),
+                    centered);
+            }
+        }
+
+        private static void DrawLevelBar(
+            Graphics graphics,
+            Rectangle bounds,
+            double fraction,
+            Color color,
+            int alpha)
+        {
+            using (Pen frame =
+                new Pen(
+                    Color.FromArgb(
+                        150,
+                        color),
+                    1.0f))
+            using (SolidBrush level =
+                new SolidBrush(
+                    Color.FromArgb(
+                        alpha,
+                        color)))
+            {
+                graphics.DrawRectangle(
+                    frame,
+                    bounds);
+
+                Rectangle filled =
+                    new Rectangle(
+                        bounds.Left + 1,
+                        bounds.Top + 1,
+                        Math.Max(
+                            0,
+                            (int)
+                            ((bounds.Width - 1) *
+                             Math.Max(
+                                 0.0,
+                                 Math.Min(
+                                     1.0,
+                                     fraction)))),
+                        Math.Max(
+                            0,
+                            bounds.Height - 1));
+
+                graphics.FillRectangle(
+                    level,
+                    filled);
             }
         }
 

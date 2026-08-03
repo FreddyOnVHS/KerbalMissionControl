@@ -1,14 +1,18 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using KMC.Plugin.Topology;
 using KMC.Shared;
 using UnityEngine;
 
 namespace KMC.Plugin
 {
-    [KSPAddon(KSPAddon.Startup.Flight, false)]
-    public sealed class TelemetrySender : MonoBehaviour
+    [KSPAddon(
+        KSPAddon.Startup.Flight,
+        false)]
+    public sealed class TelemetrySender :
+        MonoBehaviour
     {
         private const float SendIntervalSeconds =
             0.1f;
@@ -69,20 +73,17 @@ namespace KMC.Plugin
                 FlightGlobals.ActiveVessel;
 
             if (vessel == null ||
-               _udpClient == null)
+                _udpClient == null)
             {
                 return;
             }
 
-            AnalyzeCraftIfChanged(
-                vessel);
-
-            SendTelemetry(
-                vessel);
+            AnalyzeCraftIfChanged(vessel);
+            SendTelemetry(vessel);
         }
 
         private void AnalyzeCraftIfChanged(
-    Vessel vessel)
+            Vessel vessel)
         {
             if (vessel == null)
             {
@@ -122,16 +123,14 @@ namespace KMC.Plugin
             try
             {
                 CraftAnalysis analysis =
-                    CraftAnalyzer.Analyze(
-                        vessel);
+                    CraftAnalyzer.Analyze(vessel);
 
                 string report =
                     CraftAnalyzer
                         .CreateDiagnosticReport(
                             analysis);
 
-                Debug.Log(
-                    report);
+                Debug.Log(report);
             }
             catch (Exception ex)
             {
@@ -230,42 +229,46 @@ namespace KMC.Plugin
                     timeToApoapsis,
 
                 Eccentricity =
-                GetOrbitValue(
-                    vessel,
-                    orbit => orbit.eccentricity),
+                    GetOrbitValue(
+                        vessel,
+                        orbit =>
+                            orbit.eccentricity),
 
                 SemiMajorAxis =
-                GetOrbitValue(
-                    vessel,
-                    orbit => orbit.semiMajorAxis),
+                    GetOrbitValue(
+                        vessel,
+                        orbit =>
+                            orbit.semiMajorAxis),
 
                 TrueAnomalyDegrees =
-                GetTrueAnomalyDegrees(
-                    vessel),
+                    GetTrueAnomalyDegrees(vessel),
 
                 ArgumentOfPeriapsisDegrees =
-                GetOrbitValue(
-                    vessel,
-                    orbit => orbit.argumentOfPeriapsis),
+                    GetOrbitValue(
+                        vessel,
+                        orbit =>
+                            orbit.argumentOfPeriapsis),
 
                 InclinationDegrees =
-                GetOrbitValue(
-                    vessel,
-                    orbit => orbit.inclination),
+                    GetOrbitValue(
+                        vessel,
+                        orbit =>
+                            orbit.inclination),
 
                 LongitudeOfAscendingNodeDegrees =
-                GetOrbitValue(
-                    vessel,
-                    orbit => orbit.LAN),
+                    GetOrbitValue(
+                        vessel,
+                        orbit =>
+                            orbit.LAN),
 
                 OrbitalPeriod =
-                GetOrbitValue(
-                    vessel,
-                    orbit => orbit.period),
+                    GetOrbitValue(
+                        vessel,
+                        orbit =>
+                            orbit.period),
 
                 TimeToPeriapsis =
-                GetTimeToPeriapsis(
-                    vessel),
+                    GetTimeToPeriapsis(vessel),
 
                 Throttle =
                     vessel.ctrlState != null
@@ -312,14 +315,16 @@ namespace KMC.Plugin
                     engineTelemetry.EngineCount,
 
                 IgnitedEngineCount =
-                    engineTelemetry.IgnitedEngineCount,
+                    engineTelemetry
+                        .IgnitedEngineCount,
 
                 ProducingThrustEngineCount =
                     engineTelemetry
                         .ProducingThrustEngineCount,
 
                 FlameoutEngineCount =
-                    engineTelemetry.FlameoutEngineCount,
+                    engineTelemetry
+                        .FlameoutEngineCount,
 
                 AverageSpecificImpulse =
                     engineTelemetry
@@ -383,26 +388,15 @@ namespace KMC.Plugin
                 return 0.0;
             }
 
-            /*
-             * heightFromTerrain can return a negative value
-             * when no useful terrain reading is available.
-             */
             if (vessel.heightFromTerrain >= 0.0f)
             {
                 return vessel.heightFromTerrain;
             }
 
-            /*
-             * Fall back to altitude above the terrain's
-             * sea-level elevation.
-             */
-            double fallbackAltitude =
-                vessel.altitude -
-                vessel.terrainAltitude;
-
             return Math.Max(
                 0.0,
-                fallbackAltitude);
+                vessel.altitude -
+                vessel.terrainAltitude);
         }
 
         private static double GetMach(
@@ -427,22 +421,18 @@ namespace KMC.Plugin
                 return 0.0;
             }
 
-            double timeToApoapsis =
+            double value =
                 vessel.orbit.timeToAp;
 
-            if (double.IsNaN(timeToApoapsis) ||
-                double.IsInfinity(timeToApoapsis) ||
-                timeToApoapsis < 0.0)
-            {
-                return 0.0;
-            }
-
-            return timeToApoapsis;
+            return IsFinite(value) &&
+                   value >= 0.0
+                ? value
+                : 0.0;
         }
 
         private static double GetOrbitValue(
-    Vessel vessel,
-    Func<Orbit, double> selector)
+            Vessel vessel,
+            Func<Orbit, double> selector)
         {
             if (vessel == null ||
                 vessel.orbit == null ||
@@ -451,58 +441,50 @@ namespace KMC.Plugin
                 return 0.0;
             }
 
-            double value;
-
             try
             {
-                value =
-                    selector(
-                        vessel.orbit);
+                double value =
+                    selector(vessel.orbit);
+
+                return IsFinite(value)
+                    ? value
+                    : 0.0;
             }
             catch
             {
                 return 0.0;
             }
-
-            if (!IsFinite(value))
-            {
-                return 0.0;
-            }
-
-            return value;
         }
 
-        private static double GetTrueAnomalyDegrees(
-            Vessel vessel)
+        private static double
+            GetTrueAnomalyDegrees(
+                Vessel vessel)
         {
-            double trueAnomalyRadians =
+            double radians =
                 GetOrbitValue(
                     vessel,
-                    orbit => orbit.trueAnomaly);
-
-            double trueAnomalyDegrees =
-                trueAnomalyRadians *
-                180.0 /
-                Math.PI;
+                    orbit =>
+                        orbit.trueAnomaly);
 
             return NormalizeDegrees(
-                trueAnomalyDegrees);
+                radians *
+                180.0 /
+                Math.PI);
         }
 
-        private static double GetTimeToPeriapsis(
-            Vessel vessel)
+        private static double
+            GetTimeToPeriapsis(
+                Vessel vessel)
         {
             double value =
                 GetOrbitValue(
                     vessel,
-                    orbit => orbit.timeToPe);
+                    orbit =>
+                        orbit.timeToPe);
 
-            if (value < 0.0)
-            {
-                return 0.0;
-            }
-
-            return value;
+            return value >= 0.0
+                ? value
+                : 0.0;
         }
 
         private static double NormalizeDegrees(
@@ -514,13 +496,11 @@ namespace KMC.Plugin
             }
 
             double normalized =
-                value %
-                360.0;
+                value % 360.0;
 
             if (normalized < 0.0)
             {
-                normalized +=
-                    360.0;
+                normalized += 360.0;
             }
 
             return normalized;
@@ -547,8 +527,11 @@ namespace KMC.Plugin
                 return result;
             }
 
-            double specificImpulseTotal = 0.0;
-            int specificImpulseSampleCount = 0;
+            double specificImpulseTotal =
+                0.0;
+
+            int specificImpulseSampleCount =
+                0;
 
             foreach (Part part in vessel.parts)
             {
@@ -558,8 +541,8 @@ namespace KMC.Plugin
                     continue;
                 }
 
-                foreach (PartModule module in
-                    part.Modules)
+                foreach (PartModule module
+                    in part.Modules)
                 {
                     ModuleEngines engine =
                         module as ModuleEngines;
@@ -585,10 +568,6 @@ namespace KMC.Plugin
                         result.FlameoutEngineCount++;
                     }
 
-                    /*
-                     * finalThrust is the actual thrust produced
-                     * by this engine at the current instant.
-                     */
                     if (engine.finalThrust > 0.01f)
                     {
                         result.CurrentThrust +=
@@ -598,11 +577,6 @@ namespace KMC.Plugin
                             .ProducingThrustEngineCount++;
                     }
 
-                    /*
-                     * MaximumThrust represents the available
-                     * thrust from engines that are currently
-                     * ignited and not shut down or flamed out.
-                     */
                     if (ignited &&
                         !engine.flameout)
                     {
@@ -610,14 +584,12 @@ namespace KMC.Plugin
                             engine.thrustPercentage /
                             100.0;
 
-                        if (thrustLimit < 0.0)
-                        {
-                            thrustLimit = 0.0;
-                        }
-                        else if (thrustLimit > 1.0)
-                        {
-                            thrustLimit = 1.0;
-                        }
+                        thrustLimit =
+                            Math.Max(
+                                0.0,
+                                Math.Min(
+                                    1.0,
+                                    thrustLimit));
 
                         result.MaximumThrust +=
                             engine.maxThrust *
@@ -661,32 +633,23 @@ namespace KMC.Plugin
                 return 0.0;
             }
 
-            /*
-             * KSP atmosphereCurve pressure is measured in
-             * standard atmospheres. Vessel static pressure is
-             * reported in kilopascals.
-             */
             double pressureAtmospheres =
                 vessel.staticPressurekPa /
                 101.325;
 
-            if (pressureAtmospheres < 0.0)
-            {
-                pressureAtmospheres = 0.0;
-            }
+            pressureAtmospheres =
+                Math.Max(
+                    0.0,
+                    pressureAtmospheres);
 
-            double specificImpulse =
+            double value =
                 engine.atmosphereCurve.Evaluate(
                     (float)pressureAtmospheres);
 
-            if (double.IsNaN(specificImpulse) ||
-                double.IsInfinity(specificImpulse) ||
-                specificImpulse < 0.0)
-            {
-                return 0.0;
-            }
-
-            return specificImpulse;
+            return IsFinite(value) &&
+                   value >= 0.0
+                ? value
+                : 0.0;
         }
 
         private static ResourceTelemetry
@@ -702,6 +665,10 @@ namespace KMC.Plugin
                 return result;
             }
 
+            /*
+             * TOTAL is every unit stored anywhere on
+             * the currently active vessel.
+             */
             ReadResourceTotals(
                 vessel,
                 "LiquidFuel",
@@ -721,32 +688,31 @@ namespace KMC.Plugin
                 out result.TotalMonopropellantCapacity);
 
             /*
-             * KSP's Vessel resource API reports the resources
-             * connected to the active vessel. For this first
-             * PROP implementation, use those connected totals
-             * for both the stage and vessel displays.
-             *
-             * A later telemetry revision can calculate true
-             * post-decoupling stage resources from the vessel's
-             * staging and fuel-flow graph.
+             * ACTIVE is only the propellant reachable
+             * by the current or still-ignited engine
+             * network.
              */
+            ActivePropellantAnalyzer.Result active =
+                ActivePropellantAnalyzer.Analyze(
+                    vessel);
+
             result.StageLiquidFuelAmount =
-                result.TotalLiquidFuelAmount;
+                active.LiquidFuelAmount;
 
             result.StageLiquidFuelCapacity =
-                result.TotalLiquidFuelCapacity;
+                active.LiquidFuelCapacity;
 
             result.StageOxidizerAmount =
-                result.TotalOxidizerAmount;
+                active.OxidizerAmount;
 
             result.StageOxidizerCapacity =
-                result.TotalOxidizerCapacity;
+                active.OxidizerCapacity;
 
             result.StageMonopropellantAmount =
-                result.TotalMonopropellantAmount;
+                active.MonopropellantAmount;
 
             result.StageMonopropellantCapacity =
-                result.TotalMonopropellantCapacity;
+                active.MonopropellantCapacity;
 
             return result;
         }
@@ -761,7 +727,8 @@ namespace KMC.Plugin
             capacity = 0.0;
 
             if (vessel == null ||
-                string.IsNullOrEmpty(resourceName) ||
+                string.IsNullOrEmpty(
+                    resourceName) ||
                 PartResourceLibrary.Instance == null)
             {
                 return;
@@ -769,7 +736,8 @@ namespace KMC.Plugin
 
             PartResourceDefinition definition =
                 PartResourceLibrary.Instance
-                    .GetDefinition(resourceName);
+                    .GetDefinition(
+                        resourceName);
 
             if (definition == null)
             {
@@ -794,10 +762,6 @@ namespace KMC.Plugin
                 return 0.0;
             }
 
-            /*
-             * getGeeForceAtPosition returns local
-             * gravitational acceleration in m/s².
-             */
             Vector3d gravityVector =
                 FlightGlobals
                     .getGeeForceAtPosition(
@@ -811,19 +775,9 @@ namespace KMC.Plugin
                 return 0.0;
             }
 
-            /*
-             * KSP vessel mass is in metric tonnes and
-             * engine thrust is in kilonewtons.
-             *
-             * tonne × m/s² = kN, so the units work
-             * directly here.
-             */
-            double weightKilonewtons =
-                vessel.totalMass *
-                localGravity;
-
             return currentThrust /
-                weightKilonewtons;
+                (vessel.totalMass *
+                 localGravity);
         }
 
         private static double GetPitch(
@@ -882,7 +836,8 @@ namespace KMC.Plugin
             return Vector3.SignedAngle(
                 projectedUp,
                 vesselRight,
-                vesselForward) - 90.0;
+                vesselForward) -
+                90.0;
         }
 
         private void SendPacket(
@@ -916,27 +871,17 @@ namespace KMC.Plugin
         private sealed class ResourceTelemetry
         {
             public double StageLiquidFuelAmount;
-
             public double StageLiquidFuelCapacity;
-
             public double StageOxidizerAmount;
-
             public double StageOxidizerCapacity;
-
             public double StageMonopropellantAmount;
-
             public double StageMonopropellantCapacity;
 
             public double TotalLiquidFuelAmount;
-
             public double TotalLiquidFuelCapacity;
-
             public double TotalOxidizerAmount;
-
             public double TotalOxidizerCapacity;
-
             public double TotalMonopropellantAmount;
-
             public double TotalMonopropellantCapacity;
         }
 
