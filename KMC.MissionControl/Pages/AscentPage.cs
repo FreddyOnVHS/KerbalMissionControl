@@ -59,6 +59,9 @@ namespace KMC.MissionControl.Pages
         private readonly OrbitTrendRenderer _orbitTrendRenderer =
             new OrbitTrendRenderer();
 
+        private readonly FooterRenderer _footerRenderer =
+            new FooterRenderer();
+
         private static readonly object DebugLogSync =
             new object();
 
@@ -1703,9 +1706,6 @@ namespace KMC.MissionControl.Pages
             Rectangle bounds,
             MissionTelemetry telemetry)
         {
-            Graphics graphics =
-                context.Graphics;
-
             double fuelPercent =
                 CalculateStageFuelPercent(
                     telemetry);
@@ -1718,159 +1718,47 @@ namespace KMC.MissionControl.Pages
                         ? "TARGET AP"
                         : "ASCENT";
 
-            using (Pen borderPen =
-                new Pen(
-                    context.PhosphorColor,
-                    1.0f))
-            using (Brush labelBrush =
-                new SolidBrush(
-                    context.DimPhosphorColor))
-            using (Brush valueBrush =
-                new SolidBrush(
-                    context.PhosphorColor))
-            {
-                graphics.DrawRectangle(
-                    borderPen,
-                    bounds);
-
-                string[] labels =
+            FooterRenderModel model =
+                new FooterRenderModel
                 {
-                    "MET",
-                    "STAGE",
-                    "ALTITUDE",
-                    "DOWNRANGE",
-                    "VERT VEL",
-                    "HORZ VEL",
-                    "TWR",
-                    "G FORCE",
-                    "APOAPSIS",
-                    "FUEL",
-                    "STATUS"
+                    MissionTimeSeconds =
+                        telemetry.MissionTime,
+
+                    CurrentStage =
+                        telemetry.CurrentStage,
+
+                    AltitudeMeters =
+                        telemetry.Altitude,
+
+                    DownrangeMeters =
+                        _downrangeMeters,
+
+                    VerticalSpeedMetersPerSecond =
+                        telemetry.VerticalSpeed,
+
+                    HorizontalSpeedMetersPerSecond =
+                        telemetry.HorizontalSpeed,
+
+                    ThrustToWeightRatio =
+                        telemetry.ThrustToWeightRatio,
+
+                    GForce =
+                        telemetry.GForce,
+
+                    ApoapsisMeters =
+                        telemetry.Apoapsis,
+
+                    FuelPercent =
+                        fuelPercent,
+
+                    Status =
+                        status
                 };
 
-                string[] values =
-                {
-                    FormatMissionTime(
-                        telemetry.MissionTime),
-                    telemetry.CurrentStage
-                        .ToString("00"),
-                    FormatDistance(
-                        telemetry.Altitude),
-                    FormatDistance(
-                        _downrangeMeters),
-                    FormatSignedSpeed(
-                        telemetry.VerticalSpeed),
-                    FormatSpeed(
-                        telemetry.HorizontalSpeed),
-                    FormatRatio(
-                        telemetry.ThrustToWeightRatio),
-                    FormatGForceCompact(
-                        telemetry.GForce),
-                    FormatDistance(
-                        telemetry.Apoapsis),
-                    IsFinite(fuelPercent)
-                        ? fuelPercent
-                            .ToString("0") +
-                          " %"
-                        : "---",
-                    status
-                };
-
-                int count =
-                    labels.Length;
-
-                int cellWidth =
-                    bounds.Width /
-                    count;
-
-                for (int index = 0;
-                     index < count;
-                     index++)
-                {
-                    int left =
-                        bounds.Left +
-                        index *
-                        cellWidth;
-
-                    int width =
-                        index ==
-                        count - 1
-                            ? bounds.Right -
-                              left
-                            : cellWidth;
-
-                    DrawFooterCell(
-                        graphics,
-                        context,
-                        new Rectangle(
-                            left,
-                            bounds.Top,
-                            width,
-                            bounds.Height),
-                        labels[index],
-                        values[index],
-                        labelBrush,
-                        valueBrush);
-                }
-            }
-        }
-
-        private static void DrawFooterCell(
-            Graphics graphics,
-            MissionRenderContext context,
-            Rectangle bounds,
-            string label,
-            string value,
-            Brush labelBrush,
-            Brush valueBrush)
-        {
-            Rectangle labelBounds =
-                new Rectangle(
-                    bounds.Left + 4,
-                    bounds.Top + 8,
-                    bounds.Width - 8,
-                    Math.Max(
-                        16,
-                        bounds.Height / 3));
-
-            Rectangle valueBounds =
-                new Rectangle(
-                    bounds.Left + 4,
-                    labelBounds.Bottom,
-                    bounds.Width - 8,
-                    bounds.Bottom -
-                    labelBounds.Bottom -
-                    5);
-
-            using (StringFormat format =
-                new StringFormat())
-            {
-                format.Alignment =
-                    StringAlignment.Center;
-
-                format.LineAlignment =
-                    StringAlignment.Center;
-
-                format.Trimming =
-                    StringTrimming.EllipsisCharacter;
-
-                format.FormatFlags =
-                    StringFormatFlags.NoWrap;
-
-                graphics.DrawString(
-                    label,
-                    context.SmallFont,
-                    labelBrush,
-                    labelBounds,
-                    format);
-
-                graphics.DrawString(
-                    value,
-                    context.SmallFont,
-                    valueBrush,
-                    valueBounds,
-                    format);
-            }
+            _footerRenderer.Draw(
+                context,
+                bounds,
+                model);
         }
 
         private static double CalculateStageFuelPercent(

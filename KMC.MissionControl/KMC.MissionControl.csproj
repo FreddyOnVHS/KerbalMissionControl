@@ -94,6 +94,8 @@
     <Compile Include="Rendering\Ascent\PredictionRenderer.cs" />
     <Compile Include="Rendering\Ascent\OrbitTrendRenderModel.cs" />
     <Compile Include="Rendering\Ascent\OrbitTrendRenderer.cs" />
+    <Compile Include="Rendering\Ascent\FooterRenderModel.cs" />
+    <Compile Include="Rendering\Ascent\FooterRenderer.cs" />
     <Compile Include="Rendering\DisplayDrawing.cs" />
     <Compile Include="Rendering\DisplayLayout.cs" />
     <Compile Include="Rendering\MissionPageLayout.cs" />
