@@ -243,6 +243,18 @@ namespace KMC.MissionControl.Guidance
             result.PoweredGuidanceConfidencePercent =
                 poweredGuidance.ConfidencePercent;
 
+            result.PoweredGuidanceBurnSeconds =
+                poweredGuidance.PoweredFlightSeconds;
+
+            result.PoweredGuidanceCoastSeconds =
+                poweredGuidance.CoastFlightSeconds;
+
+            result.PoweredPredictionConvergenceMeters =
+                poweredGuidance.PredictionConvergenceMeters;
+
+            result.PoweredTargetCutoffReached =
+                poweredGuidance.TargetCutoffReached;
+
             result.PoweredGuidanceMode =
                 poweredGuidance.Mode;
 

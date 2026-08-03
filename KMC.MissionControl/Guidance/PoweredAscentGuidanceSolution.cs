@@ -14,6 +14,14 @@ namespace KMC.MissionControl.Guidance
 
         public double ConfidencePercent { get; set; }
 
+        public double PoweredFlightSeconds { get; set; }
+
+        public double CoastFlightSeconds { get; set; }
+
+        public double PredictionConvergenceMeters { get; set; }
+
+        public bool TargetCutoffReached { get; set; }
+
         public string Mode { get; set; }
     }
 }

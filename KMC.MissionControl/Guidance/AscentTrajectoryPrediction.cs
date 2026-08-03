@@ -12,6 +12,12 @@ namespace KMC.MissionControl.Guidance
 
         public double FinalVerticalSpeedMetersPerSecond { get; set; }
 
+        public double PoweredFlightSeconds { get; set; }
+
+        public double CoastFlightSeconds { get; set; }
+
+        public bool TargetCutoffReached { get; set; }
+
         public double Score { get; set; }
     }
 }

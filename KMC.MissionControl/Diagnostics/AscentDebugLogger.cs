@@ -70,6 +70,10 @@ namespace KMC.MissionControl.Diagnostics
             "PoweredPredictedPeriapsisM," +
             "PoweredOrbitErrorM," +
             "PoweredGuidanceConfidencePercent," +
+            "PoweredGuidanceBurnSeconds," +
+            "PoweredGuidanceCoastSeconds," +
+            "PoweredPredictionConvergenceM," +
+            "PoweredTargetCutoffReached," +
             "PoweredGuidanceMode";
 
         public void Write(
@@ -269,6 +273,15 @@ namespace KMC.MissionControl.Diagnostics
                     .ToString("0.000"),
                 plan.PoweredGuidanceConfidencePercent
                     .ToString("0.000"),
+                plan.PoweredGuidanceBurnSeconds
+                    .ToString("0.000"),
+                plan.PoweredGuidanceCoastSeconds
+                    .ToString("0.000"),
+                plan.PoweredPredictionConvergenceMeters
+                    .ToString("0.000"),
+                plan.PoweredTargetCutoffReached
+                    ? "1"
+                    : "0",
                 EscapeCsvField(
                     plan.PoweredGuidanceMode));
         }

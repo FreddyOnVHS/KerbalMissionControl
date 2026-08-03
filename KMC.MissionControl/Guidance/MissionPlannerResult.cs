@@ -26,6 +26,14 @@ namespace KMC.MissionControl.Guidance
 
         public double PoweredGuidanceConfidencePercent { get; set; }
 
+        public double PoweredGuidanceBurnSeconds { get; set; }
+
+        public double PoweredGuidanceCoastSeconds { get; set; }
+
+        public double PoweredPredictionConvergenceMeters { get; set; }
+
+        public bool PoweredTargetCutoffReached { get; set; }
+
         public string PoweredGuidanceMode { get; set; }
 
         public double ThrottleCommandPercent { get; set; }
