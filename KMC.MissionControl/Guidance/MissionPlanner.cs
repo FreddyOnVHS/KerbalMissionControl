@@ -140,6 +140,9 @@ namespace KMC.MissionControl.Guidance
         private readonly PoweredAscentGuidanceComputer _poweredAscentComputer =
             new PoweredAscentGuidanceComputer();
 
+        private readonly PeriapsisRecoveryController _periapsisRecoveryController =
+            new PeriapsisRecoveryController();
+
         public MissionPlannerResult CreatePlan(
             MissionTelemetry telemetry,
             double nominalAltitudeMeters,
@@ -367,9 +370,9 @@ namespace KMC.MissionControl.Guidance
                 return result;
             }
 
-            if (_flightPhase == "ORBIT SHAPE HOLD")
+            if (_flightPhase == "PERIAPSIS RECOVERY")
             {
-                ConfigureOrbitShapeHold(
+                ConfigurePeriapsisRecovery(
                     result,
                     telemetry,
                     guidance);
@@ -518,6 +521,7 @@ namespace KMC.MissionControl.Guidance
 
             _orbitalController.Reset();
             _poweredAscentComputer.Reset();
+            _periapsisRecoveryController.Reset();
         }
 
         private double CalculateDeltaTime(
@@ -706,7 +710,7 @@ namespace KMC.MissionControl.Guidance
                 else if (decision.PauseBurn)
                 {
                     _flightPhase =
-                        "ORBIT SHAPE HOLD";
+                        "PERIAPSIS RECOVERY";
                 }
                 else
                 {
@@ -1697,11 +1701,53 @@ namespace KMC.MissionControl.Guidance
                 " M/S";
         }
 
-        private static void ConfigureOrbitShapeHold(
+        private void ConfigurePeriapsisRecovery(
             MissionPlannerResult result,
             MissionTelemetry telemetry,
             OrbitalGuidanceSolution guidance)
         {
+            PeriapsisRecoverySolution recovery =
+                _periapsisRecoveryController.Calculate(
+                    new PeriapsisRecoveryInput
+                    {
+                        ActualApoapsisMeters =
+                            telemetry.Apoapsis,
+
+                        ActualPeriapsisMeters =
+                            telemetry.Periapsis,
+
+                        PredictedApoapsisMeters =
+                            guidance.PredictedApoapsis,
+
+                        PredictedPeriapsisMeters =
+                            guidance.PredictedPeriapsis,
+
+                        GuidanceAvailable =
+                            guidance.IsAvailable,
+
+                        ProducingThrust =
+                            IsProducingThrust(
+                                telemetry),
+
+                        Throttle =
+                            telemetry.Throttle
+                    });
+
+            result.PeriapsisRecoveryActive =
+                true;
+
+            result.PeriapsisRecoveryErrorMeters =
+                recovery.PeriapsisErrorMeters;
+
+            result.PeriapsisRecoveryThrottlePercent =
+                recovery.ThrottlePercent;
+
+            result.PeriapsisRecoveryCutoff =
+                recovery.CutoffRequired;
+
+            result.PeriapsisRecoveryReason =
+                recovery.Reason;
+
             double progradePitch =
                 CalculateProgradePitchDegrees(
                     telemetry);
@@ -1712,37 +1758,58 @@ namespace KMC.MissionControl.Guidance
             result.CircularizationPitchDegrees =
                 progradePitch;
 
-            result.Command =
-                IsProducingThrust(
-                    telemetry)
-                    ? "CUTOFF - HOLD PROGRADE"
-                    : "HOLD PROGRADE";
-
             result.ThrottleCommandPercent =
-                0.0;
+                recovery.ThrottlePercent;
 
             result.ThrottleCommand =
-                "THROTTLE 0%";
+                "THROTTLE " +
+                recovery.ThrottlePercent
+                    .ToString("0") +
+                "%";
 
             result.CutoffRequired =
-                IsProducingThrust(
-                    telemetry) ||
-                telemetry.Throttle > 0.01;
+                recovery.CutoffRequired;
 
             result.CoastLockoutActive =
-                true;
+                recovery.CutoffRequired;
 
             result.IsTargetAchievable =
                 false;
 
-            result.Status =
-                "ORBIT SHAPE OFF-NOMINAL";
+            if (recovery.CutoffRequired)
+            {
+                result.Command =
+                    recovery.ProducingThrust
+                        ? "CUTOFF NOW"
+                        : "HOLD PROGRADE";
+
+                result.Status =
+                    recovery.ActualPeriapsisSafe
+                        ? "SAFE PERIAPSIS"
+                        : "VERIFY PERIAPSIS";
+            }
+            else if (!recovery.ProducingThrust)
+            {
+                result.Command =
+                    "IGNITE - HOLD PROGRADE";
+
+                result.Status =
+                    "PERIAPSIS RECOVERY";
+            }
+            else
+            {
+                result.Command =
+                    "HOLD PROGRADE";
+
+                result.Status =
+                    "PERIAPSIS RECOVERY";
+            }
 
             result.NextEvent =
-                "PERIAPSIS " +
+                "PE " +
                 telemetry.Periapsis
                     .ToString("0") +
-                " M";
+                " / 70000 M";
         }
 
         private static void ConfigureOrbitAchieved(

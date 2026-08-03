@@ -71,6 +71,16 @@ namespace KMC.MissionControl.Guidance
 
         public double OrbitSafetyDecisionTime { get; set; }
 
+        public bool PeriapsisRecoveryActive { get; set; }
+
+        public double PeriapsisRecoveryErrorMeters { get; set; }
+
+        public double PeriapsisRecoveryThrottlePercent { get; set; }
+
+        public bool PeriapsisRecoveryCutoff { get; set; }
+
+        public string PeriapsisRecoveryReason { get; set; }
+
         public double InitialCircularizationDeltaV { get; set; }
 
         public double BurnCompletionPercent { get; set; }

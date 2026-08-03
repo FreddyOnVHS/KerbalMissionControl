@@ -91,6 +91,9 @@
     <Compile Include="Guidance\AscentEnergyManager.cs" />
     <Compile Include="Guidance\GuidanceOptimizer.cs" />
     <Compile Include="Guidance\PoweredAscentGuidanceComputer.cs" />
+    <Compile Include="Guidance\PeriapsisRecoveryInput.cs" />
+    <Compile Include="Guidance\PeriapsisRecoverySolution.cs" />
+    <Compile Include="Guidance\PeriapsisRecoveryController.cs" />
 
     <Compile Include="MainForm.cs">
       <SubType>Form</SubType>

@@ -74,7 +74,12 @@ namespace KMC.MissionControl.Diagnostics
             "PoweredGuidanceCoastSeconds," +
             "PoweredPredictionConvergenceM," +
             "PoweredTargetCutoffReached," +
-            "PoweredGuidanceMode";
+            "PoweredGuidanceMode," +
+            "PeriapsisRecoveryActive," +
+            "PeriapsisRecoveryErrorM," +
+            "PeriapsisRecoveryThrottlePercent," +
+            "PeriapsisRecoveryCutoff," +
+            "PeriapsisRecoveryReason";
 
         public void Write(
             AscentDebugRecord record)
@@ -283,7 +288,19 @@ namespace KMC.MissionControl.Diagnostics
                     ? "1"
                     : "0",
                 EscapeCsvField(
-                    plan.PoweredGuidanceMode));
+                    plan.PoweredGuidanceMode),
+                plan.PeriapsisRecoveryActive
+                    ? "1"
+                    : "0",
+                plan.PeriapsisRecoveryErrorMeters
+                    .ToString("0.000"),
+                plan.PeriapsisRecoveryThrottlePercent
+                    .ToString("0.000"),
+                plan.PeriapsisRecoveryCutoff
+                    ? "1"
+                    : "0",
+                EscapeCsvField(
+                    plan.PeriapsisRecoveryReason));
         }
 
         private static string EscapeCsvField(
