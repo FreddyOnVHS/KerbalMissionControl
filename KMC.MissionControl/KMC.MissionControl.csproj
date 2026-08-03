@@ -75,6 +75,8 @@
     <Compile Include="Flight\AscentFlightHistory.cs" />
     <Compile Include="Flight\AscentFlightHistoryUpdate.cs" />
     <Compile Include="Flight\AscentHistorySample.cs" />
+    <Compile Include="Flight\AscentBurnoutPredictor.cs" />
+    <Compile Include="Flight\BurnoutPrediction.cs" />
 
     <Compile Include="Guidance\MissionPlanner.cs" />
     <Compile Include="Guidance\MissionPlannerResult.cs" />
