@@ -53,6 +53,9 @@ namespace KMC.MissionControl.Pages
         private readonly FlightDirectorRenderer _flightDirectorRenderer =
             new FlightDirectorRenderer();
 
+        private readonly PredictionRenderer _predictionRenderer =
+            new PredictionRenderer();
+
         private static readonly object DebugLogSync =
             new object();
 
@@ -1460,121 +1463,39 @@ namespace KMC.MissionControl.Pages
             Rectangle bounds,
             MissionTelemetry telemetry)
         {
-            Graphics graphics =
-                context.Graphics;
-
             BurnoutPrediction prediction =
                 CalculateBurnoutPrediction(
                     telemetry);
 
-            float panelFontSize =
-                Math.Max(
-                    7.0f,
-                    context.SmallFont.Size *
-                    0.82f);
-
-            using (Font panelFont =
-                new Font(
-                    context.SmallFont.FontFamily,
-                    panelFontSize,
-                    FontStyle.Regular,
-                    GraphicsUnit.Point))
-            using (Pen borderPen =
-                new Pen(
-                    context.PhosphorColor,
-                    1.0f))
-            using (Brush titleBrush =
-                new SolidBrush(
-                    context.PhosphorColor))
-            using (Brush labelBrush =
-                new SolidBrush(
-                    context.DimPhosphorColor))
-            using (Brush valueBrush =
-                new SolidBrush(
-                    context.PhosphorColor))
-            {
-                graphics.DrawRectangle(
-                    borderPen,
-                    bounds);
-
-                int padding = 10;
-                int titleHeight = 28;
-
-                graphics.DrawString(
-                    "PREDICTED BURNOUT",
-                    panelFont,
-                    titleBrush,
-                    bounds.Left + padding,
-                    bounds.Top + 7);
-
-                Rectangle content =
-                    new Rectangle(
-                        bounds.Left + padding,
-                        bounds.Top + titleHeight + 3,
-                        bounds.Width - padding * 2,
-                        bounds.Height -
-                        titleHeight -
-                        padding - 3);
-
-                string[] labels =
+            PredictionRenderModel model =
+                new PredictionRenderModel
                 {
-                    "BURN TIME",
-                    "BURNOUT VEL",
-                    "PREDICTED AP",
-                    "TARGET ERR",
-                    "CONFIDENCE",
-                    "RESULT"
+                    IsAvailable =
+                        prediction.IsAvailable,
+
+                    TimeRemainingSeconds =
+                        prediction.TimeRemainingSeconds,
+
+                    BurnoutVelocityMetersPerSecond =
+                        prediction.BurnoutVelocityMetersPerSecond,
+
+                    PredictedApoapsisMeters =
+                        prediction.PredictedApoapsisMeters,
+
+                    TargetApoapsisMeters =
+                        DefaultTargetApoapsisMeters,
+
+                    ConfidencePercent =
+                        prediction.ConfidencePercent,
+
+                    Status =
+                        prediction.Status
                 };
 
-                string[] values =
-                {
-                    prediction.IsAvailable
-                        ? FormatDurationCompact(
-                            prediction.TimeRemainingSeconds)
-                        : "---",
-                    prediction.IsAvailable
-                        ? FormatSpeed(
-                            prediction.BurnoutVelocityMetersPerSecond)
-                        : "---",
-                    prediction.IsAvailable
-                        ? FormatDistance(
-                            prediction.PredictedApoapsisMeters)
-                        : "---",
-                    prediction.IsAvailable
-                        ? FormatSignedDistance(
-                            prediction.PredictedApoapsisMeters -
-                            DefaultTargetApoapsisMeters)
-                        : "---",
-                    prediction.IsAvailable
-                        ? prediction.ConfidencePercent
-                            .ToString("0") +
-                          " %"
-                        : "WAITING",
-                    prediction.Status
-                };
-
-                int rowHeight =
-                    Math.Max(
-                        20,
-                        content.Height /
-                        labels.Length);
-
-                for (int index = 0;
-                     index < labels.Length;
-                     index++)
-                {
-                    DrawSafeDataRow(
-                        graphics,
-                        panelFont,
-                        labelBrush,
-                        valueBrush,
-                        content,
-                        index,
-                        rowHeight,
-                        labels[index],
-                        values[index]);
-                }
-            }
+            _predictionRenderer.Draw(
+                context,
+                bounds,
+                model);
         }
 
         private BurnoutPrediction CalculateBurnoutPrediction(
