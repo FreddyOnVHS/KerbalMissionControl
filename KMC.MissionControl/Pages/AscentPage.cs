@@ -103,28 +103,28 @@ namespace KMC.MissionControl.Pages
                 context.GetRelativeRectangle(
                     0.008f,
                     0.070f,
-                    0.600f,
+                    0.555f,
                     0.765f);
 
             Rectangle orbitInsetBounds =
                 context.GetRelativeRectangle(
-                    0.620f,
+                    0.575f,
                     0.070f,
-                    0.372f,
+                    0.417f,
                     0.220f);
 
             Rectangle statusBounds =
                 context.GetRelativeRectangle(
-                    0.620f,
+                    0.575f,
                     0.302f,
-                    0.372f,
+                    0.417f,
                     0.325f);
 
             Rectangle predictionBounds =
                 context.GetRelativeRectangle(
-                    0.620f,
+                    0.575f,
                     0.639f,
-                    0.372f,
+                    0.417f,
                     0.196f);
 
             Rectangle footerBounds =
@@ -480,7 +480,14 @@ namespace KMC.MissionControl.Pages
                                 "CircularizationDeltaV," +
                                 "CircularizationBurnTimeS," +
                                 "CircularizationIgnitionInS," +
-                                "CircularizationPeriapsisErrorM");
+                                "CircularizationPeriapsisErrorM," +
+                                "CircularizationPitchDeg," +
+                                "MecoCountdownSeconds," +
+                                "FlashAlert," +
+                                "PredictedShutdownApoapsisM," +
+                                "PredictedShutdownPeriapsisM," +
+                                "PredictedOrbitErrorM," +
+                                "OrbitalEnergyError");
                         }
 
                         writer.WriteLine(
@@ -590,6 +597,27 @@ namespace KMC.MissionControl.Pages
                                     .ToString("0.000"),
                                 missionPlan
                                     .CircularizationPeriapsisErrorMeters
+                                    .ToString("0.000"),
+                                missionPlan
+                                    .CircularizationPitchDegrees
+                                    .ToString("0.000"),
+                                missionPlan
+                                    .MecoCountdownSeconds,
+                                missionPlan
+                                    .FlashAlert
+                                    ? "1"
+                                    : "0",
+                                missionPlan
+                                    .PredictedShutdownApoapsisMeters
+                                    .ToString("0.000"),
+                                missionPlan
+                                    .PredictedShutdownPeriapsisMeters
+                                    .ToString("0.000"),
+                                missionPlan
+                                    .PredictedOrbitErrorMeters
+                                    .ToString("0.000"),
+                                missionPlan
+                                    .OrbitalEnergyError
                                     .ToString("0.000")));
                     }
                 }
@@ -1105,6 +1133,8 @@ namespace KMC.MissionControl.Pages
                 new SolidBrush(
                     context.PhosphorColor))
             {
+                
+
                 graphics.DrawRectangle(
                     borderPen,
                     bounds);
@@ -1399,7 +1429,7 @@ namespace KMC.MissionControl.Pages
                 Math.Max(
                     7.0f,
                     context.SmallFont.Size *
-                    0.76f);
+                    0.72f);
 
             using (Font panelFont =
                 new Font(
@@ -1450,7 +1480,7 @@ namespace KMC.MissionControl.Pages
 
                 int dividerX =
                     content.Left +
-                    content.Width * 56 /
+                    content.Width * 50 /
                     100;
 
                 graphics.DrawLine(
@@ -1544,7 +1574,11 @@ namespace KMC.MissionControl.Pages
 
                 string guidanceValue =
                     IsPostMecoPhase(
-                        missionPlan.FlightPhase)
+                        missionPlan.FlightPhase) ||
+                    string.Equals(
+                        missionPlan.FlightPhase,
+                        "MECO COUNTDOWN",
+                        StringComparison.Ordinal)
                         ? missionPlan.NextEvent
                         : FormatAngle(
                             missionPlan
@@ -1809,8 +1843,15 @@ namespace KMC.MissionControl.Pages
                 case "AWAITING ASCENT":
                     return "AWAIT ASCENT";
 
+                case "PREPARE FOR MECO 5":
+                case "PREPARE FOR MECO 4":
+                case "PREPARE FOR MECO 3":
+                case "PREPARE FOR MECO 2":
+                case "PREPARE FOR MECO 1":
+                    return guidance;
+
                 case "CUTOFF REQUIRED":
-                    return "MECO NOW";
+                    return "MECO";
 
                 case "COAST - NO REIGNITION":
                     return "COAST LOCKED";

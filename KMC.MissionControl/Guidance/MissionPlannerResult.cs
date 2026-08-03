@@ -43,6 +43,12 @@ namespace KMC.MissionControl.Guidance
 
         public double PredictedOrbitErrorMeters { get; set; }
 
+        public double CircularizationPitchDegrees { get; set; }
+
+        public int MecoCountdownSeconds { get; set; }
+
+        public bool FlashAlert { get; set; }
+
         public string FlightPhase { get; set; }
 
         public string Command { get; set; }

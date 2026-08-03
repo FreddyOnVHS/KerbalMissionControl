@@ -77,6 +77,15 @@ namespace KMC.MissionControl.Guidance
         private const double EnergyCutoffToleranceJoulesPerKilogram =
             3000.0;
 
+        private const double MecoCountdownWindowSeconds =
+            5.0;
+
+        private const double MecoFlashDurationSeconds =
+            1.25;
+
+        private const double MaximumCircularizationPitchCorrectionDegrees =
+            7.0;
+
         private string _flightPhase =
             "PRELAUNCH";
 
@@ -87,6 +96,18 @@ namespace KMC.MissionControl.Guidance
             double.NaN;
 
         private double _initialCircularizationDeltaV =
+            double.NaN;
+
+        private double _lastApoapsisMeters =
+            double.NaN;
+
+        private double _lastApoapsisSampleTime =
+            double.NaN;
+
+        private double _smoothedApoapsisRateMetersPerSecond =
+            double.NaN;
+
+        private double _mecoCommandTime =
             double.NaN;
 
         private bool _ascentMecoLatched;
@@ -117,6 +138,14 @@ namespace KMC.MissionControl.Guidance
                 CalculateDeltaTime(
                     telemetry.MissionTime);
 
+            UpdateApoapsisTrend(
+                telemetry);
+
+            double estimatedMecoSeconds =
+                CalculateEstimatedMecoSeconds(
+                    telemetry,
+                    targetApoapsisMeters);
+
             OrbitalGuidanceSolution guidance =
                 CalculateOrbitalGuidance(
                     telemetry,
@@ -125,7 +154,8 @@ namespace KMC.MissionControl.Guidance
             UpdateFlightPhase(
                 telemetry,
                 targetApoapsisMeters,
-                guidance);
+                guidance,
+                estimatedMecoSeconds);
 
             PopulateOrbitalGuidanceResult(
                 result,
@@ -150,10 +180,42 @@ namespace KMC.MissionControl.Guidance
             result.FlightPhase =
                 _flightPhase;
 
+            result.FlashAlert =
+                string.Equals(
+                    _flightPhase,
+                    "MECO",
+                    StringComparison.Ordinal) &&
+                IsFinite(
+                    _mecoCommandTime) &&
+                telemetry.MissionTime -
+                    _mecoCommandTime <=
+                    MecoFlashDurationSeconds;
+
             if (_flightPhase == "PRELAUNCH")
             {
                 ConfigurePrelaunch(
                     result);
+
+                SavePlannerState(
+                    telemetry,
+                    result);
+
+                return result;
+            }
+
+            if (_flightPhase == "MECO COUNTDOWN")
+            {
+                ConfigurePoweredAscent(
+                    result,
+                    telemetry,
+                    nominalPitchDegrees,
+                    altitudeError,
+                    apoapsisError,
+                    deltaTime);
+
+                ConfigureMecoCountdown(
+                    result,
+                    estimatedMecoSeconds);
 
                 SavePlannerState(
                     telemetry,
@@ -306,6 +368,18 @@ namespace KMC.MissionControl.Guidance
             _initialCircularizationDeltaV =
                 double.NaN;
 
+            _lastApoapsisMeters =
+                double.NaN;
+
+            _lastApoapsisSampleTime =
+                double.NaN;
+
+            _smoothedApoapsisRateMetersPerSecond =
+                double.NaN;
+
+            _mecoCommandTime =
+                double.NaN;
+
             _ascentMecoLatched =
                 false;
 
@@ -339,10 +413,91 @@ namespace KMC.MissionControl.Guidance
             return delta;
         }
 
+        private void UpdateApoapsisTrend(
+            MissionTelemetry telemetry)
+        {
+            if (!IsFinite(
+                    telemetry.MissionTime) ||
+                !IsFinite(
+                    telemetry.Apoapsis))
+            {
+                return;
+            }
+
+            if (IsFinite(
+                    _lastApoapsisSampleTime))
+            {
+                double elapsed =
+                    telemetry.MissionTime -
+                    _lastApoapsisSampleTime;
+
+                if (elapsed >= 0.10 &&
+                    elapsed <= 2.0)
+                {
+                    double instantaneousRate =
+                        (telemetry.Apoapsis -
+                         _lastApoapsisMeters) /
+                        elapsed;
+
+                    if (instantaneousRate > 0.0 &&
+                        instantaneousRate < 50000.0)
+                    {
+                        if (!IsFinite(
+                                _smoothedApoapsisRateMetersPerSecond))
+                        {
+                            _smoothedApoapsisRateMetersPerSecond =
+                                instantaneousRate;
+                        }
+                        else
+                        {
+                            _smoothedApoapsisRateMetersPerSecond =
+                                _smoothedApoapsisRateMetersPerSecond *
+                                0.72 +
+                                instantaneousRate *
+                                0.28;
+                        }
+                    }
+                }
+            }
+
+            _lastApoapsisMeters =
+                telemetry.Apoapsis;
+
+            _lastApoapsisSampleTime =
+                telemetry.MissionTime;
+        }
+
+        private double CalculateEstimatedMecoSeconds(
+            MissionTelemetry telemetry,
+            double targetOrbitMeters)
+        {
+            if (!IsFinite(
+                    _smoothedApoapsisRateMetersPerSecond) ||
+                _smoothedApoapsisRateMetersPerSecond < 1.0)
+            {
+                return double.PositiveInfinity;
+            }
+
+            double remainingMeters =
+                targetOrbitMeters -
+                AscentCutoffToleranceMeters -
+                telemetry.Apoapsis;
+
+            if (remainingMeters <= 0.0)
+            {
+                return 0.0;
+            }
+
+            return
+                remainingMeters /
+                _smoothedApoapsisRateMetersPerSecond;
+        }
+
         private void UpdateFlightPhase(
             MissionTelemetry telemetry,
             double targetOrbitMeters,
-            OrbitalGuidanceSolution guidance)
+            OrbitalGuidanceSolution guidance,
+            double estimatedMecoSeconds)
         {
             if (_orbitCutoffLatched)
             {
@@ -441,8 +596,22 @@ namespace KMC.MissionControl.Guidance
                 _ascentMecoLatched =
                     true;
 
+                _mecoCommandTime =
+                    telemetry.MissionTime;
+
                 _flightPhase =
                     "MECO";
+
+                return;
+            }
+
+            if (IsFinite(
+                    estimatedMecoSeconds) &&
+                estimatedMecoSeconds <=
+                    MecoCountdownWindowSeconds)
+            {
+                _flightPhase =
+                    "MECO COUNTDOWN";
 
                 return;
             }
@@ -996,6 +1165,35 @@ namespace KMC.MissionControl.Guidance
                 "LIFTOFF";
         }
 
+        private static void ConfigureMecoCountdown(
+            MissionPlannerResult result,
+            double estimatedMecoSeconds)
+        {
+            int countdown =
+                Math.Max(
+                    1,
+                    Math.Min(
+                        5,
+                        (int)Math.Ceiling(
+                            estimatedMecoSeconds)));
+
+            result.MecoCountdownSeconds =
+                countdown;
+
+            result.Status =
+                "PREPARE FOR MECO " +
+                countdown;
+
+            result.NextEvent =
+                "MECO T-" +
+                countdown;
+
+            /*
+             * Keep the current target-approach steering and throttle
+             * recommendations until the actual cutoff threshold is met.
+             */
+        }
+
         private static void ConfigureAscentCutoff(
             MissionPlannerResult result,
             MissionTelemetry telemetry)
@@ -1013,6 +1211,9 @@ namespace KMC.MissionControl.Guidance
                 "THROTTLE 0%";
 
             result.CutoffRequired =
+                true;
+
+            result.FlashAlert =
                 true;
 
             result.CoastLockoutActive =
@@ -1043,16 +1244,138 @@ namespace KMC.MissionControl.Guidance
                 "COAST TO APOAPSIS";
         }
 
+        private static double CalculateProgradePitchDegrees(
+            MissionTelemetry telemetry)
+        {
+            double speed =
+                Math.Max(
+                    0.0,
+                    telemetry.OrbitalSpeed);
+
+            if (speed < 1.0)
+            {
+                return 0.0;
+            }
+
+            double ratio =
+                Clamp(
+                    telemetry.VerticalSpeed /
+                    speed,
+                    -1.0,
+                    1.0);
+
+            return
+                Math.Asin(ratio) *
+                180.0 /
+                Math.PI;
+        }
+
+        private static double CalculateCircularizationPitchDegrees(
+            MissionTelemetry telemetry,
+            OrbitalGuidanceSolution guidance)
+        {
+            double progradePitch =
+                CalculateProgradePitchDegrees(
+                    telemetry);
+
+            if (!guidance.IsAvailable)
+            {
+                return Clamp(
+                    progradePitch,
+                    -10.0,
+                    10.0);
+            }
+
+            /*
+             * A positive shape error means the predicted apoapsis is
+             * higher than the predicted periapsis. Add a small downward
+             * radial component so the burn raises periapsis without
+             * continuing to inflate apoapsis as aggressively.
+             */
+            double shapeError =
+                guidance.PredictedApoapsis -
+                guidance.PredictedPeriapsis;
+
+            double shapeCorrection =
+                -Clamp(
+                    shapeError /
+                    18000.0,
+                    0.0,
+                    MaximumCircularizationPitchCorrectionDegrees);
+
+            double targetOvershoot =
+                Math.Max(
+                    0.0,
+                    guidance.PredictedApoapsis -
+                    80000.0);
+
+            double overshootCorrection =
+                -Clamp(
+                    targetOvershoot /
+                    12000.0,
+                    0.0,
+                    2.5);
+
+            return Clamp(
+                progradePitch +
+                shapeCorrection +
+                overshootCorrection,
+                -10.0,
+                8.0);
+        }
+
+        private static string GetCircularizationSteeringCommand(
+            MissionTelemetry telemetry,
+            double recommendedPitch)
+        {
+            double error =
+                recommendedPitch -
+                telemetry.Pitch;
+
+            if (error > 1.5)
+            {
+                return
+                    "PITCH UP " +
+                    Math.Min(
+                        9.9,
+                        Math.Abs(error))
+                        .ToString("0.0") +
+                    " DEG";
+            }
+
+            if (error < -1.5)
+            {
+                return
+                    "PITCH DOWN " +
+                    Math.Min(
+                        9.9,
+                        Math.Abs(error))
+                        .ToString("0.0") +
+                    " DEG";
+            }
+
+            return "HOLD VECTOR";
+        }
+
         private static void ConfigureCoast(
             MissionPlannerResult result,
             MissionTelemetry telemetry,
             OrbitalGuidanceSolution guidance)
         {
+            double coastPitch =
+                CalculateProgradePitchDegrees(
+                    telemetry);
+
             result.RecommendedPitchDegrees =
-                0.0;
+                coastPitch;
+
+            result.CircularizationPitchDegrees =
+                coastPitch;
 
             result.Command =
-                "POINT PROGRADE";
+                GetCircularizationSteeringCommand(
+                    telemetry,
+                    coastPitch);
 
             result.ThrottleCommandPercent =
                 0.0;
@@ -1094,11 +1417,21 @@ namespace KMC.MissionControl.Guidance
             MissionTelemetry telemetry,
             OrbitalGuidanceSolution guidance)
         {
+            double readyPitch =
+                CalculateCircularizationPitchDegrees(
+                    telemetry,
+                    guidance);
+
             result.RecommendedPitchDegrees =
-                0.0;
+                readyPitch;
+
+            result.CircularizationPitchDegrees =
+                readyPitch;
 
             result.Command =
-                "HOLD PROGRADE";
+                GetCircularizationSteeringCommand(
+                    telemetry,
+                    readyPitch);
 
             result.CoastLockoutActive =
                 false;
@@ -1157,11 +1490,21 @@ namespace KMC.MissionControl.Guidance
                 throttleFraction *
                 100.0;
 
+            double burnPitch =
+                CalculateCircularizationPitchDegrees(
+                    telemetry,
+                    guidance);
+
             result.RecommendedPitchDegrees =
-                0.0;
+                burnPitch;
+
+            result.CircularizationPitchDegrees =
+                burnPitch;
 
             result.Command =
-                "HOLD PROGRADE";
+                GetCircularizationSteeringCommand(
+                    telemetry,
+                    burnPitch);
 
             result.CoastLockoutActive =
                 false;
