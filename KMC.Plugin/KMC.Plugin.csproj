@@ -1,125 +1,55 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props"
-          Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
-
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{26FC5569-6518-457D-8F57-3CFAAE024FC4}</ProjectGuid>
-    <OutputType>Library</OutputType>
-    <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>KMC.Plugin</RootNamespace>
-    <AssemblyName>KMC.Plugin</AssemblyName>
-    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
-    <TargetFrameworkProfile />
-    <FileAlignment>512</FileAlignment>
-    <Deterministic>true</Deterministic>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration><Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{26FC5569-6518-457D-8F57-3CFAAE024FC4}</ProjectGuid><OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder><RootNamespace>KMC.Plugin</RootNamespace><AssemblyName>KMC.Plugin</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion><TargetFrameworkProfile /><FileAlignment>512</FileAlignment><Deterministic>true</Deterministic>
   </PropertyGroup>
-
   <PropertyGroup>
     <KspRoot Condition="'$(KspRoot)' == '' and '$(KSP_DIR)' != ''">$(KSP_DIR)</KspRoot>
-    <KspRoot Condition="'$(KspRoot)' == '' and Exists('C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program\KSP_x64_Data\Managed\Assembly-CSharp.dll')">C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program</KspRoot>
-    <KspRoot Condition="'$(KspRoot)' == '' and Exists('C:\Program Files\Steam\steamapps\common\Kerbal Space Program\KSP_x64_Data\Managed\Assembly-CSharp.dll')">C:\Program Files\Steam\steamapps\common\Kerbal Space Program</KspRoot>
     <KspRoot Condition="'$(KspRoot)' == '' and Exists('D:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program\KSP_x64_Data\Managed\Assembly-CSharp.dll')">D:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program</KspRoot>
-    <KspRoot Condition="'$(KspRoot)' == '' and Exists('D:\SteamLibrary\steamapps\common\Kerbal Space Program\KSP_x64_Data\Managed\Assembly-CSharp.dll')">D:\SteamLibrary\steamapps\common\Kerbal Space Program</KspRoot>
+    <KspRoot Condition="'$(KspRoot)' == '' and Exists('C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program\KSP_x64_Data\Managed\Assembly-CSharp.dll')">C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program</KspRoot>
     <KspManagedPath Condition="'$(KspRoot)' != ''">$(KspRoot)\KSP_x64_Data\Managed</KspManagedPath>
   </PropertyGroup>
-
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
+    <DebugSymbols>true</DebugSymbols><DebugType>full</DebugType><Optimize>false</Optimize><OutputPath>bin\Debug\</OutputPath><DefineConstants>DEBUG;TRACE</DefineConstants><WarningLevel>4</WarningLevel>
   </PropertyGroup>
-
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
+    <DebugType>pdbonly</DebugType><Optimize>true</Optimize><OutputPath>bin\Release\</OutputPath><DefineConstants>TRACE</DefineConstants><WarningLevel>4</WarningLevel>
   </PropertyGroup>
-
   <ItemGroup>
-    <Reference Include="Assembly-CSharp">
-      <HintPath>$(KspManagedPath)\Assembly-CSharp.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine">
-      <HintPath>$(KspManagedPath)\UnityEngine.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(KspManagedPath)\UnityEngine.CoreModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.Xml.Linq" />
-    <Reference Include="System.Data.DataSetExtensions" />
-    <Reference Include="Microsoft.CSharp" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.Net.Http" />
-    <Reference Include="System.Xml" />
+    <Reference Include="Assembly-CSharp"><HintPath>$(KspManagedPath)\Assembly-CSharp.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(KspManagedPath)\UnityEngine.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(KspManagedPath)\UnityEngine.CoreModule.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="System" /><Reference Include="System.Core" /><Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" /><Reference Include="Microsoft.CSharp" /><Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" /><Reference Include="System.Xml" />
   </ItemGroup>
-
   <ItemGroup>
     <Compile Include="CraftAnalyzer.cs" />
-    <Compile Include="Simulation\CraftSimulationBuilder.cs" />
-    <Compile Include="Simulation\CraftSimulationModel.cs" />
-    <Compile Include="Simulation\CraftSimulationReporter.cs" />
-    <Compile Include="Simulation\ResourceFlowCategory.cs" />
-    <Compile Include="Simulation\SimulatedEngine.cs" />
-    <Compile Include="Simulation\SimulatedPart.cs" />
-    <Compile Include="Simulation\SimulatedPropellant.cs" />
-    <Compile Include="Simulation\SimulatedResource.cs" />
-    <Compile Include="TelemetrySender.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
-
-    <Compile Include="Topology\VesselPartClassifier.cs" />
-    <Compile Include="Topology\VesselTopologyBuilder.cs" />
-    <Compile Include="Topology\VesselTopologyService.cs" />
-    <Compile Include="Topology\VesselTopologyDiagnostics.cs" />
-    <Compile Include="Topology\VesselTopologyMonitor.cs" />
-    <Compile Include="Topology\VesselTopologyAnalyzer.cs" />
+    <Compile Include="Simulation\CraftSimulationBuilder.cs" /><Compile Include="Simulation\CraftSimulationModel.cs" />
+    <Compile Include="Simulation\CraftSimulationReporter.cs" /><Compile Include="Simulation\ResourceFlowCategory.cs" />
+    <Compile Include="Simulation\SimulatedEngine.cs" /><Compile Include="Simulation\SimulatedPart.cs" />
+    <Compile Include="Simulation\SimulatedPropellant.cs" /><Compile Include="Simulation\SimulatedResource.cs" />
+    <Compile Include="TelemetrySender.cs" /><Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Topology\VesselPartClassifier.cs" /><Compile Include="Topology\VesselTopologyBuilder.cs" />
+    <Compile Include="Topology\VesselTopologyService.cs" /><Compile Include="Topology\VesselTopologyDiagnostics.cs" />
+    <Compile Include="Topology\VesselTopologyMonitor.cs" /><Compile Include="Topology\VesselTopologyAnalyzer.cs" />
     <Compile Include="Topology\VesselResourceAnalyzer.cs" />
-
-    <Compile Include="..\KMC.shared\TelemetryPacket.cs">
-      <Link>Shared\TelemetryPacket.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselAttachmentType.cs">
-      <Link>Shared\Topology\VesselAttachmentType.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselNodeCategory.cs">
-      <Link>Shared\Topology\VesselNodeCategory.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselNodeRole.cs">
-      <Link>Shared\Topology\VesselNodeRole.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselResourceState.cs">
-      <Link>Shared\Topology\VesselResourceState.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselPropellantRequirement.cs">
-      <Link>Shared\Topology\VesselPropellantRequirement.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs">
-      <Link>Shared\Topology\VesselTopologyNode.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselTopology.cs">
-      <Link>Shared\Topology\VesselTopology.cs</Link>
-    </Compile>
+    <Compile Include="..\KMC.shared\TelemetryPacket.cs"><Link>Shared\TelemetryPacket.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselAttachmentType.cs"><Link>Shared\Topology\VesselAttachmentType.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselNodeCategory.cs"><Link>Shared\Topology\VesselNodeCategory.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselNodeRole.cs"><Link>Shared\Topology\VesselNodeRole.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselResourceState.cs"><Link>Shared\Topology\VesselResourceState.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselPropellantRequirement.cs"><Link>Shared\Topology\VesselPropellantRequirement.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs"><Link>Shared\Topology\VesselTopologyNode.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselTopology.cs"><Link>Shared\Topology\VesselTopology.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselTopologyPacketCodec.cs"><Link>Shared\Topology\VesselTopologyPacketCodec.cs</Link></Compile>
   </ItemGroup>
-
   <Target Name="ValidateKspManagedPath" BeforeTargets="ResolveAssemblyReferences">
-    <Error Condition="'$(KspManagedPath)' == '' or !Exists('$(KspManagedPath)\Assembly-CSharp.dll')"
-           Text="KSP managed assemblies were not found. Set the KSP_DIR environment variable to your Kerbal Space Program installation folder, then reload Visual Studio." />
+    <Error Condition="'$(KspManagedPath)' == '' or !Exists('$(KspManagedPath)\Assembly-CSharp.dll')" Text="KSP managed assemblies were not found. Set KSP_DIR and reload Visual Studio." />
   </Target>
-
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

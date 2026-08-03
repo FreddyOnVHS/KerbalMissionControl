@@ -54,24 +54,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="Controls\ConsolePanel.cs">
-      <SubType>Component</SubType>
-    </Compile>
-    <Compile Include="Controls\MissionDisplay.cs">
-      <SubType>Component</SubType>
-    </Compile>
-    <Compile Include="Controls\MissionSummary.cs">
-      <SubType>Component</SubType>
-    </Compile>
-    <Compile Include="Controls\NavigationBar.cs">
-      <SubType>Component</SubType>
-    </Compile>
-    <Compile Include="Controls\TelemetryValue.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
+    <Compile Include="Controls\ConsolePanel.cs"><SubType>Component</SubType></Compile>
+    <Compile Include="Controls\MissionDisplay.cs"><SubType>Component</SubType></Compile>
+    <Compile Include="Controls\MissionSummary.cs"><SubType>Component</SubType></Compile>
+    <Compile Include="Controls\NavigationBar.cs"><SubType>Component</SubType></Compile>
+    <Compile Include="Controls\TelemetryValue.cs"><SubType>UserControl</SubType></Compile>
 
     <Compile Include="Diagnostics\AscentDebugRecord.cs" />
     <Compile Include="Diagnostics\AscentDebugLogger.cs" />
+    <Compile Include="Diagnostics\PropulsionGraphFileLogger.cs" />
 
     <Compile Include="Flight\AscentFlightHistory.cs" />
     <Compile Include="Flight\AscentFlightHistoryUpdate.cs" />
@@ -96,10 +87,7 @@
     <Compile Include="Guidance\PeriapsisRecoverySolution.cs" />
     <Compile Include="Guidance\PeriapsisRecoveryController.cs" />
 
-    <Compile Include="MainForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
-
+    <Compile Include="MainForm.cs"><SubType>Form</SubType></Compile>
     <Compile Include="MissionControlReceiver.cs" />
     <Compile Include="Models\MissionTelemetry.cs" />
 
@@ -123,48 +111,32 @@
     <Compile Include="Rendering\Ascent\AscentLayout.cs" />
     <Compile Include="Rendering\Ascent\AscentGraphRenderModel.cs" />
     <Compile Include="Rendering\Ascent\AscentGraphRenderer.cs" />
+
+    <Compile Include="Rendering\Propulsion\PropulsionGraphNode.cs" />
+    <Compile Include="Rendering\Propulsion\PropulsionGraphEdge.cs" />
+    <Compile Include="Rendering\Propulsion\PropulsionRenderGraph.cs" />
+    <Compile Include="Rendering\Propulsion\PropulsionRenderGraphBuilder.cs" />
+    <Compile Include="Rendering\Propulsion\PropulsionRenderGraphDiagnostics.cs" />
+
     <Compile Include="Rendering\DisplayDrawing.cs" />
     <Compile Include="Rendering\DisplayLayout.cs" />
     <Compile Include="Rendering\MissionPageLayout.cs" />
     <Compile Include="Rendering\MissionRenderContext.cs" />
 
     <Compile Include="Themes\ApolloTheme.cs" />
-
     <Compile Include="Widgets\HorizontalResourceBarWidget.cs" />
     <Compile Include="Widgets\IMissionWidget.cs" />
     <Compile Include="Widgets\OrbitPlotWidget.cs" />
 
-    <Compile Include="..\KMC.shared\TelemetryPacket.cs">
-      <Link>Shared\TelemetryPacket.cs</Link>
-    </Compile>
-
-    <Compile Include="..\KMC.shared\Topology\VesselAttachmentType.cs">
-      <Link>Shared\Topology\VesselAttachmentType.cs</Link>
-    </Compile>
-
-    <Compile Include="..\KMC.shared\Topology\VesselNodeCategory.cs">
-      <Link>Shared\Topology\VesselNodeCategory.cs</Link>
-    </Compile>
-
-    <Compile Include="..\KMC.shared\Topology\VesselNodeRole.cs">
-      <Link>Shared\Topology\VesselNodeRole.cs</Link>
-    </Compile>
-
-    <Compile Include="..\KMC.shared\Topology\VesselResourceState.cs">
-      <Link>Shared\Topology\VesselResourceState.cs</Link>
-    </Compile>
-
-    <Compile Include="..\KMC.shared\Topology\VesselPropellantRequirement.cs">
-      <Link>Shared\Topology\VesselPropellantRequirement.cs</Link>
-    </Compile>
-
-    <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs">
-      <Link>Shared\Topology\VesselTopologyNode.cs</Link>
-    </Compile>
-
-    <Compile Include="..\KMC.shared\Topology\VesselTopology.cs">
-      <Link>Shared\Topology\VesselTopology.cs</Link>
-    </Compile>
+    <Compile Include="..\KMC.shared\TelemetryPacket.cs"><Link>Shared\TelemetryPacket.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselAttachmentType.cs"><Link>Shared\Topology\VesselAttachmentType.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselNodeCategory.cs"><Link>Shared\Topology\VesselNodeCategory.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselNodeRole.cs"><Link>Shared\Topology\VesselNodeRole.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselResourceState.cs"><Link>Shared\Topology\VesselResourceState.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselPropellantRequirement.cs"><Link>Shared\Topology\VesselPropellantRequirement.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs"><Link>Shared\Topology\VesselTopologyNode.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselTopology.cs"><Link>Shared\Topology\VesselTopology.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselTopologyPacketCodec.cs"><Link>Shared\Topology\VesselTopologyPacketCodec.cs</Link></Compile>
   </ItemGroup>
 
   <ItemGroup />
