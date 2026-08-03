@@ -137,6 +137,9 @@ namespace KMC.MissionControl.Guidance
         private readonly OrbitalGuidanceController _orbitalController =
             new OrbitalGuidanceController();
 
+        private readonly PoweredAscentGuidanceComputer _poweredAscentComputer =
+            new PoweredAscentGuidanceComputer();
+
         public MissionPlannerResult CreatePlan(
             MissionTelemetry telemetry,
             double nominalAltitudeMeters,
@@ -216,6 +219,33 @@ namespace KMC.MissionControl.Guidance
                 targetApoapsisMeters -
                 telemetry.Apoapsis;
 
+            PoweredAscentGuidanceSolution poweredGuidance =
+                _poweredAscentComputer.Calculate(
+                    telemetry,
+                    nominalPitchDegrees,
+                    targetApoapsisMeters);
+
+            result.PoweredGuidanceAvailable =
+                poweredGuidance.IsAvailable;
+
+            result.PoweredGuidancePitchDegrees =
+                poweredGuidance.RecommendedPitchDegrees;
+
+            result.PoweredPredictedApoapsisMeters =
+                poweredGuidance.PredictedApoapsisMeters;
+
+            result.PoweredPredictedPeriapsisMeters =
+                poweredGuidance.PredictedPeriapsisMeters;
+
+            result.PoweredOrbitErrorMeters =
+                poweredGuidance.OrbitErrorMeters;
+
+            result.PoweredGuidanceConfidencePercent =
+                poweredGuidance.ConfidencePercent;
+
+            result.PoweredGuidanceMode =
+                poweredGuidance.Mode;
+
             result.AltitudeErrorMeters =
                 altitudeError;
 
@@ -256,7 +286,8 @@ namespace KMC.MissionControl.Guidance
                     nominalPitchDegrees,
                     altitudeError,
                     apoapsisError,
-                    deltaTime);
+                    deltaTime,
+                    poweredGuidance);
 
                 ConfigureMecoCountdown(
                     result,
@@ -358,7 +389,8 @@ namespace KMC.MissionControl.Guidance
                 nominalPitchDegrees,
                 altitudeError,
                 apoapsisError,
-                deltaTime);
+                deltaTime,
+                poweredGuidance);
 
             SavePlannerState(
                 telemetry,
@@ -473,6 +505,7 @@ namespace KMC.MissionControl.Guidance
                 double.NaN;
 
             _orbitalController.Reset();
+            _poweredAscentComputer.Reset();
         }
 
         private double CalculateDeltaTime(
@@ -1775,7 +1808,8 @@ namespace KMC.MissionControl.Guidance
             double nominalPitchDegrees,
             double altitudeError,
             double apoapsisError,
-            double deltaTime)
+            double deltaTime,
+            PoweredAscentGuidanceSolution poweredGuidance)
         {
             double rawPitch =
                 CalculateRawRecommendedPitch(
@@ -1792,6 +1826,29 @@ namespace KMC.MissionControl.Guidance
                         telemetry,
                         rawPitch,
                         apoapsisError);
+            }
+
+            if (poweredGuidance != null &&
+                poweredGuidance.IsAvailable)
+            {
+                double blend =
+                    telemetry.Altitude >= 30000.0
+                        ? 0.55
+                        : 0.35;
+
+                if (_flightPhase ==
+                    "TARGET APPROACH")
+                {
+                    blend =
+                        0.70;
+                }
+
+                rawPitch =
+                    rawPitch *
+                    (1.0 - blend) +
+                    poweredGuidance
+                        .RecommendedPitchDegrees *
+                    blend;
             }
 
             double recommendedPitch =
@@ -1833,6 +1890,16 @@ namespace KMC.MissionControl.Guidance
                     altitudeError,
                     apoapsisError,
                     result.IsTargetAchievable);
+
+            if (poweredGuidance != null &&
+                poweredGuidance.IsAvailable &&
+                result.IsTargetAchievable &&
+                apoapsisError >
+                    AscentCutoffToleranceMeters)
+            {
+                result.Status =
+                    "PREDICTIVE GUIDANCE";
+            }
 
             result.NextEvent =
                 _flightPhase ==

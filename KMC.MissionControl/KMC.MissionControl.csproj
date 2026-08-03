@@ -85,6 +85,12 @@
     <Compile Include="Guidance\OrbitSafetyInput.cs" />
     <Compile Include="Guidance\OrbitSafetyDecision.cs" />
     <Compile Include="Guidance\OrbitalGuidanceController.cs" />
+    <Compile Include="Guidance\PoweredAscentGuidanceSolution.cs" />
+    <Compile Include="Guidance\AscentTrajectoryPrediction.cs" />
+    <Compile Include="Guidance\PoweredTrajectoryPredictor.cs" />
+    <Compile Include="Guidance\AscentEnergyManager.cs" />
+    <Compile Include="Guidance\GuidanceOptimizer.cs" />
+    <Compile Include="Guidance\PoweredAscentGuidanceComputer.cs" />
 
     <Compile Include="MainForm.cs">
       <SubType>Form</SubType>

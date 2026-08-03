@@ -14,6 +14,20 @@ namespace KMC.MissionControl.Guidance
 
         public double RecoveryAuthorityPercent { get; set; }
 
+        public bool PoweredGuidanceAvailable { get; set; }
+
+        public double PoweredGuidancePitchDegrees { get; set; }
+
+        public double PoweredPredictedApoapsisMeters { get; set; }
+
+        public double PoweredPredictedPeriapsisMeters { get; set; }
+
+        public double PoweredOrbitErrorMeters { get; set; }
+
+        public double PoweredGuidanceConfidencePercent { get; set; }
+
+        public string PoweredGuidanceMode { get; set; }
+
         public double ThrottleCommandPercent { get; set; }
 
         /*

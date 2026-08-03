@@ -63,7 +63,14 @@ namespace KMC.MissionControl.Diagnostics
             "RemainingDeltaV," +
             "EnergySatisfied," +
             "DeltaVSatisfied," +
-            "SafetyDecisionTime";
+            "SafetyDecisionTime," +
+            "PoweredGuidanceAvailable," +
+            "PoweredGuidancePitchDeg," +
+            "PoweredPredictedApoapsisM," +
+            "PoweredPredictedPeriapsisM," +
+            "PoweredOrbitErrorM," +
+            "PoweredGuidanceConfidencePercent," +
+            "PoweredGuidanceMode";
 
         public void Write(
             AscentDebugRecord record)
@@ -248,7 +255,22 @@ namespace KMC.MissionControl.Diagnostics
                 plan.OrbitEnergySatisfied ? "1" : "0",
                 plan.OrbitDeltaVSatisfied ? "1" : "0",
                 plan.OrbitSafetyDecisionTime
-                    .ToString("0.000"));
+                    .ToString("0.000"),
+                plan.PoweredGuidanceAvailable
+                    ? "1"
+                    : "0",
+                plan.PoweredGuidancePitchDegrees
+                    .ToString("0.000"),
+                plan.PoweredPredictedApoapsisMeters
+                    .ToString("0.000"),
+                plan.PoweredPredictedPeriapsisMeters
+                    .ToString("0.000"),
+                plan.PoweredOrbitErrorMeters
+                    .ToString("0.000"),
+                plan.PoweredGuidanceConfidencePercent
+                    .ToString("0.000"),
+                EscapeCsvField(
+                    plan.PoweredGuidanceMode));
         }
 
         private static string EscapeCsvField(
