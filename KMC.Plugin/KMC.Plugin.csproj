@@ -17,21 +17,12 @@
     <Deterministic>true</Deterministic>
   </PropertyGroup>
 
-  <!--
-    KSP_DIR may be supplied as an environment variable or MSBuild property.
-    Common Steam installation locations are detected automatically.
-  -->
   <PropertyGroup>
     <KspRoot Condition="'$(KspRoot)' == '' and '$(KSP_DIR)' != ''">$(KSP_DIR)</KspRoot>
-
     <KspRoot Condition="'$(KspRoot)' == '' and Exists('C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program\KSP_x64_Data\Managed\Assembly-CSharp.dll')">C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program</KspRoot>
-
     <KspRoot Condition="'$(KspRoot)' == '' and Exists('C:\Program Files\Steam\steamapps\common\Kerbal Space Program\KSP_x64_Data\Managed\Assembly-CSharp.dll')">C:\Program Files\Steam\steamapps\common\Kerbal Space Program</KspRoot>
-
     <KspRoot Condition="'$(KspRoot)' == '' and Exists('D:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program\KSP_x64_Data\Managed\Assembly-CSharp.dll')">D:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program</KspRoot>
-
     <KspRoot Condition="'$(KspRoot)' == '' and Exists('D:\SteamLibrary\steamapps\common\Kerbal Space Program\KSP_x64_Data\Managed\Assembly-CSharp.dll')">D:\SteamLibrary\steamapps\common\Kerbal Space Program</KspRoot>
-
     <KspManagedPath Condition="'$(KspRoot)' != ''">$(KspRoot)\KSP_x64_Data\Managed</KspManagedPath>
   </PropertyGroup>
 
@@ -59,12 +50,10 @@
       <HintPath>$(KspManagedPath)\Assembly-CSharp.dll</HintPath>
       <Private>False</Private>
     </Reference>
-
     <Reference Include="UnityEngine">
       <HintPath>$(KspManagedPath)\UnityEngine.dll</HintPath>
       <Private>False</Private>
     </Reference>
-
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(KspManagedPath)\UnityEngine.CoreModule.dll</HintPath>
       <Private>False</Private>
@@ -96,23 +85,17 @@
     <Compile Include="Topology\VesselTopologyBuilder.cs" />
     <Compile Include="Topology\VesselTopologyService.cs" />
     <Compile Include="Topology\VesselTopologyDiagnostics.cs" />
+    <Compile Include="Topology\VesselTopologyMonitor.cs" />
 
-    <!--
-      Compile shared contracts directly into the plugin. This avoids a
-      KMC.shared.dll runtime dependency inside KSP GameData.
-    -->
     <Compile Include="..\KMC.shared\TelemetryPacket.cs">
       <Link>Shared\TelemetryPacket.cs</Link>
     </Compile>
-
     <Compile Include="..\KMC.shared\Topology\VesselAttachmentType.cs">
       <Link>Shared\Topology\VesselAttachmentType.cs</Link>
     </Compile>
-
     <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs">
       <Link>Shared\Topology\VesselTopologyNode.cs</Link>
     </Compile>
-
     <Compile Include="..\KMC.shared\Topology\VesselTopology.cs">
       <Link>Shared\Topology\VesselTopology.cs</Link>
     </Compile>
