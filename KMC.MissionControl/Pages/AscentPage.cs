@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using KMC.MissionControl.Diagnostics;
+using KMC.MissionControl.Flight;
 using KMC.MissionControl.Guidance;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering;
@@ -14,23 +15,6 @@ namespace KMC.MissionControl.Pages
     {
         private const double DefaultTargetApoapsisMeters =
             80000.0;
-
-        private const double MinimumSampleIntervalSeconds =
-            0.20;
-
-        private const int MaximumSamples =
-            900;
-
-        private readonly List<AscentSample> _samples =
-            new List<AscentSample>();
-
-        private string _trackedVesselName =
-            string.Empty;
-
-        private double _previousMissionTime =
-            double.NaN;
-
-        private double _downrangeMeters;
 
         private double _planningTwr =
             double.NaN;
@@ -46,6 +30,9 @@ namespace KMC.MissionControl.Pages
 
         private double _predictionStageStartTime =
             double.NaN;
+
+        private readonly AscentFlightHistory _flightHistory =
+            new AscentFlightHistory();
 
         private readonly MissionPlanner _missionPlanner =
             new MissionPlanner();
@@ -151,155 +138,19 @@ namespace KMC.MissionControl.Pages
         private void UpdateHistory(
             MissionTelemetry telemetry)
         {
-            string vesselName =
-                telemetry.VesselName ??
-                string.Empty;
+            AscentFlightHistoryUpdate update =
+                _flightHistory.Update(
+                    telemetry);
 
-            bool vesselChanged =
-                !string.Equals(
-                    vesselName,
-                    _trackedVesselName,
-                    StringComparison.Ordinal);
-
-            bool timeReset =
-                IsFinite(_previousMissionTime) &&
-                telemetry.MissionTime + 0.5 <
-                _previousMissionTime;
-
-            if (timeReset)
-            {
-                ResetHistory(
-                    vesselName);
-            }
-            else if (vesselChanged)
-            {
-                /*
-                 * KSP may change the active vessel name during staging,
-                 * separation, docking, or control-point transfer.
-                 *
-                 * Mission time is still moving forward, so this is the
-                 * same ascent. Preserve downrange, profile, samples, and
-                 * predictor history. Only update the tracked name.
-                 */
-                _trackedVesselName =
-                    vesselName;
-            }
-
-            if (!IsFinite(
-                    telemetry.MissionTime))
+            if (!update.MissionReset)
             {
                 return;
             }
 
-            if (!IsFinite(
-                    _previousMissionTime))
-            {
-                _previousMissionTime =
-                    telemetry.MissionTime;
-            }
-
-            double deltaTime =
-                telemetry.MissionTime -
-                _previousMissionTime;
-
-            if (deltaTime < 0.0 ||
-                deltaTime > 10.0)
-            {
-                deltaTime = 0.0;
-            }
-
-            if (deltaTime > 0.0 &&
-                IsFinite(
-                    telemetry.HorizontalSpeed))
-            {
-                _downrangeMeters +=
-                    Math.Max(
-                        0.0,
-                        telemetry.HorizontalSpeed) *
-                    deltaTime;
-            }
-
-            bool shouldSample =
-                _samples.Count == 0 ||
-                telemetry.MissionTime -
-                _samples[_samples.Count - 1]
-                    .MissionTime >=
-                MinimumSampleIntervalSeconds;
-
-            if (shouldSample)
-            {
-                _samples.Add(
-                    new AscentSample
-                    {
-                        MissionTime =
-                            telemetry.MissionTime,
-
-                        DownrangeMeters =
-                            Math.Max(
-                                0.0,
-                                _downrangeMeters),
-
-                        AltitudeMeters =
-                            Math.Max(
-                                0.0,
-                                telemetry.Altitude),
-
-                        ApoapsisMeters =
-                            telemetry.Apoapsis,
-
-                        PitchDegrees =
-                            telemetry.Pitch,
-
-                        DynamicPressureKpa =
-                            telemetry.DynamicPressureKpa,
-
-                        StageLiquidFuelAmount =
-                            telemetry.StageLiquidFuelAmount,
-
-                        StageOxidizerAmount =
-                            telemetry.StageOxidizerAmount,
-
-                        OrbitalSpeedMetersPerSecond =
-                            telemetry.OrbitalSpeed,
-
-                        VesselMassTonnes =
-                            telemetry.VesselMass,
-
-                        CurrentThrustKilonewtons =
-                            telemetry.CurrentThrust,
-
-                        AverageSpecificImpulseSeconds =
-                            telemetry.AverageSpecificImpulse,
-
-                        StageNumber =
-                            telemetry.CurrentStage
-                    });
-
-                while (_samples.Count >
-                       MaximumSamples)
-                {
-                    _samples.RemoveAt(0);
-                }
-            }
-
-            _previousMissionTime =
-                telemetry.MissionTime;
-        }
-
-        private void ResetHistory(
-            string vesselName)
-        {
-            _samples.Clear();
-
-            _trackedVesselName =
-                vesselName ??
-                string.Empty;
-
-            _previousMissionTime =
-                double.NaN;
-
-            _downrangeMeters = 0.0;
-
+            /*
+             * The history component owns trajectory state. Page-specific
+             * planning and prediction state still resets here.
+             */
             _planningTwr =
                 double.NaN;
 
@@ -362,13 +213,13 @@ namespace KMC.MissionControl.Pages
             MissionTelemetry telemetry)
         {
             if (telemetry == null ||
-                _samples.Count == 0)
+                _flightHistory.Samples.Count == 0)
             {
                 return;
             }
 
-            AscentSample sample =
-                _samples[_samples.Count - 1];
+            AscentHistorySample sample =
+                _flightHistory.Samples[_flightHistory.Samples.Count - 1];
 
             /*
              * Only write once per stored ascent sample. The sample cadence
@@ -527,14 +378,14 @@ namespace KMC.MissionControl.Pages
 
             AscentGraphPoint[] actualPoints =
                 new AscentGraphPoint[
-                    _samples.Count];
+                    _flightHistory.Samples.Count];
 
             for (int index = 0;
-                 index < _samples.Count;
+                 index < _flightHistory.Samples.Count;
                  index++)
             {
-                AscentSample sample =
-                    _samples[index];
+                AscentHistorySample sample =
+                    _flightHistory.Samples[index];
 
                 actualPoints[index] =
                     new AscentGraphPoint
@@ -606,12 +457,12 @@ namespace KMC.MissionControl.Pages
         {
             double targetAltitude =
                 CalculateTargetAltitude(
-                    _downrangeMeters,
+                    _flightHistory.DownrangeMeters,
                     telemetry);
 
             double targetPitch =
                 CalculateTargetPitch(
-                    _downrangeMeters,
+                    _flightHistory.DownrangeMeters,
                     telemetry);
 
             MissionPlannerResult missionPlan =
@@ -628,7 +479,7 @@ namespace KMC.MissionControl.Pages
                         DefaultTargetApoapsisMeters,
 
                     DownrangeMeters =
-                        _downrangeMeters,
+                        _flightHistory.DownrangeMeters,
 
                     TargetAltitudeMeters =
                         targetAltitude,
@@ -744,7 +595,7 @@ namespace KMC.MissionControl.Pages
                 return result;
             }
 
-            List<AscentSample> window =
+            List<AscentHistorySample> window =
                 GetPredictionWindow(
                     telemetry.CurrentStage,
                     telemetry.MissionTime,
@@ -758,7 +609,7 @@ namespace KMC.MissionControl.Pages
                 return result;
             }
 
-            AscentSample newest =
+            AscentHistorySample newest =
                 window[window.Count - 1];
 
             double elapsed =
@@ -913,25 +764,25 @@ namespace KMC.MissionControl.Pages
             return result;
         }
 
-        private List<AscentSample> GetPredictionWindow(
+        private List<AscentHistorySample> GetPredictionWindow(
             int stage,
             double currentMissionTime,
             double windowSeconds)
         {
-            List<AscentSample> result =
-                new List<AscentSample>();
+            List<AscentHistorySample> result =
+                new List<AscentHistorySample>();
 
             double earliestTime =
                 currentMissionTime -
                 windowSeconds;
 
             for (int index =
-                    _samples.Count - 1;
+                    _flightHistory.Samples.Count - 1;
                  index >= 0;
                  index--)
             {
-                AscentSample sample =
-                    _samples[index];
+                AscentHistorySample sample =
+                    _flightHistory.Samples[index];
 
                 if (sample.MissionTime <
                     earliestTime)
@@ -953,8 +804,8 @@ namespace KMC.MissionControl.Pages
         }
 
         private static double CalculateConsumptionRate(
-            IList<AscentSample> samples,
-            Func<AscentSample, double> selector)
+            IList<AscentHistorySample> samples,
+            Func<AscentHistorySample, double> selector)
         {
             RegressionResult trend =
                 CalculateRegression(
@@ -972,7 +823,7 @@ namespace KMC.MissionControl.Pages
         }
 
         private static double CalculateFuelConsistency(
-            IList<AscentSample> samples)
+            IList<AscentHistorySample> samples)
         {
             RegressionResult liquidFuel =
                 CalculateRegression(
@@ -999,8 +850,8 @@ namespace KMC.MissionControl.Pages
         }
 
         private static RegressionResult CalculateRegression(
-            IList<AscentSample> samples,
-            Func<AscentSample, double> selector)
+            IList<AscentHistorySample> samples,
+            Func<AscentHistorySample, double> selector)
         {
             RegressionResult result =
                 new RegressionResult();
@@ -1202,7 +1053,7 @@ namespace KMC.MissionControl.Pages
                         telemetry.Altitude,
 
                     DownrangeMeters =
-                        _downrangeMeters,
+                        _flightHistory.DownrangeMeters,
 
                     VerticalSpeedMetersPerSecond =
                         telemetry.VerticalSpeed,
@@ -1285,7 +1136,7 @@ namespace KMC.MissionControl.Pages
             double current =
                 Math.Max(
                     1.0,
-                    _downrangeMeters);
+                    _flightHistory.DownrangeMeters);
 
             double profileScale =
                 GetPlanningProfileScale(
@@ -1489,8 +1340,8 @@ namespace KMC.MissionControl.Pages
         {
             double maximum = 0.0;
 
-            foreach (AscentSample sample in
-                _samples)
+            foreach (AscentHistorySample sample in
+                _flightHistory.Samples)
             {
                 maximum =
                     Math.Max(
@@ -1660,37 +1511,6 @@ namespace KMC.MissionControl.Pages
             return
                 !double.IsNaN(value) &&
                 !double.IsInfinity(value);
-        }
-
-        private sealed class AscentSample
-        {
-            public double MissionTime { get; set; }
-
-            public double DownrangeMeters { get; set; }
-
-            public double AltitudeMeters { get; set; }
-
-            public double ApoapsisMeters { get; set; }
-
-            public double PitchDegrees { get; set; }
-
-            public double DynamicPressureKpa { get; set; }
-
-            public double StageLiquidFuelAmount { get; set; }
-
-            public double StageOxidizerAmount { get; set; }
-
-            public double OrbitalSpeedMetersPerSecond { get; set; }
-
-            public double VesselMassTonnes { get; set; }
-
-            public double CurrentThrustKilonewtons { get; set; }
-
-            public double AverageSpecificImpulseSeconds { get; set; }
-
-            public int StageNumber { get; set; }
-
-            public bool DebugWritten { get; set; }
         }
 
         private sealed class BurnoutPrediction

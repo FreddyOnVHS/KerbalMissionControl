@@ -72,6 +72,10 @@
     <Compile Include="Diagnostics\AscentDebugRecord.cs" />
     <Compile Include="Diagnostics\AscentDebugLogger.cs" />
 
+    <Compile Include="Flight\AscentFlightHistory.cs" />
+    <Compile Include="Flight\AscentFlightHistoryUpdate.cs" />
+    <Compile Include="Flight\AscentHistorySample.cs" />
+
     <Compile Include="Guidance\MissionPlanner.cs" />
     <Compile Include="Guidance\MissionPlannerResult.cs" />
 
