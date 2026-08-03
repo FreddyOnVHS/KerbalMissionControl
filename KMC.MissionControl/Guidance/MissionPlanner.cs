@@ -1705,8 +1705,27 @@ namespace KMC.MissionControl.Guidance
             MissionTelemetry telemetry,
             OrbitalGuidanceSolution guidance)
         {
+            bool thrustActive =
+                IsProducingThrust(
+                    telemetry) ||
+                telemetry.Throttle > 0.01;
+
+            double progradePitch =
+                CalculateProgradePitchDegrees(
+                    telemetry);
+
+            /*
+             * ORBIT ACHIEVED is a permanent post-cutoff lockout state.
+             *
+             * Guidance must never recommend another burn after the orbital
+             * safety controller has accepted the orbit. Any continued or
+             * resumed thrust is treated as an unplanned ignition.
+             */
             result.RecommendedPitchDegrees =
-                0.0;
+                progradePitch;
+
+            result.CircularizationPitchDegrees =
+                progradePitch;
 
             result.ThrottleCommandPercent =
                 0.0;
@@ -1715,9 +1734,7 @@ namespace KMC.MissionControl.Guidance
                 "THROTTLE 0%";
 
             result.CutoffRequired =
-                IsProducingThrust(
-                    telemetry) ||
-                telemetry.Throttle > 0.01;
+                thrustActive;
 
             result.CoastLockoutActive =
                 true;
@@ -1725,32 +1742,31 @@ namespace KMC.MissionControl.Guidance
             result.IsTargetAchievable =
                 true;
 
-            result.Command =
-                result.CutoffRequired
-                    ? "CUTOFF NOW"
-                    : "HOLD PROGRADE";
-
-            if (guidance.PredictedOrbitError <=
-                OrbitNominalToleranceMeters)
+            if (thrustActive)
             {
+                result.Command =
+                    "CUTOFF IMMEDIATELY";
+
                 result.Status =
-                    result.CutoffRequired
-                        ? "ORBIT CUTOFF"
-                        : "ORBIT NOMINAL";
+                    "UNPLANNED IGNITION";
+
+                result.NextEvent =
+                    "NO REIGNITION";
             }
             else
             {
-                result.Status =
-                    result.CutoffRequired
-                        ? "PROTECTIVE CUTOFF"
-                        : "ORBIT ENERGY SET";
-            }
+                result.Command =
+                    "HOLD PROGRADE";
 
-            result.NextEvent =
-                "PRED " +
-                FormatOrbitPair(
-                    guidance.PredictedApoapsis,
-                    guidance.PredictedPeriapsis);
+                result.Status =
+                    guidance.PredictedOrbitError <=
+                        OrbitNominalToleranceMeters
+                        ? "ORBIT NOMINAL"
+                        : "SAFE ORBIT - OFF TARGET";
+
+                result.NextEvent =
+                    "NO REIGNITION";
+            }
         }
 
         private void ConfigurePoweredAscent(
