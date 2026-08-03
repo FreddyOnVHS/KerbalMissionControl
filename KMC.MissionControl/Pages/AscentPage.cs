@@ -11,14 +11,12 @@ namespace KMC.MissionControl.Pages
 {
     public sealed class AscentPage : IMissionPage
     {
-        private const double DefaultTargetApoapsisMeters =
-            80000.0;
+        private readonly MissionTarget _missionTarget =
+            new MissionTarget(
+                80000.0);
 
-        private double _planningTwr =
-            double.NaN;
-
-        private double _planningProfileScale =
-            double.NaN;
+        private readonly AscentProfilePlanner _profilePlanner =
+            new AscentProfilePlanner();
 
         private int _initialStage =
             -1;
@@ -56,6 +54,41 @@ namespace KMC.MissionControl.Pages
         public string Name
         {
             get { return "ASCENT GUIDANCE"; }
+        }
+
+        /// <summary>
+        /// Requested ascent apoapsis in meters.
+        ///
+        /// The current UI still uses the default 80 km value, but future
+        /// controls can change this property and every dependent calculation
+        /// will use the new target.
+        /// </summary>
+        public double TargetApoapsisMeters
+        {
+            get
+            {
+                return _missionTarget
+                    .TargetApoapsisMeters;
+            }
+
+            set
+            {
+                if (Math.Abs(
+                        _missionTarget
+                            .TargetApoapsisMeters -
+                        value) <
+                    0.001)
+                {
+                    return;
+                }
+
+                _missionTarget
+                    .TargetApoapsisMeters =
+                    value;
+
+                _profilePlanner.Reset();
+                _burnoutPredictor.Reset();
+            }
         }
 
         public void Draw(
@@ -146,11 +179,7 @@ namespace KMC.MissionControl.Pages
              * The history component owns trajectory state. Page-specific
              * planning and prediction state still resets here.
              */
-            _planningTwr =
-                double.NaN;
-
-            _planningProfileScale =
-                double.NaN;
+            _profilePlanner.Reset();
 
             _initialStage =
                 -1;
@@ -161,40 +190,11 @@ namespace KMC.MissionControl.Pages
         private void CaptureLaunchPlan(
             MissionTelemetry telemetry)
         {
-            if (telemetry == null)
+            if (!_profilePlanner.CaptureLaunchPlan(
+                    telemetry))
             {
                 return;
             }
-
-            if (IsFinite(
-                    _planningProfileScale))
-            {
-                return;
-            }
-
-            double twr =
-                telemetry.ThrustToWeightRatio;
-
-            /*
-             * Do not lock the ascent plan while telemetry is still
-             * reporting zero thrust on the launchpad.
-             */
-            if (!IsFinite(twr) ||
-                twr < 1.0)
-            {
-                return;
-            }
-
-            _planningTwr =
-                Math.Max(
-                    0.8,
-                    Math.Min(
-                        3.0,
-                        twr));
-
-            _planningProfileScale =
-                CalculateProfileScaleFromTwr(
-                    _planningTwr);
 
             _initialStage =
                 telemetry.CurrentStage;
@@ -224,31 +224,33 @@ namespace KMC.MissionControl.Pages
             sample.DebugWritten = true;
 
             double profileScale =
-                GetPlanningProfileScale(
+                _profilePlanner.GetProfileScale(
                     telemetry);
 
             double targetAltitude =
-                CalculateTargetAltitude(
+                _profilePlanner.CalculateTargetAltitude(
                     sample.DownrangeMeters,
-                    telemetry);
+                    telemetry,
+                    _missionTarget.TargetApoapsisMeters);
 
             double targetPitch =
-                CalculateTargetPitch(
+                _profilePlanner.CalculateTargetPitch(
                     sample.DownrangeMeters,
-                    telemetry);
+                    telemetry,
+                    _missionTarget.TargetApoapsisMeters);
 
             BurnoutPrediction prediction =
                 _burnoutPredictor.Calculate(
                     telemetry,
                     _flightHistory.Samples,
-                    DefaultTargetApoapsisMeters);
+                    _missionTarget.TargetApoapsisMeters);
 
             MissionPlannerResult missionPlan =
                 _missionPlanner.CreatePlan(
                     telemetry,
                     targetAltitude,
                     targetPitch,
-                    DefaultTargetApoapsisMeters);
+                    _missionTarget.TargetApoapsisMeters);
 
             AscentDebugRecord record =
                 new AscentDebugRecord
@@ -272,7 +274,7 @@ namespace KMC.MissionControl.Pages
                         telemetry.ThrustToWeightRatio,
 
                     PlanningThrustToWeightRatio =
-                        _planningTwr,
+                        _profilePlanner.PlanningThrustToWeightRatio,
 
                     ProfileScaleMeters =
                         profileScale,
@@ -303,7 +305,7 @@ namespace KMC.MissionControl.Pages
 
                     PredictionTargetErrorMeters =
                         prediction.PredictedApoapsisMeters -
-                        DefaultTargetApoapsisMeters,
+                        _missionTarget.TargetApoapsisMeters,
 
                     PredictionConfidencePercent =
                         prediction.ConfidencePercent,
@@ -330,7 +332,7 @@ namespace KMC.MissionControl.Pages
 
             double maxAltitude =
                 Math.Max(
-                    DefaultTargetApoapsisMeters *
+                    _missionTarget.TargetApoapsisMeters *
                     1.15,
                     GetMaximumActualAltitude() *
                     1.10);
@@ -363,9 +365,10 @@ namespace KMC.MissionControl.Pages
                             downrange,
 
                         AltitudeMeters =
-                            CalculateTargetAltitude(
+                            _profilePlanner.CalculateTargetAltitude(
                                 downrange,
-                                telemetry)
+                                telemetry,
+                                _missionTarget.TargetApoapsisMeters)
                     };
             }
 
@@ -449,27 +452,29 @@ namespace KMC.MissionControl.Pages
             MissionTelemetry telemetry)
         {
             double targetAltitude =
-                CalculateTargetAltitude(
+                _profilePlanner.CalculateTargetAltitude(
                     _flightHistory.DownrangeMeters,
-                    telemetry);
+                    telemetry,
+                    _missionTarget.TargetApoapsisMeters);
 
             double targetPitch =
-                CalculateTargetPitch(
+                _profilePlanner.CalculateTargetPitch(
                     _flightHistory.DownrangeMeters,
-                    telemetry);
+                    telemetry,
+                    _missionTarget.TargetApoapsisMeters);
 
             MissionPlannerResult missionPlan =
                 _missionPlanner.CreatePlan(
                     telemetry,
                     targetAltitude,
                     targetPitch,
-                    DefaultTargetApoapsisMeters);
+                    _missionTarget.TargetApoapsisMeters);
 
             FlightDirectorRenderModel model =
                 new FlightDirectorRenderModel
                 {
                     TargetApoapsisMeters =
-                        DefaultTargetApoapsisMeters,
+                        _missionTarget.TargetApoapsisMeters,
 
                     DownrangeMeters =
                         _flightHistory.DownrangeMeters,
@@ -508,7 +513,7 @@ namespace KMC.MissionControl.Pages
                 _burnoutPredictor.Calculate(
                     telemetry,
                     _flightHistory.Samples,
-                    DefaultTargetApoapsisMeters);
+                    _missionTarget.TargetApoapsisMeters);
 
             PredictionRenderModel model =
                 new PredictionRenderModel
@@ -526,7 +531,7 @@ namespace KMC.MissionControl.Pages
                         prediction.PredictedApoapsisMeters,
 
                     TargetApoapsisMeters =
-                        DefaultTargetApoapsisMeters,
+                        _missionTarget.TargetApoapsisMeters,
 
                     ConfidencePercent =
                         prediction.ConfidencePercent,
@@ -582,7 +587,7 @@ namespace KMC.MissionControl.Pages
                 telemetry.MissionTime < 1.0
                     ? "PAD"
                     : telemetry.Apoapsis >=
-                      DefaultTargetApoapsisMeters
+                      _missionTarget.TargetApoapsisMeters
                         ? "TARGET AP"
                         : "ASCENT";
 
@@ -685,7 +690,7 @@ namespace KMC.MissionControl.Pages
                     _flightHistory.DownrangeMeters);
 
             double profileScale =
-                GetPlanningProfileScale(
+                _profilePlanner.GetProfileScale(
                     telemetry);
 
             return Math.Max(
@@ -693,110 +698,6 @@ namespace KMC.MissionControl.Pages
                 Math.Max(
                     current * 1.20,
                     profileScale * 4.5));
-        }
-
-        private double CalculateTargetAltitude(
-            double downrangeMeters,
-            MissionTelemetry telemetry)
-        {
-            double profileScale =
-                GetPlanningProfileScale(
-                    telemetry);
-
-            double normalized =
-                Math.Max(
-                    0.0,
-                    downrangeMeters) /
-                profileScale;
-
-            double altitude =
-                DefaultTargetApoapsisMeters *
-                (1.0 -
-                 Math.Exp(
-                     -normalized));
-
-            return Math.Min(
-                DefaultTargetApoapsisMeters,
-                Math.Max(
-                    0.0,
-                    altitude));
-        }
-
-        private double CalculateTargetPitch(
-            double downrangeMeters,
-            MissionTelemetry telemetry)
-        {
-            double scale =
-                GetPlanningProfileScale(
-                    telemetry);
-
-            double slope =
-                DefaultTargetApoapsisMeters /
-                scale *
-                Math.Exp(
-                    -Math.Max(
-                        0.0,
-                        downrangeMeters) /
-                    scale);
-
-            double flightPathAngle =
-                Math.Atan(
-                    slope) *
-                180.0 /
-                Math.PI;
-
-            /*
-             * KSP pitch is measured from the horizon:
-             * 90 degrees is vertical and 0 degrees is horizontal.
-             */
-            return Math.Max(
-                0.0,
-                Math.Min(
-                    90.0,
-                    flightPathAngle));
-        }
-
-        private double GetPlanningProfileScale(
-            MissionTelemetry telemetry)
-        {
-            if (IsFinite(
-                    _planningProfileScale))
-            {
-                return _planningProfileScale;
-            }
-
-            double fallbackTwr =
-                telemetry != null &&
-                IsFinite(
-                    telemetry.ThrustToWeightRatio)
-                    ? telemetry
-                        .ThrustToWeightRatio
-                    : 1.5;
-
-            return CalculateProfileScaleFromTwr(
-                fallbackTwr);
-        }
-
-        private static double CalculateProfileScaleFromTwr(
-            double twr)
-        {
-            twr =
-                Math.Max(
-                    0.8,
-                    Math.Min(
-                        3.0,
-                        twr));
-
-            double scale =
-                52000.0 /
-                Math.Sqrt(
-                    twr);
-
-            return Math.Max(
-                26000.0,
-                Math.Min(
-                    72000.0,
-                    scale));
         }
 
         private string DetermineGuidance(
@@ -845,13 +746,14 @@ namespace KMC.MissionControl.Pages
             }
 
             double targetPitch =
-                CalculateTargetPitch(
+                _profilePlanner.CalculateTargetPitch(
                     Math.Max(
                         0.0,
                         telemetry.HorizontalSpeed *
                         telemetry.MissionTime *
                         0.55),
-                    telemetry);
+                    telemetry,
+                    _missionTarget.TargetApoapsisMeters);
 
             double pitchError =
                 telemetry.Pitch -
@@ -872,7 +774,7 @@ namespace KMC.MissionControl.Pages
             }
 
             if (telemetry.Apoapsis >=
-                DefaultTargetApoapsisMeters)
+                _missionTarget.TargetApoapsisMeters)
             {
                 return
                     "TARGET APOAPSIS ACHIEVED - PREPARE MECO";
