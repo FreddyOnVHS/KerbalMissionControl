@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
-using System.IO;
+using KMC.MissionControl.Diagnostics;
 using KMC.MissionControl.Guidance;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering;
@@ -68,8 +68,8 @@ namespace KMC.MissionControl.Pages
         private readonly AscentGraphRenderer _ascentGraphRenderer =
             new AscentGraphRenderer();
 
-        private static readonly object DebugLogSync =
-            new object();
+        private readonly AscentDebugLogger _debugLogger =
+            new AscentDebugLogger();
 
         public string Name
         {
@@ -406,244 +406,73 @@ namespace KMC.MissionControl.Pages
                     targetPitch,
                     DefaultTargetApoapsisMeters);
 
-            try
-            {
-                string directory =
-                    Path.Combine(
-                        Environment.GetFolderPath(
-                            Environment.SpecialFolder
-                                .LocalApplicationData),
-                        "KMC");
-
-                Directory.CreateDirectory(
-                    directory);
-
-                string path =
-                    Path.Combine(
-                        directory,
-                        "ascent-debug.csv");
-
-                /*
-                 * Output:
-                 * %LOCALAPPDATA%\KMC\ascent-debug.csv
-                 */
-
-                lock (DebugLogSync)
+            AscentDebugRecord record =
+                new AscentDebugRecord
                 {
-                    bool writeHeader =
-                        !File.Exists(path);
+                    MissionTimeSeconds =
+                        telemetry.MissionTime,
 
-                    using (StreamWriter writer =
-                        new StreamWriter(
-                            path,
-                            true))
-                    {
-                        if (writeHeader)
-                        {
-                            writer.WriteLine(
-                                "MET,Stage,InitialStage,AltitudeM," +
-                                "DownrangeM,LiveTWR,PlanningTWR," +
-                                "ProfileScaleM,TargetAltitudeM," +
-                                "TargetPitchDeg,ActualPitchDeg," +
-                                "ApoapsisM,BurnTimeRemainingS," +
-                                "PredictedBurnoutVelocityMps," +
-                                "PredictedApoapsisM," +
-                                "PredictionTargetErrorM," +
-                                "PredictionConfidencePercent," +
-                                "PredictionStatus," +
-                                "PlannerNominalPitchDeg," +
-                                "PlannerRecommendedPitchDeg," +
-                                "PlannerPitchCorrectionDeg," +
-                                "PlannerRecoveryAuthorityPercent," +
-                                "PlannerTargetAchievable," +
-                                "PlannerFlightPhase," +
-                                "PlannerThrottleCommandPercent," +
-                                "PlannerCutoffRequired," +
-                                "PlannerCoastLockoutActive," +
-                                "PlannerCommand," +
-                                "PlannerThrottleCommand," +
-                                "PlannerStatus," +
-                                "PlannerNextEvent," +
-                                "CircularizationAvailable," +
-                                "CircularizationDeltaV," +
-                                "CircularizationBurnTimeS," +
-                                "CircularizationIgnitionInS," +
-                                "CircularizationPeriapsisErrorM," +
-                                "CircularizationPitchDeg," +
-                                "MecoCountdownSeconds," +
-                                "FlashAlert," +
-                                "PredictedShutdownApoapsisM," +
-                                "PredictedShutdownPeriapsisM," +
-                                "PredictedOrbitErrorM," +
-                                "OrbitalEnergyError");
-                        }
+                    Stage =
+                        telemetry.CurrentStage,
 
-                        writer.WriteLine(
-                            string.Join(
-                                ",",
-                                telemetry.MissionTime
-                                    .ToString("0.000"),
-                                telemetry.CurrentStage,
-                                _initialStage,
-                                telemetry.Altitude
-                                    .ToString("0.000"),
-                                sample.DownrangeMeters
-                                    .ToString("0.000"),
-                                telemetry.ThrustToWeightRatio
-                                    .ToString("0.000"),
-                                IsFinite(_planningTwr)
-                                    ? _planningTwr
-                                        .ToString("0.000")
-                                    : string.Empty,
-                                profileScale
-                                    .ToString("0.000"),
-                                targetAltitude
-                                    .ToString("0.000"),
-                                targetPitch
-                                    .ToString("0.000"),
-                                telemetry.Pitch
-                                    .ToString("0.000"),
-                                telemetry.Apoapsis
-                                    .ToString("0.000"),
-                                prediction.IsAvailable
-                                    ? prediction
-                                        .TimeRemainingSeconds
-                                        .ToString("0.000")
-                                    : string.Empty,
-                                prediction.IsAvailable
-                                    ? prediction
-                                        .BurnoutVelocityMetersPerSecond
-                                        .ToString("0.000")
-                                    : string.Empty,
-                                prediction.IsAvailable
-                                    ? prediction
-                                        .PredictedApoapsisMeters
-                                        .ToString("0.000")
-                                    : string.Empty,
-                                prediction.IsAvailable
-                                    ? (prediction
-                                        .PredictedApoapsisMeters -
-                                       DefaultTargetApoapsisMeters)
-                                        .ToString("0.000")
-                                    : string.Empty,
-                                prediction.IsAvailable
-                                    ? prediction
-                                        .ConfidencePercent
-                                        .ToString("0.000")
-                                    : string.Empty,
-                                EscapeCsvField(
-                                    prediction.Status),
-                                missionPlan
-                                    .NominalPitchDegrees
-                                    .ToString("0.000"),
-                                missionPlan
-                                    .RecommendedPitchDegrees
-                                    .ToString("0.000"),
-                                missionPlan
-                                    .PitchCorrectionDegrees
-                                    .ToString("0.000"),
-                                missionPlan
-                                    .RecoveryAuthorityPercent
-                                    .ToString("0.000"),
-                                missionPlan
-                                    .IsTargetAchievable
-                                    ? "1"
-                                    : "0",
-                                EscapeCsvField(
-                                    missionPlan.FlightPhase),
-                                missionPlan
-                                    .ThrottleCommandPercent
-                                    .ToString("0.000"),
-                                missionPlan
-                                    .CutoffRequired
-                                    ? "1"
-                                    : "0",
-                                missionPlan
-                                    .CoastLockoutActive
-                                    ? "1"
-                                    : "0",
-                                EscapeCsvField(
-                                    missionPlan.Command),
-                                EscapeCsvField(
-                                    missionPlan.ThrottleCommand),
-                                EscapeCsvField(
-                                    missionPlan.Status),
-                                EscapeCsvField(
-                                    missionPlan.NextEvent),
-                                missionPlan
-                                    .CircularizationAvailable
-                                    ? "1"
-                                    : "0",
-                                missionPlan
-                                    .CircularizationDeltaV
-                                    .ToString("0.000"),
-                                missionPlan
-                                    .CircularizationBurnTimeSeconds
-                                    .ToString("0.000"),
-                                missionPlan
-                                    .CircularizationIgnitionInSeconds
-                                    .ToString("0.000"),
-                                missionPlan
-                                    .CircularizationPeriapsisErrorMeters
-                                    .ToString("0.000"),
-                                missionPlan
-                                    .CircularizationPitchDegrees
-                                    .ToString("0.000"),
-                                missionPlan
-                                    .MecoCountdownSeconds,
-                                missionPlan
-                                    .FlashAlert
-                                    ? "1"
-                                    : "0",
-                                missionPlan
-                                    .PredictedShutdownApoapsisMeters
-                                    .ToString("0.000"),
-                                missionPlan
-                                    .PredictedShutdownPeriapsisMeters
-                                    .ToString("0.000"),
-                                missionPlan
-                                    .PredictedOrbitErrorMeters
-                                    .ToString("0.000"),
-                                missionPlan
-                                    .OrbitalEnergyError
-                                    .ToString("0.000")));
-                    }
-                }
-            }
-            catch
-            {
-                /*
-                 * Diagnostics must never interrupt the mission display.
-                 */
-            }
-        }
+                    InitialStage =
+                        _initialStage,
 
-        private static string EscapeCsvField(
-            string value)
-        {
-            if (string.IsNullOrEmpty(
-                    value))
-            {
-                return string.Empty;
-            }
+                    AltitudeMeters =
+                        telemetry.Altitude,
 
-            bool requiresQuotes =
-                value.IndexOf(',') >= 0 ||
-                value.IndexOf('"') >= 0 ||
-                value.IndexOf('\r') >= 0 ||
-                value.IndexOf('\n') >= 0;
+                    DownrangeMeters =
+                        sample.DownrangeMeters,
 
-            if (!requiresQuotes)
-            {
-                return value;
-            }
+                    LiveThrustToWeightRatio =
+                        telemetry.ThrustToWeightRatio,
 
-            return
-                "\"" +
-                value.Replace(
-                    "\"",
-                    "\"\"") +
-                "\"";
+                    PlanningThrustToWeightRatio =
+                        _planningTwr,
+
+                    ProfileScaleMeters =
+                        profileScale,
+
+                    TargetAltitudeMeters =
+                        targetAltitude,
+
+                    TargetPitchDegrees =
+                        targetPitch,
+
+                    ActualPitchDegrees =
+                        telemetry.Pitch,
+
+                    ApoapsisMeters =
+                        telemetry.Apoapsis,
+
+                    PredictionAvailable =
+                        prediction.IsAvailable,
+
+                    BurnTimeRemainingSeconds =
+                        prediction.TimeRemainingSeconds,
+
+                    PredictedBurnoutVelocityMetersPerSecond =
+                        prediction.BurnoutVelocityMetersPerSecond,
+
+                    PredictedApoapsisMeters =
+                        prediction.PredictedApoapsisMeters,
+
+                    PredictionTargetErrorMeters =
+                        prediction.PredictedApoapsisMeters -
+                        DefaultTargetApoapsisMeters,
+
+                    PredictionConfidencePercent =
+                        prediction.ConfidencePercent,
+
+                    PredictionStatus =
+                        prediction.Status,
+
+                    MissionPlan =
+                        missionPlan
+                };
+
+            _debugLogger.Write(
+                record);
         }
 
         private void DrawAscentGraph(
