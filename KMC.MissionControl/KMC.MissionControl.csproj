@@ -82,6 +82,9 @@
 
     <Compile Include="Guidance\MissionPlanner.cs" />
     <Compile Include="Guidance\MissionPlannerResult.cs" />
+    <Compile Include="Guidance\OrbitSafetyInput.cs" />
+    <Compile Include="Guidance\OrbitSafetyDecision.cs" />
+    <Compile Include="Guidance\OrbitalGuidanceController.cs" />
 
     <Compile Include="MainForm.cs">
       <SubType>Form</SubType>

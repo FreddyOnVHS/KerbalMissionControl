@@ -51,7 +51,19 @@ namespace KMC.MissionControl.Diagnostics
             "PredictedShutdownApoapsisM," +
             "PredictedShutdownPeriapsisM," +
             "PredictedOrbitErrorM," +
-            "OrbitalEnergyError";
+            "OrbitalEnergyError," +
+            "GuidancePhase," +
+            "OrbitSafetyReason," +
+            "OrbitAchieved," +
+            "PauseBurn," +
+            "ActualApoapsisM," +
+            "ActualPeriapsisM," +
+            "PeriapsisSafe," +
+            "PredictedPeriapsisSafe," +
+            "RemainingDeltaV," +
+            "EnergySatisfied," +
+            "DeltaVSatisfied," +
+            "SafetyDecisionTime";
 
         public void Write(
             AscentDebugRecord record)
@@ -218,6 +230,24 @@ namespace KMC.MissionControl.Diagnostics
                 plan.PredictedOrbitErrorMeters
                     .ToString("0.000"),
                 plan.OrbitalEnergyError
+                    .ToString("0.000"),
+                EscapeCsvField(
+                    plan.FlightPhase),
+                EscapeCsvField(
+                    plan.OrbitSafetyReason),
+                plan.OrbitSafetyAchieved ? "1" : "0",
+                plan.OrbitSafetyPauseBurn ? "1" : "0",
+                record.ActualApoapsisMeters
+                    .ToString("0.000"),
+                record.ActualPeriapsisMeters
+                    .ToString("0.000"),
+                plan.ActualPeriapsisSafe ? "1" : "0",
+                plan.PredictedPeriapsisSafe ? "1" : "0",
+                plan.CircularizationDeltaV
+                    .ToString("0.000"),
+                plan.OrbitEnergySatisfied ? "1" : "0",
+                plan.OrbitDeltaVSatisfied ? "1" : "0",
+                plan.OrbitSafetyDecisionTime
                     .ToString("0.000"));
         }
 

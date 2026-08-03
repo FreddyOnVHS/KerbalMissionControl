@@ -45,6 +45,10 @@ namespace KMC.MissionControl.Diagnostics
 
         public string PredictionStatus { get; set; }
 
+        public double ActualApoapsisMeters { get; set; }
+
+        public double ActualPeriapsisMeters { get; set; }
+
         public MissionPlannerResult MissionPlan { get; set; }
     }
 }

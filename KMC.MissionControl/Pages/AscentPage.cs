@@ -313,6 +313,12 @@ namespace KMC.MissionControl.Pages
                     PredictionStatus =
                         prediction.Status,
 
+                    ActualApoapsisMeters =
+                        telemetry.Apoapsis,
+
+                    ActualPeriapsisMeters =
+                        telemetry.Periapsis,
+
                     MissionPlan =
                         missionPlan
                 };

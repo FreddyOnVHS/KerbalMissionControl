@@ -33,6 +33,22 @@ namespace KMC.MissionControl.Guidance
 
         public double OrbitalEnergyError { get; set; }
 
+        public string OrbitSafetyReason { get; set; }
+
+        public bool OrbitSafetyAchieved { get; set; }
+
+        public bool OrbitSafetyPauseBurn { get; set; }
+
+        public bool ActualPeriapsisSafe { get; set; }
+
+        public bool PredictedPeriapsisSafe { get; set; }
+
+        public bool OrbitEnergySatisfied { get; set; }
+
+        public bool OrbitDeltaVSatisfied { get; set; }
+
+        public double OrbitSafetyDecisionTime { get; set; }
+
         public double InitialCircularizationDeltaV { get; set; }
 
         public double BurnCompletionPercent { get; set; }
