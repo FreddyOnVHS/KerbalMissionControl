@@ -15,10 +15,8 @@ namespace KMC.MissionControl
     {
         private UdpClient _telemetryClient;
         private UdpClient _topologyClient;
-
         private Thread _telemetryThread;
         private Thread _topologyThread;
-
         private volatile bool _running;
 
         public event Action<TelemetryPacket>
@@ -152,6 +150,9 @@ namespace KMC.MissionControl
                     PropulsionRenderGraph graph =
                         builder.Build(topology);
 
+                    PropulsionGraphStore.Publish(
+                        graph);
+
                     PropulsionGraphFileLogger.Write(
                         graph);
 
@@ -185,6 +186,7 @@ namespace KMC.MissionControl
         public void Stop()
         {
             _running = false;
+            PropulsionGraphStore.Clear();
 
             CloseClient(ref _telemetryClient);
             CloseClient(ref _topologyClient);
