@@ -910,6 +910,57 @@ namespace KMC.MissionControl.Controls
                     155,
                     phosphorColor);
 
+            Rectangle contentRectangle =
+                CalculatePageContentBounds(
+                    virtualWidth,
+                    virtualHeight,
+                    GetContentProfile());
+
+            MissionRenderContext context =
+                new MissionRenderContext(
+                    graphics,
+                    contentRectangle,
+                    _largePageFont,
+                    _smallPageFont,
+                    phosphorColor,
+                    dimColor,
+                    new Size(
+                        virtualWidth,
+                        virtualHeight));
+
+            if (_missionPage != null &&
+                _telemetry != null)
+            {
+                _missionPage.Draw(
+                    context,
+                    _telemetry);
+            }
+        }
+
+        private static Rectangle CalculatePageContentBounds(
+            int virtualWidth,
+            int virtualHeight,
+            MissionPageContentProfile contentProfile)
+        {
+            if (contentProfile ==
+                MissionPageContentProfile.DenseEngineering)
+            {
+                const int DenseHorizontalMargin = 28;
+                const int DenseVerticalMargin = 24;
+
+                return new Rectangle(
+                    DenseHorizontalMargin,
+                    DenseVerticalMargin,
+                    Math.Max(
+                        1,
+                        virtualWidth -
+                        DenseHorizontalMargin * 2),
+                    Math.Max(
+                        1,
+                        virtualHeight -
+                        DenseVerticalMargin * 2));
+            }
+
             const float PageExpansionFactor =
                 1.30f;
 
@@ -931,23 +982,20 @@ namespace KMC.MissionControl.Controls
                     baselineContentHeight *
                     PageExpansionFactor);
 
-            int horizontalMargin =
-                28;
-
-            int verticalMargin =
-                24;
+            const int StandardHorizontalMargin = 28;
+            const int StandardVerticalMargin = 24;
 
             int availableWidth =
                 Math.Max(
                     1,
                     virtualWidth -
-                    horizontalMargin * 2);
+                    StandardHorizontalMargin * 2);
 
             int availableHeight =
                 Math.Max(
                     1,
                     virtualHeight -
-                    verticalMargin * 2);
+                    StandardVerticalMargin * 2);
 
             int contentWidth =
                 Math.Min(
@@ -961,44 +1009,23 @@ namespace KMC.MissionControl.Controls
 
             int contentLeft =
                 Math.Max(
-                    horizontalMargin,
+                    StandardHorizontalMargin,
                     (virtualWidth -
                      contentWidth) /
                     2);
 
             int contentTop =
                 Math.Max(
-                    verticalMargin,
+                    StandardVerticalMargin,
                     (virtualHeight -
                      contentHeight) /
                     2);
 
-            Rectangle contentRectangle =
-                new Rectangle(
-                    contentLeft,
-                    contentTop,
-                    contentWidth,
-                    contentHeight);
-
-            MissionRenderContext context =
-                new MissionRenderContext(
-                    graphics,
-                    contentRectangle,
-                    _largePageFont,
-                    _smallPageFont,
-                    phosphorColor,
-                    dimColor,
-                    new Size(
-                        virtualWidth,
-                        virtualHeight));
-
-            if (_missionPage != null &&
-                _telemetry != null)
-            {
-                _missionPage.Draw(
-                    context,
-                    _telemetry);
-            }
+            return new Rectangle(
+                contentLeft,
+                contentTop,
+                contentWidth,
+                contentHeight);
         }
 
         private void DrawDiagnostics(
@@ -1034,17 +1061,77 @@ namespace KMC.MissionControl.Controls
             }
         }
 
-        private static CanvasLayout CalculateCanvasLayout(
+        private Size GetRequestedVirtualCanvasSize()
+        {
+            IMissionPageCanvasProvider provider =
+                _missionPage as
+                    IMissionPageCanvasProvider;
+
+            if (provider == null)
+            {
+                return Size.Empty;
+            }
+
+            Size requested =
+                provider.PreferredVirtualCanvasSize;
+
+            if (requested.Width <= 0 ||
+                requested.Height <= 0)
+            {
+                return Size.Empty;
+            }
+
+            return new Size(
+                Math.Max(
+                    MinimumVirtualWidth,
+                    Math.Min(
+                        MaximumVirtualWidth,
+                        requested.Width)),
+                Math.Max(
+                    MinimumVirtualHeight,
+                    Math.Min(
+                        MaximumVirtualHeight,
+                        requested.Height)));
+        }
+
+        private MissionPageContentProfile GetContentProfile()
+        {
+            IMissionPageCanvasProvider provider =
+                _missionPage as
+                    IMissionPageCanvasProvider;
+
+            return provider != null
+                ? provider.ContentProfile
+                : MissionPageContentProfile.Standard;
+        }
+
+        private CanvasLayout CalculateCanvasLayout(
             RectangleF viewport)
         {
+            Size requestedCanvas =
+                GetRequestedVirtualCanvasSize();
+
+            bool hasRequestedCanvas =
+                !requestedCanvas.IsEmpty;
+
+            int baselineVirtualWidth =
+                hasRequestedCanvas
+                    ? requestedCanvas.Width
+                    : MinimumVirtualWidth;
+
+            int baselineVirtualHeight =
+                hasRequestedCanvas
+                    ? requestedCanvas.Height
+                    : MinimumVirtualHeight;
+
             CanvasLayout result =
                 new CanvasLayout
                 {
                     VirtualWidth =
-                        MinimumVirtualWidth,
+                        baselineVirtualWidth,
 
                     VirtualHeight =
-                        MinimumVirtualHeight,
+                        baselineVirtualHeight,
 
                     DestinationRectangle =
                         RectangleF.Empty,
@@ -1061,11 +1148,11 @@ namespace KMC.MissionControl.Controls
 
             float widthScale =
                 viewport.Width /
-                MinimumVirtualWidth;
+                baselineVirtualWidth;
 
             float heightScale =
                 viewport.Height /
-                MinimumVirtualHeight;
+                baselineVirtualHeight;
 
             float scale =
                 Math.Min(
@@ -1079,29 +1166,51 @@ namespace KMC.MissionControl.Controls
                 return result;
             }
 
-            int virtualWidth =
-                (int)Math.Ceiling(
-                    viewport.Width /
-                    scale);
+            int virtualWidth;
+            int virtualHeight;
 
-            int virtualHeight =
-                (int)Math.Ceiling(
-                    viewport.Height /
-                    scale);
+            if (hasRequestedCanvas)
+            {
+                /*
+                 * Dense pages request a stable logical resolution. The page is
+                 * fitted to the CRT viewport without changing that resolution.
+                 */
+                virtualWidth =
+                    baselineVirtualWidth;
 
-            virtualWidth =
-                Math.Max(
-                    MinimumVirtualWidth,
-                    Math.Min(
-                        MaximumVirtualWidth,
-                        virtualWidth));
+                virtualHeight =
+                    baselineVirtualHeight;
+            }
+            else
+            {
+                /*
+                 * Existing pages retain the original responsive behavior,
+                 * expanding the logical canvas as the physical CRT grows.
+                 */
+                virtualWidth =
+                    (int)Math.Ceiling(
+                        viewport.Width /
+                        scale);
 
-            virtualHeight =
-                Math.Max(
-                    MinimumVirtualHeight,
-                    Math.Min(
-                        MaximumVirtualHeight,
-                        virtualHeight));
+                virtualHeight =
+                    (int)Math.Ceiling(
+                        viewport.Height /
+                        scale);
+
+                virtualWidth =
+                    Math.Max(
+                        MinimumVirtualWidth,
+                        Math.Min(
+                            MaximumVirtualWidth,
+                            virtualWidth));
+
+                virtualHeight =
+                    Math.Max(
+                        MinimumVirtualHeight,
+                        Math.Min(
+                            MaximumVirtualHeight,
+                            virtualHeight));
+            }
 
             float destinationWidth =
                 virtualWidth *

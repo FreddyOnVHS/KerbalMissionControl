@@ -95,6 +95,8 @@
 
     <Compile Include="Pages\AscentPage.cs" />
     <Compile Include="Pages\IMissionPage.cs" />
+    <Compile Include="Pages\IMissionPageCanvasProvider.cs" />
+    <Compile Include="Pages\MissionPageContentProfile.cs" />
     <Compile Include="Pages\OrbitPage.cs" />
     <Compile Include="Pages\PropulsionPage.cs" />
 

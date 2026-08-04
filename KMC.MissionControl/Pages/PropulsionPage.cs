@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering;
@@ -7,7 +7,8 @@ using KMC.MissionControl.Rendering.Propulsion;
 namespace KMC.MissionControl.Pages
 {
     public sealed class PropulsionPage :
-        IMissionPage
+        IMissionPage,
+        IMissionPageCanvasProvider
     {
         private readonly PropulsionDisplayRenderer
             _displayRenderer =
@@ -16,6 +17,30 @@ namespace KMC.MissionControl.Pages
         public string Name
         {
             get { return "PROPULSION"; }
+        }
+
+        public Size PreferredVirtualCanvasSize
+        {
+            get
+            {
+                /*
+                 * 16:9 dense engineering canvas. At the normal maximum
+                 * presentation scale of 0.625 this remains readable while
+                 * providing substantially more layout room than 1280 x 720.
+                 */
+                return new Size(
+                    2400,
+                    1350);
+            }
+        }
+
+        public MissionPageContentProfile ContentProfile
+        {
+            get
+            {
+                return
+                    MissionPageContentProfile.DenseEngineering;
+            }
         }
 
         public void Draw(
