@@ -61,7 +61,12 @@ namespace KMC.MissionControl.Controls
         private readonly Font _diagnosticFont;
 
         private long _renderCount;
+        private long _paintCount;
+        private long _bitmapAllocationCount;
         private double _lastRenderMilliseconds;
+        private double _averageRenderMilliseconds;
+        private double _lastPaintMilliseconds;
+        private double _averagePaintMilliseconds;
 
         private struct CanvasLayout
         {
@@ -242,6 +247,52 @@ namespace KMC.MissionControl.Controls
         public double LastRenderMilliseconds
         {
             get { return _lastRenderMilliseconds; }
+        }
+
+        public double AverageRenderMilliseconds
+        {
+            get { return _averageRenderMilliseconds; }
+        }
+
+        public long PaintCount
+        {
+            get { return _paintCount; }
+        }
+
+        public double LastPaintMilliseconds
+        {
+            get { return _lastPaintMilliseconds; }
+        }
+
+        public double AveragePaintMilliseconds
+        {
+            get { return _averagePaintMilliseconds; }
+        }
+
+        public long BitmapAllocationCount
+        {
+            get { return _bitmapAllocationCount; }
+        }
+
+        public long CachedBitmapBytes
+        {
+            get
+            {
+                if (_cachedCanvas == null)
+                {
+                    return 0L;
+                }
+
+                return
+                    (long)_cachedCanvas.Width *
+                    _cachedCanvas.Height *
+                    4L;
+            }
+        }
+
+        public bool IsRenderingSuspended
+        {
+            get { return _renderingSuspended; }
         }
 
         public void SetPage(
@@ -434,49 +485,63 @@ namespace KMC.MissionControl.Controls
         protected override void OnPaint(
             PaintEventArgs e)
         {
+            Stopwatch stopwatch =
+                Stopwatch.StartNew();
+
             base.OnPaint(
                 e);
 
-            if (Width < 8 ||
-                Height < 8)
+            if (Width >= 8 &&
+                Height >= 8)
             {
-                return;
-            }
+                e.Graphics.SmoothingMode =
+                    SmoothingMode.AntiAlias;
 
-            e.Graphics.SmoothingMode =
-                SmoothingMode.AntiAlias;
+                e.Graphics.PixelOffsetMode =
+                    PixelOffsetMode.HighQuality;
 
-            e.Graphics.PixelOffsetMode =
-                PixelOffsetMode.HighQuality;
+                Rectangle bezelRectangle =
+                    GetBezelRectangle();
 
-            Rectangle bezelRectangle =
-                GetBezelRectangle();
+                Rectangle glassRectangle =
+                    GetGlassRectangle();
 
-            Rectangle glassRectangle =
-                GetGlassRectangle();
+                DrawBezel(
+                    e.Graphics,
+                    bezelRectangle);
 
-            DrawBezel(
-                e.Graphics,
-                bezelRectangle);
+                DrawGlass(
+                    e.Graphics,
+                    glassRectangle);
 
-            DrawGlass(
-                e.Graphics,
-                glassRectangle);
+                DrawVirtualCanvas(
+                    e.Graphics,
+                    glassRectangle);
 
-            DrawVirtualCanvas(
-                e.Graphics,
-                glassRectangle);
+                if (_showScanLines)
+                {
+                    DrawScanLines(
+                        e.Graphics,
+                        glassRectangle);
+                }
 
-            if (_showScanLines)
-            {
-                DrawScanLines(
+                DrawGlassReflection(
                     e.Graphics,
                     glassRectangle);
             }
 
-            DrawGlassReflection(
-                e.Graphics,
-                glassRectangle);
+            stopwatch.Stop();
+
+            _paintCount++;
+
+            _lastPaintMilliseconds =
+                stopwatch.Elapsed.TotalMilliseconds;
+
+            _averagePaintMilliseconds =
+                UpdateRunningAverage(
+                    _averagePaintMilliseconds,
+                    _lastPaintMilliseconds,
+                    _paintCount);
         }
 
         protected override void Dispose(
@@ -709,6 +774,12 @@ namespace KMC.MissionControl.Controls
 
             _lastRenderMilliseconds =
                 stopwatch.Elapsed.TotalMilliseconds;
+
+            _averageRenderMilliseconds =
+                UpdateRunningAverage(
+                    _averageRenderMilliseconds,
+                    _lastRenderMilliseconds,
+                    _renderCount);
         }
 
         private void EnsureCachedCanvas(
@@ -738,6 +809,8 @@ namespace KMC.MissionControl.Controls
                 new Size(
                     width,
                     height);
+
+            _bitmapAllocationCount++;
         }
 
         private void DisposeCachedCanvas()
@@ -1261,6 +1334,23 @@ namespace KMC.MissionControl.Controls
                 default:
                     return ApolloTheme.CrtBlue;
             }
+        }
+
+        private static double UpdateRunningAverage(
+            double currentAverage,
+            double sample,
+            long sampleCount)
+        {
+            if (sampleCount <= 1)
+            {
+                return sample;
+            }
+
+            return
+                currentAverage +
+                (sample -
+                 currentAverage) /
+                sampleCount;
         }
 
         private static GraphicsPath CreateRoundedRectangle(

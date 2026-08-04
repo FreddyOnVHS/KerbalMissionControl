@@ -1,4 +1,4 @@
-using KMC.Shared;
+﻿using KMC.Shared;
 using System;
 
 namespace KMC.MissionControl.Telemetry

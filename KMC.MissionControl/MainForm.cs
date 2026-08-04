@@ -1,4 +1,5 @@
 ﻿using KMC.MissionControl.Controls;
+using KMC.MissionControl.Diagnostics;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Pages;
 using KMC.MissionControl.Telemetry;
@@ -38,6 +39,7 @@ namespace KMC.MissionControl
         private readonly LatestTelemetryBuffer _telemetryBuffer;
         private readonly FormsTimer _connectionTimer;
         private readonly FormsTimer _displayRefreshTimer;
+        private readonly FormsTimer _performanceOverlayTimer;
 
         private readonly Label _connectionLabel;
         private readonly Label _displayRefreshLabel;
@@ -46,6 +48,7 @@ namespace KMC.MissionControl
         private readonly MissionDisplay _missionDisplay;
         private readonly NavigationBar _navigationBar;
         private readonly MissionSummary _missionSummary;
+        private readonly PerformanceOverlay _performanceOverlay;
 
         private long _lastDisplayedPacketSequence;
         private long _displayedPacketCount;
@@ -191,11 +194,28 @@ namespace KMC.MissionControl
             _missionSummary.UpdateTelemetry(
                 initialTelemetry);
 
+            _performanceOverlay =
+                new PerformanceOverlay
+                {
+                    Left =
+                        ClientSize.Width -
+                        410,
+                    Top =
+                        HeaderHeight +
+                        OuterMargin +
+                        12
+                };
+
             _rootLayout =
                 CreateMainLayout();
 
             Controls.Add(
                 _rootLayout);
+
+            Controls.Add(
+                _performanceOverlay);
+
+            _performanceOverlay.BringToFront();
 
             Resize +=
                 OnMainFormResize;
@@ -229,8 +249,23 @@ namespace KMC.MissionControl
             _connectionTimer.Tick +=
                 OnConnectionTimerTick;
 
+            _performanceOverlayTimer =
+                new FormsTimer
+                {
+                    Interval = 250
+                };
+
+            _performanceOverlayTimer.Tick +=
+                OnPerformanceOverlayTimerTick;
+
             _lastPerformanceReportUtc =
                 DateTime.UtcNow;
+
+            KeyPreview =
+                true;
+
+            KeyDown +=
+                OnMainFormKeyDown;
 
             Load +=
                 OnFormLoad;
@@ -692,6 +727,7 @@ namespace KMC.MissionControl
                 _receiver.Start();
                 _displayRefreshTimer.Start();
                 _connectionTimer.Start();
+                _performanceOverlayTimer.Start();
             }
             catch (Exception ex)
             {
@@ -960,6 +996,121 @@ namespace KMC.MissionControl
             };
         }
 
+        private void OnMainFormKeyDown(
+            object sender,
+            KeyEventArgs e)
+        {
+            if (e.Control &&
+                e.Shift &&
+                e.KeyCode ==
+                    Keys.D)
+            {
+                _performanceOverlay.Visible =
+                    !_performanceOverlay.Visible;
+
+                if (_performanceOverlay.Visible)
+                {
+                    UpdatePerformanceOverlay();
+                    _performanceOverlay.BringToFront();
+                }
+
+                e.Handled =
+                    true;
+
+                e.SuppressKeyPress =
+                    true;
+            }
+        }
+
+        private void OnPerformanceOverlayTimerTick(
+            object sender,
+            EventArgs e)
+        {
+            if (_performanceOverlay.Visible)
+            {
+                UpdatePerformanceOverlay();
+            }
+        }
+
+        private void UpdatePerformanceOverlay()
+        {
+            DateTime lastReceivedUtc =
+                _telemetryBuffer.LastReceivedUtc;
+
+            bool online =
+                lastReceivedUtc !=
+                    default(DateTime) &&
+                DateTime.UtcNow -
+                    lastReceivedUtc <
+                TimeSpan.FromSeconds(
+                    2.0);
+
+            PerformanceSnapshot snapshot =
+                new PerformanceSnapshot
+                {
+                    SelectedDisplayFps =
+                        _displayRefreshSlider.Value,
+
+                    PacketsReceived =
+                        _telemetryBuffer.ReceivedPacketCount,
+
+                    PacketsDisplayed =
+                        _displayedPacketCount,
+
+                    PacketsSuperseded =
+                        _telemetryBuffer.SupersededPacketCount,
+
+                    RenderCount =
+                        _missionDisplay.RenderCount,
+
+                    LastRenderMilliseconds =
+                        _missionDisplay.LastRenderMilliseconds,
+
+                    AverageRenderMilliseconds =
+                        _missionDisplay.AverageRenderMilliseconds,
+
+                    PaintCount =
+                        _missionDisplay.PaintCount,
+
+                    LastPaintMilliseconds =
+                        _missionDisplay.LastPaintMilliseconds,
+
+                    AveragePaintMilliseconds =
+                        _missionDisplay.AveragePaintMilliseconds,
+
+                    BitmapSize =
+                        _missionDisplay.VirtualCanvasSize,
+
+                    BitmapBytes =
+                        _missionDisplay.CachedBitmapBytes,
+
+                    BitmapAllocationCount =
+                        _missionDisplay.BitmapAllocationCount,
+
+                    ManagedMemoryBytes =
+                        GC.GetTotalMemory(
+                            forceFullCollection: false),
+
+                    GenerationZeroCollections =
+                        GC.CollectionCount(0),
+
+                    GenerationOneCollections =
+                        GC.CollectionCount(1),
+
+                    GenerationTwoCollections =
+                        GC.CollectionCount(2),
+
+                    RenderingSuspended =
+                        _missionDisplay.IsRenderingSuspended,
+
+                    LinkOnline =
+                        online
+                };
+
+            _performanceOverlay.UpdateSnapshot(
+                snapshot);
+        }
+
         private void OnConnectionTimerTick(
             object sender,
             EventArgs e)
@@ -1024,6 +1175,7 @@ namespace KMC.MissionControl
         {
             _displayRefreshTimer.Stop();
             _connectionTimer.Stop();
+            _performanceOverlayTimer.Stop();
 
             _receiver.TelemetryReceived -=
                 OnTelemetryReceived;

@@ -58,11 +58,13 @@
     <Compile Include="Controls\MissionDisplay.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\MissionSummary.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\NavigationBar.cs"><SubType>Component</SubType></Compile>
+    <Compile Include="Controls\PerformanceOverlay.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\TelemetryValue.cs"><SubType>UserControl</SubType></Compile>
 
     <Compile Include="Diagnostics\AscentDebugRecord.cs" />
     <Compile Include="Diagnostics\AscentDebugLogger.cs" />
     <Compile Include="Diagnostics\PropulsionGraphFileLogger.cs" />
+    <Compile Include="Diagnostics\PerformanceSnapshot.cs" />
 
     <Compile Include="Flight\AscentFlightHistory.cs" />
     <Compile Include="Flight\AscentFlightHistoryUpdate.cs" />
