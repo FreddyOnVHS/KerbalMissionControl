@@ -29,6 +29,9 @@ namespace KMC.MissionControl
         private const int MaximumDisplayRefreshRate = 20;
         private const int DefaultDisplayRefreshRate = 10;
 
+        private const int WmEnterSizeMove = 0x0231;
+        private const int WmExitSizeMove = 0x0232;
+
         private readonly TableLayoutPanel _rootLayout;
 
         private readonly MissionControlReceiver _receiver;
@@ -47,6 +50,7 @@ namespace KMC.MissionControl
         private long _lastDisplayedPacketSequence;
         private long _displayedPacketCount;
         private DateTime _lastPerformanceReportUtc;
+        private bool _isMovingOrResizing;
 
         public MainForm()
         {
@@ -550,6 +554,72 @@ namespace KMC.MissionControl
             EventArgs e)
         {
             UpdateResponsiveLayout();
+
+            /*
+             * During an interactive move/resize, MissionDisplay continues
+             * presenting its last completed bitmap. The canvas is rebuilt
+             * once when Windows reports that the operation has ended.
+             */
+            if (!_isMovingOrResizing)
+            {
+                _missionDisplay.RequestRender();
+            }
+        }
+
+        protected override void WndProc(
+            ref Message message)
+        {
+            if (message.Msg ==
+                WmEnterSizeMove)
+            {
+                BeginInteractiveMoveResize();
+            }
+
+            base.WndProc(
+                ref message);
+
+            if (message.Msg ==
+                WmExitSizeMove)
+            {
+                EndInteractiveMoveResize();
+            }
+        }
+
+        private void BeginInteractiveMoveResize()
+        {
+            if (_isMovingOrResizing)
+            {
+                return;
+            }
+
+            _isMovingOrResizing =
+                true;
+
+            _displayRefreshTimer.Stop();
+
+            _missionDisplay.SuspendRendering();
+        }
+
+        private void EndInteractiveMoveResize()
+        {
+            if (!_isMovingOrResizing)
+            {
+                return;
+            }
+
+            _isMovingOrResizing =
+                false;
+
+            /*
+             * Consume the newest packet immediately, then rebuild the cached
+             * canvas once at the final window dimensions.
+             */
+            RefreshLatestTelemetry();
+
+            _missionDisplay.ResumeRendering(
+                renderImmediately: true);
+
+            _displayRefreshTimer.Start();
         }
 
         private void UpdateResponsiveLayout()
@@ -653,14 +723,19 @@ namespace KMC.MissionControl
             object sender,
             EventArgs e)
         {
+            RefreshLatestTelemetry();
+            ReportPerformanceIfDue();
+        }
+
+        private bool RefreshLatestTelemetry()
+        {
             TelemetryPacket packet;
 
             if (!_telemetryBuffer.TryReadLatest(
                 ref _lastDisplayedPacketSequence,
                 out packet))
             {
-                ReportPerformanceIfDue();
-                return;
+                return false;
             }
 
             MissionTelemetry telemetry =
@@ -687,7 +762,7 @@ namespace KMC.MissionControl
 
             _displayedPacketCount++;
 
-            ReportPerformanceIfDue();
+            return true;
         }
 
         private void OnDisplayRefreshSliderValueChanged(

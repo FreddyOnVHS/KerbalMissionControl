@@ -3,6 +3,7 @@ using KMC.MissionControl.Pages;
 using KMC.MissionControl.Rendering;
 using KMC.MissionControl.Themes;
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -18,19 +19,18 @@ namespace KMC.MissionControl.Controls
     }
 
     /// <summary>
-    /// Apollo-inspired CRT display.
+    /// Apollo-inspired CRT display with a persistent virtual canvas.
     ///
-    /// Mission pages render inside a fixed 1280 x 720 baseline region.
-    /// When the physical CRT is enlarged, the virtual canvas expands
-    /// horizontally and vertically while the baseline content retains
-    /// its original physical scale.
+    /// Mission-page rendering is intentionally separated from presentation.
+    /// Expensive page drawing occurs only when telemetry, page content, theme,
+    /// diagnostics, or virtual-canvas dimensions change. Normal WinForms paint
+    /// messages simply present the most recently completed bitmap.
     /// </summary>
     public sealed class MissionDisplay : Control
     {
         public const int MinimumVirtualWidth = 1280;
         public const int MinimumVirtualHeight = 720;
 
-        // Compatibility aliases for existing code.
         public const int VirtualWidth = MinimumVirtualWidth;
         public const int VirtualHeight = MinimumVirtualHeight;
 
@@ -38,8 +38,8 @@ namespace KMC.MissionControl.Controls
         private const int GlassContentInsetX = 22;
         private const int GlassContentInsetY = 18;
         private const int MaximumVirtualWidth = 4096;
-        private const float MaximumCanvasScale = 0.625f;
         private const int MaximumVirtualHeight = 2304;
+        private const float MaximumCanvasScale = 0.625f;
 
         private IMissionPage _missionPage;
         private MissionTelemetry _telemetry;
@@ -47,8 +47,21 @@ namespace KMC.MissionControl.Controls
         private CrtPhosphorMode _phosphorMode;
         private bool _showScanLines;
         private bool _showScalingDiagnostics;
+
         private int _currentVirtualWidth;
         private int _currentVirtualHeight;
+
+        private Bitmap _cachedCanvas;
+        private Size _cachedCanvasSize;
+        private bool _canvasDirty;
+        private bool _renderingSuspended;
+
+        private readonly Font _largePageFont;
+        private readonly Font _smallPageFont;
+        private readonly Font _diagnosticFont;
+
+        private long _renderCount;
+        private double _lastRenderMilliseconds;
 
         private struct CanvasLayout
         {
@@ -60,21 +73,65 @@ namespace KMC.MissionControl.Controls
 
         public MissionDisplay()
         {
-            _missionPage = new OrbitPage();
-            _telemetry = new MissionTelemetry();
-            _screenTitle = "DATA DISPLAY";
-            _phosphorMode = CrtPhosphorMode.Blue;
-            _showScanLines = true;
-            _showScalingDiagnostics = false;
-            _currentVirtualWidth = MinimumVirtualWidth;
-            _currentVirtualHeight = MinimumVirtualHeight;
+            _missionPage =
+                new OrbitPage();
+
+            _telemetry =
+                new MissionTelemetry();
+
+            _screenTitle =
+                "DATA DISPLAY";
+
+            _phosphorMode =
+                CrtPhosphorMode.Blue;
+
+            _showScanLines =
+                true;
+
+            _showScalingDiagnostics =
+                false;
+
+            _currentVirtualWidth =
+                MinimumVirtualWidth;
+
+            _currentVirtualHeight =
+                MinimumVirtualHeight;
+
+            _cachedCanvasSize =
+                Size.Empty;
+
+            _canvasDirty =
+                true;
+
+            _largePageFont =
+                ApolloTheme.CreateConsoleFont(
+                    27.0f,
+                    FontStyle.Regular);
+
+            _smallPageFont =
+                ApolloTheme.CreateConsoleFont(
+                    21.0f,
+                    FontStyle.Bold);
+
+            _diagnosticFont =
+                ApolloTheme.CreateConsoleFont(
+                    16.0f,
+                    FontStyle.Regular);
 
             Width = 640;
             Height = 400;
-            BackColor = ApolloTheme.ConsoleFace;
-            ForeColor = ApolloTheme.CrtBlue;
-            DoubleBuffered = true;
-            ResizeRedraw = true;
+
+            BackColor =
+                ApolloTheme.ConsoleFace;
+
+            ForeColor =
+                ApolloTheme.CrtBlue;
+
+            DoubleBuffered =
+                true;
+
+            ResizeRedraw =
+                true;
 
             SetStyle(
                 ControlStyles.AllPaintingInWmPaint |
@@ -90,10 +147,25 @@ namespace KMC.MissionControl.Controls
             get { return _screenTitle; }
             set
             {
-                _screenTitle = string.IsNullOrWhiteSpace(value)
-                    ? "DATA DISPLAY"
-                    : value.Trim().ToUpperInvariant();
-                Invalidate();
+                string normalized =
+                    string.IsNullOrWhiteSpace(value)
+                        ? "DATA DISPLAY"
+                        : value
+                            .Trim()
+                            .ToUpperInvariant();
+
+                if (string.Equals(
+                    _screenTitle,
+                    normalized,
+                    StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                _screenTitle =
+                    normalized;
+
+                MarkCanvasDirty();
             }
         }
 
@@ -102,8 +174,15 @@ namespace KMC.MissionControl.Controls
             get { return _phosphorMode; }
             set
             {
-                _phosphorMode = value;
-                Invalidate();
+                if (_phosphorMode == value)
+                {
+                    return;
+                }
+
+                _phosphorMode =
+                    value;
+
+                MarkCanvasDirty();
             }
         }
 
@@ -112,7 +191,18 @@ namespace KMC.MissionControl.Controls
             get { return _showScanLines; }
             set
             {
-                _showScanLines = value;
+                if (_showScanLines == value)
+                {
+                    return;
+                }
+
+                _showScanLines =
+                    value;
+
+                /*
+                 * Scanlines are a presentation layer and do not require the
+                 * mission-page bitmap to be rebuilt.
+                 */
                 Invalidate();
             }
         }
@@ -122,8 +212,15 @@ namespace KMC.MissionControl.Controls
             get { return _showScalingDiagnostics; }
             set
             {
-                _showScalingDiagnostics = value;
-                Invalidate();
+                if (_showScalingDiagnostics == value)
+                {
+                    return;
+                }
+
+                _showScalingDiagnostics =
+                    value;
+
+                MarkCanvasDirty();
             }
         }
 
@@ -137,10 +234,23 @@ namespace KMC.MissionControl.Controls
             }
         }
 
-        public void SetPage(
-    IMissionPage page)
+        public long RenderCount
         {
-            if (page == null)
+            get { return _renderCount; }
+        }
+
+        public double LastRenderMilliseconds
+        {
+            get { return _lastRenderMilliseconds; }
+        }
+
+        public void SetPage(
+            IMissionPage page)
+        {
+            if (page == null ||
+                ReferenceEquals(
+                    _missionPage,
+                    page))
             {
                 return;
             }
@@ -148,7 +258,7 @@ namespace KMC.MissionControl.Controls
             _missionPage =
                 page;
 
-            Invalidate();
+            MarkCanvasDirty();
         }
 
         public void UpdateTelemetry(
@@ -162,22 +272,57 @@ namespace KMC.MissionControl.Controls
             _telemetry =
                 telemetry;
 
+            MarkCanvasDirty();
+        }
+
+        /// <summary>
+        /// Prevents expensive mission-page rendering while allowing paint
+        /// messages to present the last completed cached frame.
+        /// </summary>
+        public void SuspendRendering()
+        {
+            _renderingSuspended =
+                true;
+        }
+
+        public void ResumeRendering(
+            bool renderImmediately)
+        {
+            _renderingSuspended =
+                false;
+
+            _canvasDirty =
+                true;
+
+            if (renderImmediately)
+            {
+                RenderCurrentCanvas();
+            }
+
             Invalidate();
+        }
+
+        public void RequestRender()
+        {
+            MarkCanvasDirty();
         }
 
         public RectangleF GetCanvasDestinationRectangle()
         {
-            RectangleF viewport = RectangleF.Inflate(
-                GetGlassRectangle(),
-                -GlassContentInsetX,
-                -GlassContentInsetY);
+            RectangleF viewport =
+                RectangleF.Inflate(
+                    GetGlassRectangle(),
+                    -GlassContentInsetX,
+                    -GlassContentInsetY);
 
-            return CalculateCanvasLayout(viewport).DestinationRectangle;
+            return CalculateCanvasLayout(
+                viewport)
+                .DestinationRectangle;
         }
 
         public bool TryClientToVirtual(
-    Point clientPoint,
-    out PointF virtualPoint)
+            Point clientPoint,
+            out PointF virtualPoint)
         {
             RectangleF viewport =
                 RectangleF.Inflate(
@@ -225,7 +370,7 @@ namespace KMC.MissionControl.Controls
         }
 
         public PointF VirtualToClient(
-    PointF virtualPoint)
+            PointF virtualPoint)
         {
             RectangleF viewport =
                 RectangleF.Inflate(
@@ -257,18 +402,40 @@ namespace KMC.MissionControl.Controls
                 y);
         }
 
-        protected override void OnPaintBackground(PaintEventArgs e)
+        protected override void OnSizeChanged(
+            EventArgs e)
         {
-            Color parentColor = Parent != null
-                ? Parent.BackColor
-                : ApolloTheme.ConsoleFace;
+            base.OnSizeChanged(
+                e);
 
-            e.Graphics.Clear(parentColor);
+            /*
+             * A size change may require a different virtual-canvas size.
+             * During interactive resize, keep presenting the existing bitmap
+             * and defer the rebuild until rendering resumes.
+             */
+            _canvasDirty =
+                true;
+
+            Invalidate();
         }
 
-        protected override void OnPaint(PaintEventArgs e)
+        protected override void OnPaintBackground(
+            PaintEventArgs e)
         {
-            base.OnPaint(e);
+            Color parentColor =
+                Parent != null
+                    ? Parent.BackColor
+                    : ApolloTheme.ConsoleFace;
+
+            e.Graphics.Clear(
+                parentColor);
+        }
+
+        protected override void OnPaint(
+            PaintEventArgs e)
+        {
+            base.OnPaint(
+                e);
 
             if (Width < 8 ||
                 Height < 8)
@@ -276,15 +443,21 @@ namespace KMC.MissionControl.Controls
                 return;
             }
 
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            e.Graphics.SmoothingMode =
+                SmoothingMode.AntiAlias;
 
-            Rectangle bezelRectangle = GetBezelRectangle();
-            Rectangle glassRectangle = GetGlassRectangle();
+            e.Graphics.PixelOffsetMode =
+                PixelOffsetMode.HighQuality;
+
+            Rectangle bezelRectangle =
+                GetBezelRectangle();
+
+            Rectangle glassRectangle =
+                GetGlassRectangle();
 
             DrawBezel(
-            e.Graphics,
-            bezelRectangle);
+                e.Graphics,
+                bezelRectangle);
 
             DrawGlass(
                 e.Graphics,
@@ -306,13 +479,48 @@ namespace KMC.MissionControl.Controls
                 glassRectangle);
         }
 
+        protected override void Dispose(
+            bool disposing)
+        {
+            if (disposing)
+            {
+                DisposeCachedCanvas();
+
+                _largePageFont.Dispose();
+                _smallPageFont.Dispose();
+                _diagnosticFont.Dispose();
+            }
+
+            base.Dispose(
+                disposing);
+        }
+
+        private void MarkCanvasDirty()
+        {
+            _canvasDirty =
+                true;
+
+            /*
+             * While rendering is suspended, do not create extra paint work.
+             * The last completed bitmap remains available for window moves.
+             */
+            if (!_renderingSuspended)
+            {
+                Invalidate();
+            }
+        }
+
         private Rectangle GetBezelRectangle()
         {
             return new Rectangle(
                 1,
                 1,
-                Math.Max(1, Width - 3),
-                Math.Max(1, Height - 3));
+                Math.Max(
+                    1,
+                    Width - 3),
+                Math.Max(
+                    1,
+                    Height - 3));
         }
 
         private Rectangle GetGlassRectangle()
@@ -320,16 +528,27 @@ namespace KMC.MissionControl.Controls
             return new Rectangle(
                 BezelInset,
                 BezelInset,
-                Math.Max(1, Width - BezelInset * 2 - 1),
-                Math.Max(1, Height - BezelInset * 2 - 1));
+                Math.Max(
+                    1,
+                    Width -
+                    BezelInset * 2 -
+                    1),
+                Math.Max(
+                    1,
+                    Height -
+                    BezelInset * 2 -
+                    1));
         }
 
-        private void DrawVirtualCanvas(Graphics targetGraphics, Rectangle glassRectangle)
+        private void DrawVirtualCanvas(
+            Graphics targetGraphics,
+            Rectangle glassRectangle)
         {
-            RectangleF viewport = RectangleF.Inflate(
-                glassRectangle,
-                -GlassContentInsetX,
-                -GlassContentInsetY);
+            RectangleF viewport =
+                RectangleF.Inflate(
+                    glassRectangle,
+                    -GlassContentInsetX,
+                    -GlassContentInsetY);
 
             if (viewport.Width <= 1.0f ||
                 viewport.Height <= 1.0f)
@@ -341,96 +560,223 @@ namespace KMC.MissionControl.Controls
                 targetGraphics,
                 viewport);
 
-            CanvasLayout layout = CalculateCanvasLayout(viewport);
+            CanvasLayout layout =
+                CalculateCanvasLayout(
+                    viewport);
 
             if (layout.VirtualWidth <= 0 ||
+                layout.VirtualHeight <= 0 ||
                 layout.DestinationRectangle.Width <= 0.0f ||
                 layout.DestinationRectangle.Height <= 0.0f)
             {
                 return;
             }
+
             _currentVirtualWidth =
                 layout.VirtualWidth;
 
             _currentVirtualHeight =
                 layout.VirtualHeight;
 
-            using (Bitmap virtualCanvas =
-            new Bitmap(
-                layout.VirtualWidth,
-                layout.VirtualHeight,
-                    PixelFormat.Format32bppPArgb))
+            bool cacheSizeChanged =
+                _cachedCanvas == null ||
+                _cachedCanvasSize.Width !=
+                    layout.VirtualWidth ||
+                _cachedCanvasSize.Height !=
+                    layout.VirtualHeight;
+
+            if (!_renderingSuspended &&
+                (_canvasDirty ||
+                 cacheSizeChanged))
             {
-                virtualCanvas.SetResolution(
-                    96.0f,
-                    96.0f);
+                RenderCachedCanvas(
+                    layout);
+            }
 
-                using (Graphics canvasGraphics =
-                    Graphics.FromImage(
-                        virtualCanvas))
-                {
-                    ConfigureCanvasGraphics(
-                        canvasGraphics);
+            if (_cachedCanvas == null)
+            {
+                return;
+            }
 
-                    DrawMissionPage(
-                        canvasGraphics,
-                        layout.VirtualWidth,
-                        layout.VirtualHeight);
+            GraphicsState state =
+                targetGraphics.Save();
 
-                    if (_showScalingDiagnostics)
-                    {
-                        DrawDiagnostics(
-                            canvasGraphics,
-                            layout);
-                    }
-                }
-
-                GraphicsState state = targetGraphics.Save();
-
-                try
-                {
-                    targetGraphics.SetClip(
+            try
+            {
+                targetGraphics.SetClip(
                     glassRectangle);
 
-                    targetGraphics.InterpolationMode =
-                        InterpolationMode.HighQualityBicubic;
+                targetGraphics.InterpolationMode =
+                    InterpolationMode.HighQualityBicubic;
 
-                    targetGraphics.CompositingQuality =
-                        CompositingQuality.HighQuality;
+                targetGraphics.CompositingQuality =
+                    CompositingQuality.HighQuality;
 
-                    targetGraphics.PixelOffsetMode =
-                        PixelOffsetMode.HighQuality;
+                targetGraphics.PixelOffsetMode =
+                    PixelOffsetMode.HighQuality;
 
-                    RectangleF sourceRectangle =
-                        new RectangleF(
-                            0.0f,
-                            0.0f,
-                            layout.VirtualWidth,
-                            layout.VirtualHeight);
+                RectangleF sourceRectangle =
+                    new RectangleF(
+                        0.0f,
+                        0.0f,
+                        _cachedCanvas.Width,
+                        _cachedCanvas.Height);
 
-                    targetGraphics.DrawImage(
-                        virtualCanvas,
-                        layout.DestinationRectangle,
-                        sourceRectangle,
-                        GraphicsUnit.Pixel);
-                }
-                finally
-                {
-                    targetGraphics.Restore(state);
-                }
+                targetGraphics.DrawImage(
+                    _cachedCanvas,
+                    layout.DestinationRectangle,
+                    sourceRectangle,
+                    GraphicsUnit.Pixel);
+            }
+            finally
+            {
+                targetGraphics.Restore(
+                    state);
             }
         }
 
-        private static void ConfigureCanvasGraphics(Graphics graphics)
+        private void RenderCurrentCanvas()
         {
-            graphics.Clear(Color.Transparent);
-            graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            graphics.CompositingMode = CompositingMode.SourceOver;
-            graphics.CompositingQuality = CompositingQuality.HighQuality;
-            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            if (_renderingSuspended ||
+                Width < 8 ||
+                Height < 8)
+            {
+                return;
+            }
+
+            RectangleF viewport =
+                RectangleF.Inflate(
+                    GetGlassRectangle(),
+                    -GlassContentInsetX,
+                    -GlassContentInsetY);
+
+            CanvasLayout layout =
+                CalculateCanvasLayout(
+                    viewport);
+
+            if (layout.VirtualWidth <= 0 ||
+                layout.VirtualHeight <= 0)
+            {
+                return;
+            }
+
+            _currentVirtualWidth =
+                layout.VirtualWidth;
+
+            _currentVirtualHeight =
+                layout.VirtualHeight;
+
+            RenderCachedCanvas(
+                layout);
+        }
+
+        private void RenderCachedCanvas(
+            CanvasLayout layout)
+        {
+            Stopwatch stopwatch =
+                Stopwatch.StartNew();
+
+            EnsureCachedCanvas(
+                layout.VirtualWidth,
+                layout.VirtualHeight);
+
+            using (Graphics canvasGraphics =
+                Graphics.FromImage(
+                    _cachedCanvas))
+            {
+                ConfigureCanvasGraphics(
+                    canvasGraphics);
+
+                DrawMissionPage(
+                    canvasGraphics,
+                    layout.VirtualWidth,
+                    layout.VirtualHeight);
+
+                if (_showScalingDiagnostics)
+                {
+                    DrawDiagnostics(
+                        canvasGraphics,
+                        layout);
+                }
+            }
+
+            _canvasDirty =
+                false;
+
+            _renderCount++;
+
+            stopwatch.Stop();
+
+            _lastRenderMilliseconds =
+                stopwatch.Elapsed.TotalMilliseconds;
+        }
+
+        private void EnsureCachedCanvas(
+            int width,
+            int height)
+        {
+            if (_cachedCanvas != null &&
+                _cachedCanvasSize.Width == width &&
+                _cachedCanvasSize.Height == height)
+            {
+                return;
+            }
+
+            DisposeCachedCanvas();
+
+            _cachedCanvas =
+                new Bitmap(
+                    width,
+                    height,
+                    PixelFormat.Format32bppPArgb);
+
+            _cachedCanvas.SetResolution(
+                96.0f,
+                96.0f);
+
+            _cachedCanvasSize =
+                new Size(
+                    width,
+                    height);
+        }
+
+        private void DisposeCachedCanvas()
+        {
+            if (_cachedCanvas != null)
+            {
+                _cachedCanvas.Dispose();
+                _cachedCanvas = null;
+            }
+
+            _cachedCanvasSize =
+                Size.Empty;
+        }
+
+        private static void ConfigureCanvasGraphics(
+            Graphics graphics)
+        {
+            graphics.Clear(
+                Color.Transparent);
+
+            graphics.SmoothingMode =
+                SmoothingMode.AntiAlias;
+
+            graphics.CompositingMode =
+                CompositingMode.SourceOver;
+
+            graphics.CompositingQuality =
+                CompositingQuality.HighQuality;
+
+            graphics.InterpolationMode =
+                InterpolationMode.HighQualityBicubic;
+
+            graphics.PixelOffsetMode =
+                PixelOffsetMode.HighQuality;
+
             graphics.TextRenderingHint =
-                System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;
+                System.Drawing.Text
+                    .TextRenderingHint
+                    .SingleBitPerPixelGridFit;
         }
 
         private static void DrawViewportBackground(
@@ -478,11 +824,10 @@ namespace KMC.MissionControl.Controls
             }
         }
 
-
         private void DrawMissionPage(
-    Graphics graphics,
-    int virtualWidth,
-    int virtualHeight)
+            Graphics graphics,
+            int virtualWidth,
+            int virtualHeight)
         {
             Color phosphorColor =
                 GetPhosphorColor();
@@ -492,15 +837,6 @@ namespace KMC.MissionControl.Controls
                     155,
                     phosphorColor);
 
-            /*
-             * Mission pages previously remained inside a fixed
-             * 1280 x 720 baseline, even when the CRT became larger.
-             *
-             * Increase the usable mission-page rectangle by 30 percent.
-             * The font sizes intentionally remain unchanged. This creates
-             * real additional room for panels, labels, and values instead
-             * of merely magnifying the same cramped layout.
-             */
             const float PageExpansionFactor =
                 1.30f;
 
@@ -571,39 +907,30 @@ namespace KMC.MissionControl.Controls
                     contentWidth,
                     contentHeight);
 
-            using (Font largeFont =
-                ApolloTheme.CreateConsoleFont(
-                    27.0f,
-                    FontStyle.Regular))
-            using (Font smallFont =
-                ApolloTheme.CreateConsoleFont(
-                    21.0f,
-                    FontStyle.Bold))
-            {
-                MissionRenderContext context =
-                    new MissionRenderContext(
-                        graphics,
-                        contentRectangle,
-                        largeFont,
-                        smallFont,
-                        phosphorColor,
-                        dimColor,
-                        new Size(
-                            virtualWidth,
-                            virtualHeight));
+            MissionRenderContext context =
+                new MissionRenderContext(
+                    graphics,
+                    contentRectangle,
+                    _largePageFont,
+                    _smallPageFont,
+                    phosphorColor,
+                    dimColor,
+                    new Size(
+                        virtualWidth,
+                        virtualHeight));
 
-                if (_missionPage != null &&
-                    _telemetry != null)
-                {
-                    _missionPage.Draw(
-                        context,
-                        _telemetry);
-                }
+            if (_missionPage != null &&
+                _telemetry != null)
+            {
+                _missionPage.Draw(
+                    context,
+                    _telemetry);
             }
         }
 
-
-        private void DrawDiagnostics(Graphics graphics, CanvasLayout layout)
+        private void DrawDiagnostics(
+            Graphics graphics,
+            CanvasLayout layout)
         {
             string diagnosticText =
                 "VIRTUAL " +
@@ -612,12 +939,12 @@ namespace KMC.MissionControl.Controls
                 layout.VirtualHeight +
                 "  |  SCALE " +
                 layout.Scale.ToString(
-                    "0.000");
+                    "0.000") +
+                "  |  RENDER " +
+                _lastRenderMilliseconds.ToString(
+                    "0.0") +
+                " MS";
 
-            using (Font font =
-                ApolloTheme.CreateConsoleFont(
-                    16.0f,
-                    FontStyle.Regular))
             using (SolidBrush brush =
                 new SolidBrush(
                     Color.FromArgb(
@@ -626,7 +953,7 @@ namespace KMC.MissionControl.Controls
             {
                 graphics.DrawString(
                     diagnosticText,
-                    font,
+                    _diagnosticFont,
                     brush,
                     42.0f,
                     layout.VirtualHeight -
@@ -635,7 +962,7 @@ namespace KMC.MissionControl.Controls
         }
 
         private static CanvasLayout CalculateCanvasLayout(
-    RectangleF viewport)
+            RectangleF viewport)
         {
             CanvasLayout result =
                 new CanvasLayout
@@ -649,7 +976,8 @@ namespace KMC.MissionControl.Controls
                     DestinationRectangle =
                         RectangleF.Empty,
 
-                    Scale = 0.0f
+                    Scale =
+                        0.0f
                 };
 
             if (viewport.Width <= 0.0f ||
@@ -658,11 +986,6 @@ namespace KMC.MissionControl.Controls
                 return result;
             }
 
-            /*
-             * The display may shrink below the baseline scale only when
-             * forced to do so. MainForm.MinimumSize should normally prevent
-             * that condition.
-             */
             float widthScale =
                 viewport.Width /
                 MinimumVirtualWidth;
@@ -742,7 +1065,9 @@ namespace KMC.MissionControl.Controls
             return result;
         }
 
-        private static void DrawBezel(Graphics graphics, Rectangle rectangle)
+        private static void DrawBezel(
+            Graphics graphics,
+            Rectangle rectangle)
         {
             if (rectangle.Width <= 1 ||
                 rectangle.Height <= 1)
@@ -750,21 +1075,44 @@ namespace KMC.MissionControl.Controls
                 return;
             }
 
-            using (GraphicsPath path = CreateRoundedRectangle(rectangle, 28))
-            using (LinearGradientBrush brush = new LinearGradientBrush(
-                rectangle,
-                Color.FromArgb(78, 84, 79),
-                Color.FromArgb(25, 29, 28),
-                LinearGradientMode.Vertical))
-            using (Pen borderPen = new Pen(
-                Color.FromArgb(115, 121, 112),
-                2.0f))
+            using (GraphicsPath path =
+                CreateRoundedRectangle(
+                    rectangle,
+                    28))
+            using (LinearGradientBrush brush =
+                new LinearGradientBrush(
+                    rectangle,
+                    Color.FromArgb(
+                        78,
+                        84,
+                        79),
+                    Color.FromArgb(
+                        25,
+                        29,
+                        28),
+                    LinearGradientMode.Vertical))
+            using (Pen borderPen =
+                new Pen(
+                    Color.FromArgb(
+                        115,
+                        121,
+                        112),
+                    2.0f))
             {
-                graphics.FillPath(brush, path);
-                graphics.DrawPath(borderPen, path);
+                graphics.FillPath(
+                    brush,
+                    path);
+
+                graphics.DrawPath(
+                    borderPen,
+                    path);
             }
 
-            Rectangle innerBezel = Rectangle.Inflate(rectangle, -8, -8);
+            Rectangle innerBezel =
+                Rectangle.Inflate(
+                    rectangle,
+                    -8,
+                    -8);
 
             if (innerBezel.Width <= 1 ||
                 innerBezel.Height <= 1)
@@ -772,14 +1120,27 @@ namespace KMC.MissionControl.Controls
                 return;
             }
 
-            using (GraphicsPath path = CreateRoundedRectangle(innerBezel, 22))
-            using (Pen shadowPen = new Pen(Color.FromArgb(8, 10, 10), 4.0f))
+            using (GraphicsPath path =
+                CreateRoundedRectangle(
+                    innerBezel,
+                    22))
+            using (Pen shadowPen =
+                new Pen(
+                    Color.FromArgb(
+                        8,
+                        10,
+                        10),
+                    4.0f))
             {
-                graphics.DrawPath(shadowPen, path);
+                graphics.DrawPath(
+                    shadowPen,
+                    path);
             }
         }
 
-        private static void DrawGlass(Graphics graphics, Rectangle rectangle)
+        private static void DrawGlass(
+            Graphics graphics,
+            Rectangle rectangle)
         {
             if (rectangle.Width <= 1 ||
                 rectangle.Height <= 1)
@@ -787,27 +1148,54 @@ namespace KMC.MissionControl.Controls
                 return;
             }
 
-            using (GraphicsPath path = CreateRoundedRectangle(rectangle, 20))
-            using (LinearGradientBrush brush = new LinearGradientBrush(
-                rectangle,
-                Color.FromArgb(15, 42, 57),
-                ApolloTheme.CrtBackground,
-                LinearGradientMode.Vertical))
-            using (Pen rimPen = new Pen(Color.FromArgb(48, 73, 82), 2.0f))
+            using (GraphicsPath path =
+                CreateRoundedRectangle(
+                    rectangle,
+                    20))
+            using (LinearGradientBrush brush =
+                new LinearGradientBrush(
+                    rectangle,
+                    Color.FromArgb(
+                        15,
+                        42,
+                        57),
+                    ApolloTheme.CrtBackground,
+                    LinearGradientMode.Vertical))
+            using (Pen rimPen =
+                new Pen(
+                    Color.FromArgb(
+                        48,
+                        73,
+                        82),
+                    2.0f))
             {
-                graphics.FillPath(brush, path);
-                graphics.DrawPath(rimPen, path);
+                graphics.FillPath(
+                    brush,
+                    path);
+
+                graphics.DrawPath(
+                    rimPen,
+                    path);
             }
         }
 
-        private static void DrawScanLines(Graphics graphics, Rectangle glassRectangle)
+        private static void DrawScanLines(
+            Graphics graphics,
+            Rectangle glassRectangle)
         {
-            using (Pen scanLinePen = new Pen(
-                Color.FromArgb(14, 0, 0, 0),
-                1.0f))
+            using (Pen scanLinePen =
+                new Pen(
+                    Color.FromArgb(
+                        14,
+                        0,
+                        0,
+                        0),
+                    1.0f))
             {
-                for (int y = glassRectangle.Top + 3;
-                     y < glassRectangle.Bottom - 2;
+                for (int y =
+                         glassRectangle.Top + 3;
+                     y <
+                         glassRectangle.Bottom - 2;
                      y += 4)
                 {
                     graphics.DrawLine(
@@ -824,22 +1212,39 @@ namespace KMC.MissionControl.Controls
             Graphics graphics,
             Rectangle glassRectangle)
         {
-            Rectangle reflectionRectangle = new Rectangle(
-                glassRectangle.Left + 18,
-                glassRectangle.Top + 10,
-                Math.Max(1, glassRectangle.Width - 36),
-                Math.Max(12, glassRectangle.Height / 5));
+            Rectangle reflectionRectangle =
+                new Rectangle(
+                    glassRectangle.Left + 18,
+                    glassRectangle.Top + 10,
+                    Math.Max(
+                        1,
+                        glassRectangle.Width - 36),
+                    Math.Max(
+                        12,
+                        glassRectangle.Height / 5));
 
             using (GraphicsPath reflectionPath =
-                CreateRoundedRectangle(reflectionRectangle, 12))
+                CreateRoundedRectangle(
+                    reflectionRectangle,
+                    12))
             using (LinearGradientBrush reflectionBrush =
                 new LinearGradientBrush(
                     reflectionRectangle,
-                    Color.FromArgb(28, 190, 225, 240),
-                    Color.FromArgb(0, 190, 225, 240),
+                    Color.FromArgb(
+                        28,
+                        190,
+                        225,
+                        240),
+                    Color.FromArgb(
+                        0,
+                        190,
+                        225,
+                        240),
                     LinearGradientMode.Vertical))
             {
-                graphics.FillPath(reflectionBrush, reflectionPath);
+                graphics.FillPath(
+                    reflectionBrush,
+                    reflectionPath);
             }
         }
 
@@ -862,22 +1267,30 @@ namespace KMC.MissionControl.Controls
             Rectangle rectangle,
             int radius)
         {
-            GraphicsPath path = new GraphicsPath();
+            GraphicsPath path =
+                new GraphicsPath();
 
-            if (rectangle.Width <= 0 || rectangle.Height <= 0)
+            if (rectangle.Width <= 0 ||
+                rectangle.Height <= 0)
             {
                 return path;
             }
 
-            int maximumRadius = Math.Min(
-                rectangle.Width,
-                rectangle.Height) / 2;
+            int maximumRadius =
+                Math.Min(
+                    rectangle.Width,
+                    rectangle.Height) /
+                2;
 
-            int safeRadius = Math.Max(
-                1,
-                Math.Min(radius, maximumRadius));
+            int safeRadius =
+                Math.Max(
+                    1,
+                    Math.Min(
+                        radius,
+                        maximumRadius));
 
-            int diameter = safeRadius * 2;
+            int diameter =
+                safeRadius * 2;
 
             path.AddArc(
                 rectangle.Left,
@@ -888,7 +1301,8 @@ namespace KMC.MissionControl.Controls
                 90);
 
             path.AddArc(
-                rectangle.Right - diameter,
+                rectangle.Right -
+                diameter,
                 rectangle.Top,
                 diameter,
                 diameter,
@@ -896,8 +1310,10 @@ namespace KMC.MissionControl.Controls
                 90);
 
             path.AddArc(
-                rectangle.Right - diameter,
-                rectangle.Bottom - diameter,
+                rectangle.Right -
+                diameter,
+                rectangle.Bottom -
+                diameter,
                 diameter,
                 diameter,
                 0,
@@ -905,13 +1321,15 @@ namespace KMC.MissionControl.Controls
 
             path.AddArc(
                 rectangle.Left,
-                rectangle.Bottom - diameter,
+                rectangle.Bottom -
+                diameter,
                 diameter,
                 diameter,
                 90,
                 90);
 
             path.CloseFigure();
+
             return path;
         }
     }
