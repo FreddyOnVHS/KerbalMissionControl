@@ -38,7 +38,7 @@ namespace KMC.MissionControl.Controls
                     FontStyle.Bold);
 
             Width = 390;
-            Height = 330;
+            Height = 455;
 
             Anchor =
                 AnchorStyles.Top |
@@ -200,6 +200,42 @@ namespace KMC.MissionControl.Controls
                 _snapshot.RenderingSuspended
                     ? "SUSPENDED"
                     : "ACTIVE");
+
+
+            y += 6;
+
+            DrawRow(e.Graphics, ref y, "PROP CACHE",
+                _snapshot.HasPropulsionCache
+                    ? "READY"
+                    : "EMPTY");
+
+            DrawRow(e.Graphics, ref y, "PROP HIT / MISS",
+                _snapshot.PropulsionCacheHits
+                + " / "
+                + _snapshot.PropulsionCacheMisses);
+
+            DrawRow(e.Graphics, ref y, "PROP REBUILDS",
+                _snapshot.PropulsionCacheRebuilds
+                    .ToString("N0"));
+
+            DrawRow(e.Graphics, ref y, "PROP BUILD LAST / AVG",
+                _snapshot
+                    .PropulsionCacheLastRebuildMilliseconds
+                    .ToString("0.00")
+                + " / "
+                + _snapshot
+                    .PropulsionCacheAverageRebuildMilliseconds
+                    .ToString("0.00")
+                + " ms");
+
+            DrawRow(e.Graphics, ref y, "PROP REV / STAGE",
+                _snapshot.PropulsionCachedTopologyRevision
+                + " / "
+                + _snapshot.PropulsionCachedStage);
+
+            DrawRow(e.Graphics, ref y, "PROP NODES",
+                _snapshot.PropulsionCachedNodeCount
+                    .ToString("N0"));
         }
 
         protected override void Dispose(

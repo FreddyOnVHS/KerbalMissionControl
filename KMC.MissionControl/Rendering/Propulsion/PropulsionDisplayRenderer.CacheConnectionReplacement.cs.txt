@@ -1,0 +1,29 @@
+﻿// PropulsionDisplayRenderer.cs cache connection replacement
+//
+// In the existing PropulsionDisplayRenderer.cs, remove these fields:
+//
+//     private readonly EngineClusterProjector _clusterProjector =
+//         new EngineClusterProjector();
+//
+//     private readonly PropulsionSystemModelBuilder _systemBuilder =
+//         new PropulsionSystemModelBuilder();
+//
+// Then replace this block inside Draw():
+//
+//     PropulsionSystemModel system =
+//         _systemBuilder.Build(graph);
+//
+//     EngineClusterProjection cluster =
+//         _clusterProjector.Build(graph);
+//
+// with the source code below:
+
+PropulsionAnalysis analysis =
+    PropulsionAnalysisCache.GetOrBuild(
+        graph);
+
+PropulsionSystemModel system =
+    analysis.SystemModel;
+
+EngineClusterProjection cluster =
+    analysis.EngineCluster;

@@ -2,6 +2,7 @@
 using KMC.MissionControl.Diagnostics;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Pages;
+using KMC.MissionControl.Rendering.Propulsion;
 using KMC.MissionControl.Telemetry;
 using KMC.MissionControl.Themes;
 using KMC.Shared;
@@ -1045,6 +1046,10 @@ namespace KMC.MissionControl
                 TimeSpan.FromSeconds(
                     2.0);
 
+            PropulsionAnalysisCacheSnapshot
+                propulsionCache =
+                    PropulsionAnalysisCache.GetSnapshot();
+
             PerformanceSnapshot snapshot =
                 new PerformanceSnapshot
                 {
@@ -1104,7 +1109,40 @@ namespace KMC.MissionControl
                         _missionDisplay.IsRenderingSuspended,
 
                     LinkOnline =
-                        online
+                        online,
+
+                    PropulsionCacheHits =
+                        propulsionCache.HitCount,
+
+                    PropulsionCacheMisses =
+                        propulsionCache.MissCount,
+
+                    PropulsionCacheRebuilds =
+                        propulsionCache.RebuildCount,
+
+                    PropulsionCacheLastRebuildMilliseconds =
+                        propulsionCache
+                            .LastRebuildMilliseconds,
+
+                    PropulsionCacheAverageRebuildMilliseconds =
+                        propulsionCache
+                            .AverageRebuildMilliseconds,
+
+                    PropulsionCachedTopologyRevision =
+                        propulsionCache
+                            .CachedTopologyRevision,
+
+                    PropulsionCachedStage =
+                        propulsionCache.CachedStage,
+
+                    PropulsionCachedNodeCount =
+                        propulsionCache.CachedNodeCount,
+
+                    PropulsionCachedVesselName =
+                        propulsionCache.CachedVesselName,
+
+                    HasPropulsionCache =
+                        propulsionCache.HasCachedAnalysis
                 };
 
             _performanceOverlay.UpdateSnapshot(

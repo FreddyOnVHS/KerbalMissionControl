@@ -30,5 +30,38 @@ namespace KMC.MissionControl.Diagnostics
 
         public bool RenderingSuspended { get; set; }
         public bool LinkOnline { get; set; }
+
+        public long PropulsionCacheHits { get; set; }
+        public long PropulsionCacheMisses { get; set; }
+        public long PropulsionCacheRebuilds { get; set; }
+
+        public double PropulsionCacheLastRebuildMilliseconds
+        {
+            get;
+            set;
+        }
+
+        public double PropulsionCacheAverageRebuildMilliseconds
+        {
+            get;
+            set;
+        }
+
+        public long PropulsionCachedTopologyRevision
+        {
+            get;
+            set;
+        }
+
+        public int PropulsionCachedStage { get; set; }
+        public int PropulsionCachedNodeCount { get; set; }
+
+        public string PropulsionCachedVesselName
+        {
+            get;
+            set;
+        }
+
+        public bool HasPropulsionCache { get; set; }
     }
 }

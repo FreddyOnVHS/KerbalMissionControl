@@ -129,6 +129,9 @@
     <Compile Include="Rendering\Propulsion\EngineClusterProjection.cs" />
     <Compile Include="Rendering\Propulsion\EngineClusterProjector.cs" />
     <Compile Include="Rendering\Propulsion\PropulsionDisplayRenderer.cs" />
+    <Compile Include="Rendering\Propulsion\PropulsionAnalysis.cs" />
+    <Compile Include="Rendering\Propulsion\PropulsionAnalysisCache.cs" />
+    <Compile Include="Rendering\Propulsion\PropulsionAnalysisCacheSnapshot.cs" />
     <Compile Include="Rendering\Propulsion\PropulsionLayoutNode.cs" />
     <Compile Include="Rendering\Propulsion\PropulsionLayout.cs" />
     <Compile Include="Rendering\Propulsion\PropulsionLayoutEngine.cs" />
