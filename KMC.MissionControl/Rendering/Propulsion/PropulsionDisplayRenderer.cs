@@ -11,11 +11,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
     /// </summary>
     public sealed class PropulsionDisplayRenderer
     {
-        private readonly EngineClusterProjector _clusterProjector =
-            new EngineClusterProjector();
-
-        private readonly PropulsionSystemModelBuilder _systemBuilder =
-            new PropulsionSystemModelBuilder();
+        // Topology-dependent analysis is supplied by the shared cache.
 
         public void Draw(
             Graphics graphics,
@@ -59,11 +55,15 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     return;
                 }
 
+                PropulsionAnalysis analysis =
+                    PropulsionAnalysisCache.GetOrBuild(
+                        graph);
+
                 PropulsionSystemModel system =
-                    _systemBuilder.Build(graph);
+                    analysis.SystemModel;
 
                 EngineClusterProjection cluster =
-                    _clusterProjector.Build(graph);
+                    analysis.EngineCluster;
 
                 int gap = 14;
                 int upperHeight =
