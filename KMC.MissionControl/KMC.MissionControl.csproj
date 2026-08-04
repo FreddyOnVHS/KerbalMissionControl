@@ -135,6 +135,8 @@
     <Compile Include="Rendering\MissionPageLayout.cs" />
     <Compile Include="Rendering\MissionRenderContext.cs" />
 
+    <Compile Include="Telemetry\LatestTelemetryBuffer.cs" />
+
     <Compile Include="Themes\ApolloTheme.cs" />
     <Compile Include="Widgets\HorizontalResourceBarWidget.cs" />
     <Compile Include="Widgets\IMissionWidget.cs" />
