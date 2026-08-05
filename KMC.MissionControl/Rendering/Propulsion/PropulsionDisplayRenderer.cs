@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using KMC.MissionControl.Models;
@@ -166,7 +166,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
             }
         }
 
-        private static void DrawEngineCluster(
+        internal static void DrawEngineCluster(
             Graphics graphics,
             Rectangle bounds,
             EngineClusterProjection cluster,
@@ -395,7 +395,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
             }
         }
 
-        private static void DrawPerformance(
+        internal static void DrawPerformance(
             Graphics graphics,
             Rectangle bounds,
             PropulsionRenderGraph graph,
@@ -602,7 +602,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
             }
         }
 
-        private static void DrawSystemFlow(
+        internal static void DrawSystemFlow(
             Graphics graphics,
             Rectangle bounds,
             PropulsionSystemModel system,

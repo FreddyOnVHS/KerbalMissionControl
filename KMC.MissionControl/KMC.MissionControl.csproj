@@ -60,6 +60,13 @@
     <Compile Include="Controls\NavigationBar.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\PerformanceOverlay.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\TelemetryValue.cs"><SubType>UserControl</SubType></Compile>
+    <Compile Include="Cards\IMissionDisplayCard.cs" />
+    <Compile Include="Cards\MissionDisplayCard.cs" />
+    <Compile Include="Cards\MissionCardLayout.cs" />
+    <Compile Include="Cards\Propulsion\EngineClusterCard.cs" />
+    <Compile Include="Cards\Propulsion\PropulsionPerformanceCard.cs" />
+    <Compile Include="Cards\Propulsion\PropellantFlowCard.cs" />
+    <Compile Include="Cards\Propulsion\PropulsionFooterCard.cs" />
 
     <Compile Include="Diagnostics\AscentDebugRecord.cs" />
     <Compile Include="Diagnostics\AscentDebugLogger.cs" />
@@ -132,6 +139,7 @@
     <Compile Include="Rendering\Propulsion\PropulsionAnalysis.cs" />
     <Compile Include="Rendering\Propulsion\PropulsionAnalysisCache.cs" />
     <Compile Include="Rendering\Propulsion\PropulsionAnalysisCacheSnapshot.cs" />
+    <Compile Include="Rendering\Propulsion\PropulsionPageRenderModel.cs" />
     <Compile Include="Rendering\Propulsion\PropulsionLayoutNode.cs" />
     <Compile Include="Rendering\Propulsion\PropulsionLayout.cs" />
     <Compile Include="Rendering\Propulsion\PropulsionLayoutEngine.cs" />
