@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using KMC.Shared.Topology;
@@ -7,7 +7,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
 {
     /// <summary>
     /// Projects the propulsion engines relevant to the current propulsion
-    /// phase. Future-stage engines and older propulsion groups are hidden.
+    /// phase using a stable engine-bell view. Future-stage engines and older
+    /// propulsion groups are hidden.
     /// </summary>
     public sealed class EngineClusterProjector
     {
@@ -80,12 +81,21 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 CreateClusterName(
                     engines);
 
+            /*
+             * VesselTopologyBuilder stores positions in
+             * vessel.ReferenceTransform coordinates.
+             *
+             * Local Y is the vehicle longitudinal nose-to-tail axis.
+             * The engine-bell view must therefore project onto local X/Z.
+             * Including Y makes engines at different heights appear radially
+             * displaced, which is what placed the center engine below the
+             * two boosters in the previous display.
+             */
             AxisPair pair =
-                ChooseAxisPair(
-                    engines);
+                AxisPair.XZ;
 
             result.UsedFallbackAxis =
-                pair.IsFallback;
+                false;
 
             double centerA =
                 engines.Average(
