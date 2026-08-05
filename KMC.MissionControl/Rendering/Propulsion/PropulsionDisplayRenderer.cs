@@ -1313,26 +1313,32 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     166,
                     118);
 
+            /*
+             * Give the center LF/OX schematic more breathing room. All
+             * downstream elements continue to anchor to these rectangles, so
+             * the valve, liquid-propulsion block, nozzle, and SRB banks remain
+             * aligned as one assembly.
+             */
             Rectangle mixer =
                 new Rectangle(
-                    centerX - 48,
+                    centerX - 52,
                     bounds.Top + 64,
-                    96,
-                    40);
+                    104,
+                    46);
 
             Rectangle valve =
                 new Rectangle(
-                    centerX - 40,
-                    mixer.Bottom + 28,
-                    80,
-                    34);
+                    centerX - 42,
+                    mixer.Bottom + 38,
+                    84,
+                    36);
 
             Rectangle chamber =
                 new Rectangle(
-                    centerX - 62,
-                    valve.Bottom + 28,
-                    124,
-                    48);
+                    centerX - 82,
+                    valve.Bottom + 40,
+                    164,
+                    64);
 
             if (showSolidBoosters)
             {
