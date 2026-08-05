@@ -5,12 +5,190 @@ using KMC.MissionControl.Cards.Propulsion;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering;
 using KMC.MissionControl.Rendering.Propulsion;
+
 namespace KMC.MissionControl.Pages
 {
- public sealed class PropulsionPage:IMissionPage,IMissionPageCanvasProvider
- {
-  readonly EngineClusterCard a=new EngineClusterCard(); readonly PropulsionPerformanceCard b=new PropulsionPerformanceCard(); readonly PropellantFlowCard c=new PropellantFlowCard(); readonly PropulsionFooterCard d=new PropulsionFooterCard();
-  public string Name=>"PROPULSION"; public Size PreferredVirtualCanvasSize=>new Size(2400,1350); public MissionPageContentProfile ContentProfile=>MissionPageContentProfile.DenseEngineering;
-  public void Draw(MissionRenderContext x,MissionTelemetry t){if(x==null)throw new ArgumentNullException(nameof(x));if(t==null)return;new MissionPageLayout(x).DrawHeader(Name,"CH 04");var w=new Rectangle(x.ContentBounds.Left+18,x.ContentBounds.Top+78,x.ContentBounds.Width-36,x.ContentBounds.Height-98);var l=MissionCardLayoutEngine.CalculatePropulsion(w);var g=PropulsionGraphStore.GetCurrent();var an=g!=null?PropulsionAnalysisCache.GetOrBuild(g):null;var m=new PropulsionPageRenderModel{Graph=g,Analysis=an,Telemetry=t};a.Bounds=l.EngineCluster;b.Bounds=l.Performance;c.Bounds=l.PropellantFlow;d.Bounds=l.Footer;a.Draw(x,m);b.Draw(x,m);c.Draw(x,m);d.Draw(x,m);}
- }
+    public sealed class PropulsionPage :
+        IMissionPage,
+        IMissionPageCanvasProvider
+    {
+        private readonly EngineClusterCard
+            _engineClusterCard =
+                new EngineClusterCard();
+
+        private readonly PropulsionPerformanceCard
+            _performanceCard =
+                new PropulsionPerformanceCard();
+
+        private readonly PropellantFlowCard
+            _propellantFlowCard =
+                new PropellantFlowCard();
+
+        private readonly PropulsionFooterCard
+            _footerCard =
+                new PropulsionFooterCard();
+
+        private long _lastTopologyRevision =
+            long.MinValue;
+
+        private int _lastStage =
+            int.MinValue;
+
+        public string Name
+        {
+            get { return "PROPULSION"; }
+        }
+
+        public Size PreferredVirtualCanvasSize
+        {
+            get
+            {
+                return new Size(
+                    2400,
+                    1350);
+            }
+        }
+
+        public MissionPageContentProfile ContentProfile
+        {
+            get
+            {
+                return
+                    MissionPageContentProfile.DenseEngineering;
+            }
+        }
+
+        public void Draw(
+            MissionRenderContext context,
+            MissionTelemetry telemetry)
+        {
+            if (context == null)
+            {
+                throw new ArgumentNullException(
+                    nameof(context));
+            }
+
+            if (telemetry == null)
+            {
+                return;
+            }
+
+            MissionPageLayout pageLayout =
+                new MissionPageLayout(
+                    context);
+
+            pageLayout.DrawHeader(
+                Name,
+                "CH 04");
+
+            Rectangle working =
+                new Rectangle(
+                    context.ContentBounds.Left + 18,
+                    context.ContentBounds.Top + 78,
+                    context.ContentBounds.Width - 36,
+                    context.ContentBounds.Height - 98);
+
+            MissionCardLayout layout =
+                MissionCardLayoutEngine
+                    .CalculatePropulsion(
+                        working);
+
+            PropulsionRenderGraph graph =
+                PropulsionGraphStore.GetCurrent();
+
+            PropulsionAnalysis analysis =
+                graph != null
+                    ? PropulsionAnalysisCache
+                        .GetOrBuild(graph)
+                    : null;
+
+            bool topologyChanged =
+                graph == null
+                    ? _lastTopologyRevision !=
+                        long.MinValue
+                    : graph.TopologyRevision !=
+                        _lastTopologyRevision ||
+                      graph.CurrentStage !=
+                        _lastStage;
+
+            if (topologyChanged)
+            {
+                MarkAllCardsDirty(
+                    CardDirtyState.Static |
+                    CardDirtyState.Telemetry);
+            }
+            else
+            {
+                MarkAllCardsDirty(
+                    CardDirtyState.Telemetry);
+            }
+
+            _lastTopologyRevision =
+                graph != null
+                    ? graph.TopologyRevision
+                    : long.MinValue;
+
+            _lastStage =
+                graph != null
+                    ? graph.CurrentStage
+                    : int.MinValue;
+
+            PropulsionPageRenderModel model =
+                new PropulsionPageRenderModel
+                {
+                    Graph =
+                        graph,
+
+                    Analysis =
+                        analysis,
+
+                    Telemetry =
+                        telemetry
+                };
+
+            _engineClusterCard.Bounds =
+                layout.EngineCluster;
+
+            _performanceCard.Bounds =
+                layout.Performance;
+
+            _propellantFlowCard.Bounds =
+                layout.PropellantFlow;
+
+            _footerCard.Bounds =
+                layout.Footer;
+
+            _engineClusterCard.Draw(
+                context,
+                model);
+
+            _performanceCard.Draw(
+                context,
+                model);
+
+            _propellantFlowCard.Draw(
+                context,
+                model);
+
+            _footerCard.Draw(
+                context,
+                model);
+        }
+
+        private void MarkAllCardsDirty(
+            CardDirtyState dirtyState)
+        {
+            _engineClusterCard.MarkDirty(
+                dirtyState);
+
+            _performanceCard.MarkDirty(
+                dirtyState);
+
+            _propellantFlowCard.MarkDirty(
+                dirtyState);
+
+            _footerCard.MarkDirty(
+                dirtyState);
+        }
+    }
 }

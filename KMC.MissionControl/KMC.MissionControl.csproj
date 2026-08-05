@@ -60,6 +60,9 @@
     <Compile Include="Controls\NavigationBar.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\PerformanceOverlay.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\TelemetryValue.cs"><SubType>UserControl</SubType></Compile>
+    <Compile Include="Cards\CardDirtyState.cs" />
+    <Compile Include="Cards\CardDiagnosticSnapshot.cs" />
+    <Compile Include="Cards\CardDiagnosticsRegistry.cs" />
     <Compile Include="Cards\IMissionDisplayCard.cs" />
     <Compile Include="Cards\MissionDisplayCard.cs" />
     <Compile Include="Cards\MissionCardLayout.cs" />
