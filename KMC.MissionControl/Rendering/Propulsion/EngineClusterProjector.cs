@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using KMC.Shared.Topology;
@@ -6,9 +6,8 @@ using KMC.Shared.Topology;
 namespace KMC.MissionControl.Rendering.Propulsion
 {
     /// <summary>
-    /// Projects every propulsion engine currently attached to the vessel.
-    /// This is a physical hardware view, so it includes liquid engines and
-    /// solid boosters from every stage until topology reports their removal.
+    /// Projects the propulsion engines relevant to the current propulsion
+    /// phase. Future-stage engines and older propulsion groups are hidden.
     /// </summary>
     public sealed class EngineClusterProjector
     {
@@ -26,7 +25,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 return result;
             }
 
-            List<PropulsionGraphNode> engines =
+            List<PropulsionGraphNode> allEngines =
                 graph.Nodes
                     .Where(
                         node =>
@@ -34,26 +33,43 @@ namespace KMC.MissionControl.Rendering.Propulsion
                                 VesselNodeCategory.Engine ||
                             node.Category ==
                                 VesselNodeCategory.SolidBooster)
-                    .OrderByDescending(
-                        node => node.ActivationStage)
-                    .ThenBy(
-                        node => node.SeparationStage)
-                    .ThenBy(
-                        node => node.PartId)
                     .ToList();
+
+            int selectedStage =
+                SelectRelevantActivationStage(
+                    allEngines,
+                    graph.CurrentStage);
+
+            List<PropulsionGraphNode> engines =
+                selectedStage >= 0
+                    ? allEngines
+                        .Where(
+                            node =>
+                                node.ActivationStage ==
+                                selectedStage)
+                        .OrderBy(
+                            node => node.SeparationStage)
+                        .ThenBy(
+                            node => node.PartId)
+                        .ToList()
+                    : new List<PropulsionGraphNode>();
 
             if (engines.Count == 0)
             {
-                result.DisplayName = "NO ENGINES";
-                result.ActivationStage = -1;
-                result.SeparationStage = -1;
+                result.DisplayName =
+                    "NO CURRENT STAGE ENGINES";
+
+                result.ActivationStage =
+                    selectedStage;
+
+                result.SeparationStage =
+                    -1;
+
                 return result;
             }
 
             result.ActivationStage =
-                GetCommonStage(
-                    engines,
-                    node => node.ActivationStage);
+                selectedStage;
 
             result.SeparationStage =
                 GetCommonStage(
@@ -155,6 +171,48 @@ namespace KMC.MissionControl.Rendering.Propulsion
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// KSP stage numbers decrease as staging progresses. Engines with an
+        /// activation stage below CurrentStage are future engines. Of the
+        /// attached engines already activated, the lowest stage number is the
+        /// most recently activated propulsion group.
+        /// </summary>
+        private static int SelectRelevantActivationStage(
+            IList<PropulsionGraphNode> engines,
+            int currentStage)
+        {
+            int selectedStage =
+                int.MaxValue;
+
+            for (int index = 0;
+                 index < engines.Count;
+                 index++)
+            {
+                int activationStage =
+                    engines[index]
+                        .ActivationStage;
+
+                if (activationStage < 0 ||
+                    activationStage <
+                        currentStage)
+                {
+                    continue;
+                }
+
+                if (activationStage <
+                    selectedStage)
+                {
+                    selectedStage =
+                        activationStage;
+                }
+            }
+
+            return selectedStage ==
+                int.MaxValue
+                    ? -1
+                    : selectedStage;
         }
 
         private static int GetCommonStage(
