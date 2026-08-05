@@ -159,7 +159,8 @@ namespace KMC.MissionControl.Cards.Propulsion
                 graph != null
                     ? StableStringKey(
                         graph.VesselName)
-                    : 0L);
+                    : 0L,
+                EngineStateTelemetryStore.GetRevision());
         }
 
         private static string BuildPerformanceSignature(

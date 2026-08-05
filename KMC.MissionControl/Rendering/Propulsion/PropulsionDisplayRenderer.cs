@@ -336,75 +336,39 @@ namespace KMC.MissionControl.Rendering.Propulsion
         }
 
         private static void DrawEngineSymbol(
-            Graphics graphics,
-            Rectangle bounds,
-            EngineProjectionPoint point,
-            Color color,
-            Font numberFont,
-            Font detailFont)
+            Graphics graphics, Rectangle bounds, EngineProjectionPoint point,
+            Color color, Font numberFont, Font detailFont)
         {
-            using (Pen outer =
-                new Pen(
-                    color,
-                    2.0f))
-            using (Pen inner =
-                new Pen(
-                    Color.FromArgb(
-                        110,
-                        color),
-                    1.0f))
-            using (SolidBrush brush =
-                new SolidBrush(
-                    color))
-            using (StringFormat centered =
-                new StringFormat
-                {
-                    Alignment =
-                        StringAlignment.Center,
-                    LineAlignment =
-                        StringAlignment.Center,
-                    Trimming =
-                        StringTrimming.EllipsisCharacter,
-                    FormatFlags =
-                        StringFormatFlags.NoWrap
-                })
+            EngineStateTelemetry state = point != null ? EngineStateTelemetryStore.GetEngine(point.PartId) : null;
+            Color stateColor = ResolveEngineStateColor(color, state);
+            bool producing = state != null && state.OperatingState == EngineOperatingState.Producing;
+            using (Pen outer = new Pen(stateColor, producing ? 3.0f : 2.0f))
+            using (Pen inner = new Pen(Color.FromArgb(producing ? 190 : 100, stateColor), 1.0f))
+            using (SolidBrush brush = new SolidBrush(stateColor))
+            using (SolidBrush fill = new SolidBrush(Color.FromArgb(48, stateColor)))
+            using (StringFormat centered = new StringFormat { Alignment=StringAlignment.Center, LineAlignment=StringAlignment.Center, Trimming=StringTrimming.EllipsisCharacter, FormatFlags=StringFormatFlags.NoWrap })
             {
-                graphics.DrawEllipse(
-                    outer,
-                    bounds);
-
-                Rectangle innerBounds =
-                    Rectangle.Inflate(
-                        bounds,
-                        -6,
-                        -6);
-
-                graphics.DrawEllipse(
-                    inner,
-                    innerBounds);
-
-                graphics.DrawString(
-                    point.DisplayNumber
-                        .ToString("00"),
-                    numberFont,
-                    brush,
-                    bounds,
-                    centered);
-
-                Rectangle tag =
-                    new Rectangle(
-                        bounds.Left - 25,
-                        bounds.Bottom + 2,
-                        bounds.Width + 50,
-                        18);
-
-                graphics.DrawString(
-                    CreateEngineTag(
-                        point),
-                    detailFont,
-                    brush,
-                    tag,
-                    centered);
+                if (producing) graphics.FillEllipse(fill,bounds);
+                graphics.DrawEllipse(outer,bounds);
+                graphics.DrawEllipse(inner,Rectangle.Inflate(bounds,-6,-6));
+                graphics.DrawString(point.DisplayNumber.ToString("00"),numberFont,brush,bounds,centered);
+                Rectangle tag=new Rectangle(bounds.Left-25,bounds.Bottom+2,bounds.Width+50,18);
+                graphics.DrawString(CreateEngineTag(point),detailFont,brush,tag,centered);
+                if(state!=null&&state.OperatingState==EngineOperatingState.Flameout)
+                { graphics.DrawLine(outer,bounds.Left+8,bounds.Top+8,bounds.Right-8,bounds.Bottom-8); graphics.DrawLine(outer,bounds.Right-8,bounds.Top+8,bounds.Left+8,bounds.Bottom-8); }
+            }
+        }
+        private static Color ResolveEngineStateColor(Color normal, EngineStateTelemetry state)
+        {
+            if(state==null)return Color.FromArgb(135,normal);
+            switch(state.OperatingState)
+            {
+                case EngineOperatingState.Producing:return normal;
+                case EngineOperatingState.Ignited:return Color.FromArgb(255,255,190,60);
+                case EngineOperatingState.Flameout:return Color.FromArgb(255,255,75,75);
+                case EngineOperatingState.Shutdown:return Color.FromArgb(85,normal);
+                case EngineOperatingState.Armed:return Color.FromArgb(145,normal);
+                default:return Color.FromArgb(115,normal);
             }
         }
 
