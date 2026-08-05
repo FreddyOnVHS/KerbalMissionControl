@@ -159,6 +159,21 @@ namespace KMC.MissionControl.Rendering.Propulsion
             List<EngineLayoutPoint> points =
                 new List<EngineLayoutPoint>();
 
+            /*
+             * Center the projection on the current engine cluster itself.
+             * Vessel ReferenceTransform origin is not guaranteed to pass
+             * through the propulsion cluster, especially on unusual craft.
+             */
+            double centerX =
+                engines.Average(
+                    node =>
+                        pair.ReadA(node));
+
+            double centerY =
+                engines.Average(
+                    node =>
+                        -pair.ReadB(node));
+
             double maximumRadius =
                 0.0;
 
@@ -168,11 +183,13 @@ namespace KMC.MissionControl.Rendering.Propulsion
             {
                 double x =
                     pair.ReadA(
-                        engines[index]);
+                        engines[index]) -
+                    centerX;
 
                 double y =
                     -pair.ReadB(
-                        engines[index]);
+                        engines[index]) -
+                    centerY;
 
                 double radius =
                     Math.Sqrt(
@@ -194,9 +211,10 @@ namespace KMC.MissionControl.Rendering.Propulsion
                             radius,
 
                         Angle =
-                            Math.Atan2(
-                                y,
-                                x)
+                            NormalizeAngle(
+                                Math.Atan2(
+                                    y,
+                                    x))
                     });
             }
 
@@ -206,7 +224,12 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 ArrangeCentralGroup(
                     points);
 
-                return points;
+                return points
+                    .OrderBy(
+                        item => item.Angle)
+                    .ThenBy(
+                        item => item.Node.PartId)
+                    .ToList();
             }
 
             double centerThreshold =
@@ -249,6 +272,14 @@ namespace KMC.MissionControl.Rendering.Propulsion
                  ringIndex < rings.Count;
                  ringIndex++)
             {
+                List<EngineLayoutPoint> ring =
+                    rings[ringIndex]
+                        .OrderBy(
+                            item => item.Angle)
+                        .ThenBy(
+                            item => item.Node.PartId)
+                        .ToList();
+
                 double displayRadius =
                     rings.Count == 1
                         ? 0.78
@@ -259,23 +290,12 @@ namespace KMC.MissionControl.Rendering.Propulsion
                               1,
                               rings.Count - 1);
 
-                for (int itemIndex = 0;
-                     itemIndex < rings[ringIndex].Count;
-                     itemIndex++)
-                {
-                    EngineLayoutPoint item =
-                        rings[ringIndex][itemIndex];
+                ArrangePerfectRing(
+                    ring,
+                    displayRadius);
 
-                    item.NormalizedX =
-                        Math.Cos(
-                            item.Angle) *
-                        displayRadius;
-
-                    item.NormalizedY =
-                        Math.Sin(
-                            item.Angle) *
-                        displayRadius;
-                }
+                rings[ringIndex] =
+                    ring;
             }
 
             List<EngineLayoutPoint> result =
@@ -293,14 +313,129 @@ namespace KMC.MissionControl.Rendering.Propulsion
                  ringIndex++)
             {
                 result.AddRange(
-                    rings[ringIndex]
-                        .OrderBy(
-                            item => item.Angle)
-                        .ThenBy(
-                            item => item.Node.PartId));
+                    rings[ringIndex]);
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Snaps a physical engine ring to exact equal angular spacing while
+        /// retaining the ring's overall vehicle-relative rotation.
+        /// </summary>
+        private static void ArrangePerfectRing(
+            IList<EngineLayoutPoint> ring,
+            double displayRadius)
+        {
+            if (ring == null ||
+                ring.Count == 0)
+            {
+                return;
+            }
+
+            if (ring.Count == 1)
+            {
+                ring[0].NormalizedX =
+                    Math.Cos(
+                        ring[0].Angle) *
+                    displayRadius;
+
+                ring[0].NormalizedY =
+                    Math.Sin(
+                        ring[0].Angle) *
+                    displayRadius;
+
+                return;
+            }
+
+            /*
+             * Find the circular mean of each engine's actual angle minus its
+             * ideal equally spaced angle. This supplies a stable orientation
+             * offset without allowing construction tolerances to distort the
+             * displayed ring.
+             */
+            double sine =
+                0.0;
+
+            double cosine =
+                0.0;
+
+            for (int index = 0;
+                 index < ring.Count;
+                 index++)
+            {
+                double idealAngle =
+                    Math.PI *
+                    2.0 *
+                    index /
+                    ring.Count;
+
+                double offset =
+                    NormalizeAngle(
+                        ring[index].Angle -
+                        idealAngle);
+
+                sine +=
+                    Math.Sin(
+                        offset);
+
+                cosine +=
+                    Math.Cos(
+                        offset);
+            }
+
+            double orientation =
+                Math.Atan2(
+                    sine,
+                    cosine);
+
+            for (int index = 0;
+                 index < ring.Count;
+                 index++)
+            {
+                double angle =
+                    NormalizeAngle(
+                        orientation +
+                        Math.PI *
+                        2.0 *
+                        index /
+                        ring.Count);
+
+                ring[index].Angle =
+                    angle;
+
+                ring[index].NormalizedX =
+                    Math.Cos(
+                        angle) *
+                    displayRadius;
+
+                ring[index].NormalizedY =
+                    Math.Sin(
+                        angle) *
+                    displayRadius;
+            }
+        }
+
+        private static double NormalizeAngle(
+            double angle)
+        {
+            while (angle <=
+                   -Math.PI)
+            {
+                angle +=
+                    Math.PI *
+                    2.0;
+            }
+
+            while (angle >
+                   Math.PI)
+            {
+                angle -=
+                    Math.PI *
+                    2.0;
+            }
+
+            return angle;
         }
 
         private static List<List<EngineLayoutPoint>>
@@ -422,13 +557,28 @@ namespace KMC.MissionControl.Rendering.Propulsion
             public double NormalizedY;
         }
 
+        /// <summary>
+        /// Selects the current propulsion stage.
+        ///
+        /// KSP stage numbers decrease as staging progresses:
+        /// - Attached engines at or above CurrentStage have already activated.
+        /// - Engines immediately below CurrentStage are armed for the next
+        ///   staging event.
+        ///
+        /// The newest activated attached propulsion stage is preferred. If no
+        /// attached propulsion stage has activated yet, the nearest armed
+        /// propulsion stage is returned so the cluster is visible before
+        /// ignition.
+        /// </summary>
         private static int SelectRelevantActivationStage(
-
             IList<PropulsionGraphNode> engines,
             int currentStage)
         {
-            int selectedStage =
+            int activatedStage =
                 int.MaxValue;
+
+            int armedStage =
+                int.MinValue;
 
             for (int index = 0;
                  index < engines.Count;
@@ -438,25 +588,43 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     engines[index]
                         .ActivationStage;
 
-                if (activationStage < 0 ||
-                    activationStage <
-                        currentStage)
+                if (activationStage < 0)
                 {
                     continue;
                 }
 
-                if (activationStage <
-                    selectedStage)
+                if (activationStage >=
+                    currentStage)
                 {
-                    selectedStage =
+                    if (activationStage <
+                        activatedStage)
+                    {
+                        activatedStage =
+                            activationStage;
+                    }
+                }
+                else if (activationStage >
+                         armedStage)
+                {
+                    /*
+                     * Highest stage number below CurrentStage is the next
+                     * propulsion stage that will activate.
+                     */
+                    armedStage =
                         activationStage;
                 }
             }
 
-            return selectedStage ==
-                int.MaxValue
-                    ? -1
-                    : selectedStage;
+            if (activatedStage !=
+                int.MaxValue)
+            {
+                return activatedStage;
+            }
+
+            return armedStage !=
+                int.MinValue
+                    ? armedStage
+                    : -1;
         }
 
         private static int GetCommonStage(
