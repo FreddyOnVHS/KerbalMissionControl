@@ -175,7 +175,7 @@ namespace KMC.MissionControl.Cards.Propulsion
             MissionTelemetry telemetry)
         {
             SolidFuelTelemetrySnapshot solidFuel =
-                SolidFuelTelemetryStore.GetSnapshot();
+                SolidFuelTelemetryResolver.GetSnapshot();
 
             return Join(
                 PercentKey(

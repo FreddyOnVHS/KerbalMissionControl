@@ -642,7 +642,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     35);
 
             SolidFuelTelemetrySnapshot solidFuel =
-                SolidFuelTelemetryStore.GetSnapshot();
+                SolidFuelTelemetryResolver.GetSnapshot();
 
             bool showSolidBoosters =
                 system != null &&
