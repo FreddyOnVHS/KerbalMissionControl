@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using KMC.Shared.Topology;
@@ -57,13 +57,22 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         node.SeparationStage);
                 }
 
+                /*
+                 * Solid boosters are propulsion engines and must participate
+                 * in the same grouping and stage display as liquid engines.
+                 */
                 if (node.Category ==
-                    VesselNodeCategory.Engine)
+                        VesselNodeCategory.Engine ||
+                    node.Category ==
+                        VesselNodeCategory.SolidBooster)
                 {
                     string name =
-                        CreateEngineName(node);
+                        CreateEngineName(
+                            node);
 
                     string key =
+                        node.Category +
+                        "|" +
                         name +
                         "|" +
                         node.ActivationStage +
@@ -79,9 +88,15 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         group =
                             new PropulsionEngineGroup
                             {
-                                DisplayName = name,
+                                DisplayName =
+                                    node.Category ==
+                                    VesselNodeCategory.SolidBooster
+                                        ? name + " SRB"
+                                        : name,
+
                                 ActivationStage =
                                     node.ActivationStage,
+
                                 SeparationStage =
                                     node.SeparationStage
                             };
@@ -102,7 +117,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     .ThenBy(
                         item => item.DisplayName))
             {
-                model.EngineGroups.Add(group);
+                model.EngineGroups.Add(
+                    group);
             }
 
             foreach (int stage
@@ -110,7 +126,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     .OrderByDescending(
                         value => value))
             {
-                model.SeparationStages.Add(stage);
+                model.SeparationStages.Add(
+                    stage);
             }
 
             return model;
@@ -164,25 +181,29 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         resource,
                         "LiquidFuel"))
                 {
-                    model.HasLiquidFuel = true;
+                    model.HasLiquidFuel =
+                        true;
                 }
                 else if (EqualsName(
                              resource,
                              "Oxidizer"))
                 {
-                    model.HasOxidizer = true;
+                    model.HasOxidizer =
+                        true;
                 }
                 else if (EqualsName(
                              resource,
                              "MonoPropellant"))
                 {
-                    model.HasMonopropellant = true;
+                    model.HasMonopropellant =
+                        true;
                 }
                 else if (EqualsName(
                              resource,
                              "SolidFuel"))
                 {
-                    model.HasSolidFuel = true;
+                    model.HasSolidFuel =
+                        true;
                 }
             }
         }
@@ -195,7 +216,10 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
             if (title.Length == 0)
             {
-                return "ENGINE";
+                return node.Category ==
+                    VesselNodeCategory.SolidBooster
+                        ? "BOOSTER"
+                        : "ENGINE";
             }
 
             int quoteStart =
@@ -231,7 +255,10 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     .ToUpperInvariant();
             }
 
-            return "ENGINE";
+            return node.Category ==
+                VesselNodeCategory.SolidBooster
+                    ? "BOOSTER"
+                    : "ENGINE";
         }
 
         private static bool EqualsName(
