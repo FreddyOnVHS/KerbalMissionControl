@@ -192,19 +192,38 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     "NO ENGINE CLUSTER",
                     labelFont,
                     dimPhosphor);
+
                 return;
             }
 
-            int labelHeight = 38;
+            int headerHeight =
+                38;
+
+            int statusHeight =
+                Math.Max(
+                    72,
+                    Math.Min(
+                        90,
+                        bounds.Height / 4));
 
             Rectangle plot =
                 new Rectangle(
                     bounds.Left + 12,
-                    bounds.Top + labelHeight,
+                    bounds.Top + headerHeight,
                     bounds.Width - 24,
-                    bounds.Height -
-                    labelHeight -
-                    8);
+                    Math.Max(
+                        1,
+                        bounds.Height -
+                        headerHeight -
+                        statusHeight -
+                        8));
+
+            Rectangle status =
+                new Rectangle(
+                    bounds.Left + 4,
+                    plot.Bottom + 8,
+                    bounds.Width - 8,
+                    statusHeight - 8);
 
             int diameter =
                 Math.Max(
@@ -225,7 +244,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     0,
                     (plot.Width -
                      diameter -
-                     16) /
+                     24) /
                     2.0f);
 
             float radiusY =
@@ -233,17 +252,17 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     0,
                     (plot.Height -
                      diameter -
-                     16) /
+                     30) /
                     2.0f);
 
-            bool producing =
+            bool anyProducing =
                 telemetry != null &&
                 telemetry
                     .ProducingThrustEngineCount >
                 0;
 
-            Color active =
-                producing
+            Color normal =
+                anyProducing
                     ? Color.FromArgb(
                         255,
                         55,
@@ -252,14 +271,17 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     : dimPhosphor;
 
             using (SolidBrush labelBrush =
-                new SolidBrush(phosphor))
+                new SolidBrush(
+                    phosphor))
             using (SolidBrush detailBrush =
-                new SolidBrush(dimPhosphor))
+                new SolidBrush(
+                    dimPhosphor))
             using (StringFormat centered =
                 new StringFormat
                 {
                     Alignment =
                         StringAlignment.Center,
+
                     LineAlignment =
                         StringAlignment.Center
                 })
@@ -318,21 +340,316 @@ namespace KMC.MissionControl.Rendering.Propulsion
                      radiusY -
                      diameter / 2.0f);
 
-                Rectangle engine =
+                DrawEngineSymbol(
+                    graphics,
                     new Rectangle(
                         x,
                         y,
                         diameter,
-                        diameter);
-
-                DrawEngineSymbol(
-                    graphics,
-                    engine,
+                        diameter),
                     point,
-                    active,
+                    normal,
                     labelFont,
                     smallFont);
             }
+
+            DrawEngineClusterStatus(
+                graphics,
+                status,
+                cluster,
+                smallFont,
+                phosphor,
+                dimPhosphor);
+        }
+
+        private static void DrawEngineClusterStatus(
+            Graphics graphics,
+            Rectangle bounds,
+            EngineClusterProjection cluster,
+            Font font,
+            Color phosphor,
+            Color dimPhosphor)
+        {
+            int producing = 0;
+            int ignited = 0;
+            int armed = 0;
+            int shutdown = 0;
+            int flameout = 0;
+
+            double currentThrust = 0.0;
+            double maximumThrust = 0.0;
+
+            for (int index = 0;
+                 index < cluster.Engines.Count;
+                 index++)
+            {
+                EngineStateTelemetry state =
+                    EngineStateTelemetryStore.GetEngine(
+                        cluster.Engines[index].PartId);
+
+                if (state == null)
+                {
+                    armed++;
+                    continue;
+                }
+
+                currentThrust +=
+                    Math.Max(
+                        0.0,
+                        state.CurrentThrust);
+
+                maximumThrust +=
+                    Math.Max(
+                        0.0,
+                        state.MaximumThrust);
+
+                switch (state.OperatingState)
+                {
+                    case EngineOperatingState.Producing:
+                        producing++;
+                        break;
+
+                    case EngineOperatingState.Ignited:
+                        ignited++;
+                        break;
+
+                    case EngineOperatingState.Flameout:
+                        flameout++;
+                        break;
+
+                    case EngineOperatingState.Shutdown:
+                        shutdown++;
+                        break;
+
+                    case EngineOperatingState.Armed:
+                    case EngineOperatingState.Unknown:
+                    default:
+                        armed++;
+                        break;
+                }
+            }
+
+            double thrustFraction =
+                maximumThrust > 0.0001
+                    ? Math.Max(
+                        0.0,
+                        Math.Min(
+                            1.0,
+                            currentThrust /
+                            maximumThrust))
+                    : 0.0;
+
+            string mode =
+                flameout > 0
+                    ? "FAULT"
+                    : producing > 0
+                        ? "RUNNING"
+                        : ignited > 0
+                            ? "IGNITED"
+                            : armed > 0
+                                ? "ARMED"
+                                : shutdown > 0
+                                    ? "SHUTDOWN"
+                                    : "UNKNOWN";
+
+            Color modeColor =
+                flameout > 0
+                    ? Color.FromArgb(
+                        255,
+                        255,
+                        75,
+                        75)
+                    : producing > 0
+                        ? Color.FromArgb(
+                            255,
+                            55,
+                            255,
+                            105)
+                        : ignited > 0
+                            ? Color.FromArgb(
+                                255,
+                                255,
+                                190,
+                                60)
+                            : dimPhosphor;
+
+            int firstRowHeight =
+                Math.Max(
+                    22,
+                    bounds.Height / 2);
+
+            Rectangle firstRow =
+                new Rectangle(
+                    bounds.Left,
+                    bounds.Top,
+                    bounds.Width,
+                    firstRowHeight);
+
+            Rectangle secondRow =
+                new Rectangle(
+                    bounds.Left,
+                    firstRow.Bottom,
+                    bounds.Width,
+                    bounds.Bottom -
+                    firstRow.Bottom);
+
+            using (Pen border =
+                new Pen(
+                    Color.FromArgb(
+                        115,
+                        dimPhosphor),
+                    1.0f))
+            using (SolidBrush labelBrush =
+                new SolidBrush(
+                    dimPhosphor))
+            using (SolidBrush valueBrush =
+                new SolidBrush(
+                    phosphor))
+            using (SolidBrush modeBrush =
+                new SolidBrush(
+                    modeColor))
+            using (StringFormat centered =
+                new StringFormat
+                {
+                    Alignment =
+                        StringAlignment.Center,
+
+                    LineAlignment =
+                        StringAlignment.Center,
+
+                    FormatFlags =
+                        StringFormatFlags.NoWrap
+                })
+            {
+                graphics.DrawRectangle(
+                    border,
+                    bounds);
+
+                int width =
+                    Math.Max(
+                        1,
+                        firstRow.Width / 4);
+
+                DrawStatusCell(
+                    graphics,
+                    new Rectangle(
+                        firstRow.Left,
+                        firstRow.Top,
+                        width,
+                        firstRow.Height),
+                    "ACTIVE",
+                    producing.ToString("00") +
+                    "/" +
+                    cluster.Engines.Count
+                        .ToString("00"),
+                    font,
+                    labelBrush,
+                    valueBrush,
+                    centered);
+
+                DrawStatusCell(
+                    graphics,
+                    new Rectangle(
+                        firstRow.Left + width,
+                        firstRow.Top,
+                        width,
+                        firstRow.Height),
+                    "ARMED",
+                    armed.ToString("00"),
+                    font,
+                    labelBrush,
+                    valueBrush,
+                    centered);
+
+                DrawStatusCell(
+                    graphics,
+                    new Rectangle(
+                        firstRow.Left + width * 2,
+                        firstRow.Top,
+                        width,
+                        firstRow.Height),
+                    "FAULT",
+                    flameout.ToString("00"),
+                    font,
+                    labelBrush,
+                    flameout > 0
+                        ? modeBrush
+                        : valueBrush,
+                    centered);
+
+                DrawStatusCell(
+                    graphics,
+                    new Rectangle(
+                        firstRow.Left + width * 3,
+                        firstRow.Top,
+                        firstRow.Right -
+                        (firstRow.Left + width * 3),
+                        firstRow.Height),
+                    "THRUST",
+                    (thrustFraction * 100.0)
+                        .ToString("0") +
+                    "%",
+                    font,
+                    labelBrush,
+                    valueBrush,
+                    centered);
+
+                graphics.DrawLine(
+                    border,
+                    bounds.Left,
+                    firstRow.Bottom,
+                    bounds.Right,
+                    firstRow.Bottom);
+
+                graphics.DrawString(
+                    "MODE " +
+                    mode +
+                    "   •   DIM ARMED   GREEN RUN   AMBER IGN   RED FAIL",
+                    font,
+                    modeBrush,
+                    secondRow,
+                    centered);
+            }
+        }
+
+        private static void DrawStatusCell(
+            Graphics graphics,
+            Rectangle bounds,
+            string label,
+            string value,
+            Font font,
+            Brush labelBrush,
+            Brush valueBrush,
+            StringFormat centered)
+        {
+            int labelHeight =
+                Math.Max(
+                    12,
+                    bounds.Height / 2);
+
+            graphics.DrawString(
+                label,
+                font,
+                labelBrush,
+                new Rectangle(
+                    bounds.Left,
+                    bounds.Top,
+                    bounds.Width,
+                    labelHeight),
+                centered);
+
+            graphics.DrawString(
+                value,
+                font,
+                valueBrush,
+                new Rectangle(
+                    bounds.Left,
+                    bounds.Top + labelHeight,
+                    bounds.Width,
+                    bounds.Bottom -
+                    bounds.Top -
+                    labelHeight),
+                centered);
         }
 
         private static void DrawEngineSymbol(
@@ -375,13 +692,19 @@ namespace KMC.MissionControl.Rendering.Propulsion
         private static string CreateEngineTag(
             EngineProjectionPoint point)
         {
-            string prefix =
-                CreateEnginePrefix(
-                    point != null
-                        ? point.DisplayName
-                        : string.Empty);
+            if (point == null)
+            {
+                return "E--";
+            }
 
-            return prefix +
+            if (!string.IsNullOrWhiteSpace(
+                    point.Identifier))
+            {
+                return point.Identifier;
+            }
+
+            return CreateEnginePrefix(
+                    point.DisplayName) +
                 point.DisplayNumber
                     .ToString("00");
         }

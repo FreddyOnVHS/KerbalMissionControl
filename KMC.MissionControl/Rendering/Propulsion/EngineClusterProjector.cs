@@ -54,6 +54,19 @@ namespace KMC.MissionControl.Rendering.Propulsion
                                 liveCurrentStage))
                     .ToList();
 
+            /*
+             * Register the complete attached inventory before current-stage
+             * filtering. Identifiers therefore remain stable after staging.
+             */
+            EngineIdentifierRegistry.RegisterInventory(
+                graph.VesselName,
+                graph.Nodes.Where(
+                    node =>
+                        node.Category ==
+                            VesselNodeCategory.Engine ||
+                        node.Category ==
+                            VesselNodeCategory.SolidBooster));
+
             int selectedStage =
                 SelectRelevantActivationStage(
                     allEngines,
@@ -153,7 +166,15 @@ namespace KMC.MissionControl.Rendering.Propulsion
                             item.NormalizedY,
 
                         DisplayNumber =
-                            index + 1
+                            index + 1,
+
+                        Identifier =
+                            EngineIdentifierRegistry
+                                .GetIdentifier(
+                                    node.PartId,
+                                    CreateEngineName(
+                                        node),
+                                    index + 1)
                     });
             }
 
