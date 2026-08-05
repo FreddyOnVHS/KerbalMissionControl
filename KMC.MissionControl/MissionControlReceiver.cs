@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using KMC.MissionControl.Debugging;
 using KMC.MissionControl.Diagnostics;
 using KMC.MissionControl.Rendering.Propulsion;
 using KMC.Shared;
@@ -45,7 +46,8 @@ namespace KMC.MissionControl
                         VesselTopologyPacketCodec
                             .TopologyPort));
 
-            _running = true;
+            _running =
+                true;
 
             _telemetryThread =
                 CreateThread(
@@ -88,7 +90,8 @@ namespace KMC.MissionControl
                             ref sender);
 
                     string message =
-                        Encoding.UTF8.GetString(data);
+                        Encoding.UTF8.GetString(
+                            data);
 
                     TelemetryPacket packet;
 
@@ -96,6 +99,10 @@ namespace KMC.MissionControl
                             message,
                             out packet))
                     {
+                        PropulsionDebugSnapshotStore
+                            .PublishTelemetry(
+                                packet);
+
                         Action<TelemetryPacket> handler =
                             TelemetryReceived;
 
@@ -147,8 +154,13 @@ namespace KMC.MissionControl
                         continue;
                     }
 
+                    PropulsionDebugSnapshotStore
+                        .PublishTopology(
+                            topology);
+
                     PropulsionRenderGraph graph =
-                        builder.Build(topology);
+                        builder.Build(
+                            topology);
 
                     PropulsionGraphStore.Publish(
                         graph);
@@ -185,14 +197,23 @@ namespace KMC.MissionControl
 
         public void Stop()
         {
-            _running = false;
+            _running =
+                false;
+
             PropulsionGraphStore.Clear();
+            PropulsionDebugSnapshotStore.Clear();
 
-            CloseClient(ref _telemetryClient);
-            CloseClient(ref _topologyClient);
+            CloseClient(
+                ref _telemetryClient);
 
-            JoinThread(ref _telemetryThread);
-            JoinThread(ref _topologyThread);
+            CloseClient(
+                ref _topologyClient);
+
+            JoinThread(
+                ref _telemetryThread);
+
+            JoinThread(
+                ref _topologyThread);
         }
 
         private static void CloseClient(
@@ -204,7 +225,9 @@ namespace KMC.MissionControl
             }
 
             client.Close();
-            client = null;
+
+            client =
+                null;
         }
 
         private static void JoinThread(
@@ -214,10 +237,12 @@ namespace KMC.MissionControl
                 thread.IsAlive &&
                 Thread.CurrentThread != thread)
             {
-                thread.Join(1000);
+                thread.Join(
+                    1000);
             }
 
-            thread = null;
+            thread =
+                null;
         }
 
         public void Dispose()
