@@ -33,13 +33,16 @@ namespace KMC.MissionControl.Rendering.Propulsion
             {
                 get
                 {
+                    /*
+                     * Pump rotation represents real or commanded propellant
+                     * flow. A flameout is shown as a fault, not as a normally
+                     * operating pump.
+                     */
                     return
                         State ==
                             LiquidPropulsionState.Ignition ||
                         State ==
-                            LiquidPropulsionState.Running ||
-                        State ==
-                            LiquidPropulsionState.Flameout;
+                            LiquidPropulsionState.Running;
                 }
             }
 
@@ -47,7 +50,10 @@ namespace KMC.MissionControl.Rendering.Propulsion
             {
                 get
                 {
-                    return FlowActive;
+                    return
+                        FlowActive ||
+                        State ==
+                            LiquidPropulsionState.Flameout;
                 }
             }
         }
@@ -1337,12 +1343,25 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
             LiquidPropulsionSnapshot liquidState =
                 ResolveLiquidPropulsionState(
-                    system);
+                    system,
+                    telemetry);
 
-            Color liquidFlowColor =
-                ResolveLiquidFlowColor(
+            Color lfFlowColor =
+                ResolveLiquidFeedColor(
                     liquidState,
                     lf,
+                    dimPhosphor);
+
+            Color oxFlowColor =
+                ResolveLiquidFeedColor(
+                    liquidState,
+                    ox,
+                    dimPhosphor);
+
+            Color liquidCenterColor =
+                ResolveLiquidCenterColor(
+                    liquidState,
+                    phosphor,
                     dimPhosphor);
 
             int centerX =
@@ -1465,7 +1484,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     mixer.Left,
                     mixer.Top +
                     mixer.Height / 2),
-                liquidFlowColor,
+                lfFlowColor,
                 "LF",
                 liquidState.FlowActive,
                 smallFont);
@@ -1480,7 +1499,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     mixer.Right,
                     mixer.Top +
                     mixer.Height / 2),
-                liquidFlowColor,
+                oxFlowColor,
                 "OX",
                 liquidState.FlowActive,
                 smallFont);
@@ -1490,26 +1509,26 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 mixer,
                 "MIXER",
                 "LF / OX",
-                liquidFlowColor,
+                liquidCenterColor,
                 labelFont,
                 smallFont);
 
             DrawMixerDetail(
                 graphics,
                 mixer,
-                liquidFlowColor);
+                liquidCenterColor);
 
             DrawVerticalFlow(
                 graphics,
                 mixer,
                 valve,
-                liquidFlowColor,
+                liquidCenterColor,
                 liquidState.FlowActive);
 
             DrawValve(
                 graphics,
                 valve,
-                liquidFlowColor,
+                liquidCenterColor,
                 liquidState.ValveOpen,
                 smallFont);
 
@@ -1517,7 +1536,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 graphics,
                 valve,
                 chamber,
-                liquidFlowColor,
+                liquidCenterColor,
                 liquidState.FlowActive);
 
             int liquidEngineCount =
@@ -1534,14 +1553,14 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 "  " +
                 GetLiquidStateLabel(
                     liquidState.State),
-                liquidFlowColor,
+                liquidCenterColor,
                 labelFont,
                 smallFont);
 
             DrawNozzle(
                 graphics,
                 chamber,
-                liquidFlowColor);
+                liquidCenterColor);
 
             if (system.HasMonopropellant)
             {
@@ -1669,7 +1688,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
         private static LiquidPropulsionSnapshot
             ResolveLiquidPropulsionState(
-                PropulsionSystemModel system)
+                PropulsionSystemModel system,
+                MissionTelemetry telemetry)
         {
             LiquidPropulsionSnapshot snapshot =
                 new LiquidPropulsionSnapshot();
@@ -1695,8 +1715,15 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 return snapshot;
             }
 
-            int known =
-                0;
+            /*
+             * KSP can continue reporting a throttleable engine as Ignited
+             * after the player returns throttle to zero. The schematic treats
+             * zero throttle as no commanded flow regardless of that flag.
+             */
+            bool thrustCommanded =
+                telemetry != null &&
+                telemetry.Throttle >
+                    0.005;
 
             int producing =
                 0;
@@ -1706,6 +1733,9 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
             int flameout =
                 0;
+
+            double liquidThrust =
+                0.0;
 
             for (int index = 0;
                  index < system.LiquidEnginePartIds.Count;
@@ -1720,7 +1750,10 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     continue;
                 }
 
-                known++;
+                liquidThrust +=
+                    Math.Max(
+                        0.0,
+                        engine.CurrentThrust);
 
                 switch (engine.OperatingState)
                 {
@@ -1741,27 +1774,37 @@ namespace KMC.MissionControl.Rendering.Propulsion
             snapshot.ProducingCount =
                 producing;
 
-            if (flameout > 0)
+            bool measurableLiquidThrust =
+                liquidThrust >
+                    0.05;
+
+            if (!thrustCommanded &&
+                !measurableLiquidThrust)
+            {
+                snapshot.State =
+                    LiquidPropulsionState.Idle;
+            }
+            else if (flameout > 0 &&
+                     thrustCommanded &&
+                     !measurableLiquidThrust)
             {
                 snapshot.State =
                     LiquidPropulsionState.Flameout;
             }
-            else if (producing > 0)
+            else if (producing > 0 ||
+                     measurableLiquidThrust)
             {
                 snapshot.State =
                     LiquidPropulsionState.Running;
             }
-            else if (ignited > 0)
+            else if (thrustCommanded &&
+                     ignited > 0)
             {
                 snapshot.State =
                     LiquidPropulsionState.Ignition;
             }
             else
             {
-                /*
-                 * Unknown, armed, and shutdown engines all represent no
-                 * current propellant flow in the schematic.
-                 */
                 snapshot.State =
                     LiquidPropulsionState.Idle;
             }
@@ -1769,7 +1812,54 @@ namespace KMC.MissionControl.Rendering.Propulsion
             return snapshot;
         }
 
-        private static Color ResolveLiquidFlowColor(
+        private static Color ResolveLiquidFeedColor(
+            LiquidPropulsionSnapshot state,
+            Color normal,
+            Color dim)
+        {
+            if (state == null)
+            {
+                return dim;
+            }
+
+            switch (state.State)
+            {
+                case LiquidPropulsionState.Running:
+                    /*
+                     * Preserve each feed's identity:
+                     * LF stays green and OX stays cyan.
+                     */
+                    return normal;
+
+                case LiquidPropulsionState.Ignition:
+                    return Color.FromArgb(
+                        255,
+                        255,
+                        205,
+                        75);
+
+                case LiquidPropulsionState.Flameout:
+                    return Color.FromArgb(
+                        255,
+                        255,
+                        75,
+                        55);
+
+                case LiquidPropulsionState.Idle:
+                    /*
+                     * Inactive hardware is a cool, subdued version of its
+                     * normal color rather than SRB-like orange.
+                     */
+                    return Color.FromArgb(
+                        92,
+                        normal);
+
+                default:
+                    return dim;
+            }
+        }
+
+        private static Color ResolveLiquidCenterColor(
             LiquidPropulsionSnapshot state,
             Color normal,
             Color dim)
@@ -1788,8 +1878,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     return Color.FromArgb(
                         255,
                         255,
-                        190,
-                        60);
+                        205,
+                        75);
 
                 case LiquidPropulsionState.Flameout:
                     return Color.FromArgb(
@@ -1800,8 +1890,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
                 case LiquidPropulsionState.Idle:
                     return Color.FromArgb(
-                        120,
-                        normal);
+                        115,
+                        dim);
 
                 default:
                     return dim;

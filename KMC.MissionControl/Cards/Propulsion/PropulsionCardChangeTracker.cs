@@ -203,6 +203,9 @@ namespace KMC.MissionControl.Cards.Propulsion
                 SolidFuelTelemetryResolver.GetSnapshot();
 
             return Join(
+                Quantize(
+                    telemetry.Throttle,
+                    1000.0),
                 PercentKey(
                     telemetry.StageLiquidFuelAmount,
                     telemetry.StageLiquidFuelCapacity),
