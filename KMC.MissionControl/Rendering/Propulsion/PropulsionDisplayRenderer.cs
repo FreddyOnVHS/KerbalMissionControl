@@ -56,9 +56,15 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     return;
                 }
 
+                int liveCurrentStage =
+                    telemetry != null
+                        ? telemetry.CurrentStage
+                        : graph.CurrentStage;
+
                 PropulsionAnalysis analysis =
                     PropulsionAnalysisCache.GetOrBuild(
-                        graph);
+                        graph,
+                        liveCurrentStage);
 
                 PropulsionSystemModel system =
                     analysis.SystemModel;

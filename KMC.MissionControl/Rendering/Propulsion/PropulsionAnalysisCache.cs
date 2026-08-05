@@ -7,9 +7,9 @@ namespace KMC.MissionControl.Rendering.Propulsion
     /// Caches topology-dependent propulsion analysis.
     ///
     /// PropulsionSystemModelBuilder and EngineClusterProjector are relatively
-    /// expensive and depend on vessel topology rather than rapidly changing
-    /// telemetry. This cache rebuilds those objects only when the graph
-    /// identity or topology key changes.
+    /// expensive and depend primarily on vessel topology. The engine
+    /// projection also depends on live current stage, so the cache rebuilds
+    /// when topology identity changes or telemetry advances to another stage.
     /// </summary>
     public sealed class PropulsionAnalysisCache
     {
@@ -61,8 +61,20 @@ namespace KMC.MissionControl.Rendering.Propulsion
         public static PropulsionAnalysis GetOrBuild(
             PropulsionRenderGraph graph)
         {
+            return GetOrBuild(
+                graph,
+                graph != null
+                    ? graph.CurrentStage
+                    : -1);
+        }
+
+        public static PropulsionAnalysis GetOrBuild(
+            PropulsionRenderGraph graph,
+            int liveCurrentStage)
+        {
             return SharedInstance.GetOrBuildInternal(
-                graph);
+                graph,
+                liveCurrentStage);
         }
 
         public static void Clear()
@@ -77,7 +89,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
         }
 
         private PropulsionAnalysis GetOrBuildInternal(
-            PropulsionRenderGraph graph)
+            PropulsionRenderGraph graph,
+            int liveCurrentStage)
         {
             if (graph == null)
             {
@@ -110,7 +123,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     _cachedRevision ==
                         graph.TopologyRevision &&
                     _cachedStage ==
-                        graph.CurrentStage &&
+                        liveCurrentStage &&
                     _cachedNodeCount ==
                         nodeCount &&
                     string.Equals(
@@ -135,7 +148,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
                 EngineClusterProjection cluster =
                     _clusterProjector.Build(
-                        graph);
+                        graph,
+                        liveCurrentStage);
 
                 stopwatch.Stop();
 
@@ -146,7 +160,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     graph.TopologyRevision;
 
                 _cachedStage =
-                    graph.CurrentStage;
+                    liveCurrentStage;
 
                 _cachedNodeCount =
                     nodeCount;

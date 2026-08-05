@@ -33,7 +33,8 @@ namespace KMC.MissionControl.Cards.Propulsion
 
             string engineCluster =
                 BuildEngineClusterSignature(
-                    telemetry);
+                    telemetry,
+                    graph);
 
             string performance =
                 BuildPerformanceSignature(
@@ -129,12 +130,35 @@ namespace KMC.MissionControl.Cards.Propulsion
                 null;
         }
 
+        /// <summary>
+        /// The engine-cluster bitmap depends on much more than whether any
+        /// engine is producing thrust. It also depends on vessel identity,
+        /// live stage selection, topology, and the attached engine population.
+        ///
+        /// Omitting these values allowed an old "NO ENGINE CLUSTER" bitmap to
+        /// survive after the shared analysis cache had already built a valid
+        /// projection for a newly loaded vessel.
+        /// </summary>
         private static string BuildEngineClusterSignature(
-            MissionTelemetry telemetry)
+            MissionTelemetry telemetry,
+            PropulsionRenderGraph graph)
         {
             return Join(
-                telemetry.ProducingThrustEngineCount > 0
-                    ? 1L
+                telemetry.CurrentStage,
+                telemetry.EngineCount,
+                telemetry.IgnitedEngineCount,
+                telemetry.ProducingThrustEngineCount,
+                telemetry.FlameoutEngineCount,
+                graph != null
+                    ? graph.TopologyRevision
+                    : -1L,
+                graph != null &&
+                graph.Nodes != null
+                    ? graph.Nodes.Count
+                    : -1L,
+                graph != null
+                    ? StableStringKey(
+                        graph.VesselName)
                     : 0L);
         }
 
@@ -243,6 +267,39 @@ namespace KMC.MissionControl.Cards.Propulsion
                 graph != null
                     ? graph.TopologyRevision
                     : -1L);
+        }
+
+        private static long StableStringKey(
+            string value)
+        {
+            if (string.IsNullOrEmpty(
+                    value))
+            {
+                return 0L;
+            }
+
+            unchecked
+            {
+                /*
+                 * Deterministic FNV-1a key. String.GetHashCode is not used
+                 * because its behavior can vary between runtime processes.
+                 */
+                ulong hash =
+                    1469598103934665603UL;
+
+                for (int index = 0;
+                     index < value.Length;
+                     index++)
+                {
+                    hash ^=
+                        value[index];
+
+                    hash *=
+                        1099511628211UL;
+                }
+
+                return (long)hash;
+            }
         }
 
         private static long PercentKey(

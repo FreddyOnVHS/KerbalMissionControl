@@ -258,10 +258,19 @@ namespace KMC.MissionControl.Debugging
                 PropulsionGraphStore
                     .GetCurrent();
 
+            int liveCurrentStage =
+                telemetry != null
+                    ? telemetry.CurrentStage
+                    : graph != null
+                        ? graph.CurrentStage
+                        : -1;
+
             PropulsionAnalysis analysis =
                 graph != null
                     ? PropulsionAnalysisCache
-                        .GetOrBuild(graph)
+                        .GetOrBuild(
+                            graph,
+                            liveCurrentStage)
                     : null;
 
             _overview.Text =
@@ -378,6 +387,12 @@ namespace KMC.MissionControl.Debugging
             builder.AppendLine("RENDER GRAPH / ANALYSIS");
             Append(builder, "Graph revision",
                 graph != null ? graph.TopologyRevision.ToString() : "--");
+            Append(builder, "Graph stage",
+                graph != null ? graph.CurrentStage.ToString() : "--");
+            Append(builder, "Live projection stage",
+                telemetry != null
+                    ? telemetry.CurrentStage.ToString()
+                    : "--");
             Append(builder, "Graph nodes",
                 graph != null ? graph.Nodes.Count.ToString() : "--");
             Append(builder, "Liquid engine nodes",

@@ -7,8 +7,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
 {
     /// <summary>
     /// Projects the propulsion engines relevant to the current propulsion
-    /// phase using a stable engine-bell view. Future-stage engines and older
-    /// propulsion groups are hidden.
+    /// phase using a stable engine-bell view and the live telemetry stage.
+    /// Future-stage engines and older propulsion groups are hidden.
     /// </summary>
     public sealed class EngineClusterProjector
     {
@@ -17,6 +17,17 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
         public EngineClusterProjection Build(
             PropulsionRenderGraph graph)
+        {
+            return Build(
+                graph,
+                graph != null
+                    ? graph.CurrentStage
+                    : -1);
+        }
+
+        public EngineClusterProjection Build(
+            PropulsionRenderGraph graph,
+            int liveCurrentStage)
         {
             EngineClusterProjection result =
                 new EngineClusterProjection();
@@ -39,7 +50,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
             int selectedStage =
                 SelectRelevantActivationStage(
                     allEngines,
-                    graph.CurrentStage);
+                    liveCurrentStage);
 
             List<PropulsionGraphNode> engines =
                 selectedStage >= 0
