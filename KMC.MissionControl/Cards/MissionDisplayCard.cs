@@ -8,10 +8,13 @@ using KMC.MissionControl.Rendering;
 namespace KMC.MissionControl.Cards
 {
     /// <summary>
-    /// Retained mission display card.
+    /// Retained mission display card with separate static and dynamic layers.
     ///
-    /// Dirty cards rebuild one reusable local bitmap. Clean cards only present
-    /// the cached bitmap onto the existing page canvas.
+    /// The static layer contains the standard card frame, background, title,
+    /// and title divider. It is rebuilt only for layout or static changes.
+    ///
+    /// The dynamic layer contains the card-specific content. It is rebuilt
+    /// only when layout, static styling, or visible telemetry changes.
     /// </summary>
     public abstract class MissionDisplayCard<TModel> :
         IMissionDisplayCard<TModel>
@@ -23,7 +26,8 @@ namespace KMC.MissionControl.Cards
         private Rectangle _bounds;
         private bool _visible;
 
-        private Bitmap _cachedBitmap;
+        private Bitmap _staticBitmap;
+        private Bitmap _dynamicBitmap;
         private Size _cachedBitmapSize;
 
         private long _drawCount;
@@ -45,23 +49,40 @@ namespace KMC.MissionControl.Cards
                     nameof(id));
             }
 
-            Id = id.Trim();
+            Id =
+                id.Trim();
+
             Title =
                 string.IsNullOrWhiteSpace(title)
                     ? Id
                     : title.Trim();
 
-            _visible = true;
-            DirtyState = CardDirtyState.All;
+            _visible =
+                true;
+
+            DirtyState =
+                CardDirtyState.All;
         }
 
-        public string Id { get; private set; }
+        public string Id
+        {
+            get;
+            private set;
+        }
 
-        public string Title { get; protected set; }
+        public string Title
+        {
+            get;
+            protected set;
+        }
 
         public Rectangle Bounds
         {
-            get { return _bounds; }
+            get
+            {
+                return _bounds;
+            }
+
             set
             {
                 if (_bounds == value)
@@ -69,7 +90,8 @@ namespace KMC.MissionControl.Cards
                     return;
                 }
 
-                _bounds = value;
+                _bounds =
+                    value;
 
                 MarkDirty(
                     CardDirtyState.Layout |
@@ -79,7 +101,11 @@ namespace KMC.MissionControl.Cards
 
         public bool Visible
         {
-            get { return _visible; }
+            get
+            {
+                return _visible;
+            }
+
             set
             {
                 if (_visible == value)
@@ -87,8 +113,11 @@ namespace KMC.MissionControl.Cards
                     return;
                 }
 
-                _visible = value;
-                MarkDirty(CardDirtyState.Static);
+                _visible =
+                    value;
+
+                MarkDirty(
+                    CardDirtyState.Static);
             }
         }
 
@@ -98,6 +127,9 @@ namespace KMC.MissionControl.Cards
             private set;
         }
 
+        /// <summary>
+        /// Number of dynamic-layer rebuilds.
+        /// </summary>
         public long DrawCount
         {
             get { return _drawCount; }
@@ -113,20 +145,41 @@ namespace KMC.MissionControl.Cards
             get { return _cacheHitCount; }
         }
 
+        /// <summary>
+        /// Total static and dynamic bitmap allocations.
+        /// </summary>
         public long BitmapAllocationCount
         {
             get { return _bitmapAllocationCount; }
         }
 
+        /// <summary>
+        /// Combined estimated memory for both retained card layers.
+        /// </summary>
         public long CachedBitmapBytes
         {
             get
             {
-                return _cachedBitmap == null
-                    ? 0L
-                    : (long)_cachedBitmap.Width *
-                      _cachedBitmap.Height *
-                      4L;
+                long bytes =
+                    0L;
+
+                if (_staticBitmap != null)
+                {
+                    bytes +=
+                        (long)_staticBitmap.Width *
+                        _staticBitmap.Height *
+                        4L;
+                }
+
+                if (_dynamicBitmap != null)
+                {
+                    bytes +=
+                        (long)_dynamicBitmap.Width *
+                        _dynamicBitmap.Height *
+                        4L;
+                }
+
+                return bytes;
             }
         }
 
@@ -148,7 +201,8 @@ namespace KMC.MissionControl.Cards
         public void MarkDirty(
             CardDirtyState dirtyState)
         {
-            DirtyState |= dirtyState;
+            DirtyState |=
+                dirtyState;
         }
 
         public void Draw(
@@ -166,27 +220,58 @@ namespace KMC.MissionControl.Cards
             CardDirtyState stateBeforeDraw =
                 DirtyState;
 
-            EnsureBitmap();
+            EnsureBitmaps();
 
-            bool rebuild =
-                DirtyState != CardDirtyState.None;
+            bool staticLayerDirty =
+                DrawStandardFrame &&
+                (DirtyState &
+                 (CardDirtyState.Layout |
+                  CardDirtyState.Static)) !=
+                CardDirtyState.None;
 
-            if (rebuild)
+            bool dynamicLayerDirty =
+                (DirtyState &
+                 (CardDirtyState.Layout |
+                  CardDirtyState.Static |
+                  CardDirtyState.Telemetry)) !=
+                CardDirtyState.None;
+
+            bool rebuiltAnyLayer =
+                false;
+
+            if (staticLayerDirty)
             {
-                RebuildBitmap(
+                RebuildStaticLayer(
+                    context);
+
+                rebuiltAnyLayer =
+                    true;
+            }
+
+            if (dynamicLayerDirty)
+            {
+                RebuildDynamicLayer(
                     context,
                     model);
 
-                DirtyState =
-                    CardDirtyState.None;
+                rebuiltAnyLayer =
+                    true;
             }
-            else
+
+            if (!rebuiltAnyLayer)
             {
                 _cacheHitCount++;
             }
 
+            if (_staticBitmap != null)
+            {
+                context.Graphics.DrawImageUnscaled(
+                    _staticBitmap,
+                    Bounds.Location);
+            }
+
             context.Graphics.DrawImageUnscaled(
-                _cachedBitmap,
+                _dynamicBitmap,
                 Bounds.Location);
 
             _presentationCount++;
@@ -202,6 +287,9 @@ namespace KMC.MissionControl.Cards
                 CachedBitmapBytes,
                 _lastDrawMilliseconds,
                 _averageDrawMilliseconds);
+
+            DirtyState =
+                CardDirtyState.None;
         }
 
         protected abstract void DrawContent(
@@ -233,41 +321,94 @@ namespace KMC.MissionControl.Cards
                     BottomContentInset));
         }
 
-        private void EnsureBitmap()
+        private void EnsureBitmaps()
         {
             Size required =
                 new Size(
-                    Math.Max(1, Bounds.Width),
-                    Math.Max(1, Bounds.Height));
+                    Math.Max(
+                        1,
+                        Bounds.Width),
+                    Math.Max(
+                        1,
+                        Bounds.Height));
 
-            if (_cachedBitmap != null &&
-                _cachedBitmapSize == required)
+            bool sizeMatches =
+                _cachedBitmapSize ==
+                required;
+
+            bool staticLayerReady =
+                !DrawStandardFrame ||
+                _staticBitmap != null;
+
+            if (sizeMatches &&
+                staticLayerReady &&
+                _dynamicBitmap != null)
             {
                 return;
             }
 
-            if (_cachedBitmap != null)
+            DisposeBitmaps();
+
+            if (DrawStandardFrame)
             {
-                _cachedBitmap.Dispose();
+                _staticBitmap =
+                    CreateBitmap(
+                        required);
+
+                _bitmapAllocationCount++;
             }
 
-            _cachedBitmap =
-                new Bitmap(
-                    required.Width,
-                    required.Height,
-                    PixelFormat.Format32bppPArgb);
+            _dynamicBitmap =
+                CreateBitmap(
+                    required);
+
+            _bitmapAllocationCount++;
 
             _cachedBitmapSize =
                 required;
 
-            _bitmapAllocationCount++;
-
             MarkDirty(
                 CardDirtyState.Layout |
-                CardDirtyState.Static);
+                CardDirtyState.Static |
+                CardDirtyState.Telemetry);
         }
 
-        private void RebuildBitmap(
+        private void RebuildStaticLayer(
+            MissionRenderContext parentContext)
+        {
+            if (_staticBitmap == null)
+            {
+                return;
+            }
+
+            using (Graphics graphics =
+                Graphics.FromImage(
+                    _staticBitmap))
+            {
+                ConfigureGraphics(
+                    graphics,
+                    parentContext);
+
+                graphics.Clear(
+                    Color.Transparent);
+
+                Rectangle localBounds =
+                    GetLocalBounds(
+                        _staticBitmap);
+
+                MissionRenderContext localContext =
+                    CreateLocalContext(
+                        graphics,
+                        localBounds,
+                        parentContext);
+
+                DrawFrame(
+                    localContext,
+                    localBounds);
+            }
+        }
+
+        private void RebuildDynamicLayer(
             MissionRenderContext parentContext,
             TModel model)
         {
@@ -276,47 +417,24 @@ namespace KMC.MissionControl.Cards
 
             using (Graphics graphics =
                 Graphics.FromImage(
-                    _cachedBitmap))
+                    _dynamicBitmap))
             {
+                ConfigureGraphics(
+                    graphics,
+                    parentContext);
+
                 graphics.Clear(
                     Color.Transparent);
 
-                graphics.SmoothingMode =
-                    SmoothingMode.AntiAlias;
-
-                graphics.PixelOffsetMode =
-                    PixelOffsetMode.HighQuality;
-
-                graphics.InterpolationMode =
-                    InterpolationMode.HighQualityBicubic;
-
-                graphics.TextRenderingHint =
-                    parentContext.Graphics
-                        .TextRenderingHint;
-
                 Rectangle localBounds =
-                    new Rectangle(
-                        0,
-                        0,
-                        _cachedBitmap.Width,
-                        _cachedBitmap.Height);
+                    GetLocalBounds(
+                        _dynamicBitmap);
 
                 MissionRenderContext localContext =
-                    new MissionRenderContext(
+                    CreateLocalContext(
                         graphics,
                         localBounds,
-                        parentContext.LargeFont,
-                        parentContext.SmallFont,
-                        parentContext.PhosphorColor,
-                        parentContext.DimPhosphorColor,
-                        parentContext.VirtualCanvasSize);
-
-                if (DrawStandardFrame)
-                {
-                    DrawFrame(
-                        localContext,
-                        localBounds);
-                }
+                        parentContext);
 
                 Rectangle contentBounds =
                     CalculateContentBounds(
@@ -356,6 +474,64 @@ namespace KMC.MissionControl.Cards
                     _drawCount);
         }
 
+        private static Bitmap CreateBitmap(
+            Size size)
+        {
+            return new Bitmap(
+                size.Width,
+                size.Height,
+                PixelFormat.Format32bppPArgb);
+        }
+
+        private static Rectangle GetLocalBounds(
+            Bitmap bitmap)
+        {
+            return new Rectangle(
+                0,
+                0,
+                bitmap.Width,
+                bitmap.Height);
+        }
+
+        private static void ConfigureGraphics(
+            Graphics graphics,
+            MissionRenderContext parentContext)
+        {
+            graphics.SmoothingMode =
+                SmoothingMode.AntiAlias;
+
+            graphics.PixelOffsetMode =
+                PixelOffsetMode.HighQuality;
+
+            graphics.InterpolationMode =
+                InterpolationMode.HighQualityBicubic;
+
+            graphics.CompositingMode =
+                CompositingMode.SourceOver;
+
+            graphics.CompositingQuality =
+                CompositingQuality.HighQuality;
+
+            graphics.TextRenderingHint =
+                parentContext.Graphics
+                    .TextRenderingHint;
+        }
+
+        private static MissionRenderContext CreateLocalContext(
+            Graphics graphics,
+            Rectangle localBounds,
+            MissionRenderContext parentContext)
+        {
+            return new MissionRenderContext(
+                graphics,
+                localBounds,
+                parentContext.LargeFont,
+                parentContext.SmallFont,
+                parentContext.PhosphorColor,
+                parentContext.DimPhosphorColor,
+                parentContext.VirtualCanvasSize);
+        }
+
         private void DrawFrame(
             MissionRenderContext context,
             Rectangle bounds)
@@ -385,8 +561,12 @@ namespace KMC.MissionControl.Cards
                     border,
                     bounds.Left,
                     bounds.Top,
-                    Math.Max(0, bounds.Width - 1),
-                    Math.Max(0, bounds.Height - 1));
+                    Math.Max(
+                        0,
+                        bounds.Width - 1),
+                    Math.Max(
+                        0,
+                        bounds.Height - 1));
 
                 context.Graphics.DrawString(
                     Title,
@@ -404,6 +584,28 @@ namespace KMC.MissionControl.Cards
             }
         }
 
+        private void DisposeBitmaps()
+        {
+            if (_staticBitmap != null)
+            {
+                _staticBitmap.Dispose();
+
+                _staticBitmap =
+                    null;
+            }
+
+            if (_dynamicBitmap != null)
+            {
+                _dynamicBitmap.Dispose();
+
+                _dynamicBitmap =
+                    null;
+            }
+
+            _cachedBitmapSize =
+                Size.Empty;
+        }
+
         private static double UpdateRunningAverage(
             double currentAverage,
             double sample,
@@ -414,8 +616,10 @@ namespace KMC.MissionControl.Cards
                 return sample;
             }
 
-            return currentAverage +
-                (sample - currentAverage) /
+            return
+                currentAverage +
+                (sample -
+                 currentAverage) /
                 sampleCount;
         }
     }
