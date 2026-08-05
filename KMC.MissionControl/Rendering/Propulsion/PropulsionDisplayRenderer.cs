@@ -1681,6 +1681,11 @@ namespace KMC.MissionControl.Rendering.Propulsion
             }
         }
 
+        /// <summary>
+        /// Draws scalable SRB bank schematics rather than one decorative
+        /// booster body per side. The total booster count is divided as evenly
+        /// as possible between Bank A and Bank B.
+        /// </summary>
         private static void DrawSolidBoosterPair(
             Graphics graphics,
             Rectangle flowBounds,
@@ -1691,133 +1696,445 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Font labelFont,
             Font smallFont)
         {
-            int boosterWidth =
+            int totalCount =
                 Math.Max(
-                    42,
+                    0,
+                    telemetry.BoosterCount);
+
+            int bankACount =
+                (totalCount + 1) /
+                2;
+
+            int bankBCount =
+                totalCount -
+                bankACount;
+
+            int bankWidth =
+                Math.Max(
+                    210,
                     Math.Min(
-                        58,
-                        flowBounds.Width / 24));
+                        300,
+                        flowBounds.Width /
+                        5));
 
-            int boosterHeight =
+            int bankHeight =
                 Math.Max(
-                    118,
+                    142,
                     Math.Min(
-                        160,
-                        flowBounds.Height * 42 / 100));
+                        176,
+                        flowBounds.Height *
+                        38 /
+                        100));
 
-            int horizontalOffset =
+            int bankTop =
                 Math.Max(
-                    82,
-                    flowBounds.Width / 13);
-
-            /*
-             * Keep the SRB bodies below the horizontal LF/OX plumbing.
-             * The nose cones begin beneath the mixer instead of intersecting
-             * the pump lines.
-             */
-            int boosterTop =
-                Math.Max(
-                    mixer.Bottom + 24,
-                    flowBounds.Top +
-                    flowBounds.Height / 4);
+                    chamber.Bottom + 38,
+                    mixer.Bottom + 128);
 
             int maximumTop =
                 flowBounds.Bottom -
-                boosterHeight -
-                58;
+                bankHeight -
+                16;
 
-            boosterTop =
+            bankTop =
                 Math.Min(
-                    boosterTop,
+                    bankTop,
                     maximumTop);
 
-            Rectangle left =
+            int horizontalGap =
+                Math.Max(
+                    80,
+                    flowBounds.Width /
+                    12);
+
+            Rectangle bankA =
                 new Rectangle(
                     mixer.Left -
-                    horizontalOffset -
-                    boosterWidth,
-                    boosterTop,
-                    boosterWidth,
-                    boosterHeight);
+                    horizontalGap -
+                    bankWidth,
+                    bankTop,
+                    bankWidth,
+                    bankHeight);
 
-            Rectangle right =
+            Rectangle bankB =
                 new Rectangle(
                     mixer.Right +
-                    horizontalOffset,
-                    boosterTop,
-                    boosterWidth,
-                    boosterHeight);
+                    horizontalGap,
+                    bankTop,
+                    bankWidth,
+                    bankHeight);
 
-            DrawSolidBooster(
+            /*
+             * Clamp both banks inside the flow panel while retaining symmetry
+             * around the main thrust chamber.
+             */
+            if (bankA.Left <
+                flowBounds.Left + 34)
+            {
+                bankA.X =
+                    flowBounds.Left + 34;
+            }
+
+            if (bankB.Right >
+                flowBounds.Right - 34)
+            {
+                bankB.X =
+                    flowBounds.Right -
+                    34 -
+                    bankB.Width;
+            }
+
+            DrawSolidBoosterBank(
                 graphics,
-                left,
+                bankA,
+                "SRB BANK A",
+                bankACount,
                 telemetry.LeftBurning,
-                color,
-                labelFont,
-                smallFont);
-
-            DrawSolidBooster(
-                graphics,
-                right,
-                telemetry.RightBurning,
-                color,
-                labelFont,
-                smallFont);
-
-            int barWidth =
-                Math.Max(
-                    220,
-                    Math.Min(
-                        280,
-                        flowBounds.Width / 5));
-
-            int barHeight =
-                78;
-
-            int barTop =
-                Math.Min(
-                    flowBounds.Bottom -
-                    barHeight,
-                    Math.Max(
-                        left.Bottom,
-                        right.Bottom) +
-                    38);
-
-            Rectangle leftBar =
-                new Rectangle(
-                    left.Left +
-                    left.Width / 2 -
-                    barWidth / 2,
-                    barTop,
-                    barWidth,
-                    barHeight);
-
-            Rectangle rightBar =
-                new Rectangle(
-                    right.Left +
-                    right.Width / 2 -
-                    barWidth / 2,
-                    barTop,
-                    barWidth,
-                    barHeight);
-
-            DrawIndividualSolidFuelBar(
-                graphics,
-                leftBar,
-                "SRB LEFT",
                 telemetry.LeftAmount,
                 telemetry.LeftCapacity,
                 color,
+                labelFont,
                 smallFont);
 
-            DrawIndividualSolidFuelBar(
+            DrawSolidBoosterBank(
                 graphics,
-                rightBar,
-                "SRB RIGHT",
+                bankB,
+                "SRB BANK B",
+                bankBCount,
+                telemetry.RightBurning,
                 telemetry.RightAmount,
                 telemetry.RightCapacity,
                 color,
+                labelFont,
                 smallFont);
+        }
+
+        private static void DrawSolidBoosterBank(
+            Graphics graphics,
+            Rectangle bounds,
+            string title,
+            int boosterCount,
+            bool burning,
+            double amount,
+            double capacity,
+            Color color,
+            Font labelFont,
+            Font smallFont)
+        {
+            double fraction =
+                Fraction(
+                    amount,
+                    capacity);
+
+            Color activeColor =
+                burning
+                    ? color
+                    : Color.FromArgb(
+                        125,
+                        color);
+
+            Rectangle titleBounds =
+                new Rectangle(
+                    bounds.Left + 6,
+                    bounds.Top + 4,
+                    bounds.Width - 12,
+                    22);
+
+            Rectangle countBounds =
+                new Rectangle(
+                    bounds.Left + 6,
+                    titleBounds.Bottom,
+                    bounds.Width - 12,
+                    18);
+
+            Rectangle dotArea =
+                new Rectangle(
+                    bounds.Left + 16,
+                    countBounds.Bottom + 6,
+                    bounds.Width - 32,
+                    Math.Max(
+                        40,
+                        bounds.Height - 92));
+
+            Rectangle meter =
+                new Rectangle(
+                    bounds.Left + 12,
+                    bounds.Bottom - 24,
+                    bounds.Width - 24,
+                    10);
+
+            Rectangle percentBounds =
+                new Rectangle(
+                    bounds.Left + 6,
+                    meter.Top - 21,
+                    bounds.Width - 12,
+                    18);
+
+            using (Pen outline =
+                new Pen(
+                    Color.FromArgb(
+                        150,
+                        color),
+                    1.2f))
+            using (Pen meterOutline =
+                new Pen(
+                    color,
+                    1.2f))
+            using (SolidBrush titleBrush =
+                new SolidBrush(
+                    activeColor))
+            using (SolidBrush dimBrush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        175,
+                        color)))
+            using (SolidBrush meterFill =
+                new SolidBrush(
+                    Color.FromArgb(
+                        burning
+                            ? 180
+                            : 105,
+                        color)))
+            using (StringFormat centered =
+                new StringFormat
+                {
+                    Alignment =
+                        StringAlignment.Center,
+                    LineAlignment =
+                        StringAlignment.Center,
+                    FormatFlags =
+                        StringFormatFlags.NoWrap
+                })
+            {
+                graphics.DrawRectangle(
+                    outline,
+                    bounds);
+
+                graphics.DrawString(
+                    title,
+                    labelFont,
+                    titleBrush,
+                    titleBounds,
+                    centered);
+
+                graphics.DrawString(
+                    boosterCount.ToString("00") +
+                    (boosterCount == 1
+                        ? " BOOSTER"
+                        : " BOOSTERS"),
+                    smallFont,
+                    dimBrush,
+                    countBounds,
+                    centered);
+
+                DrawBoosterDots(
+                    graphics,
+                    dotArea,
+                    boosterCount,
+                    burning,
+                    color);
+
+                graphics.DrawString(
+                    amount.ToString("0.0") +
+                    " / " +
+                    capacity.ToString("0.0") +
+                    "   " +
+                    (fraction * 100.0)
+                        .ToString("0") +
+                    "%",
+                    smallFont,
+                    titleBrush,
+                    percentBounds,
+                    centered);
+
+                graphics.DrawRectangle(
+                    meterOutline,
+                    meter);
+
+                int fillWidth =
+                    (int)Math.Round(
+                        fraction *
+                        Math.Max(
+                            0,
+                            meter.Width - 2));
+
+                if (fillWidth > 0)
+                {
+                    graphics.FillRectangle(
+                        meterFill,
+                        new Rectangle(
+                            meter.Left + 1,
+                            meter.Top + 1,
+                            fillWidth,
+                            Math.Max(
+                                1,
+                                meter.Height - 2)));
+                }
+            }
+        }
+
+        private static void DrawBoosterDots(
+            Graphics graphics,
+            Rectangle bounds,
+            int boosterCount,
+            bool burning,
+            Color color)
+        {
+            if (boosterCount <= 0)
+            {
+                using (SolidBrush emptyBrush =
+                    new SolidBrush(
+                        Color.FromArgb(
+                            95,
+                            color)))
+                using (StringFormat centered =
+                    new StringFormat
+                    {
+                        Alignment =
+                            StringAlignment.Center,
+                        LineAlignment =
+                            StringAlignment.Center
+                    })
+                using (Font emptyFont =
+                    new Font(
+                        FontFamily.GenericMonospace,
+                        9.0f,
+                        FontStyle.Bold,
+                        GraphicsUnit.Point))
+                {
+                    graphics.DrawString(
+                        "--",
+                        emptyFont,
+                        emptyBrush,
+                        bounds,
+                        centered);
+                }
+
+                return;
+            }
+
+            int columns =
+                boosterCount <= 4
+                    ? boosterCount
+                    : (int)Math.Ceiling(
+                        boosterCount /
+                        2.0);
+
+            int rows =
+                boosterCount <= 4
+                    ? 1
+                    : 2;
+
+            int horizontalSpacing =
+                Math.Max(
+                    22,
+                    bounds.Width /
+                    Math.Max(
+                        1,
+                        columns));
+
+            int verticalSpacing =
+                Math.Max(
+                    22,
+                    bounds.Height /
+                    Math.Max(
+                        1,
+                        rows));
+
+            int diameter =
+                Math.Max(
+                    12,
+                    Math.Min(
+                        22,
+                        Math.Min(
+                            horizontalSpacing - 8,
+                            verticalSpacing - 8)));
+
+            Color dotColor =
+                burning
+                    ? color
+                    : Color.FromArgb(
+                        115,
+                        color);
+
+            using (Pen dotPen =
+                new Pen(
+                    dotColor,
+                    burning
+                        ? 2.2f
+                        : 1.4f))
+            using (SolidBrush dotFill =
+                new SolidBrush(
+                    Color.FromArgb(
+                        burning
+                            ? 105
+                            : 28,
+                        dotColor)))
+            {
+                int remaining =
+                    boosterCount;
+
+                for (int row = 0;
+                     row < rows &&
+                     remaining > 0;
+                     row++)
+                {
+                    int itemsThisRow =
+                        rows == 1
+                            ? remaining
+                            : Math.Min(
+                                columns,
+                                remaining);
+
+                    int rowWidth =
+                        itemsThisRow *
+                        horizontalSpacing;
+
+                    int startX =
+                        bounds.Left +
+                        (bounds.Width -
+                         rowWidth) /
+                        2 +
+                        (horizontalSpacing -
+                         diameter) /
+                        2;
+
+                    int centerY =
+                        bounds.Top +
+                        (row +
+                         1) *
+                        bounds.Height /
+                        (rows +
+                         1);
+
+                    for (int column = 0;
+                         column < itemsThisRow;
+                         column++)
+                    {
+                        Rectangle dot =
+                            new Rectangle(
+                                startX +
+                                column *
+                                horizontalSpacing,
+                                centerY -
+                                diameter /
+                                2,
+                                diameter,
+                                diameter);
+
+                        graphics.FillEllipse(
+                            dotFill,
+                            dot);
+
+                        graphics.DrawEllipse(
+                            dotPen,
+                            dot);
+                    }
+
+                    remaining -=
+                        itemsThisRow;
+                }
+            }
         }
 
         private static void DrawSolidBooster(
