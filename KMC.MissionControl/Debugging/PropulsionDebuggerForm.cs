@@ -19,6 +19,7 @@ namespace KMC.MissionControl.Debugging
         private readonly TextBox _overview;
         private readonly DataGridView _engines;
         private readonly DataGridView _resources;
+        private readonly DataGridView _projection;
         private readonly TextBox _raw;
         private readonly CheckBox _autoRefresh;
         private readonly Timer _timer;
@@ -77,6 +78,9 @@ namespace KMC.MissionControl.Debugging
             _resources =
                 CreateGrid();
 
+            _projection =
+                CreateGrid();
+
             _raw =
                 CreateTextView();
 
@@ -94,6 +98,11 @@ namespace KMC.MissionControl.Debugging
                 CreatePage(
                     "RESOURCES",
                     _resources));
+
+            _tabs.TabPages.Add(
+                CreatePage(
+                    "ENGINE PROJECTION",
+                    _projection));
 
             _tabs.TabPages.Add(
                 CreatePage(
@@ -261,6 +270,9 @@ namespace KMC.MissionControl.Debugging
             PopulateResources(
                 telemetry,
                 topology);
+
+            PopulateProjection(
+                analysis);
 
             _raw.Text =
                 BuildRawSnapshot(
@@ -567,6 +579,162 @@ namespace KMC.MissionControl.Debugging
                         node.AllowsCrossFeed);
                 }
             }
+        }
+
+        private void PopulateProjection(
+            PropulsionAnalysis analysis)
+        {
+            _projection.Columns.Clear();
+            _projection.Rows.Clear();
+
+            AddColumn(
+                _projection,
+                "INDEX");
+
+            if (analysis == null ||
+                analysis.EngineCluster == null ||
+                analysis.EngineCluster.Engines == null)
+            {
+                return;
+            }
+
+            EngineClusterProjection cluster =
+                analysis.EngineCluster;
+
+            Type pointType =
+                typeof(EngineProjectionPoint);
+
+            PropertyInfo[] properties =
+                pointType.GetProperties(
+                    BindingFlags.Instance |
+                    BindingFlags.Public);
+
+            Array.Sort(
+                properties,
+                delegate(
+                    PropertyInfo left,
+                    PropertyInfo right)
+                {
+                    return string.Compare(
+                        left.Name,
+                        right.Name,
+                        StringComparison.Ordinal);
+                });
+
+            for (int propertyIndex = 0;
+                 propertyIndex < properties.Length;
+                 propertyIndex++)
+            {
+                PropertyInfo property =
+                    properties[propertyIndex];
+
+                if (property.CanRead &&
+                    property.GetIndexParameters().Length == 0)
+                {
+                    AddColumn(
+                        _projection,
+                        property.Name);
+                }
+            }
+
+            for (int engineIndex = 0;
+                 engineIndex < cluster.Engines.Count;
+                 engineIndex++)
+            {
+                EngineProjectionPoint point =
+                    cluster.Engines[engineIndex];
+
+                object[] values =
+                    new object[
+                        1 +
+                        _projection.Columns.Count -
+                        1];
+
+                values[0] =
+                    engineIndex;
+
+                int valueIndex =
+                    1;
+
+                for (int propertyIndex = 0;
+                     propertyIndex < properties.Length;
+                     propertyIndex++)
+                {
+                    PropertyInfo property =
+                        properties[propertyIndex];
+
+                    if (!property.CanRead ||
+                        property.GetIndexParameters().Length != 0)
+                    {
+                        continue;
+                    }
+
+                    object value;
+
+                    try
+                    {
+                        value =
+                            point != null
+                                ? property.GetValue(
+                                    point,
+                                    null)
+                                : null;
+                    }
+                    catch (Exception ex)
+                    {
+                        value =
+                            "<ERROR " +
+                            ex.GetType().Name +
+                            ">";
+                    }
+
+                    values[valueIndex++] =
+                        FormatProjectionValue(
+                            value);
+                }
+
+                _projection.Rows.Add(
+                    values);
+            }
+
+            _projection.Tag =
+                "DISPLAY=" +
+                cluster.DisplayName +
+                "; ACT STAGE=" +
+                cluster.ActivationStage +
+                "; SEP STAGE=" +
+                cluster.SeparationStage +
+                "; FALLBACK AXIS=" +
+                cluster.UsedFallbackAxis;
+        }
+
+        private static object FormatProjectionValue(
+            object value)
+        {
+            if (value == null)
+            {
+                return "<NULL>";
+            }
+
+            double? doubleValue =
+                value as double?;
+
+            if (doubleValue.HasValue)
+            {
+                return doubleValue.Value
+                    .ToString("0.######");
+            }
+
+            float? floatValue =
+                value as float?;
+
+            if (floatValue.HasValue)
+            {
+                return floatValue.Value
+                    .ToString("0.######");
+            }
+
+            return value;
         }
 
         private static string BuildRawSnapshot(
