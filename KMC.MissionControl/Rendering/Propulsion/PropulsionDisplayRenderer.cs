@@ -1123,23 +1123,29 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
             int barWidth =
                 Math.Max(
-                    116,
+                    220,
                     Math.Min(
-                        170,
-                        flowBounds.Width / 8));
+                        280,
+                        flowBounds.Width / 5));
 
             int barHeight =
-                38;
+                78;
+
+            int barTop =
+                Math.Min(
+                    flowBounds.Bottom -
+                    barHeight,
+                    Math.Max(
+                        left.Bottom,
+                        right.Bottom) +
+                    38);
 
             Rectangle leftBar =
                 new Rectangle(
                     left.Left +
                     left.Width / 2 -
                     barWidth / 2,
-                    Math.Min(
-                        flowBounds.Bottom -
-                        barHeight,
-                        left.Bottom + 10),
+                    barTop,
                     barWidth,
                     barHeight);
 
@@ -1148,17 +1154,14 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     right.Left +
                     right.Width / 2 -
                     barWidth / 2,
-                    Math.Min(
-                        flowBounds.Bottom -
-                        barHeight,
-                        right.Bottom + 10),
+                    barTop,
                     barWidth,
                     barHeight);
 
             DrawIndividualSolidFuelBar(
                 graphics,
                 leftBar,
-                "SOLID FUEL L",
+                "SRB LEFT",
                 telemetry.LeftAmount,
                 telemetry.LeftCapacity,
                 color,
@@ -1167,7 +1170,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
             DrawIndividualSolidFuelBar(
                 graphics,
                 rightBar,
-                "SOLID FUEL R",
+                "SRB RIGHT",
                 telemetry.RightAmount,
                 telemetry.RightCapacity,
                 color,
@@ -1387,14 +1390,45 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     amount,
                     capacity);
 
+            /*
+             * Large, readable four-zone layout:
+             *
+             *  Title                    Percent
+             *  Amount / Capacity
+             *  Fuel meter
+             *
+             * Each rectangle is separated vertically and the title/percent
+             * share a row without overlapping.
+             */
+            Rectangle titleBounds =
+                new Rectangle(
+                    bounds.Left + 8,
+                    bounds.Top + 5,
+                    bounds.Width * 62 / 100,
+                    21);
+
+            Rectangle percentBounds =
+                new Rectangle(
+                    titleBounds.Right,
+                    bounds.Top + 5,
+                    bounds.Right -
+                    titleBounds.Right -
+                    8,
+                    21);
+
+            Rectangle valueBounds =
+                new Rectangle(
+                    bounds.Left + 8,
+                    bounds.Top + 29,
+                    bounds.Width - 16,
+                    21);
+
             Rectangle meter =
                 new Rectangle(
-                    bounds.Left + 5,
-                    bounds.Bottom - 13,
-                    Math.Max(
-                        1,
-                        bounds.Width - 10),
-                    9);
+                    bounds.Left + 8,
+                    bounds.Bottom - 17,
+                    bounds.Width - 16,
+                    10);
 
             int fillWidth =
                 (int)Math.Round(
@@ -1403,25 +1437,64 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         0,
                         meter.Width - 2));
 
+            float readoutSize =
+                Math.Max(
+                    10.5f,
+                    smallFont.SizeInPoints);
+
+            using (Font readoutFont =
+                new Font(
+                    smallFont.FontFamily,
+                    readoutSize,
+                    FontStyle.Bold,
+                    GraphicsUnit.Point))
             using (Pen outline =
                 new Pen(
                     color,
-                    1.2f))
+                    1.4f))
             using (SolidBrush fill =
                 new SolidBrush(
                     Color.FromArgb(
-                        155,
+                        165,
                         color)))
             using (SolidBrush brush =
                 new SolidBrush(
                     color))
+            using (StringFormat leftAligned =
+                new StringFormat
+                {
+                    Alignment =
+                        StringAlignment.Near,
+                    LineAlignment =
+                        StringAlignment.Center,
+                    Trimming =
+                        StringTrimming.EllipsisCharacter,
+                    FormatFlags =
+                        StringFormatFlags.NoWrap
+                })
+            using (StringFormat rightAligned =
+                new StringFormat
+                {
+                    Alignment =
+                        StringAlignment.Far,
+                    LineAlignment =
+                        StringAlignment.Center,
+                    Trimming =
+                        StringTrimming.EllipsisCharacter,
+                    FormatFlags =
+                        StringFormatFlags.NoWrap
+                })
             using (StringFormat centered =
                 new StringFormat
                 {
                     Alignment =
                         StringAlignment.Center,
                     LineAlignment =
-                        StringAlignment.Center
+                        StringAlignment.Center,
+                    Trimming =
+                        StringTrimming.EllipsisCharacter,
+                    FormatFlags =
+                        StringFormatFlags.NoWrap
                 })
             {
                 graphics.DrawRectangle(
@@ -1429,18 +1502,28 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     bounds);
 
                 graphics.DrawString(
-                    title +
-                    "  " +
+                    title,
+                    readoutFont,
+                    brush,
+                    titleBounds,
+                    leftAligned);
+
+                graphics.DrawString(
                     (fraction * 100.0)
                         .ToString("0") +
                     "%",
-                    smallFont,
+                    readoutFont,
                     brush,
-                    new Rectangle(
-                        bounds.Left,
-                        bounds.Top + 1,
-                        bounds.Width,
-                        16),
+                    percentBounds,
+                    rightAligned);
+
+                graphics.DrawString(
+                    amount.ToString("0.0") +
+                    " / " +
+                    capacity.ToString("0.0"),
+                    readoutFont,
+                    brush,
+                    valueBounds,
                     centered);
 
                 graphics.DrawRectangle(
