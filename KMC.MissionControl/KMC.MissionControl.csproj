@@ -70,6 +70,7 @@
     <Compile Include="Cards\Propulsion\PropulsionPerformanceCard.cs" />
     <Compile Include="Cards\Propulsion\PropellantFlowCard.cs" />
     <Compile Include="Cards\Propulsion\PropulsionFooterCard.cs" />
+    <Compile Include="Cards\Propulsion\PropulsionCardChangeTracker.cs" />
 
     <Compile Include="Diagnostics\AscentDebugRecord.cs" />
     <Compile Include="Diagnostics\AscentDebugLogger.cs" />

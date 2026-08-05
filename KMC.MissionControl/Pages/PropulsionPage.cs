@@ -28,13 +28,14 @@ namespace KMC.MissionControl.Pages
             _footerCard =
                 new PropulsionFooterCard();
 
+        private readonly PropulsionCardChangeTracker
+            _changeTracker =
+                new PropulsionCardChangeTracker();
+
         private long _lastTopologyRevision =
             long.MinValue;
 
         private int _lastStage =
-            int.MinValue;
-
-        private int _lastProducingEngineCount =
             int.MinValue;
 
         public string Name
@@ -116,30 +117,38 @@ namespace KMC.MissionControl.Pages
 
             if (topologyChanged)
             {
+                _changeTracker.Reset();
+
                 MarkAllCardsDirty(
                     CardDirtyState.Static |
                     CardDirtyState.Telemetry);
             }
-            else
-            {
-                /*
-                 * The engine-cluster card changes only when thrust-production
-                 * state changes. The remaining cards continue following live
-                 * telemetry conservatively in this first retained-cache build.
-                 */
-                if (telemetry.ProducingThrustEngineCount !=
-                    _lastProducingEngineCount)
-                {
-                    _engineClusterCard.MarkDirty(
-                        CardDirtyState.Telemetry);
-                }
 
+            PropulsionCardChangeSet changes =
+                _changeTracker.Evaluate(
+                    telemetry,
+                    graph);
+
+            if (changes.EngineClusterChanged)
+            {
+                _engineClusterCard.MarkDirty(
+                    CardDirtyState.Telemetry);
+            }
+
+            if (changes.PerformanceChanged)
+            {
                 _performanceCard.MarkDirty(
                     CardDirtyState.Telemetry);
+            }
 
+            if (changes.FlowChanged)
+            {
                 _propellantFlowCard.MarkDirty(
                     CardDirtyState.Telemetry);
+            }
 
+            if (changes.FooterChanged)
+            {
                 _footerCard.MarkDirty(
                     CardDirtyState.Telemetry);
             }
@@ -153,9 +162,6 @@ namespace KMC.MissionControl.Pages
                 graph != null
                     ? graph.CurrentStage
                     : int.MinValue;
-
-            _lastProducingEngineCount =
-                telemetry.ProducingThrustEngineCount;
 
             PropulsionPageRenderModel model =
                 new PropulsionPageRenderModel
