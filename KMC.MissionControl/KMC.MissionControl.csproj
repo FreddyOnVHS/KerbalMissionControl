@@ -116,6 +116,7 @@
     <Compile Include="Telemetry\EngineStateTelemetry.cs" />
     <Compile Include="Telemetry\EngineStateTelemetryStore.cs" />
     <Compile Include="Telemetry\SolidFuelTelemetrySnapshot.cs" />
+    <Compile Include="Telemetry\SrbBankAlertTracker.cs" />
     <Compile Include="Telemetry\SolidFuelTelemetryStore.cs" />
     <Compile Include="Telemetry\SolidFuelTelemetryResolver.cs" />
     <Compile Include="Models\MissionTelemetry.cs" />

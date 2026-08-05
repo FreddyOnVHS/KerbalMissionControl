@@ -1287,10 +1287,13 @@ namespace KMC.MissionControl.Rendering.Propulsion
             SolidFuelTelemetrySnapshot solidFuel =
                 SolidFuelTelemetryResolver.GetSnapshot();
 
+            SrbBankAlertSnapshot srbAlerts =
+                SrbBankAlertTracker.Update(
+                    solidFuel,
+                    DateTime.UtcNow);
+
             bool showSolidBoosters =
-                system != null &&
-                system.HasSolidFuel &&
-                solidFuel.BoosterCount > 0;
+                srbAlerts.ShouldDisplay;
 
             int centerX =
                 bounds.Left +
@@ -1338,7 +1341,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     bounds,
                     mixer,
                     chamber,
-                    solidFuel,
+                    srbAlerts,
                     solid,
                     labelFont,
                     smallFont);
@@ -1691,24 +1694,11 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Rectangle flowBounds,
             Rectangle mixer,
             Rectangle chamber,
-            SolidFuelTelemetrySnapshot telemetry,
+            SrbBankAlertSnapshot alerts,
             Color color,
             Font labelFont,
             Font smallFont)
         {
-            int totalCount =
-                Math.Max(
-                    0,
-                    telemetry.BoosterCount);
-
-            int bankACount =
-                (totalCount + 1) /
-                2;
-
-            int bankBCount =
-                totalCount -
-                bankACount;
-
             int bankWidth =
                 Math.Max(
                     210,
@@ -1764,10 +1754,6 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     bankWidth,
                     bankHeight);
 
-            /*
-             * Clamp both banks inside the flow panel while retaining symmetry
-             * around the main thrust chamber.
-             */
             if (bankA.Left <
                 flowBounds.Left + 34)
             {
@@ -1788,10 +1774,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 graphics,
                 bankA,
                 "SRB BANK A",
-                bankACount,
-                telemetry.LeftBurning,
-                telemetry.LeftAmount,
-                telemetry.LeftCapacity,
+                alerts.BankA,
                 color,
                 labelFont,
                 smallFont);
@@ -1800,10 +1783,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 graphics,
                 bankB,
                 "SRB BANK B",
-                bankBCount,
-                telemetry.RightBurning,
-                telemetry.RightAmount,
-                telemetry.RightCapacity,
+                alerts.BankB,
                 color,
                 labelFont,
                 smallFont);
@@ -1813,21 +1793,54 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Graphics graphics,
             Rectangle bounds,
             string title,
-            int boosterCount,
-            bool burning,
-            double amount,
-            double capacity,
+            SrbBankAlertBankSnapshot bank,
             Color color,
             Font labelFont,
             Font smallFont)
         {
+            if (bank == null ||
+                bank.State ==
+                    SrbBankAlertState.Offline)
+            {
+                return;
+            }
+
+            if (bank.State ==
+                SrbBankAlertState.Separate)
+            {
+                DrawSrbAlertBank(
+                    graphics,
+                    bounds,
+                    title,
+                    "SEPARATE",
+                    bank.FlashOn,
+                    color,
+                    labelFont,
+                    smallFont);
+
+                return;
+            }
+
+            if (bank.State ==
+                SrbBankAlertState.Separated)
+            {
+                DrawSeparatedSrbBank(
+                    graphics,
+                    bounds,
+                    title,
+                    labelFont,
+                    smallFont);
+
+                return;
+            }
+
             double fraction =
                 Fraction(
-                    amount,
-                    capacity);
+                    bank.Amount,
+                    bank.Capacity);
 
             Color activeColor =
-                burning
+                bank.Burning
                     ? color
                     : Color.FromArgb(
                         125,
@@ -1863,13 +1876,26 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     bounds.Width - 24,
                     10);
 
+            /*
+             * Give the numeric fuel readout enough ascent/descent room.
+             * The previous 18-pixel rectangle clipped the tops of the
+             * monospace digits at some DPI/font combinations.
+             */
             Rectangle percentBounds =
                 new Rectangle(
                     bounds.Left + 6,
-                    meter.Top - 21,
+                    meter.Top - 29,
                     bounds.Width - 12,
-                    18);
+                    26);
 
+            using (Font readoutFont =
+                new Font(
+                    smallFont.FontFamily,
+                    Math.Max(
+                        10.0f,
+                        smallFont.SizeInPoints),
+                    FontStyle.Bold,
+                    GraphicsUnit.Point))
             using (Pen outline =
                 new Pen(
                     Color.FromArgb(
@@ -1891,12 +1917,13 @@ namespace KMC.MissionControl.Rendering.Propulsion
             using (SolidBrush meterFill =
                 new SolidBrush(
                     Color.FromArgb(
-                        burning
+                        bank.Burning
                             ? 180
                             : 105,
                         color)))
             using (StringFormat centered =
-                new StringFormat
+                new StringFormat(
+                    StringFormat.GenericTypographic)
                 {
                     Alignment =
                         StringAlignment.Center,
@@ -1918,8 +1945,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     centered);
 
                 graphics.DrawString(
-                    boosterCount.ToString("00") +
-                    (boosterCount == 1
+                    bank.BoosterCount.ToString("00") +
+                    (bank.BoosterCount == 1
                         ? " BOOSTER"
                         : " BOOSTERS"),
                     smallFont,
@@ -1930,19 +1957,19 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 DrawBoosterDots(
                     graphics,
                     dotArea,
-                    boosterCount,
-                    burning,
+                    bank.BoosterCount,
+                    bank.Burning,
                     color);
 
                 graphics.DrawString(
-                    amount.ToString("0.0") +
+                    bank.Amount.ToString("0.0") +
                     " / " +
-                    capacity.ToString("0.0") +
+                    bank.Capacity.ToString("0.0") +
                     "   " +
                     (fraction * 100.0)
                         .ToString("0") +
                     "%",
-                    smallFont,
+                    readoutFont,
                     titleBrush,
                     percentBounds,
                     centered);
@@ -1973,6 +2000,176 @@ namespace KMC.MissionControl.Rendering.Propulsion
             }
         }
 
+        private static void DrawSeparatedSrbBank(
+            Graphics graphics,
+            Rectangle bounds,
+            string title,
+            Font labelFont,
+            Font smallFont)
+        {
+            Color confirmation =
+                Color.FromArgb(
+                    255,
+                    55,
+                    255,
+                    105);
+
+            using (Pen outline =
+                new Pen(
+                    confirmation,
+                    2.5f))
+            using (SolidBrush background =
+                new SolidBrush(
+                    Color.FromArgb(
+                        34,
+                        confirmation)))
+            using (SolidBrush brush =
+                new SolidBrush(
+                    confirmation))
+            using (Font confirmationFont =
+                new Font(
+                    labelFont.FontFamily,
+                    Math.Max(
+                        11.0f,
+                        labelFont.SizeInPoints *
+                        1.15f),
+                    FontStyle.Bold,
+                    GraphicsUnit.Point))
+            using (StringFormat centered =
+                new StringFormat(
+                    StringFormat.GenericTypographic)
+                {
+                    Alignment =
+                        StringAlignment.Center,
+                    LineAlignment =
+                        StringAlignment.Center,
+                    FormatFlags =
+                        StringFormatFlags.NoWrap
+                })
+            {
+                graphics.FillRectangle(
+                    background,
+                    bounds);
+
+                graphics.DrawRectangle(
+                    outline,
+                    bounds);
+
+                graphics.DrawString(
+                    title,
+                    smallFont,
+                    brush,
+                    new Rectangle(
+                        bounds.Left + 6,
+                        bounds.Top + 5,
+                        bounds.Width - 12,
+                        24),
+                    centered);
+
+                graphics.DrawString(
+                    "SEPARATION\nCONFIRMED",
+                    confirmationFont,
+                    brush,
+                new Rectangle(
+                    bounds.Left + 8,
+                    bounds.Top + 32,
+                    bounds.Width - 16,
+                    bounds.Height - 40),
+                centered);
+            }
+        }
+
+        private static void DrawSrbAlertBank(
+            Graphics graphics,
+            Rectangle bounds,
+            string title,
+            string alert,
+            bool flashOn,
+            Color color,
+            Font labelFont,
+            Font smallFont)
+        {
+            Color alertColor =
+                flashOn
+                    ? Color.FromArgb(
+                        255,
+                        255,
+                        75,
+                        45)
+                    : Color.FromArgb(
+                        95,
+                        color);
+
+            using (Pen outline =
+                new Pen(
+                    alertColor,
+                    flashOn
+                        ? 3.0f
+                        : 1.2f))
+            using (SolidBrush background =
+                new SolidBrush(
+                    Color.FromArgb(
+                        flashOn
+                            ? 42
+                            : 8,
+                        alertColor)))
+            using (SolidBrush brush =
+                new SolidBrush(
+                    alertColor))
+            using (Font alertFont =
+                new Font(
+                    labelFont.FontFamily,
+                    Math.Max(
+                        13.0f,
+                        labelFont.SizeInPoints *
+                        1.35f),
+                    FontStyle.Bold,
+                    GraphicsUnit.Point))
+            using (StringFormat centered =
+                new StringFormat
+                {
+                    Alignment =
+                        StringAlignment.Center,
+                    LineAlignment =
+                        StringAlignment.Center,
+                    FormatFlags =
+                        StringFormatFlags.NoWrap
+                })
+            {
+                graphics.FillRectangle(
+                    background,
+                    bounds);
+
+                graphics.DrawRectangle(
+                    outline,
+                    bounds);
+
+                graphics.DrawString(
+                    title,
+                    smallFont,
+                    brush,
+                    new Rectangle(
+                        bounds.Left + 6,
+                        bounds.Top + 5,
+                        bounds.Width - 12,
+                        22),
+                    centered);
+
+                graphics.DrawString(
+                    flashOn
+                        ? alert
+                        : string.Empty,
+                    alertFont,
+                    brush,
+                    new Rectangle(
+                        bounds.Left + 8,
+                        bounds.Top + 34,
+                        bounds.Width - 16,
+                        bounds.Height - 42),
+                    centered);
+            }
+        }
+
         private static void DrawBoosterDots(
             Graphics graphics,
             Rectangle bounds,
@@ -1992,6 +2189,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     {
                         Alignment =
                             StringAlignment.Center,
+
                         LineAlignment =
                             StringAlignment.Center
                     })
@@ -2101,11 +2299,9 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
                     int centerY =
                         bounds.Top +
-                        (row +
-                         1) *
+                        (row + 1) *
                         bounds.Height /
-                        (rows +
-                         1);
+                        (rows + 1);
 
                     for (int column = 0;
                          column < itemsThisRow;

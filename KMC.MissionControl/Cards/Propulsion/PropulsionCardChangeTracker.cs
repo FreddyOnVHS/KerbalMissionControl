@@ -237,7 +237,11 @@ namespace KMC.MissionControl.Cards.Propulsion
                     : 0L,
                 solidFuel.RightBurning
                     ? 1L
-                    : 0L);
+                    : 0L,
+                SrbBankAlertTracker.Update(
+                    solidFuel,
+                    DateTime.UtcNow)
+                    .AnimationRevision);
         }
 
         private static string BuildFooterSignature(
