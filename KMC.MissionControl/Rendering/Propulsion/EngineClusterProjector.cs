@@ -8,7 +8,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
     /// <summary>
     /// Projects the propulsion engines relevant to the current propulsion
     /// phase using a stable engine-bell view and the live telemetry stage.
-    /// Future-stage engines and older propulsion groups are hidden.
+    /// Future-stage, separated, and older propulsion groups are hidden.
     /// </summary>
     public sealed class EngineClusterProjector
     {
@@ -36,14 +36,22 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 return result;
             }
 
+            /*
+             * Topology can remain stale briefly after a staging event. Use
+             * the live stage to reject engines whose separation event has
+             * already occurred before selecting a propulsion stage.
+             */
             List<PropulsionGraphNode> allEngines =
                 graph.Nodes
                     .Where(
                         node =>
-                            node.Category ==
+                            (node.Category ==
                                 VesselNodeCategory.Engine ||
-                            node.Category ==
-                                VesselNodeCategory.SolidBooster)
+                             node.Category ==
+                                VesselNodeCategory.SolidBooster) &&
+                            !HasSeparated(
+                                node,
+                                liveCurrentStage))
                     .ToList();
 
             int selectedStage =
@@ -555,6 +563,30 @@ namespace KMC.MissionControl.Rendering.Propulsion
             public double Angle;
             public double NormalizedX;
             public double NormalizedY;
+        }
+
+        /// <summary>
+        /// Returns true once the live staging sequence has reached an
+        /// engine's separation stage.
+        ///
+        /// KSP stage numbers decrease as staging progresses. An engine with
+        /// SeparationStage 1 is attached while CurrentStage is 2, but it must
+        /// be treated as detached as soon as CurrentStage becomes 1—even if
+        /// the topology packet still contains the old part briefly.
+        /// </summary>
+        private static bool HasSeparated(
+            PropulsionGraphNode node,
+            int liveCurrentStage)
+        {
+            if (node == null ||
+                node.SeparationStage < 0 ||
+                liveCurrentStage < 0)
+            {
+                return false;
+            }
+
+            return liveCurrentStage <=
+                node.SeparationStage;
         }
 
         /// <summary>
