@@ -279,7 +279,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     "STAGE " +
                     cluster.ActivationStage
                         .ToString("00") +
-                    "  •  TOP VIEW",
+                    "  •  ENGINE BELL VIEW",
                     smallFont,
                     detailBrush,
                     new Rectangle(
@@ -344,7 +344,9 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Font detailFont)
         {
             using (Pen outer =
-                new Pen(color, 2.0f))
+                new Pen(
+                    color,
+                    2.0f))
             using (Pen inner =
                 new Pen(
                     Color.FromArgb(
@@ -352,14 +354,19 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         color),
                     1.0f))
             using (SolidBrush brush =
-                new SolidBrush(color))
+                new SolidBrush(
+                    color))
             using (StringFormat centered =
                 new StringFormat
                 {
                     Alignment =
                         StringAlignment.Center,
                     LineAlignment =
-                        StringAlignment.Center
+                        StringAlignment.Center,
+                    Trimming =
+                        StringTrimming.EllipsisCharacter,
+                    FormatFlags =
+                        StringFormatFlags.NoWrap
                 })
             {
                 graphics.DrawEllipse(
@@ -378,7 +385,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
                 graphics.DrawString(
                     point.DisplayNumber
-                        .ToString(),
+                        .ToString("00"),
                     numberFont,
                     brush,
                     bounds,
@@ -386,20 +393,88 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
                 Rectangle tag =
                     new Rectangle(
-                        bounds.Left - 20,
-                        bounds.Bottom + 1,
-                        bounds.Width + 40,
-                        17);
+                        bounds.Left - 25,
+                        bounds.Bottom + 2,
+                        bounds.Width + 50,
+                        18);
 
                 graphics.DrawString(
-                    Shorten(
-                        point.DisplayName,
-                        10),
+                    CreateEngineTag(
+                        point),
                     detailFont,
                     brush,
                     tag,
                     centered);
             }
+        }
+
+        private static string CreateEngineTag(
+            EngineProjectionPoint point)
+        {
+            string prefix =
+                CreateEnginePrefix(
+                    point != null
+                        ? point.DisplayName
+                        : string.Empty);
+
+            return prefix +
+                point.DisplayNumber
+                    .ToString("00");
+        }
+
+        private static string CreateEnginePrefix(
+            string name)
+        {
+            if (string.IsNullOrWhiteSpace(
+                    name))
+            {
+                return "E";
+            }
+
+            string upper =
+                name.Trim()
+                    .ToUpperInvariant();
+
+            if (upper.StartsWith("THUMPER", StringComparison.Ordinal))
+            {
+                return "T";
+            }
+
+            if (upper.StartsWith("KICKBACK", StringComparison.Ordinal))
+            {
+                return "K";
+            }
+
+            if (upper.StartsWith("SEPARATRON", StringComparison.Ordinal))
+            {
+                return "S";
+            }
+
+            if (upper.StartsWith("SKIPPER", StringComparison.Ordinal))
+            {
+                return "SK";
+            }
+
+            if (upper.StartsWith("TERRIER", StringComparison.Ordinal))
+            {
+                return "TR";
+            }
+
+            if (upper.StartsWith("SWIVEL", StringComparison.Ordinal))
+            {
+                return "SW";
+            }
+
+            if (upper.StartsWith("RELIANT", StringComparison.Ordinal))
+            {
+                return "R";
+            }
+
+            return upper.Substring(
+                0,
+                Math.Min(
+                    2,
+                    upper.Length));
         }
 
         internal static void DrawPerformance(

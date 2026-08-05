@@ -13,7 +13,6 @@ namespace KMC.MissionControl.Rendering.Propulsion
     public sealed class EngineClusterProjector
     {
         private const double MinimumSpread = 0.0001;
-        private const double CollisionDistance = 0.16;
 
         public EngineClusterProjection Build(
             PropulsionRenderGraph graph)
@@ -108,52 +107,22 @@ namespace KMC.MissionControl.Rendering.Propulsion
             result.UsedFallbackAxis =
                 false;
 
-            double centerA =
-                engines.Average(
-                    node => pair.ReadA(node));
-
-            double centerB =
-                engines.Average(
-                    node => pair.ReadB(node));
-
-            double maximumRadius =
-                0.0;
+            List<EngineLayoutPoint> layout =
+                BuildRadialLayout(
+                    engines,
+                    pair);
 
             for (int index = 0;
-                 index < engines.Count;
+                 index < layout.Count;
                  index++)
             {
-                double a =
-                    pair.ReadA(engines[index]) -
-                    centerA;
+                EngineLayoutPoint item =
+                    layout[index];
 
-                double b =
-                    pair.ReadB(engines[index]) -
-                    centerB;
-
-                maximumRadius =
-                    Math.Max(
-                        maximumRadius,
-                        Math.Sqrt(
-                            a * a +
-                            b * b));
-            }
-
-            if (maximumRadius <
-                MinimumSpread)
-            {
-                maximumRadius =
-                    1.0;
-            }
-
-            for (int index = 0;
-                 index < engines.Count;
-                 index++)
-            {
                 PropulsionGraphNode node =
-                    engines[index];
+                    item.Node;
 
-                EngineProjectionPoint point =
+                result.Engines.Add(
                     new EngineProjectionPoint
                     {
                         PartId =
@@ -170,37 +139,291 @@ namespace KMC.MissionControl.Rendering.Propulsion
                             node.SeparationStage,
 
                         NormalizedX =
-                            (pair.ReadA(node) -
-                             centerA) /
-                            maximumRadius,
+                            item.NormalizedX,
 
                         NormalizedY =
-                            -(pair.ReadB(node) -
-                              centerB) /
-                            maximumRadius,
+                            item.NormalizedY,
 
                         DisplayNumber =
                             index + 1
-                    };
-
-                ResolveCollision(
-                    point,
-                    result.Engines);
-
-                result.Engines.Add(
-                    point);
+                    });
             }
 
             return result;
         }
 
-        /// <summary>
-        /// KSP stage numbers decrease as staging progresses. Engines with an
-        /// activation stage below CurrentStage are future engines. Of the
-        /// attached engines already activated, the lowest stage number is the
-        /// most recently activated propulsion group.
-        /// </summary>
+        private static List<EngineLayoutPoint> BuildRadialLayout(
+            IList<PropulsionGraphNode> engines,
+            AxisPair pair)
+        {
+            List<EngineLayoutPoint> points =
+                new List<EngineLayoutPoint>();
+
+            double maximumRadius =
+                0.0;
+
+            for (int index = 0;
+                 index < engines.Count;
+                 index++)
+            {
+                double x =
+                    pair.ReadA(
+                        engines[index]);
+
+                double y =
+                    -pair.ReadB(
+                        engines[index]);
+
+                double radius =
+                    Math.Sqrt(
+                        x * x +
+                        y * y);
+
+                maximumRadius =
+                    Math.Max(
+                        maximumRadius,
+                        radius);
+
+                points.Add(
+                    new EngineLayoutPoint
+                    {
+                        Node =
+                            engines[index],
+
+                        RawRadius =
+                            radius,
+
+                        Angle =
+                            Math.Atan2(
+                                y,
+                                x)
+                    });
+            }
+
+            if (maximumRadius <
+                MinimumSpread)
+            {
+                ArrangeCentralGroup(
+                    points);
+
+                return points;
+            }
+
+            double centerThreshold =
+                Math.Max(
+                    0.05,
+                    maximumRadius *
+                    0.12);
+
+            List<EngineLayoutPoint> central =
+                points
+                    .Where(
+                        item =>
+                            item.RawRadius <=
+                            centerThreshold)
+                    .OrderBy(
+                        item => item.Node.PartId)
+                    .ToList();
+
+            List<EngineLayoutPoint> radial =
+                points
+                    .Where(
+                        item =>
+                            item.RawRadius >
+                            centerThreshold)
+                    .OrderBy(
+                        item => item.RawRadius)
+                    .ThenBy(
+                        item => item.Angle)
+                    .ToList();
+
+            ArrangeCentralGroup(
+                central);
+
+            List<List<EngineLayoutPoint>> rings =
+                BuildRadiusGroups(
+                    radial,
+                    maximumRadius);
+
+            for (int ringIndex = 0;
+                 ringIndex < rings.Count;
+                 ringIndex++)
+            {
+                double displayRadius =
+                    rings.Count == 1
+                        ? 0.78
+                        : 0.48 +
+                          0.42 *
+                          ringIndex /
+                          Math.Max(
+                              1,
+                              rings.Count - 1);
+
+                for (int itemIndex = 0;
+                     itemIndex < rings[ringIndex].Count;
+                     itemIndex++)
+                {
+                    EngineLayoutPoint item =
+                        rings[ringIndex][itemIndex];
+
+                    item.NormalizedX =
+                        Math.Cos(
+                            item.Angle) *
+                        displayRadius;
+
+                    item.NormalizedY =
+                        Math.Sin(
+                            item.Angle) *
+                        displayRadius;
+                }
+            }
+
+            List<EngineLayoutPoint> result =
+                new List<EngineLayoutPoint>();
+
+            result.AddRange(
+                central
+                    .OrderBy(
+                        item => item.Angle)
+                    .ThenBy(
+                        item => item.Node.PartId));
+
+            for (int ringIndex = 0;
+                 ringIndex < rings.Count;
+                 ringIndex++)
+            {
+                result.AddRange(
+                    rings[ringIndex]
+                        .OrderBy(
+                            item => item.Angle)
+                        .ThenBy(
+                            item => item.Node.PartId));
+            }
+
+            return result;
+        }
+
+        private static List<List<EngineLayoutPoint>>
+            BuildRadiusGroups(
+                IList<EngineLayoutPoint> radial,
+                double maximumRadius)
+        {
+            List<List<EngineLayoutPoint>> groups =
+                new List<List<EngineLayoutPoint>>();
+
+            double tolerance =
+                Math.Max(
+                    0.04,
+                    maximumRadius *
+                    0.10);
+
+            for (int index = 0;
+                 index < radial.Count;
+                 index++)
+            {
+                EngineLayoutPoint item =
+                    radial[index];
+
+                if (groups.Count == 0)
+                {
+                    groups.Add(
+                        new List<EngineLayoutPoint>());
+                }
+                else
+                {
+                    List<EngineLayoutPoint> current =
+                        groups[
+                            groups.Count - 1];
+
+                    double averageRadius =
+                        current.Average(
+                            existing =>
+                                existing.RawRadius);
+
+                    if (Math.Abs(
+                            item.RawRadius -
+                            averageRadius) >
+                        tolerance)
+                    {
+                        groups.Add(
+                            new List<EngineLayoutPoint>());
+                    }
+                }
+
+                groups[
+                    groups.Count - 1]
+                    .Add(
+                        item);
+            }
+
+            return groups;
+        }
+
+        private static void ArrangeCentralGroup(
+            IList<EngineLayoutPoint> central)
+        {
+            if (central == null ||
+                central.Count == 0)
+            {
+                return;
+            }
+
+            if (central.Count == 1)
+            {
+                central[0].NormalizedX =
+                    0.0;
+
+                central[0].NormalizedY =
+                    0.0;
+
+                central[0].Angle =
+                    0.0;
+
+                return;
+            }
+
+            double radius =
+                central.Count <= 4
+                    ? 0.16
+                    : 0.23;
+
+            for (int index = 0;
+                 index < central.Count;
+                 index++)
+            {
+                double angle =
+                    -Math.PI / 2.0 +
+                    Math.PI *
+                    2.0 *
+                    index /
+                    central.Count;
+
+                central[index].Angle =
+                    angle;
+
+                central[index].NormalizedX =
+                    Math.Cos(
+                        angle) *
+                    radius;
+
+                central[index].NormalizedY =
+                    Math.Sin(
+                        angle) *
+                    radius;
+            }
+        }
+
+        private sealed class EngineLayoutPoint
+        {
+            public PropulsionGraphNode Node;
+            public double RawRadius;
+            public double Angle;
+            public double NormalizedX;
+            public double NormalizedY;
+        }
+
         private static int SelectRelevantActivationStage(
+
             IList<PropulsionGraphNode> engines,
             int currentStage)
         {
@@ -257,148 +480,6 @@ namespace KMC.MissionControl.Rendering.Propulsion
             }
 
             return stage;
-        }
-
-        private static AxisPair ChooseAxisPair(
-            IList<PropulsionGraphNode> engines)
-        {
-            AxisPair[] pairs =
-            {
-                AxisPair.XZ,
-                AxisPair.XY,
-                AxisPair.ZY
-            };
-
-            AxisPair best =
-                pairs[0];
-
-            double bestArea =
-                -1.0;
-
-            for (int index = 0;
-                 index < pairs.Length;
-                 index++)
-            {
-                AxisPair pair =
-                    pairs[index];
-
-                double area =
-                    Spread(
-                        engines,
-                        pair.ReadA) *
-                    Spread(
-                        engines,
-                        pair.ReadB);
-
-                if (area >
-                    bestArea)
-                {
-                    bestArea =
-                        area;
-
-                    best =
-                        pair;
-                }
-            }
-
-            return bestArea <
-                MinimumSpread
-                    ? AxisPair.Fallback
-                    : best;
-        }
-
-        private static double Spread(
-            IList<PropulsionGraphNode> nodes,
-            Func<PropulsionGraphNode, double> reader)
-        {
-            double minimum =
-                double.MaxValue;
-
-            double maximum =
-                double.MinValue;
-
-            for (int index = 0;
-                 index < nodes.Count;
-                 index++)
-            {
-                double value =
-                    reader(
-                        nodes[index]);
-
-                minimum =
-                    Math.Min(
-                        minimum,
-                        value);
-
-                maximum =
-                    Math.Max(
-                        maximum,
-                        value);
-            }
-
-            return maximum -
-                minimum;
-        }
-
-        private static void ResolveCollision(
-            EngineProjectionPoint point,
-            IList<EngineProjectionPoint> existing)
-        {
-            for (int attempt = 0;
-                 attempt < 12;
-                 attempt++)
-            {
-                bool collision =
-                    false;
-
-                for (int index = 0;
-                     index < existing.Count;
-                     index++)
-                {
-                    double dx =
-                        point.NormalizedX -
-                        existing[index].NormalizedX;
-
-                    double dy =
-                        point.NormalizedY -
-                        existing[index].NormalizedY;
-
-                    if (Math.Sqrt(
-                            dx * dx +
-                            dy * dy) <
-                        CollisionDistance)
-                    {
-                        collision =
-                            true;
-
-                        break;
-                    }
-                }
-
-                if (!collision)
-                {
-                    return;
-                }
-
-                double angle =
-                    (point.DisplayNumber +
-                     attempt) *
-                    Math.PI *
-                    0.61803398875;
-
-                double radius =
-                    CollisionDistance *
-                    (1.0 +
-                     attempt * 0.16);
-
-                point.NormalizedX +=
-                    Math.Cos(angle) *
-                    radius;
-
-                point.NormalizedY +=
-                    Math.Sin(angle) *
-                    radius;
-            }
         }
 
         private static string CreateClusterName(
