@@ -19,6 +19,7 @@ namespace KMC.MissionControl.Debugging
         private readonly TextBox _overview;
         private readonly DataGridView _engines;
         private readonly DataGridView _resources;
+        private readonly DataGridView _engineDiscovery;
         private readonly DataGridView _projection;
         private readonly TextBox _raw;
         private readonly CheckBox _autoRefresh;
@@ -78,6 +79,9 @@ namespace KMC.MissionControl.Debugging
             _resources =
                 CreateGrid();
 
+            _engineDiscovery =
+                CreateGrid();
+
             _projection =
                 CreateGrid();
 
@@ -98,6 +102,11 @@ namespace KMC.MissionControl.Debugging
                 CreatePage(
                     "RESOURCES",
                     _resources));
+
+            _tabs.TabPages.Add(
+                CreatePage(
+                    "ENGINE DISCOVERY",
+                    _engineDiscovery));
 
             _tabs.TabPages.Add(
                 CreatePage(
@@ -270,6 +279,11 @@ namespace KMC.MissionControl.Debugging
             PopulateResources(
                 telemetry,
                 topology);
+
+            PopulateEngineDiscovery(
+                topology,
+                graph,
+                analysis);
 
             PopulateProjection(
                 analysis);
@@ -579,6 +593,459 @@ namespace KMC.MissionControl.Debugging
                         node.AllowsCrossFeed);
                 }
             }
+        }
+
+        private void PopulateEngineDiscovery(
+            VesselTopology topology,
+            PropulsionRenderGraph graph,
+            PropulsionAnalysis analysis)
+        {
+            _engineDiscovery.Columns.Clear();
+            _engineDiscovery.Rows.Clear();
+
+            AddColumn(
+                _engineDiscovery,
+                "PART ID");
+
+            AddColumn(
+                _engineDiscovery,
+                "TITLE");
+
+            AddColumn(
+                _engineDiscovery,
+                "CATEGORY");
+
+            AddColumn(
+                _engineDiscovery,
+                "ROLES");
+
+            AddColumn(
+                _engineDiscovery,
+                "ACT STAGE");
+
+            AddColumn(
+                _engineDiscovery,
+                "SEP STAGE");
+
+            AddColumn(
+                _engineDiscovery,
+                "IN GRAPH");
+
+            AddColumn(
+                _engineDiscovery,
+                "IN GROUPS");
+
+            AddColumn(
+                _engineDiscovery,
+                "IN PROJECTION");
+
+            AddColumn(
+                _engineDiscovery,
+                "RESULT");
+
+            AddColumn(
+                _engineDiscovery,
+                "REASON");
+
+            if (topology == null)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < topology.Nodes.Count;
+                 index++)
+            {
+                VesselTopologyNode node =
+                    topology.Nodes[index];
+
+                if (node == null ||
+                    (node.Category !=
+                        VesselNodeCategory.Engine &&
+                     node.Category !=
+                        VesselNodeCategory.SolidBooster))
+                {
+                    continue;
+                }
+
+                bool inGraph =
+                    FindGraphNode(
+                        graph,
+                        node.PartId) != null;
+
+                bool inGroups =
+                    IsRepresentedInEngineGroups(
+                        analysis,
+                        node);
+
+                bool inProjection =
+                    IsRepresentedInProjection(
+                        analysis,
+                        node);
+
+                string result =
+                    inGraph &&
+                    inGroups &&
+                    inProjection
+                        ? "ACCEPTED"
+                        : "REJECTED";
+
+                string reason =
+                    BuildDiscoveryReason(
+                        node,
+                        inGraph,
+                        inGroups,
+                        inProjection);
+
+                int rowIndex =
+                    _engineDiscovery.Rows.Add(
+                        node.PartId,
+                        node.PartTitle,
+                        node.Category,
+                        node.Roles,
+                        node.ActivationStage,
+                        node.SeparationStage,
+                        inGraph,
+                        inGroups,
+                        inProjection,
+                        result,
+                        reason);
+
+                if (result ==
+                    "REJECTED")
+                {
+                    _engineDiscovery.Rows[
+                        rowIndex]
+                        .DefaultCellStyle
+                        .ForeColor =
+                            Color.FromArgb(
+                                255,
+                                145,
+                                125);
+                }
+            }
+        }
+
+        private static PropulsionGraphNode FindGraphNode(
+            PropulsionRenderGraph graph,
+            uint partId)
+        {
+            if (graph == null)
+            {
+                return null;
+            }
+
+            for (int index = 0;
+                 index < graph.Nodes.Count;
+                 index++)
+            {
+                PropulsionGraphNode node =
+                    graph.Nodes[index];
+
+                if (node != null &&
+                    node.PartId ==
+                    partId)
+                {
+                    return node;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsRepresentedInEngineGroups(
+            PropulsionAnalysis analysis,
+            VesselTopologyNode node)
+        {
+            if (analysis == null ||
+                analysis.SystemModel == null ||
+                node == null)
+            {
+                return false;
+            }
+
+            string expectedName =
+                ExtractEngineDisplayName(
+                    node.PartTitle);
+
+            for (int index = 0;
+                 index <
+                    analysis.SystemModel.EngineGroups.Count;
+                 index++)
+            {
+                PropulsionEngineGroup group =
+                    analysis.SystemModel.EngineGroups[index];
+
+                if (group == null)
+                {
+                    continue;
+                }
+
+                if (group.ActivationStage ==
+                        node.ActivationStage &&
+                    group.SeparationStage ==
+                        node.SeparationStage &&
+                    ContainsIgnoreCase(
+                        group.DisplayName,
+                        expectedName))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsRepresentedInProjection(
+            PropulsionAnalysis analysis,
+            VesselTopologyNode node)
+        {
+            if (analysis == null ||
+                analysis.EngineCluster == null ||
+                analysis.EngineCluster.Engines == null ||
+                node == null)
+            {
+                return false;
+            }
+
+            string expectedName =
+                ExtractEngineDisplayName(
+                    node.PartTitle);
+
+            for (int index = 0;
+                 index <
+                    analysis.EngineCluster.Engines.Count;
+                 index++)
+            {
+                EngineProjectionPoint point =
+                    analysis.EngineCluster.Engines[
+                        index];
+
+                if (point == null)
+                {
+                    continue;
+                }
+
+                object partIdValue =
+                    ReadPublicProperty(
+                        point,
+                        "PartId");
+
+                if (partIdValue != null &&
+                    string.Equals(
+                        Convert.ToString(
+                            partIdValue),
+                        node.PartId.ToString(),
+                        StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                string pointText =
+                    BuildPublicPropertyText(
+                        point);
+
+                if (ContainsIgnoreCase(
+                        pointText,
+                        expectedName) ||
+                    ContainsIgnoreCase(
+                        pointText,
+                        node.PartTitle))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string BuildDiscoveryReason(
+            VesselTopologyNode node,
+            bool inGraph,
+            bool inGroups,
+            bool inProjection)
+        {
+            if (!inGraph)
+            {
+                return
+                    "Topology node was not retained by " +
+                    "PropulsionRenderGraphBuilder.";
+            }
+
+            if (!inGroups)
+            {
+                return
+                    node.Category ==
+                    VesselNodeCategory.SolidBooster
+                        ? "SolidBooster reached the graph but " +
+                          "was not represented by " +
+                          "PropulsionSystemModelBuilder."
+                        : "Engine reached the graph but was not " +
+                          "represented by the system model.";
+            }
+
+            if (!inProjection)
+            {
+                return
+                    node.Category ==
+                    VesselNodeCategory.SolidBooster
+                        ? "SolidBooster reached the graph and " +
+                          "engine groups but was filtered or " +
+                          "collapsed by EngineClusterProjector."
+                        : "Engine reached the graph and groups " +
+                          "but was not emitted by " +
+                          "EngineClusterProjector.";
+            }
+
+            return
+                "Topology, graph, grouping, and projection " +
+                "all contain this propulsion part.";
+        }
+
+        private static string ExtractEngineDisplayName(
+            string title)
+        {
+            if (string.IsNullOrWhiteSpace(
+                    title))
+            {
+                return string.Empty;
+            }
+
+            int firstQuote =
+                title.IndexOf('"');
+
+            if (firstQuote >= 0)
+            {
+                int secondQuote =
+                    title.IndexOf(
+                        '"',
+                        firstQuote + 1);
+
+                if (secondQuote >
+                    firstQuote)
+                {
+                    return title.Substring(
+                        firstQuote + 1,
+                        secondQuote -
+                        firstQuote -
+                        1);
+                }
+            }
+
+            string[] words =
+                title.Split(
+                    new[] { ' ' },
+                    StringSplitOptions
+                        .RemoveEmptyEntries);
+
+            return words.Length > 0
+                ? words[0]
+                : title;
+        }
+
+        private static bool ContainsIgnoreCase(
+            string source,
+            string value)
+        {
+            if (string.IsNullOrEmpty(source) ||
+                string.IsNullOrEmpty(value))
+            {
+                return false;
+            }
+
+            return source.IndexOf(
+                value,
+                StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static object ReadPublicProperty(
+            object instance,
+            string propertyName)
+        {
+            if (instance == null)
+            {
+                return null;
+            }
+
+            PropertyInfo property =
+                instance.GetType().GetProperty(
+                    propertyName,
+                    BindingFlags.Instance |
+                    BindingFlags.Public);
+
+            if (property == null ||
+                !property.CanRead ||
+                property.GetIndexParameters().Length != 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                return property.GetValue(
+                    instance,
+                    null);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string BuildPublicPropertyText(
+            object instance)
+        {
+            if (instance == null)
+            {
+                return string.Empty;
+            }
+
+            StringBuilder builder =
+                new StringBuilder();
+
+            PropertyInfo[] properties =
+                instance.GetType().GetProperties(
+                    BindingFlags.Instance |
+                    BindingFlags.Public);
+
+            for (int index = 0;
+                 index < properties.Length;
+                 index++)
+            {
+                PropertyInfo property =
+                    properties[index];
+
+                if (!property.CanRead ||
+                    property.GetIndexParameters().Length != 0)
+                {
+                    continue;
+                }
+
+                object value;
+
+                try
+                {
+                    value =
+                        property.GetValue(
+                            instance,
+                            null);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (value != null)
+                {
+                    builder.Append(
+                        value);
+
+                    builder.Append(
+                        " ");
+                }
+            }
+
+            return builder.ToString();
         }
 
         private void PopulateProjection(
