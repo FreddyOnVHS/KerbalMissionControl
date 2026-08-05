@@ -100,10 +100,23 @@ namespace KMC.MissionControl.Pages
             PropulsionRenderGraph graph =
                 PropulsionGraphStore.GetCurrent();
 
+            /*
+             * The graph's CurrentStage comes from topology and can remain
+             * stale when a staging event ignites engines without immediately
+             * changing the vessel structure.
+             *
+             * The card page must use the same live-stage cache overload as
+             * the debugger and full-page propulsion renderer.
+             */
+            int liveCurrentStage =
+                telemetry.CurrentStage;
+
             PropulsionAnalysis analysis =
                 graph != null
                     ? PropulsionAnalysisCache
-                        .GetOrBuild(graph)
+                        .GetOrBuild(
+                            graph,
+                            liveCurrentStage)
                     : null;
 
             bool topologyChanged =
@@ -112,7 +125,7 @@ namespace KMC.MissionControl.Pages
                         long.MinValue
                     : graph.TopologyRevision !=
                         _lastTopologyRevision ||
-                      graph.CurrentStage !=
+                      liveCurrentStage !=
                         _lastStage;
 
             if (topologyChanged)
@@ -160,7 +173,7 @@ namespace KMC.MissionControl.Pages
 
             _lastStage =
                 graph != null
-                    ? graph.CurrentStage
+                    ? liveCurrentStage
                     : int.MinValue;
 
             PropulsionPageRenderModel model =
