@@ -50,6 +50,23 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     model,
                     node);
 
+                /*
+                 * The lower LF/OX schematic must count only engines that
+                 * actually consume both LiquidFuel and Oxidizer. Solid
+                 * boosters and other propulsion types remain outside it.
+                 */
+                if (node.Category ==
+                        VesselNodeCategory.Engine &&
+                    UsesPropellant(
+                        node,
+                        "LiquidFuel") &&
+                    UsesPropellant(
+                        node,
+                        "Oxidizer"))
+                {
+                    model.LiquidEngineCount++;
+                }
+
                 if (node.IsSeparationBoundary &&
                     node.SeparationStage >= 0)
                 {
@@ -206,6 +223,31 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         true;
                 }
             }
+        }
+
+        private static bool UsesPropellant(
+            PropulsionGraphNode node,
+            string propellantName)
+        {
+            if (node == null ||
+                node.PropellantNames == null)
+            {
+                return false;
+            }
+
+            for (int index = 0;
+                 index < node.PropellantNames.Count;
+                 index++)
+            {
+                if (EqualsName(
+                        node.PropellantNames[index],
+                        propellantName))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static string CreateEngineName(

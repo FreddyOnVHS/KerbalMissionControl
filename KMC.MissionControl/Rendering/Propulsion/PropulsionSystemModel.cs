@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace KMC.MissionControl.Rendering.Propulsion
 {
@@ -32,6 +32,12 @@ namespace KMC.MissionControl.Rendering.Propulsion
         public int PowerSourceCount { get; set; }
 
         public int DockingPortCount { get; set; }
+
+        /// <summary>
+        /// Number of engines whose propellant requirements contain both
+        /// LiquidFuel and Oxidizer.
+        /// </summary>
+        public int LiquidEngineCount { get; set; }
 
         public bool HasLiquidFuel { get; set; }
 

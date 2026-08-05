@@ -161,7 +161,6 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         -18,
                         -48),
                     system,
-                    cluster,
                     telemetry,
                     labelFont,
                     smallFont,
@@ -1251,7 +1250,6 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Graphics graphics,
             Rectangle bounds,
             PropulsionSystemModel system,
-            EngineClusterProjection cluster,
             MissionTelemetry telemetry,
             Font labelFont,
             Font smallFont,
@@ -1466,9 +1464,11 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 lf);
 
             int liquidEngineCount =
-                CalculateLiquidEngineCount(
-                    cluster,
-                    solidFuel);
+                system != null
+                    ? Math.Max(
+                        0,
+                        system.LiquidEngineCount)
+                    : 0;
 
             DrawBox(
                 graphics,
@@ -1609,69 +1609,6 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     detail.Right,
                     middleY);
             }
-        }
-
-        private static int CalculateLiquidEngineCount(
-            EngineClusterProjection cluster,
-            SolidFuelTelemetrySnapshot solidFuel)
-        {
-            if (cluster == null ||
-                cluster.Engines == null)
-            {
-                return 0;
-            }
-
-            int liquidCount =
-                0;
-
-            int knownCount =
-                0;
-
-            for (int index = 0;
-                 index < cluster.Engines.Count;
-                 index++)
-            {
-                EngineStateTelemetry state =
-                    EngineStateTelemetryStore.GetEngine(
-                        cluster.Engines[index].PartId);
-
-                if (state == null)
-                {
-                    continue;
-                }
-
-                knownCount++;
-
-                if (!state.IsSolidBooster)
-                {
-                    liquidCount++;
-                }
-            }
-
-            if (knownCount ==
-                cluster.Engines.Count)
-            {
-                return liquidCount;
-            }
-
-            /*
-             * Before every per-engine packet arrives, use the attached SRB
-             * count as a conservative fallback. This prevents SRBs from being
-             * counted as LF/OX engines during startup.
-             */
-            int boosterCount =
-                solidFuel != null
-                    ? Math.Max(
-                        0,
-                        solidFuel.BoosterCount)
-                    : 0;
-
-            return Math.Max(
-                liquidCount,
-                Math.Max(
-                    0,
-                    cluster.Engines.Count -
-                    boosterCount));
         }
 
         private static void DrawPumpFlow(
