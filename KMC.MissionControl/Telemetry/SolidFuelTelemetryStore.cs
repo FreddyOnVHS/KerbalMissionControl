@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace KMC.MissionControl.Telemetry
+﻿namespace KMC.MissionControl.Telemetry
 {
     public static class SolidFuelTelemetryStore
     {
@@ -50,7 +48,25 @@ namespace KMC.MissionControl.Telemetry
                         _latest.BoosterCount,
 
                     BurningBoosterCount =
-                        _latest.BurningBoosterCount
+                        _latest.BurningBoosterCount,
+
+                    LeftAmount =
+                        _latest.LeftAmount,
+
+                    LeftCapacity =
+                        _latest.LeftCapacity,
+
+                    LeftBurning =
+                        _latest.LeftBurning,
+
+                    RightAmount =
+                        _latest.RightAmount,
+
+                    RightCapacity =
+                        _latest.RightCapacity,
+
+                    RightBurning =
+                        _latest.RightBurning
                 };
             }
         }

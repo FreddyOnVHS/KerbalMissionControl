@@ -199,8 +199,20 @@ namespace KMC.MissionControl.Cards.Propulsion
                 PercentKey(
                     solidFuel.TotalAmount,
                     solidFuel.TotalCapacity),
+                PercentKey(
+                    solidFuel.LeftAmount,
+                    solidFuel.LeftCapacity),
+                PercentKey(
+                    solidFuel.RightAmount,
+                    solidFuel.RightCapacity),
                 solidFuel.BoosterCount,
-                solidFuel.BurningBoosterCount);
+                solidFuel.BurningBoosterCount,
+                solidFuel.LeftBurning
+                    ? 1L
+                    : 0L,
+                solidFuel.RightBurning
+                    ? 1L
+                    : 0L);
         }
 
         private static string BuildFooterSignature(

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
@@ -15,7 +16,7 @@ namespace KMC.Plugin
     {
         private const int Port = 5057;
         private const float SendIntervalSeconds = 0.1f;
-        private const string ProtocolId = "KMC-SOLID1";
+        private const string ProtocolId = "KMC-SOLID2";
 
         private UdpClient _client;
         private IPEndPoint _endpoint;
@@ -54,12 +55,104 @@ namespace KMC.Plugin
                 return;
             }
 
+            List<BoosterState> boosters =
+                ReadBoosters(
+                    vessel);
+
             double totalAmount = 0.0;
             double totalCapacity = 0.0;
             double activeAmount = 0.0;
             double activeCapacity = 0.0;
-            int boosterCount = 0;
             int burningCount = 0;
+
+            for (int index = 0;
+                 index < boosters.Count;
+                 index++)
+            {
+                BoosterState booster =
+                    boosters[index];
+
+                totalAmount +=
+                    booster.Amount;
+
+                totalCapacity +=
+                    booster.Capacity;
+
+                if (booster.Burning)
+                {
+                    burningCount++;
+
+                    activeAmount +=
+                        booster.Amount;
+
+                    activeCapacity +=
+                        booster.Capacity;
+                }
+            }
+
+            BoosterState left =
+                boosters.Count > 0
+                    ? boosters[0]
+                    : new BoosterState();
+
+            BoosterState right =
+                boosters.Count > 1
+                    ? boosters[
+                        boosters.Count - 1]
+                    : new BoosterState();
+
+            string message =
+                string.Join(
+                    "|",
+                    new[]
+                    {
+                        ProtocolId,
+
+                        DateTime.UtcNow.Ticks.ToString(
+                            CultureInfo.InvariantCulture),
+
+                        Format(totalAmount),
+                        Format(totalCapacity),
+                        Format(activeAmount),
+                        Format(activeCapacity),
+
+                        boosters.Count.ToString(
+                            CultureInfo.InvariantCulture),
+
+                        burningCount.ToString(
+                            CultureInfo.InvariantCulture),
+
+                        Format(left.Amount),
+                        Format(left.Capacity),
+
+                        left.Burning
+                            ? "1"
+                            : "0",
+
+                        Format(right.Amount),
+                        Format(right.Capacity),
+
+                        right.Burning
+                            ? "1"
+                            : "0"
+                    });
+
+            byte[] data =
+                Encoding.UTF8.GetBytes(
+                    message);
+
+            _client.Send(
+                data,
+                data.Length,
+                _endpoint);
+        }
+
+        private static List<BoosterState>
+            ReadBoosters(
+                Vessel vessel)
+        {
+            List<BoosterState> result =
+                new List<BoosterState>();
 
             for (int partIndex = 0;
                  partIndex < vessel.parts.Count;
@@ -84,78 +177,73 @@ namespace KMC.Plugin
                     continue;
                 }
 
-                bool isBooster =
-                    HasSolidEngine(
-                        part,
-                        out bool burning);
+                bool burning;
 
-                if (!isBooster)
+                if (!HasSolidEngine(
+                        part,
+                        out burning))
                 {
                     continue;
                 }
 
-                boosterCount++;
+                double lateralPosition =
+                    GetLateralPosition(
+                        vessel,
+                        part);
 
-                totalAmount +=
-                    Math.Max(
-                        0.0,
-                        solidFuel.amount);
+                result.Add(
+                    new BoosterState
+                    {
+                        Amount =
+                            Math.Max(
+                                0.0,
+                                solidFuel.amount),
 
-                totalCapacity +=
-                    Math.Max(
-                        0.0,
-                        solidFuel.maxAmount);
+                        Capacity =
+                            Math.Max(
+                                0.0,
+                                solidFuel.maxAmount),
 
-                if (burning)
-                {
-                    burningCount++;
+                        Burning =
+                            burning,
 
-                    activeAmount +=
-                        Math.Max(
-                            0.0,
-                            solidFuel.amount);
-
-                    activeCapacity +=
-                        Math.Max(
-                            0.0,
-                            solidFuel.maxAmount);
-                }
+                        LateralPosition =
+                            lateralPosition
+                    });
             }
 
-            string message =
-                string.Join(
-                    "|",
-                    new[]
-                    {
-                        ProtocolId,
-                        DateTime.UtcNow.Ticks.ToString(
-                            CultureInfo.InvariantCulture),
-                        totalAmount.ToString(
-                            "R",
-                            CultureInfo.InvariantCulture),
-                        totalCapacity.ToString(
-                            "R",
-                            CultureInfo.InvariantCulture),
-                        activeAmount.ToString(
-                            "R",
-                            CultureInfo.InvariantCulture),
-                        activeCapacity.ToString(
-                            "R",
-                            CultureInfo.InvariantCulture),
-                        boosterCount.ToString(
-                            CultureInfo.InvariantCulture),
-                        burningCount.ToString(
-                            CultureInfo.InvariantCulture)
-                    });
+            result.Sort(
+                delegate(
+                    BoosterState left,
+                    BoosterState right)
+                {
+                    return left.LateralPosition
+                        .CompareTo(
+                            right.LateralPosition);
+                });
 
-            byte[] data =
-                Encoding.UTF8.GetBytes(
-                    message);
+            return result;
+        }
 
-            _client.Send(
-                data,
-                data.Length,
-                _endpoint);
+        private static double GetLateralPosition(
+            Vessel vessel,
+            Part part)
+        {
+            if (vessel == null ||
+                part == null ||
+                part.transform == null ||
+                vessel.ReferenceTransform == null)
+            {
+                return 0.0;
+            }
+
+            Vector3 offset =
+                part.transform.position -
+                vessel.ReferenceTransform.position;
+
+            return Vector3.Dot(
+                offset,
+                vessel.ReferenceTransform.right);
         }
 
         private static bool HasSolidEngine(
@@ -231,14 +319,31 @@ namespace KMC.Plugin
             return found;
         }
 
+        private static string Format(
+            double value)
+        {
+            return value.ToString(
+                "R",
+                CultureInfo.InvariantCulture);
+        }
+
         public void OnDestroy()
         {
             if (_client != null)
             {
                 _client.Close();
+
                 _client =
                     null;
             }
+        }
+
+        private sealed class BoosterState
+        {
+            public double Amount;
+            public double Capacity;
+            public bool Burning;
+            public double LateralPosition;
         }
     }
 }

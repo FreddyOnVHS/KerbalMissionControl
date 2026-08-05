@@ -17,5 +17,17 @@ namespace KMC.MissionControl.Telemetry
         public int BoosterCount { get; set; }
 
         public int BurningBoosterCount { get; set; }
+
+        public double LeftAmount { get; set; }
+
+        public double LeftCapacity { get; set; }
+
+        public bool LeftBurning { get; set; }
+
+        public double RightAmount { get; set; }
+
+        public double RightCapacity { get; set; }
+
+        public bool RightBurning { get; set; }
     }
 }

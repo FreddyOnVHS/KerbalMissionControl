@@ -1052,48 +1052,63 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 Math.Max(
                     42,
                     Math.Min(
-                        64,
-                        flowBounds.Width / 22));
+                        58,
+                        flowBounds.Width / 24));
 
             int boosterHeight =
                 Math.Max(
-                    142,
+                    118,
                     Math.Min(
-                        210,
-                        flowBounds.Height * 54 / 100));
+                        160,
+                        flowBounds.Height * 42 / 100));
 
-            int verticalCenter =
-                mixer.Top +
-                (chamber.Bottom -
-                 mixer.Top) / 2;
+            int horizontalOffset =
+                Math.Max(
+                    82,
+                    flowBounds.Width / 13);
+
+            /*
+             * Keep the SRB bodies below the horizontal LF/OX plumbing.
+             * The nose cones begin beneath the mixer instead of intersecting
+             * the pump lines.
+             */
+            int boosterTop =
+                Math.Max(
+                    mixer.Bottom + 24,
+                    flowBounds.Top +
+                    flowBounds.Height / 4);
+
+            int maximumTop =
+                flowBounds.Bottom -
+                boosterHeight -
+                58;
+
+            boosterTop =
+                Math.Min(
+                    boosterTop,
+                    maximumTop);
 
             Rectangle left =
                 new Rectangle(
                     mixer.Left -
-                    boosterWidth -
-                    Math.Max(
-                        70,
-                        flowBounds.Width / 15),
-                    verticalCenter -
-                    boosterHeight / 2,
+                    horizontalOffset -
+                    boosterWidth,
+                    boosterTop,
                     boosterWidth,
                     boosterHeight);
 
             Rectangle right =
                 new Rectangle(
                     mixer.Right +
-                    Math.Max(
-                        70,
-                        flowBounds.Width / 15),
-                    verticalCenter -
-                    boosterHeight / 2,
+                    horizontalOffset,
+                    boosterTop,
                     boosterWidth,
                     boosterHeight);
 
             DrawSolidBooster(
                 graphics,
                 left,
-                telemetry.BurningBoosterCount > 0,
+                telemetry.LeftBurning,
                 color,
                 labelFont,
                 smallFont);
@@ -1101,28 +1116,61 @@ namespace KMC.MissionControl.Rendering.Propulsion
             DrawSolidBooster(
                 graphics,
                 right,
-                telemetry.BurningBoosterCount > 1,
+                telemetry.RightBurning,
                 color,
                 labelFont,
                 smallFont);
 
-            Rectangle fuelBar =
-                new Rectangle(
-                    chamber.Left - 76,
+            int barWidth =
+                Math.Max(
+                    116,
                     Math.Min(
-                        flowBounds.Bottom - 52,
-                        Math.Max(
-                            chamber.Bottom + 36,
-                            left.Bottom + 8)),
-                    chamber.Width + 152,
-                    34);
+                        170,
+                        flowBounds.Width / 8));
 
-            DrawSolidFuelBar(
+            int barHeight =
+                38;
+
+            Rectangle leftBar =
+                new Rectangle(
+                    left.Left +
+                    left.Width / 2 -
+                    barWidth / 2,
+                    Math.Min(
+                        flowBounds.Bottom -
+                        barHeight,
+                        left.Bottom + 10),
+                    barWidth,
+                    barHeight);
+
+            Rectangle rightBar =
+                new Rectangle(
+                    right.Left +
+                    right.Width / 2 -
+                    barWidth / 2,
+                    Math.Min(
+                        flowBounds.Bottom -
+                        barHeight,
+                        right.Bottom + 10),
+                    barWidth,
+                    barHeight);
+
+            DrawIndividualSolidFuelBar(
                 graphics,
-                fuelBar,
-                telemetry,
+                leftBar,
+                "SOLID FUEL L",
+                telemetry.LeftAmount,
+                telemetry.LeftCapacity,
                 color,
-                labelFont,
+                smallFont);
+
+            DrawIndividualSolidFuelBar(
+                graphics,
+                rightBar,
+                "SOLID FUEL R",
+                telemetry.RightAmount,
+                telemetry.RightCapacity,
+                color,
                 smallFont);
         }
 
@@ -1325,38 +1373,44 @@ namespace KMC.MissionControl.Rendering.Propulsion
             }
         }
 
-        private static void DrawSolidFuelBar(
+        private static void DrawIndividualSolidFuelBar(
             Graphics graphics,
             Rectangle bounds,
-            SolidFuelTelemetrySnapshot telemetry,
+            string title,
+            double amount,
+            double capacity,
             Color color,
-            Font labelFont,
             Font smallFont)
         {
             double fraction =
                 Fraction(
-                    telemetry.TotalAmount,
-                    telemetry.TotalCapacity);
+                    amount,
+                    capacity);
+
+            Rectangle meter =
+                new Rectangle(
+                    bounds.Left + 5,
+                    bounds.Bottom - 13,
+                    Math.Max(
+                        1,
+                        bounds.Width - 10),
+                    9);
 
             int fillWidth =
                 (int)Math.Round(
-                    Math.Max(
-                        0.0,
-                        Math.Min(
-                            1.0,
-                            fraction)) *
+                    fraction *
                     Math.Max(
                         0,
-                        bounds.Width - 2));
+                        meter.Width - 2));
 
             using (Pen outline =
                 new Pen(
                     color,
-                    1.4f))
+                    1.2f))
             using (SolidBrush fill =
                 new SolidBrush(
                     Color.FromArgb(
-                        150,
+                        155,
                         color)))
             using (SolidBrush brush =
                 new SolidBrush(
@@ -1374,37 +1428,37 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     outline,
                     bounds);
 
+                graphics.DrawString(
+                    title +
+                    "  " +
+                    (fraction * 100.0)
+                        .ToString("0") +
+                    "%",
+                    smallFont,
+                    brush,
+                    new Rectangle(
+                        bounds.Left,
+                        bounds.Top + 1,
+                        bounds.Width,
+                        16),
+                    centered);
+
+                graphics.DrawRectangle(
+                    outline,
+                    meter);
+
                 if (fillWidth > 0)
                 {
                     graphics.FillRectangle(
                         fill,
                         new Rectangle(
-                            bounds.Left + 1,
-                            bounds.Top + 1,
+                            meter.Left + 1,
+                            meter.Top + 1,
                             fillWidth,
                             Math.Max(
                                 1,
-                                bounds.Height - 2)));
+                                meter.Height - 2)));
                 }
-
-                string value =
-                    "SOLID FUEL  " +
-                    telemetry.TotalAmount
-                        .ToString("0.0") +
-                    " / " +
-                    telemetry.TotalCapacity
-                        .ToString("0.0") +
-                    "  (" +
-                    (fraction * 100.0)
-                        .ToString("0") +
-                    "%)";
-
-                graphics.DrawString(
-                    value,
-                    smallFont,
-                    brush,
-                    bounds,
-                    centered);
             }
         }
 

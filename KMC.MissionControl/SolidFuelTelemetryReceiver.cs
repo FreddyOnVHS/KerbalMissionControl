@@ -12,7 +12,7 @@ namespace KMC.MissionControl
         IDisposable
     {
         private const int Port = 5057;
-        private const string ProtocolId = "KMC-SOLID1";
+        private const string ProtocolId = "KMC-SOLID2";
 
         private UdpClient _client;
         private Thread _thread;
@@ -107,7 +107,7 @@ namespace KMC.MissionControl
             string[] parts =
                 message.Split('|');
 
-            if (parts.Length != 8 ||
+            if (parts.Length != 14 ||
                 parts[0] !=
                     ProtocolId)
             {
@@ -121,42 +121,55 @@ namespace KMC.MissionControl
             double activeCapacity;
             int boosterCount;
             int burningCount;
+            double leftAmount;
+            double leftCapacity;
+            int leftBurning;
+            double rightAmount;
+            double rightCapacity;
+            int rightBurning;
 
-            if (!long.TryParse(
-                    parts[1],
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
+            int index =
+                1;
+
+            if (!TryLong(
+                    parts[index++],
                     out ticks) ||
-                !double.TryParse(
-                    parts[2],
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
+                !TryDouble(
+                    parts[index++],
                     out totalAmount) ||
-                !double.TryParse(
-                    parts[3],
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
+                !TryDouble(
+                    parts[index++],
                     out totalCapacity) ||
-                !double.TryParse(
-                    parts[4],
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
+                !TryDouble(
+                    parts[index++],
                     out activeAmount) ||
-                !double.TryParse(
-                    parts[5],
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
+                !TryDouble(
+                    parts[index++],
                     out activeCapacity) ||
-                !int.TryParse(
-                    parts[6],
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
+                !TryInt(
+                    parts[index++],
                     out boosterCount) ||
-                !int.TryParse(
-                    parts[7],
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out burningCount))
+                !TryInt(
+                    parts[index++],
+                    out burningCount) ||
+                !TryDouble(
+                    parts[index++],
+                    out leftAmount) ||
+                !TryDouble(
+                    parts[index++],
+                    out leftCapacity) ||
+                !TryInt(
+                    parts[index++],
+                    out leftBurning) ||
+                !TryDouble(
+                    parts[index++],
+                    out rightAmount) ||
+                !TryDouble(
+                    parts[index++],
+                    out rightCapacity) ||
+                !TryInt(
+                    parts[index++],
+                    out rightBurning))
             {
                 return false;
             }
@@ -185,10 +198,61 @@ namespace KMC.MissionControl
                         boosterCount,
 
                     BurningBoosterCount =
-                        burningCount
+                        burningCount,
+
+                    LeftAmount =
+                        leftAmount,
+
+                    LeftCapacity =
+                        leftCapacity,
+
+                    LeftBurning =
+                        leftBurning != 0,
+
+                    RightAmount =
+                        rightAmount,
+
+                    RightCapacity =
+                        rightCapacity,
+
+                    RightBurning =
+                        rightBurning != 0
                 };
 
             return true;
+        }
+
+        private static bool TryDouble(
+            string value,
+            out double result)
+        {
+            return double.TryParse(
+                value,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out result);
+        }
+
+        private static bool TryInt(
+            string value,
+            out int result)
+        {
+            return int.TryParse(
+                value,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out result);
+        }
+
+        private static bool TryLong(
+            string value,
+            out long result)
+        {
+            return long.TryParse(
+                value,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out result);
         }
 
         public void Stop()
@@ -201,6 +265,7 @@ namespace KMC.MissionControl
             if (_client != null)
             {
                 _client.Close();
+
                 _client =
                     null;
             }

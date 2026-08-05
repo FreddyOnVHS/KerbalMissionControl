@@ -1,16 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
 using KMC.MissionControl.Debugging;
 using KMC.Shared.Topology;
 
 namespace KMC.MissionControl.Telemetry
 {
-    /// <summary>
-    /// Supplies the PROP renderer with solid-fuel information.
-    ///
-    /// Live side-channel telemetry is preferred when it is current. The
-    /// already-received vessel topology is used as a fallback so attached
-    /// boosters appear immediately even before the live sender is confirmed.
-    /// </summary>
     public static class SolidFuelTelemetryResolver
     {
         private static readonly TimeSpan LiveTimeout =
@@ -52,8 +46,8 @@ namespace KMC.MissionControl.Telemetry
                 return result;
             }
 
-            result.TimestampUtc =
-                DateTime.UtcNow;
+            List<BoosterResource> boosters =
+                new List<BoosterResource>();
 
             for (int nodeIndex = 0;
                  nodeIndex < topology.Nodes.Count;
@@ -69,60 +63,105 @@ namespace KMC.MissionControl.Telemetry
                     continue;
                 }
 
-                result.BoosterCount++;
-
-                if (node.Resources == null)
-                {
-                    continue;
-                }
-
-                for (int resourceIndex = 0;
-                     resourceIndex <
-                        node.Resources.Count;
-                     resourceIndex++)
-                {
-                    VesselResourceState resource =
-                        node.Resources[
-                            resourceIndex];
-
-                    if (resource == null ||
-                        !string.Equals(
-                            resource.Name,
-                            "SolidFuel",
-                            StringComparison
-                                .OrdinalIgnoreCase))
+                BoosterResource booster =
+                    new BoosterResource
                     {
-                        continue;
+                        VesselX =
+                            node.VesselX
+                    };
+
+                if (node.Resources != null)
+                {
+                    for (int resourceIndex = 0;
+                         resourceIndex <
+                            node.Resources.Count;
+                         resourceIndex++)
+                    {
+                        VesselResourceState resource =
+                            node.Resources[
+                                resourceIndex];
+
+                        if (resource != null &&
+                            string.Equals(
+                                resource.Name,
+                                "SolidFuel",
+                                StringComparison
+                                    .OrdinalIgnoreCase))
+                        {
+                            booster.Amount =
+                                Math.Max(
+                                    0.0,
+                                    resource.Amount);
+
+                            booster.Capacity =
+                                Math.Max(
+                                    0.0,
+                                    resource.Capacity);
+                        }
                     }
-
-                    result.TotalAmount +=
-                        Math.Max(
-                            0.0,
-                            resource.Amount);
-
-                    result.TotalCapacity +=
-                        Math.Max(
-                            0.0,
-                            resource.Capacity);
                 }
+
+                boosters.Add(
+                    booster);
             }
 
-            /*
-             * Topology packets describe structure and their resource values
-             * are only refreshed when topology changes. They intentionally do
-             * not claim that a booster is currently burning. The live sender
-             * supplies burning state and smoothly decreasing fuel quantities.
-             */
-            result.ActiveAmount =
-                0.0;
+            boosters.Sort(
+                delegate(
+                    BoosterResource left,
+                    BoosterResource right)
+                {
+                    return left.VesselX
+                        .CompareTo(
+                            right.VesselX);
+                });
 
-            result.ActiveCapacity =
-                0.0;
+            result.TimestampUtc =
+                DateTime.UtcNow;
 
-            result.BurningBoosterCount =
-                0;
+            result.BoosterCount =
+                boosters.Count;
+
+            for (int index = 0;
+                 index < boosters.Count;
+                 index++)
+            {
+                result.TotalAmount +=
+                    boosters[index].Amount;
+
+                result.TotalCapacity +=
+                    boosters[index].Capacity;
+            }
+
+            if (boosters.Count > 0)
+            {
+                result.LeftAmount =
+                    boosters[0].Amount;
+
+                result.LeftCapacity =
+                    boosters[0].Capacity;
+            }
+
+            if (boosters.Count > 1)
+            {
+                BoosterResource right =
+                    boosters[
+                        boosters.Count - 1];
+
+                result.RightAmount =
+                    right.Amount;
+
+                result.RightCapacity =
+                    right.Capacity;
+            }
 
             return result;
+        }
+
+        private sealed class BoosterResource
+        {
+            public double VesselX;
+            public double Amount;
+            public double Capacity;
         }
     }
 }
