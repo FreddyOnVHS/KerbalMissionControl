@@ -110,6 +110,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="MissionControlReceiver.cs" />
+    <Compile Include="SolidFuelTelemetryReceiver.cs" />
+    <Compile Include="Telemetry\SolidFuelTelemetrySnapshot.cs" />
+    <Compile Include="Telemetry\SolidFuelTelemetryStore.cs" />
     <Compile Include="Models\MissionTelemetry.cs" />
     <Compile Include="Pages\AscentPage.cs" />
     <Compile Include="Pages\IMissionPage.cs" />

@@ -2,6 +2,7 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using KMC.MissionControl.Models;
+using KMC.MissionControl.Telemetry;
 
 namespace KMC.MissionControl.Rendering.Propulsion
 {
@@ -633,6 +634,21 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     145,
                     30);
 
+            Color solid =
+                Color.FromArgb(
+                    255,
+                    255,
+                    150,
+                    35);
+
+            SolidFuelTelemetrySnapshot solidFuel =
+                SolidFuelTelemetryStore.GetSnapshot();
+
+            bool showSolidBoosters =
+                system != null &&
+                system.HasSolidFuel &&
+                solidFuel.BoosterCount > 0;
+
             int centerX =
                 bounds.Left +
                 bounds.Width / 2;
@@ -671,6 +687,19 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     valve.Bottom + 28,
                     124,
                     48);
+
+            if (showSolidBoosters)
+            {
+                DrawSolidBoosterPair(
+                    graphics,
+                    bounds,
+                    mixer,
+                    chamber,
+                    solidFuel,
+                    solid,
+                    labelFont,
+                    smallFont);
+            }
 
             DrawSplitTank(
                 graphics,
@@ -1005,6 +1034,376 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         bounds.Bottom + 2,
                         bounds.Width + 24,
                         18),
+                    centered);
+            }
+        }
+
+        private static void DrawSolidBoosterPair(
+            Graphics graphics,
+            Rectangle flowBounds,
+            Rectangle mixer,
+            Rectangle chamber,
+            SolidFuelTelemetrySnapshot telemetry,
+            Color color,
+            Font labelFont,
+            Font smallFont)
+        {
+            int boosterWidth =
+                Math.Max(
+                    42,
+                    Math.Min(
+                        64,
+                        flowBounds.Width / 22));
+
+            int boosterHeight =
+                Math.Max(
+                    142,
+                    Math.Min(
+                        210,
+                        flowBounds.Height * 54 / 100));
+
+            int verticalCenter =
+                mixer.Top +
+                (chamber.Bottom -
+                 mixer.Top) / 2;
+
+            Rectangle left =
+                new Rectangle(
+                    mixer.Left -
+                    boosterWidth -
+                    Math.Max(
+                        70,
+                        flowBounds.Width / 15),
+                    verticalCenter -
+                    boosterHeight / 2,
+                    boosterWidth,
+                    boosterHeight);
+
+            Rectangle right =
+                new Rectangle(
+                    mixer.Right +
+                    Math.Max(
+                        70,
+                        flowBounds.Width / 15),
+                    verticalCenter -
+                    boosterHeight / 2,
+                    boosterWidth,
+                    boosterHeight);
+
+            DrawSolidBooster(
+                graphics,
+                left,
+                telemetry.BurningBoosterCount > 0,
+                color,
+                labelFont,
+                smallFont);
+
+            DrawSolidBooster(
+                graphics,
+                right,
+                telemetry.BurningBoosterCount > 1,
+                color,
+                labelFont,
+                smallFont);
+
+            Rectangle fuelBar =
+                new Rectangle(
+                    chamber.Left - 76,
+                    Math.Min(
+                        flowBounds.Bottom - 52,
+                        Math.Max(
+                            chamber.Bottom + 36,
+                            left.Bottom + 8)),
+                    chamber.Width + 152,
+                    34);
+
+            DrawSolidFuelBar(
+                graphics,
+                fuelBar,
+                telemetry,
+                color,
+                labelFont,
+                smallFont);
+        }
+
+        private static void DrawSolidBooster(
+            Graphics graphics,
+            Rectangle bounds,
+            bool burning,
+            Color color,
+            Font labelFont,
+            Font smallFont)
+        {
+            using (Pen outline =
+                new Pen(
+                    color,
+                    2.0f))
+            using (Pen detail =
+                new Pen(
+                    Color.FromArgb(
+                        135,
+                        color),
+                    1.0f))
+            using (SolidBrush textBrush =
+                new SolidBrush(
+                    color))
+            using (StringFormat centered =
+                new StringFormat
+                {
+                    Alignment =
+                        StringAlignment.Center,
+                    LineAlignment =
+                        StringAlignment.Center
+                })
+            {
+                Point[] body =
+                {
+                    new Point(
+                        bounds.Left +
+                        bounds.Width / 2,
+                        bounds.Top),
+                    new Point(
+                        bounds.Right - 5,
+                        bounds.Top +
+                        bounds.Width / 2),
+                    new Point(
+                        bounds.Right - 5,
+                        bounds.Bottom - 28),
+                    new Point(
+                        bounds.Left + 5,
+                        bounds.Bottom - 28),
+                    new Point(
+                        bounds.Left + 5,
+                        bounds.Top +
+                        bounds.Width / 2)
+                };
+
+                graphics.DrawPolygon(
+                    outline,
+                    body);
+
+                graphics.DrawLine(
+                    detail,
+                    bounds.Left + 5,
+                    bounds.Top +
+                    bounds.Width / 2 +
+                    10,
+                    bounds.Right - 5,
+                    bounds.Top +
+                    bounds.Width / 2 +
+                    10);
+
+                graphics.DrawLine(
+                    detail,
+                    bounds.Left + 5,
+                    bounds.Bottom - 48,
+                    bounds.Right - 5,
+                    bounds.Bottom - 48);
+
+                Rectangle nozzle =
+                    new Rectangle(
+                        bounds.Left +
+                        bounds.Width / 4,
+                        bounds.Bottom - 28,
+                        bounds.Width / 2,
+                        20);
+
+                graphics.DrawRectangle(
+                    outline,
+                    nozzle);
+
+                Point[] bell =
+                {
+                    new Point(
+                        nozzle.Left,
+                        nozzle.Bottom),
+                    new Point(
+                        nozzle.Right,
+                        nozzle.Bottom),
+                    new Point(
+                        bounds.Right - 4,
+                        bounds.Bottom),
+                    new Point(
+                        bounds.Left + 4,
+                        bounds.Bottom)
+                };
+
+                graphics.DrawPolygon(
+                    outline,
+                    bell);
+
+                GraphicsState state =
+                    graphics.Save();
+
+                try
+                {
+                    graphics.TranslateTransform(
+                        bounds.Left +
+                        bounds.Width / 2.0f,
+                        bounds.Top +
+                        bounds.Height / 2.0f);
+
+                    graphics.RotateTransform(
+                        -90.0f);
+
+                    Rectangle label =
+                        new Rectangle(
+                            -bounds.Height / 2 + 28,
+                            -bounds.Width / 2,
+                            bounds.Height - 56,
+                            bounds.Width);
+
+                    graphics.DrawString(
+                        "SOLID FUEL",
+                        smallFont,
+                        textBrush,
+                        label,
+                        centered);
+                }
+                finally
+                {
+                    graphics.Restore(
+                        state);
+                }
+
+                if (burning)
+                {
+                    DrawBoosterFlame(
+                        graphics,
+                        bounds,
+                        color);
+                }
+            }
+        }
+
+        private static void DrawBoosterFlame(
+            Graphics graphics,
+            Rectangle booster,
+            Color color)
+        {
+            Rectangle flame =
+                new Rectangle(
+                    booster.Left +
+                    booster.Width / 4,
+                    booster.Bottom + 3,
+                    booster.Width / 2,
+                    Math.Max(
+                        18,
+                        booster.Width / 2));
+
+            Point[] flameShape =
+            {
+                new Point(
+                    flame.Left,
+                    flame.Top),
+                new Point(
+                    flame.Right,
+                    flame.Top),
+                new Point(
+                    flame.Left +
+                    flame.Width / 2,
+                    flame.Bottom)
+            };
+
+            using (SolidBrush brush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        160,
+                        color)))
+            using (Pen pen =
+                new Pen(
+                    color,
+                    1.5f))
+            {
+                graphics.FillPolygon(
+                    brush,
+                    flameShape);
+
+                graphics.DrawPolygon(
+                    pen,
+                    flameShape);
+            }
+        }
+
+        private static void DrawSolidFuelBar(
+            Graphics graphics,
+            Rectangle bounds,
+            SolidFuelTelemetrySnapshot telemetry,
+            Color color,
+            Font labelFont,
+            Font smallFont)
+        {
+            double fraction =
+                Fraction(
+                    telemetry.TotalAmount,
+                    telemetry.TotalCapacity);
+
+            int fillWidth =
+                (int)Math.Round(
+                    Math.Max(
+                        0.0,
+                        Math.Min(
+                            1.0,
+                            fraction)) *
+                    Math.Max(
+                        0,
+                        bounds.Width - 2));
+
+            using (Pen outline =
+                new Pen(
+                    color,
+                    1.4f))
+            using (SolidBrush fill =
+                new SolidBrush(
+                    Color.FromArgb(
+                        150,
+                        color)))
+            using (SolidBrush brush =
+                new SolidBrush(
+                    color))
+            using (StringFormat centered =
+                new StringFormat
+                {
+                    Alignment =
+                        StringAlignment.Center,
+                    LineAlignment =
+                        StringAlignment.Center
+                })
+            {
+                graphics.DrawRectangle(
+                    outline,
+                    bounds);
+
+                if (fillWidth > 0)
+                {
+                    graphics.FillRectangle(
+                        fill,
+                        new Rectangle(
+                            bounds.Left + 1,
+                            bounds.Top + 1,
+                            fillWidth,
+                            Math.Max(
+                                1,
+                                bounds.Height - 2)));
+                }
+
+                string value =
+                    "SOLID FUEL  " +
+                    telemetry.TotalAmount
+                        .ToString("0.0") +
+                    " / " +
+                    telemetry.TotalCapacity
+                        .ToString("0.0") +
+                    "  (" +
+                    (fraction * 100.0)
+                        .ToString("0") +
+                    "%)";
+
+                graphics.DrawString(
+                    value,
+                    smallFont,
+                    brush,
+                    bounds,
                     centered);
             }
         }

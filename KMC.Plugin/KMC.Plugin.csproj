@@ -76,6 +76,7 @@
     <Compile Include="Simulation\SimulatedResource.cs" />
 
     <Compile Include="TelemetrySender.cs" />
+    <Compile Include="SolidFuelTelemetrySender.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
 
     <Compile Include="Topology\ActivePropellantAnalyzer.cs" />

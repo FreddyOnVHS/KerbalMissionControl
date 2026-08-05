@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using KMC.Shared.Topology;
@@ -6,13 +6,9 @@ using KMC.Shared.Topology;
 namespace KMC.MissionControl.Rendering.Propulsion
 {
     /// <summary>
-    /// Builds a top-down engine layout from the actual vessel-space
-    /// coordinates transmitted by KSP.
-    ///
-    /// KSP vessel orientation can vary with root-part orientation, so the
-    /// projector chooses the pair of coordinate axes with the greatest
-    /// two-dimensional spread. That makes the cluster useful for ordinary
-    /// rockets without hard-coding X/Z or X/Y.
+    /// Projects every propulsion engine currently attached to the vessel.
+    /// This is a physical hardware view, so it includes liquid engines and
+    /// solid boosters from every stage until topology reports their removal.
     /// </summary>
     public sealed class EngineClusterProjector
     {
@@ -35,116 +31,117 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     .Where(
                         node =>
                             node.Category ==
-                            VesselNodeCategory.Engine)
+                                VesselNodeCategory.Engine ||
+                            node.Category ==
+                                VesselNodeCategory.SolidBooster)
+                    .OrderByDescending(
+                        node => node.ActivationStage)
+                    .ThenBy(
+                        node => node.SeparationStage)
+                    .ThenBy(
+                        node => node.PartId)
                     .ToList();
 
             if (engines.Count == 0)
             {
+                result.DisplayName = "NO ENGINES";
+                result.ActivationStage = -1;
+                result.SeparationStage = -1;
                 return result;
             }
 
-            int selectedStage =
-                SelectStage(
-                    engines,
-                    graph.CurrentStage);
-
-            List<PropulsionGraphNode> selected =
-                engines
-                    .Where(
-                        node =>
-                            node.ActivationStage ==
-                            selectedStage)
-                    .OrderBy(node => node.PartId)
-                    .ToList();
-
-            if (selected.Count == 0)
-            {
-                selected = engines
-                    .OrderBy(node => node.PartId)
-                    .ToList();
-            }
-
             result.ActivationStage =
-                selectedStage;
+                GetCommonStage(
+                    engines,
+                    node => node.ActivationStage);
 
             result.SeparationStage =
-                selected
-                    .Where(
-                        node =>
-                            node.SeparationStage >= 0)
-                    .Select(
-                        node => node.SeparationStage)
-                    .DefaultIfEmpty(-1)
-                    .First();
+                GetCommonStage(
+                    engines,
+                    node => node.SeparationStage);
 
             result.DisplayName =
-                CreateClusterName(selected);
+                CreateClusterName(
+                    engines);
 
             AxisPair pair =
-                ChooseAxisPair(selected);
+                ChooseAxisPair(
+                    engines);
 
             result.UsedFallbackAxis =
                 pair.IsFallback;
 
             double centerA =
-                selected.Average(
+                engines.Average(
                     node => pair.ReadA(node));
 
             double centerB =
-                selected.Average(
+                engines.Average(
                     node => pair.ReadB(node));
 
-            double maximumRadius = 0.0;
+            double maximumRadius =
+                0.0;
 
             for (int index = 0;
-                 index < selected.Count;
+                 index < engines.Count;
                  index++)
             {
                 double a =
-                    pair.ReadA(selected[index]) -
+                    pair.ReadA(engines[index]) -
                     centerA;
 
                 double b =
-                    pair.ReadB(selected[index]) -
+                    pair.ReadB(engines[index]) -
                     centerB;
 
                 maximumRadius =
                     Math.Max(
                         maximumRadius,
-                        Math.Sqrt(a * a + b * b));
+                        Math.Sqrt(
+                            a * a +
+                            b * b));
             }
 
             if (maximumRadius <
                 MinimumSpread)
             {
-                maximumRadius = 1.0;
+                maximumRadius =
+                    1.0;
             }
 
             for (int index = 0;
-                 index < selected.Count;
+                 index < engines.Count;
                  index++)
             {
                 PropulsionGraphNode node =
-                    selected[index];
+                    engines[index];
 
                 EngineProjectionPoint point =
                     new EngineProjectionPoint
                     {
-                        PartId = node.PartId,
+                        PartId =
+                            node.PartId,
+
                         DisplayName =
-                            CreateEngineName(node),
+                            CreateEngineName(
+                                node),
+
                         ActivationStage =
                             node.ActivationStage,
+
                         SeparationStage =
                             node.SeparationStage,
+
                         NormalizedX =
                             (pair.ReadA(node) -
                              centerA) /
                             maximumRadius,
+
                         NormalizedY =
                             -(pair.ReadB(node) -
                               centerB) /
                             maximumRadius,
+
                         DisplayNumber =
                             index + 1
                     };
@@ -153,48 +150,34 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     point,
                     result.Engines);
 
-                result.Engines.Add(point);
+                result.Engines.Add(
+                    point);
             }
 
             return result;
         }
 
-        private static int SelectStage(
+        private static int GetCommonStage(
             IList<PropulsionGraphNode> engines,
-            int currentStage)
+            Func<PropulsionGraphNode, int> selector)
         {
-            IEnumerable<int> stages =
-                engines
-                    .Where(
-                        node =>
-                            node.ActivationStage >= 0)
-                    .Select(
-                        node => node.ActivationStage)
-                    .Distinct();
+            int stage =
+                selector(
+                    engines[0]);
 
-            int[] values =
-                stages.ToArray();
-
-            if (values.Length == 0)
+            for (int index = 1;
+                 index < engines.Count;
+                 index++)
             {
-                return -1;
+                if (selector(
+                        engines[index]) !=
+                    stage)
+                {
+                    return -1;
+                }
             }
 
-            /*
-             * Prefer the stage that is currently active or was most recently
-             * activated. KSP's stage cursor may be one above the engine's
-             * inverse stage immediately before activation.
-             */
-            return values
-                .OrderBy(
-                    stage =>
-                        Math.Min(
-                            Math.Abs(stage - currentStage),
-                            Math.Abs(
-                                stage -
-                                (currentStage - 1))))
-                .ThenByDescending(stage => stage)
-                .First();
+            return stage;
         }
 
         private static AxisPair ChooseAxisPair(
@@ -210,7 +193,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
             AxisPair best =
                 pairs[0];
 
-            double bestArea = -1.0;
+            double bestArea =
+                -1.0;
 
             for (int index = 0;
                  index < pairs.Length;
@@ -219,33 +203,29 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 AxisPair pair =
                     pairs[index];
 
-                double spreadA =
+                double area =
                     Spread(
                         engines,
-                        pair.ReadA);
-
-                double spreadB =
+                        pair.ReadA) *
                     Spread(
                         engines,
                         pair.ReadB);
 
-                double area =
-                    spreadA * spreadB;
-
-                if (area > bestArea)
+                if (area >
+                    bestArea)
                 {
-                    bestArea = area;
-                    best = pair;
+                    bestArea =
+                        area;
+
+                    best =
+                        pair;
                 }
             }
 
-            if (bestArea <
-                MinimumSpread)
-            {
-                return AxisPair.Fallback;
-            }
-
-            return best;
+            return bestArea <
+                MinimumSpread
+                    ? AxisPair.Fallback
+                    : best;
         }
 
         private static double Spread(
@@ -263,7 +243,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
                  index++)
             {
                 double value =
-                    reader(nodes[index]);
+                    reader(
+                        nodes[index]);
 
                 minimum =
                     Math.Min(
@@ -276,7 +257,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         value);
             }
 
-            return maximum - minimum;
+            return maximum -
+                minimum;
         }
 
         private static void ResolveCollision(
@@ -287,7 +269,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
                  attempt < 12;
                  attempt++)
             {
-                bool collision = false;
+                bool collision =
+                    false;
 
                 for (int index = 0;
                      index < existing.Count;
@@ -306,7 +289,9 @@ namespace KMC.MissionControl.Rendering.Propulsion
                             dy * dy) <
                         CollisionDistance)
                     {
-                        collision = true;
+                        collision =
+                            true;
+
                         break;
                     }
                 }
@@ -340,11 +325,6 @@ namespace KMC.MissionControl.Rendering.Propulsion
         private static string CreateClusterName(
             IList<PropulsionGraphNode> engines)
         {
-            if (engines.Count == 0)
-            {
-                return "NO ENGINES";
-            }
-
             string name =
                 CreateEngineName(
                     engines[0]);
@@ -370,7 +350,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
             PropulsionGraphNode node)
         {
             string title =
-                node.Title ?? string.Empty;
+                node.Title ??
+                string.Empty;
 
             int quoteStart =
                 title.IndexOf('"');
@@ -400,10 +381,16 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     StringSplitOptions
                         .RemoveEmptyEntries);
 
-            return words.Length > 0
-                ? words[0]
-                    .ToUpperInvariant()
-                : "ENGINE";
+            if (words.Length > 0)
+            {
+                return words[0]
+                    .ToUpperInvariant();
+            }
+
+            return node.Category ==
+                VesselNodeCategory.SolidBooster
+                    ? "BOOSTER"
+                    : "ENGINE";
         }
 
         private sealed class AxisPair
@@ -437,18 +424,35 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 Func<PropulsionGraphNode, double> readB,
                 bool isFallback)
             {
-                ReadA = readA;
-                ReadB = readB;
-                IsFallback = isFallback;
+                ReadA =
+                    readA;
+
+                ReadB =
+                    readB;
+
+                IsFallback =
+                    isFallback;
             }
 
             public Func<PropulsionGraphNode, double>
-                ReadA { get; private set; }
+                ReadA
+                {
+                    get;
+                    private set;
+                }
 
             public Func<PropulsionGraphNode, double>
-                ReadB { get; private set; }
+                ReadB
+                {
+                    get;
+                    private set;
+                }
 
-            public bool IsFallback { get; private set; }
+            public bool IsFallback
+            {
+                get;
+                private set;
+            }
         }
     }
 }

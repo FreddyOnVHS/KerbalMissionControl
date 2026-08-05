@@ -21,7 +21,11 @@ namespace KMC.MissionControl
             using (PropulsionDebuggerHost debugger =
                 PropulsionDebuggerHost.Attach(
                     mainForm))
+            using (SolidFuelTelemetryReceiver solidFuel =
+                new SolidFuelTelemetryReceiver())
             {
+                solidFuel.Start();
+
                 System.Windows.Forms.Application.Run(
                     mainForm);
             }

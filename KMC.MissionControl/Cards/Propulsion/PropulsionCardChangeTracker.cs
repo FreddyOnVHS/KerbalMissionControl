@@ -2,6 +2,7 @@
 using System.Globalization;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering.Propulsion;
+using KMC.MissionControl.Telemetry;
 
 namespace KMC.MissionControl.Cards.Propulsion
 {
@@ -173,6 +174,9 @@ namespace KMC.MissionControl.Cards.Propulsion
         private static string BuildFlowSignature(
             MissionTelemetry telemetry)
         {
+            SolidFuelTelemetrySnapshot solidFuel =
+                SolidFuelTelemetryStore.GetSnapshot();
+
             return Join(
                 PercentKey(
                     telemetry.StageLiquidFuelAmount,
@@ -191,7 +195,12 @@ namespace KMC.MissionControl.Cards.Propulsion
                     telemetry.StageMonopropellantCapacity),
                 PercentKey(
                     telemetry.TotalMonopropellantAmount,
-                    telemetry.TotalMonopropellantCapacity));
+                    telemetry.TotalMonopropellantCapacity),
+                PercentKey(
+                    solidFuel.TotalAmount,
+                    solidFuel.TotalCapacity),
+                solidFuel.BoosterCount,
+                solidFuel.BurningBoosterCount);
         }
 
         private static string BuildFooterSignature(
