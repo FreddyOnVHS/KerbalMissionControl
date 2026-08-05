@@ -161,6 +161,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         -18,
                         -48),
                     system,
+                    cluster,
                     telemetry,
                     labelFont,
                     smallFont,
@@ -1250,6 +1251,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Graphics graphics,
             Rectangle bounds,
             PropulsionSystemModel system,
+            EngineClusterProjection cluster,
             MissionTelemetry telemetry,
             Font labelFont,
             Font smallFont,
@@ -1399,7 +1401,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 labelFont,
                 smallFont);
 
-            DrawFlow(
+            DrawPumpFlow(
                 graphics,
                 new Point(
                     lfTank.Right,
@@ -1410,10 +1412,12 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     mixer.Top +
                     mixer.Height / 2),
                 lf,
-                "LF PUMP",
+                "LF",
+                telemetry != null &&
+                telemetry.ProducingThrustEngineCount > 0,
                 smallFont);
 
-            DrawFlow(
+            DrawPumpFlow(
                 graphics,
                 new Point(
                     oxTank.Left,
@@ -1424,7 +1428,9 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     mixer.Top +
                     mixer.Height / 2),
                 ox,
-                "OX PUMP",
+                "OX",
+                telemetry != null &&
+                telemetry.ProducingThrustEngineCount > 0,
                 smallFont);
 
             DrawBox(
@@ -1435,6 +1441,11 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 phosphor,
                 labelFont,
                 smallFont);
+
+            DrawMixerDetail(
+                graphics,
+                mixer,
+                phosphor);
 
             DrawVerticalFlow(
                 graphics,
@@ -1454,12 +1465,19 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 chamber,
                 lf);
 
+            int liquidEngineCount =
+                CalculateLiquidEngineCount(
+                    cluster,
+                    solidFuel);
+
             DrawBox(
                 graphics,
                 chamber,
-                "THRUST CHAMBER",
-                system.TotalEngineCount +
-                " ENGINES",
+                "LIQUID PROPULSION",
+                liquidEngineCount.ToString("00") +
+                (liquidEngineCount == 1
+                    ? " ENGINE"
+                    : " ENGINES"),
                 Color.White,
                 labelFont,
                 smallFont);
@@ -1542,6 +1560,321 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 system,
                 smallFont,
                 dimPhosphor);
+        }
+
+        private static void DrawMixerDetail(
+            Graphics graphics,
+            Rectangle mixer,
+            Color color)
+        {
+            Rectangle detail =
+                new Rectangle(
+                    mixer.Left + 8,
+                    mixer.Top + 21,
+                    mixer.Width - 16,
+                    Math.Max(
+                        8,
+                        mixer.Height - 27));
+
+            using (Pen pen =
+                new Pen(
+                    Color.FromArgb(
+                        135,
+                        color),
+                    1.0f))
+            {
+                int middleY =
+                    detail.Top +
+                    detail.Height /
+                    2;
+
+                graphics.DrawLine(
+                    pen,
+                    detail.Left,
+                    detail.Top,
+                    detail.Right,
+                    detail.Bottom);
+
+                graphics.DrawLine(
+                    pen,
+                    detail.Left,
+                    detail.Bottom,
+                    detail.Right,
+                    detail.Top);
+
+                graphics.DrawLine(
+                    pen,
+                    detail.Left,
+                    middleY,
+                    detail.Right,
+                    middleY);
+            }
+        }
+
+        private static int CalculateLiquidEngineCount(
+            EngineClusterProjection cluster,
+            SolidFuelTelemetrySnapshot solidFuel)
+        {
+            if (cluster == null ||
+                cluster.Engines == null)
+            {
+                return 0;
+            }
+
+            int liquidCount =
+                0;
+
+            int knownCount =
+                0;
+
+            for (int index = 0;
+                 index < cluster.Engines.Count;
+                 index++)
+            {
+                EngineStateTelemetry state =
+                    EngineStateTelemetryStore.GetEngine(
+                        cluster.Engines[index].PartId);
+
+                if (state == null)
+                {
+                    continue;
+                }
+
+                knownCount++;
+
+                if (!state.IsSolidBooster)
+                {
+                    liquidCount++;
+                }
+            }
+
+            if (knownCount ==
+                cluster.Engines.Count)
+            {
+                return liquidCount;
+            }
+
+            /*
+             * Before every per-engine packet arrives, use the attached SRB
+             * count as a conservative fallback. This prevents SRBs from being
+             * counted as LF/OX engines during startup.
+             */
+            int boosterCount =
+                solidFuel != null
+                    ? Math.Max(
+                        0,
+                        solidFuel.BoosterCount)
+                    : 0;
+
+            return Math.Max(
+                liquidCount,
+                Math.Max(
+                    0,
+                    cluster.Engines.Count -
+                    boosterCount));
+        }
+
+        private static void DrawPumpFlow(
+            Graphics graphics,
+            Point start,
+            Point end,
+            Color color,
+            string label,
+            bool active,
+            Font font)
+        {
+            int middleX =
+                (start.X + end.X) /
+                2;
+
+            Point pumpCenter =
+                new Point(
+                    middleX,
+                    start.Y);
+
+            int pumpRadius =
+                22;
+
+            Color pumpColor =
+                active
+                    ? color
+                    : Color.FromArgb(
+                        145,
+                        color);
+
+            using (Pen pipePen =
+                new Pen(
+                    pumpColor,
+                    2.0f))
+            using (Pen pumpPen =
+                new Pen(
+                    pumpColor,
+                    active
+                        ? 2.4f
+                        : 1.5f))
+            using (SolidBrush brush =
+                new SolidBrush(
+                    pumpColor))
+            using (SolidBrush fill =
+                new SolidBrush(
+                    Color.FromArgb(
+                        active
+                            ? 42
+                            : 18,
+                        pumpColor)))
+            using (StringFormat centered =
+                new StringFormat
+                {
+                    Alignment =
+                        StringAlignment.Center,
+
+                    LineAlignment =
+                        StringAlignment.Center,
+
+                    FormatFlags =
+                        StringFormatFlags.NoWrap
+                })
+            {
+                pipePen.EndCap =
+                    LineCap.ArrowAnchor;
+
+                graphics.DrawLine(
+                    pipePen,
+                    start,
+                    new Point(
+                        pumpCenter.X -
+                        pumpRadius,
+                        start.Y));
+
+                graphics.DrawLines(
+                    pipePen,
+                    new[]
+                    {
+                        new Point(
+                            pumpCenter.X +
+                            pumpRadius,
+                            start.Y),
+
+                        new Point(
+                            end.X,
+                            start.Y),
+
+                        end
+                    });
+
+                Rectangle pumpBounds =
+                    new Rectangle(
+                        pumpCenter.X -
+                        pumpRadius,
+                        pumpCenter.Y -
+                        pumpRadius,
+                        pumpRadius * 2,
+                        pumpRadius * 2);
+
+                graphics.FillEllipse(
+                    fill,
+                    pumpBounds);
+
+                graphics.DrawEllipse(
+                    pumpPen,
+                    pumpBounds);
+
+                DrawPumpImpeller(
+                    graphics,
+                    pumpCenter,
+                    pumpRadius - 6,
+                    pumpPen,
+                    active);
+
+                Rectangle labelBounds =
+                    new Rectangle(
+                        pumpBounds.Left - 20,
+                        pumpBounds.Top - 24,
+                        pumpBounds.Width + 40,
+                        20);
+
+                graphics.DrawString(
+                    label + " PUMP",
+                    font,
+                    brush,
+                    labelBounds,
+                    centered);
+            }
+        }
+
+        private static void DrawPumpImpeller(
+            Graphics graphics,
+            Point center,
+            int radius,
+            Pen pen,
+            bool active)
+        {
+            int bladeCount =
+                8;
+
+            double phase =
+                active
+                    ? DateTime.UtcNow
+                        .Millisecond /
+                      1000.0 *
+                      Math.PI *
+                      2.0
+                    : 0.0;
+
+            for (int index = 0;
+                 index < bladeCount;
+                 index++)
+            {
+                double angle =
+                    phase +
+                    index *
+                    Math.PI *
+                    2.0 /
+                    bladeCount;
+
+                double curvedAngle =
+                    angle +
+                    0.42;
+
+                Point inner =
+                    new Point(
+                        center.X +
+                        (int)Math.Round(
+                            Math.Cos(angle) *
+                            radius *
+                            0.22),
+
+                        center.Y +
+                        (int)Math.Round(
+                            Math.Sin(angle) *
+                            radius *
+                            0.22));
+
+                Point outer =
+                    new Point(
+                        center.X +
+                        (int)Math.Round(
+                            Math.Cos(curvedAngle) *
+                            radius),
+
+                        center.Y +
+                        (int)Math.Round(
+                            Math.Sin(curvedAngle) *
+                            radius));
+
+                graphics.DrawLine(
+                    pen,
+                    inner,
+                    outer);
+            }
+
+            graphics.DrawEllipse(
+                pen,
+                new Rectangle(
+                    center.X - 3,
+                    center.Y - 3,
+                    6,
+                    6));
         }
 
         private static void DrawFlow(
@@ -2030,9 +2363,9 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 new Font(
                     labelFont.FontFamily,
                     Math.Max(
-                        11.0f,
+                        13.0f,
                         labelFont.SizeInPoints *
-                        1.15f),
+                        1.35f),
                     FontStyle.Bold,
                     GraphicsUnit.Point))
             using (StringFormat centered =
@@ -2070,12 +2403,12 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     "SEPARATION\nCONFIRMED",
                     confirmationFont,
                     brush,
-                new Rectangle(
-                    bounds.Left + 8,
-                    bounds.Top + 32,
-                    bounds.Width - 16,
-                    bounds.Height - 40),
-                centered);
+                    new Rectangle(
+                        bounds.Left + 8,
+                        bounds.Top + 36,
+                        bounds.Width - 16,
+                        bounds.Height - 46),
+                    centered);
             }
         }
 
