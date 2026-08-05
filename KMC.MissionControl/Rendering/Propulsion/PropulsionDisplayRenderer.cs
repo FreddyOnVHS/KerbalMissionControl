@@ -199,12 +199,17 @@ namespace KMC.MissionControl.Rendering.Propulsion
             int headerHeight =
                 38;
 
+            /*
+             * The cleanup build uses one compact status row only. Removing
+             * the legend and mode row gives the engine-bell plot substantially
+             * more vertical space.
+             */
             int statusHeight =
                 Math.Max(
-                    72,
+                    48,
                     Math.Min(
-                        90,
-                        bounds.Height / 4));
+                        60,
+                        bounds.Height / 6));
 
             Rectangle plot =
                 new Rectangle(
@@ -216,7 +221,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         bounds.Height -
                         headerHeight -
                         statusHeight -
-                        8));
+                        10));
 
             Rectangle status =
                 new Rectangle(
@@ -225,11 +230,16 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     bounds.Width - 8,
                     statusHeight - 8);
 
-            int diameter =
+            /*
+             * Begin with a desired symbol size, then reduce it when the
+             * projected engine centers are close enough that circles would
+             * touch. This keeps dense vertical and radial arrangements clear.
+             */
+            int desiredDiameter =
                 Math.Max(
                     34,
                     Math.Min(
-                        58,
+                        54,
                         Math.Min(
                             plot.Width,
                             plot.Height) /
@@ -238,6 +248,37 @@ namespace KMC.MissionControl.Rendering.Propulsion
                             (int)Math.Ceiling(
                                 Math.Sqrt(
                                     cluster.Engines.Count)))));
+
+            float provisionalRadiusX =
+                Math.Max(
+                    0,
+                    (plot.Width -
+                     desiredDiameter -
+                     24) /
+                    2.0f);
+
+            float provisionalRadiusY =
+                Math.Max(
+                    0,
+                    (plot.Height -
+                     desiredDiameter -
+                     24) /
+                    2.0f);
+
+            int collisionSafeDiameter =
+                CalculateCollisionSafeDiameter(
+                    cluster,
+                    plot,
+                    provisionalRadiusX,
+                    provisionalRadiusY,
+                    desiredDiameter);
+
+            int diameter =
+                Math.Max(
+                    28,
+                    Math.Min(
+                        desiredDiameter,
+                        collisionSafeDiameter));
 
             float radiusX =
                 Math.Max(
@@ -252,7 +293,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     0,
                     (plot.Height -
                      diameter -
-                     30) /
+                     24) /
                     2.0f);
 
             bool anyProducing =
@@ -357,27 +398,125 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 graphics,
                 status,
                 cluster,
+                telemetry,
                 smallFont,
                 phosphor,
                 dimPhosphor);
+        }
+
+        private static int CalculateCollisionSafeDiameter(
+            EngineClusterProjection cluster,
+            Rectangle plot,
+            float radiusX,
+            float radiusY,
+            int desiredDiameter)
+        {
+            if (cluster == null ||
+                cluster.Engines == null ||
+                cluster.Engines.Count < 2)
+            {
+                return desiredDiameter;
+            }
+
+            double minimumDistance =
+                double.MaxValue;
+
+            for (int leftIndex = 0;
+                 leftIndex < cluster.Engines.Count;
+                 leftIndex++)
+            {
+                EngineProjectionPoint left =
+                    cluster.Engines[leftIndex];
+
+                double leftX =
+                    plot.Left +
+                    plot.Width / 2.0 +
+                    left.NormalizedX *
+                    radiusX;
+
+                double leftY =
+                    plot.Top +
+                    plot.Height / 2.0 +
+                    left.NormalizedY *
+                    radiusY;
+
+                for (int rightIndex =
+                        leftIndex + 1;
+                     rightIndex <
+                        cluster.Engines.Count;
+                     rightIndex++)
+                {
+                    EngineProjectionPoint right =
+                        cluster.Engines[rightIndex];
+
+                    double rightX =
+                        plot.Left +
+                        plot.Width / 2.0 +
+                        right.NormalizedX *
+                        radiusX;
+
+                    double rightY =
+                        plot.Top +
+                        plot.Height / 2.0 +
+                        right.NormalizedY *
+                        radiusY;
+
+                    double deltaX =
+                        rightX -
+                        leftX;
+
+                    double deltaY =
+                        rightY -
+                        leftY;
+
+                    double distance =
+                        Math.Sqrt(
+                            deltaX * deltaX +
+                            deltaY * deltaY);
+
+                    minimumDistance =
+                        Math.Min(
+                            minimumDistance,
+                            distance);
+                }
+            }
+
+            if (minimumDistance ==
+                double.MaxValue)
+            {
+                return desiredDiameter;
+            }
+
+            /*
+             * Keep at least 8 pixels between neighboring symbols.
+             */
+            return Math.Max(
+                28,
+                (int)Math.Floor(
+                    minimumDistance -
+                    8.0));
         }
 
         private static void DrawEngineClusterStatus(
             Graphics graphics,
             Rectangle bounds,
             EngineClusterProjection cluster,
+            MissionTelemetry telemetry,
             Font font,
             Color phosphor,
             Color dimPhosphor)
         {
-            int producing = 0;
-            int ignited = 0;
-            int armed = 0;
-            int shutdown = 0;
-            int flameout = 0;
+            int producing =
+                0;
 
-            double currentThrust = 0.0;
-            double maximumThrust = 0.0;
+            int flameout =
+                0;
+
+            double currentThrust =
+                0.0;
+
+            double maximumThrust =
+                0.0;
 
             for (int index = 0;
                  index < cluster.Engines.Count;
@@ -389,7 +528,6 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
                 if (state == null)
                 {
-                    armed++;
                     continue;
                 }
 
@@ -403,29 +541,16 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         0.0,
                         state.MaximumThrust);
 
-                switch (state.OperatingState)
+                if (state.OperatingState ==
+                    EngineOperatingState.Producing)
                 {
-                    case EngineOperatingState.Producing:
-                        producing++;
-                        break;
+                    producing++;
+                }
 
-                    case EngineOperatingState.Ignited:
-                        ignited++;
-                        break;
-
-                    case EngineOperatingState.Flameout:
-                        flameout++;
-                        break;
-
-                    case EngineOperatingState.Shutdown:
-                        shutdown++;
-                        break;
-
-                    case EngineOperatingState.Armed:
-                    case EngineOperatingState.Unknown:
-                    default:
-                        armed++;
-                        break;
+                if (state.OperatingState ==
+                    EngineOperatingState.Flameout)
+                {
+                    flameout++;
                 }
             }
 
@@ -439,60 +564,6 @@ namespace KMC.MissionControl.Rendering.Propulsion
                             maximumThrust))
                     : 0.0;
 
-            string mode =
-                flameout > 0
-                    ? "FAULT"
-                    : producing > 0
-                        ? "RUNNING"
-                        : ignited > 0
-                            ? "IGNITED"
-                            : armed > 0
-                                ? "ARMED"
-                                : shutdown > 0
-                                    ? "SHUTDOWN"
-                                    : "UNKNOWN";
-
-            Color modeColor =
-                flameout > 0
-                    ? Color.FromArgb(
-                        255,
-                        255,
-                        75,
-                        75)
-                    : producing > 0
-                        ? Color.FromArgb(
-                            255,
-                            55,
-                            255,
-                            105)
-                        : ignited > 0
-                            ? Color.FromArgb(
-                                255,
-                                255,
-                                190,
-                                60)
-                            : dimPhosphor;
-
-            int firstRowHeight =
-                Math.Max(
-                    22,
-                    bounds.Height / 2);
-
-            Rectangle firstRow =
-                new Rectangle(
-                    bounds.Left,
-                    bounds.Top,
-                    bounds.Width,
-                    firstRowHeight);
-
-            Rectangle secondRow =
-                new Rectangle(
-                    bounds.Left,
-                    firstRow.Bottom,
-                    bounds.Width,
-                    bounds.Bottom -
-                    firstRow.Bottom);
-
             using (Pen border =
                 new Pen(
                     Color.FromArgb(
@@ -505,9 +576,15 @@ namespace KMC.MissionControl.Rendering.Propulsion
             using (SolidBrush valueBrush =
                 new SolidBrush(
                     phosphor))
-            using (SolidBrush modeBrush =
+            using (SolidBrush faultBrush =
                 new SolidBrush(
-                    modeColor))
+                    flameout > 0
+                        ? Color.FromArgb(
+                            255,
+                            255,
+                            75,
+                            75)
+                        : phosphor))
             using (StringFormat centered =
                 new StringFormat
                 {
@@ -525,18 +602,43 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     border,
                     bounds);
 
-                int width =
+                int cellWidth =
                     Math.Max(
                         1,
-                        firstRow.Width / 4);
+                        bounds.Width / 4);
+
+                Rectangle activeCell =
+                    new Rectangle(
+                        bounds.Left,
+                        bounds.Top,
+                        cellWidth,
+                        bounds.Height);
+
+                Rectangle thrustCell =
+                    new Rectangle(
+                        activeCell.Right,
+                        bounds.Top,
+                        cellWidth,
+                        bounds.Height);
+
+                Rectangle faultCell =
+                    new Rectangle(
+                        thrustCell.Right,
+                        bounds.Top,
+                        cellWidth,
+                        bounds.Height);
+
+                Rectangle stageCell =
+                    new Rectangle(
+                        faultCell.Right,
+                        bounds.Top,
+                        bounds.Right -
+                        faultCell.Right,
+                        bounds.Height);
 
                 DrawStatusCell(
                     graphics,
-                    new Rectangle(
-                        firstRow.Left,
-                        firstRow.Top,
-                        width,
-                        firstRow.Height),
+                    activeCell,
                     "ACTIVE",
                     producing.ToString("00") +
                     "/" +
@@ -549,42 +651,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
                 DrawStatusCell(
                     graphics,
-                    new Rectangle(
-                        firstRow.Left + width,
-                        firstRow.Top,
-                        width,
-                        firstRow.Height),
-                    "ARMED",
-                    armed.ToString("00"),
-                    font,
-                    labelBrush,
-                    valueBrush,
-                    centered);
-
-                DrawStatusCell(
-                    graphics,
-                    new Rectangle(
-                        firstRow.Left + width * 2,
-                        firstRow.Top,
-                        width,
-                        firstRow.Height),
-                    "FAULT",
-                    flameout.ToString("00"),
-                    font,
-                    labelBrush,
-                    flameout > 0
-                        ? modeBrush
-                        : valueBrush,
-                    centered);
-
-                DrawStatusCell(
-                    graphics,
-                    new Rectangle(
-                        firstRow.Left + width * 3,
-                        firstRow.Top,
-                        firstRow.Right -
-                        (firstRow.Left + width * 3),
-                        firstRow.Height),
+                    thrustCell,
                     "THRUST",
                     (thrustFraction * 100.0)
                         .ToString("0") +
@@ -594,21 +661,50 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     valueBrush,
                     centered);
 
+                DrawStatusCell(
+                    graphics,
+                    faultCell,
+                    "FAULTS",
+                    flameout.ToString("00"),
+                    font,
+                    labelBrush,
+                    faultBrush,
+                    centered);
+
+                DrawStatusCell(
+                    graphics,
+                    stageCell,
+                    "STAGE",
+                    telemetry != null
+                        ? telemetry.CurrentStage
+                            .ToString("00")
+                        : cluster.ActivationStage
+                            .ToString("00"),
+                    font,
+                    labelBrush,
+                    valueBrush,
+                    centered);
+
                 graphics.DrawLine(
                     border,
-                    bounds.Left,
-                    firstRow.Bottom,
-                    bounds.Right,
-                    firstRow.Bottom);
+                    activeCell.Right,
+                    bounds.Top,
+                    activeCell.Right,
+                    bounds.Bottom);
 
-                graphics.DrawString(
-                    "MODE " +
-                    mode +
-                    "   •   DIM ARMED   GREEN RUN   AMBER IGN   RED FAIL",
-                    font,
-                    modeBrush,
-                    secondRow,
-                    centered);
+                graphics.DrawLine(
+                    border,
+                    thrustCell.Right,
+                    bounds.Top,
+                    thrustCell.Right,
+                    bounds.Bottom);
+
+                graphics.DrawLine(
+                    border,
+                    faultCell.Right,
+                    bounds.Top,
+                    faultCell.Right,
+                    bounds.Bottom);
             }
         }
 
@@ -622,59 +718,238 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Brush valueBrush,
             StringFormat centered)
         {
+            int topPadding =
+                2;
+
+            int gap =
+                2;
+
             int labelHeight =
                 Math.Max(
-                    12,
-                    bounds.Height / 2);
+                    14,
+                    (bounds.Height -
+                     topPadding -
+                     gap) *
+                    42 /
+                    100);
+
+            Rectangle labelBounds =
+                new Rectangle(
+                    bounds.Left + 3,
+                    bounds.Top + topPadding,
+                    Math.Max(
+                        1,
+                        bounds.Width - 6),
+                    labelHeight);
+
+            Rectangle valueBounds =
+                new Rectangle(
+                    bounds.Left + 3,
+                    labelBounds.Bottom + gap,
+                    Math.Max(
+                        1,
+                        bounds.Width - 6),
+                    Math.Max(
+                        1,
+                        bounds.Bottom -
+                        labelBounds.Bottom -
+                        gap -
+                        2));
 
             graphics.DrawString(
                 label,
                 font,
                 labelBrush,
-                new Rectangle(
-                    bounds.Left,
-                    bounds.Top,
-                    bounds.Width,
-                    labelHeight),
+                labelBounds,
                 centered);
 
             graphics.DrawString(
                 value,
                 font,
                 valueBrush,
-                new Rectangle(
-                    bounds.Left,
-                    bounds.Top + labelHeight,
-                    bounds.Width,
-                    bounds.Bottom -
-                    bounds.Top -
-                    labelHeight),
+                valueBounds,
                 centered);
         }
 
         private static void DrawEngineSymbol(
-            Graphics graphics, Rectangle bounds, EngineProjectionPoint point,
-            Color color, Font numberFont, Font detailFont)
+            Graphics graphics,
+            Rectangle bounds,
+            EngineProjectionPoint point,
+            Color color,
+            Font numberFont,
+            Font detailFont)
         {
-            EngineStateTelemetry state = point != null ? EngineStateTelemetryStore.GetEngine(point.PartId) : null;
-            Color stateColor = ResolveEngineStateColor(color, state);
-            bool producing = state != null && state.OperatingState == EngineOperatingState.Producing;
-            using (Pen outer = new Pen(stateColor, producing ? 3.0f : 2.0f))
-            using (Pen inner = new Pen(Color.FromArgb(producing ? 190 : 100, stateColor), 1.0f))
-            using (SolidBrush brush = new SolidBrush(stateColor))
-            using (SolidBrush fill = new SolidBrush(Color.FromArgb(48, stateColor)))
-            using (StringFormat centered = new StringFormat { Alignment=StringAlignment.Center, LineAlignment=StringAlignment.Center, Trimming=StringTrimming.EllipsisCharacter, FormatFlags=StringFormatFlags.NoWrap })
+            EngineStateTelemetry state =
+                point != null
+                    ? EngineStateTelemetryStore.GetEngine(
+                        point.PartId)
+                    : null;
+
+            Color stateColor =
+                ResolveEngineStateColor(
+                    color,
+                    state);
+
+            bool producing =
+                state != null &&
+                state.OperatingState ==
+                    EngineOperatingState.Producing;
+
+            string identifier =
+                CreateEngineTag(
+                    point);
+
+            float identifierSize =
+                CalculateIdentifierFontSize(
+                    detailFont,
+                    identifier,
+                    bounds.Width);
+
+            using (Font identifierFont =
+                new Font(
+                    detailFont.FontFamily,
+                    identifierSize,
+                    FontStyle.Bold,
+                    GraphicsUnit.Point))
+            using (Pen outer =
+                new Pen(
+                    stateColor,
+                    producing
+                        ? 3.0f
+                        : 2.0f))
+            using (Pen inner =
+                new Pen(
+                    Color.FromArgb(
+                        producing
+                            ? 190
+                            : 100,
+                        stateColor),
+                    1.0f))
+            using (SolidBrush brush =
+                new SolidBrush(
+                    stateColor))
+            using (SolidBrush fill =
+                new SolidBrush(
+                    Color.FromArgb(
+                        48,
+                        stateColor)))
+            using (StringFormat centered =
+                new StringFormat
+                {
+                    Alignment =
+                        StringAlignment.Center,
+
+                    LineAlignment =
+                        StringAlignment.Center,
+
+                    Trimming =
+                        StringTrimming.EllipsisCharacter,
+
+                    FormatFlags =
+                        StringFormatFlags.NoWrap
+                })
             {
-                if (producing) graphics.FillEllipse(fill,bounds);
-                graphics.DrawEllipse(outer,bounds);
-                graphics.DrawEllipse(inner,Rectangle.Inflate(bounds,-6,-6));
-                graphics.DrawString(point.DisplayNumber.ToString("00"),numberFont,brush,bounds,centered);
-                Rectangle tag=new Rectangle(bounds.Left-25,bounds.Bottom+2,bounds.Width+50,18);
-                graphics.DrawString(CreateEngineTag(point),detailFont,brush,tag,centered);
-                if(state!=null&&state.OperatingState==EngineOperatingState.Flameout)
-                { graphics.DrawLine(outer,bounds.Left+8,bounds.Top+8,bounds.Right-8,bounds.Bottom-8); graphics.DrawLine(outer,bounds.Right-8,bounds.Top+8,bounds.Left+8,bounds.Bottom-8); }
+                if (producing)
+                {
+                    graphics.FillEllipse(
+                        fill,
+                        bounds);
+                }
+
+                graphics.DrawEllipse(
+                    outer,
+                    bounds);
+
+                Rectangle innerBounds =
+                    Rectangle.Inflate(
+                        bounds,
+                        -5,
+                        -5);
+
+                if (innerBounds.Width > 4 &&
+                    innerBounds.Height > 4)
+                {
+                    graphics.DrawEllipse(
+                        inner,
+                        innerBounds);
+                }
+
+                /*
+                 * The stable mission identifier is the only label. It is
+                 * rendered inside the symbol, eliminating both the duplicate
+                 * display number and all external label collisions.
+                 */
+                graphics.DrawString(
+                    identifier,
+                    identifierFont,
+                    brush,
+                    Rectangle.Inflate(
+                        bounds,
+                        -3,
+                        -3),
+                    centered);
+
+                if (state != null &&
+                    state.OperatingState ==
+                        EngineOperatingState.Flameout)
+                {
+                    graphics.DrawLine(
+                        outer,
+                        bounds.Left + 7,
+                        bounds.Top + 7,
+                        bounds.Right - 7,
+                        bounds.Bottom - 7);
+
+                    graphics.DrawLine(
+                        outer,
+                        bounds.Right - 7,
+                        bounds.Top + 7,
+                        bounds.Left + 7,
+                        bounds.Bottom - 7);
+                }
             }
         }
+
+        private static float CalculateIdentifierFontSize(
+            Font baseFont,
+            string identifier,
+            int symbolWidth)
+        {
+            int characterCount =
+                string.IsNullOrEmpty(
+                    identifier)
+                    ? 1
+                    : identifier.Length;
+
+            float size =
+                Math.Max(
+                    8.0f,
+                    baseFont.SizeInPoints);
+
+            if (characterCount >= 4)
+            {
+                size =
+                    Math.Min(
+                        size,
+                        Math.Max(
+                            8.0f,
+                            symbolWidth /
+                            5.2f));
+            }
+            else
+            {
+                size =
+                    Math.Min(
+                        size + 1.0f,
+                        Math.Max(
+                            8.0f,
+                            symbolWidth /
+                            4.2f));
+            }
+
+            return size;
+        }
+
         private static Color ResolveEngineStateColor(Color normal, EngineStateTelemetry state)
         {
             if(state==null)return Color.FromArgb(135,normal);
