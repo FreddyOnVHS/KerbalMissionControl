@@ -12,6 +12,19 @@ namespace KMC.MissionControl.Rendering.Propulsion
     /// </summary>
     public sealed class PropulsionDisplayRenderer
     {
+        private static readonly object ValveAnimationSync =
+            new object();
+
+        private static bool _lastValveTargetOpen;
+
+        private static bool _valveAnimationInitialized;
+
+        private static DateTime _valveTransitionStartedUtc =
+            DateTime.MinValue;
+
+        private const double ValveTransitionSeconds =
+            0.30;
+
         private enum LiquidPropulsionState
         {
             Unavailable = 0,
@@ -28,6 +41,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
             public int InstalledCount { get; set; }
 
             public int ProducingCount { get; set; }
+
+            public double ThrottleFraction { get; set; }
 
             public bool FlowActive
             {
@@ -1346,6 +1361,14 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     system,
                     telemetry);
 
+            DateTime animationNowUtc =
+                DateTime.UtcNow;
+
+            double valveOpenFraction =
+                GetValveOpenFraction(
+                    liquidState.ValveOpen,
+                    animationNowUtc);
+
             Color lfFlowColor =
                 ResolveLiquidFeedColor(
                     liquidState,
@@ -1486,7 +1509,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     mixer.Height / 2),
                 lfFlowColor,
                 "LF",
-                liquidState.FlowActive,
+                liquidState,
+                animationNowUtc,
                 smallFont);
 
             DrawPumpFlow(
@@ -1501,7 +1525,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     mixer.Height / 2),
                 oxFlowColor,
                 "OX",
-                liquidState.FlowActive,
+                liquidState,
+                animationNowUtc,
                 smallFont);
 
             DrawBox(
@@ -1523,13 +1548,14 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 mixer,
                 valve,
                 liquidCenterColor,
-                liquidState.FlowActive);
+                liquidState,
+                animationNowUtc);
 
             DrawValve(
                 graphics,
                 valve,
                 liquidCenterColor,
-                liquidState.ValveOpen,
+                valveOpenFraction,
                 smallFont);
 
             DrawVerticalFlow(
@@ -1537,7 +1563,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 valve,
                 chamber,
                 liquidCenterColor,
-                liquidState.FlowActive);
+                liquidState,
+                animationNowUtc);
 
             int liquidEngineCount =
                 liquidState.InstalledCount;
@@ -1561,6 +1588,16 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 graphics,
                 chamber,
                 liquidCenterColor);
+
+            if (liquidState.State ==
+                LiquidPropulsionState.Flameout)
+            {
+                DrawLiquidFaultAnnunciator(
+                    graphics,
+                    chamber,
+                    animationNowUtc,
+                    smallFont);
+            }
 
             if (system.HasMonopropellant)
             {
@@ -1720,9 +1757,17 @@ namespace KMC.MissionControl.Rendering.Propulsion
              * after the player returns throttle to zero. The schematic treats
              * zero throttle as no commanded flow regardless of that flag.
              */
+            snapshot.ThrottleFraction =
+                telemetry != null
+                    ? Math.Max(
+                        0.0,
+                        Math.Min(
+                            1.0,
+                            telemetry.Throttle))
+                    : 0.0;
+
             bool thrustCommanded =
-                telemetry != null &&
-                telemetry.Throttle >
+                snapshot.ThrottleFraction >
                     0.005;
 
             int producing =
@@ -1839,11 +1884,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         75);
 
                 case LiquidPropulsionState.Flameout:
-                    return Color.FromArgb(
-                        255,
-                        255,
-                        75,
-                        55);
+                    return CreateFaultPulseColor(
+                        DateTime.UtcNow);
 
                 case LiquidPropulsionState.Idle:
                     /*
@@ -1882,11 +1924,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         75);
 
                 case LiquidPropulsionState.Flameout:
-                    return Color.FromArgb(
-                        255,
-                        255,
-                        75,
-                        55);
+                    return CreateFaultPulseColor(
+                        DateTime.UtcNow);
 
                 case LiquidPropulsionState.Idle:
                     return Color.FromArgb(
@@ -1920,15 +1959,346 @@ namespace KMC.MissionControl.Rendering.Propulsion
             }
         }
 
+        private static double GetValveOpenFraction(
+            bool targetOpen,
+            DateTime nowUtc)
+        {
+            lock (ValveAnimationSync)
+            {
+                if (!_valveAnimationInitialized)
+                {
+                    _valveAnimationInitialized =
+                        true;
+
+                    _lastValveTargetOpen =
+                        targetOpen;
+
+                    _valveTransitionStartedUtc =
+                        nowUtc -
+                        TimeSpan.FromSeconds(
+                            ValveTransitionSeconds);
+                }
+                else if (_lastValveTargetOpen !=
+                         targetOpen)
+                {
+                    _lastValveTargetOpen =
+                        targetOpen;
+
+                    _valveTransitionStartedUtc =
+                        nowUtc;
+                }
+
+                double progress =
+                    Math.Max(
+                        0.0,
+                        Math.Min(
+                            1.0,
+                            (nowUtc -
+                             _valveTransitionStartedUtc)
+                                .TotalSeconds /
+                            ValveTransitionSeconds));
+
+                /*
+                 * Smoothstep avoids an abrupt mechanical snap at either end.
+                 */
+                progress =
+                    progress *
+                    progress *
+                    (3.0 -
+                     2.0 *
+                     progress);
+
+                return targetOpen
+                    ? progress
+                    : 1.0 -
+                      progress;
+            }
+        }
+
+        private static void DrawHorizontalFlowPackets(
+            Graphics graphics,
+            Point start,
+            Point end,
+            Color color,
+            double throttle,
+            DateTime nowUtc,
+            bool reverse)
+        {
+            int length =
+                Math.Abs(
+                    end.X -
+                    start.X);
+
+            if (length <
+                18)
+            {
+                return;
+            }
+
+            int packetCount =
+                Math.Max(
+                    2,
+                    Math.Min(
+                        7,
+                        length /
+                        54));
+
+            double speed =
+                0.35 +
+                1.65 *
+                throttle;
+
+            double phase =
+                (nowUtc.TimeOfDay
+                    .TotalSeconds *
+                 speed) %
+                1.0;
+
+            using (SolidBrush brush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        225,
+                        color)))
+            {
+                for (int index = 0;
+                     index < packetCount;
+                     index++)
+                {
+                    double fraction =
+                        (phase +
+                         index /
+                         (double)packetCount) %
+                        1.0;
+
+                    if (reverse)
+                    {
+                        fraction =
+                            1.0 -
+                            fraction;
+                    }
+
+                    int x =
+                        (int)Math.Round(
+                            start.X +
+                            (end.X -
+                             start.X) *
+                            fraction);
+
+                    int y =
+                        start.Y;
+
+                    int radius =
+                        throttle >
+                        0.66
+                            ? 3
+                            : 2;
+
+                    graphics.FillEllipse(
+                        brush,
+                        x - radius,
+                        y - radius,
+                        radius * 2,
+                        radius * 2);
+                }
+            }
+        }
+
+        private static void DrawVerticalFlowPackets(
+            Graphics graphics,
+            Point start,
+            Point end,
+            Color color,
+            double throttle,
+            DateTime nowUtc)
+        {
+            int length =
+                Math.Abs(
+                    end.Y -
+                    start.Y);
+
+            if (length <
+                14)
+            {
+                return;
+            }
+
+            int packetCount =
+                Math.Max(
+                    1,
+                    Math.Min(
+                        4,
+                        length /
+                        32));
+
+            double speed =
+                0.35 +
+                1.65 *
+                throttle;
+
+            double phase =
+                (nowUtc.TimeOfDay
+                    .TotalSeconds *
+                 speed) %
+                1.0;
+
+            using (SolidBrush brush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        225,
+                        color)))
+            {
+                for (int index = 0;
+                     index < packetCount;
+                     index++)
+                {
+                    double fraction =
+                        (phase +
+                         index /
+                         (double)packetCount) %
+                        1.0;
+
+                    int x =
+                        start.X;
+
+                    int y =
+                        (int)Math.Round(
+                            start.Y +
+                            (end.Y -
+                             start.Y) *
+                            fraction);
+
+                    int radius =
+                        throttle >
+                        0.66
+                            ? 3
+                            : 2;
+
+                    graphics.FillEllipse(
+                        brush,
+                        x - radius,
+                        y - radius,
+                        radius * 2,
+                        radius * 2);
+                }
+            }
+        }
+
+        private static Color CreateFaultPulseColor(
+            DateTime nowUtc)
+        {
+            double pulse =
+                0.5 +
+                0.5 *
+                Math.Sin(
+                    nowUtc.TimeOfDay
+                        .TotalSeconds *
+                    Math.PI *
+                    4.0);
+
+            return Color.FromArgb(
+                255,
+                255,
+                (int)Math.Round(
+                    35 +
+                    70 *
+                    pulse),
+                (int)Math.Round(
+                    30 +
+                    35 *
+                    pulse));
+        }
+
+        private static void DrawLiquidFaultAnnunciator(
+            Graphics graphics,
+            Rectangle chamber,
+            DateTime nowUtc,
+            Font font)
+        {
+            Color fault =
+                CreateFaultPulseColor(
+                    nowUtc);
+
+            Rectangle bounds =
+                new Rectangle(
+                    chamber.Left - 8,
+                    chamber.Bottom + 34,
+                    chamber.Width + 16,
+                    24);
+
+            using (Pen pen =
+                new Pen(
+                    fault,
+                    2.0f))
+            using (SolidBrush brush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        42,
+                        fault)))
+            using (SolidBrush text =
+                new SolidBrush(
+                    fault))
+            using (StringFormat centered =
+                new StringFormat
+                {
+                    Alignment =
+                        StringAlignment.Center,
+                    LineAlignment =
+                        StringAlignment.Center
+                })
+            {
+                graphics.FillRectangle(
+                    brush,
+                    bounds);
+
+                graphics.DrawRectangle(
+                    pen,
+                    bounds);
+
+                graphics.DrawString(
+                    "LIQUID FLOW FAULT",
+                    font,
+                    text,
+                    bounds,
+                    centered);
+            }
+        }
+
         private static void DrawPumpFlow(
             Graphics graphics,
             Point start,
             Point end,
             Color color,
             string label,
-            bool active,
+            LiquidPropulsionSnapshot liquidState,
+            DateTime nowUtc,
             Font font)
         {
+            bool active =
+                liquidState != null &&
+                liquidState.FlowActive;
+
+            double throttle =
+                liquidState != null
+                    ? liquidState.ThrottleFraction
+                    : 0.0;
+
+            double vibration =
+                active &&
+                liquidState.State ==
+                    LiquidPropulsionState.Running
+                    ? Math.Sin(
+                        nowUtc.TimeOfDay
+                            .TotalSeconds *
+                        26.0) *
+                      Math.Min(
+                          1.0,
+                          throttle)
+                    : 0.0;
+
+            int vibrationOffset =
+                (int)Math.Round(
+                    vibration);
+
             int middleX =
                 (start.X + end.X) /
                 2;
@@ -1936,7 +2306,8 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Point pumpCenter =
                 new Point(
                     middleX,
-                    start.Y);
+                    start.Y +
+                    vibrationOffset);
 
             int pumpRadius =
                 22;
@@ -1948,16 +2319,27 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         145,
                         color);
 
+            float pipeWidth =
+                active
+                    ? (float)(
+                        1.7 +
+                        2.1 *
+                        throttle)
+                    : 1.2f;
+
             using (Pen pipePen =
                 new Pen(
                     pumpColor,
-                    2.0f))
+                    pipeWidth))
             using (Pen pumpPen =
                 new Pen(
                     pumpColor,
                     active
-                        ? 2.4f
-                        : 1.5f))
+                        ? (float)(
+                            2.0 +
+                            1.0 *
+                            throttle)
+                        : 1.4f))
             using (SolidBrush brush =
                 new SolidBrush(
                     pumpColor))
@@ -1965,8 +2347,11 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 new SolidBrush(
                     Color.FromArgb(
                         active
-                            ? 42
-                            : 18,
+                            ? (int)(
+                                32 +
+                                54 *
+                                throttle)
+                            : 16,
                         pumpColor)))
             using (StringFormat centered =
                 new StringFormat
@@ -1982,31 +2367,60 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 })
             {
                 pipePen.EndCap =
-                    LineCap.ArrowAnchor;
+                    active
+                        ? LineCap.ArrowAnchor
+                        : LineCap.Flat;
+
+                Point firstPipeEnd =
+                    new Point(
+                        pumpCenter.X -
+                        pumpRadius,
+                        start.Y);
+
+                Point secondPipeStart =
+                    new Point(
+                        pumpCenter.X +
+                        pumpRadius,
+                        start.Y);
 
                 graphics.DrawLine(
                     pipePen,
                     start,
-                    new Point(
-                        pumpCenter.X -
-                        pumpRadius,
-                        start.Y));
+                    firstPipeEnd);
 
                 graphics.DrawLines(
                     pipePen,
                     new[]
                     {
-                        new Point(
-                            pumpCenter.X +
-                            pumpRadius,
-                            start.Y),
-
+                        secondPipeStart,
                         new Point(
                             end.X,
                             start.Y),
-
                         end
                     });
+
+                if (active)
+                {
+                    DrawHorizontalFlowPackets(
+                        graphics,
+                        start,
+                        firstPipeEnd,
+                        pumpColor,
+                        throttle,
+                        nowUtc,
+                        false);
+
+                    DrawHorizontalFlowPackets(
+                        graphics,
+                        secondPipeStart,
+                        new Point(
+                            end.X,
+                            start.Y),
+                        pumpColor,
+                        throttle,
+                        nowUtc,
+                        start.X > end.X);
+                }
 
                 Rectangle pumpBounds =
                     new Rectangle(
@@ -2030,7 +2444,9 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     pumpCenter,
                     pumpRadius - 6,
                     pumpPen,
-                    active);
+                    active,
+                    throttle,
+                    nowUtc);
 
                 Rectangle labelBounds =
                     new Rectangle(
@@ -2053,16 +2469,33 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Point center,
             int radius,
             Pen pen,
-            bool active)
+            bool active,
+            double throttle,
+            DateTime nowUtc)
         {
             int bladeCount =
                 8;
 
+            /*
+             * Approximately 0.4 rotations/second near idle command and
+             * 4 rotations/second at full throttle.
+             */
+            double rotationsPerSecond =
+                active
+                    ? 0.4 +
+                      3.6 *
+                      Math.Max(
+                          0.0,
+                          Math.Min(
+                              1.0,
+                              throttle))
+                    : 0.0;
+
             double phase =
                 active
-                    ? DateTime.UtcNow
-                        .Millisecond /
-                      1000.0 *
+                    ? nowUtc.TimeOfDay
+                        .TotalSeconds *
+                      rotationsPerSecond *
                       Math.PI *
                       2.0
                     : 0.0;
@@ -2176,13 +2609,38 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Rectangle from,
             Rectangle to,
             Color color,
-            bool active)
+            LiquidPropulsionSnapshot liquidState,
+            DateTime nowUtc)
         {
+            bool active =
+                liquidState != null &&
+                liquidState.FlowActive;
+
+            double throttle =
+                liquidState != null
+                    ? liquidState.ThrottleFraction
+                    : 0.0;
+
+            Point start =
+                new Point(
+                    from.Left +
+                    from.Width / 2,
+                    from.Bottom);
+
+            Point end =
+                new Point(
+                    to.Left +
+                    to.Width / 2,
+                    to.Top);
+
             using (Pen pen =
                 new Pen(
                     color,
                     active
-                        ? 2.2f
+                        ? (float)(
+                            1.7 +
+                            2.1 *
+                            throttle)
                         : 1.2f))
             {
                 pen.EndCap =
@@ -2192,12 +2650,19 @@ namespace KMC.MissionControl.Rendering.Propulsion
 
                 graphics.DrawLine(
                     pen,
-                    from.Left +
-                    from.Width / 2,
-                    from.Bottom,
-                    to.Left +
-                    to.Width / 2,
-                    to.Top);
+                    start,
+                    end);
+            }
+
+            if (active)
+            {
+                DrawVerticalFlowPackets(
+                    graphics,
+                    start,
+                    end,
+                    color,
+                    throttle,
+                    nowUtc);
             }
         }
 
@@ -2205,9 +2670,16 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Graphics graphics,
             Rectangle bounds,
             Color color,
-            bool open,
+            double openFraction,
             Font font)
         {
+            openFraction =
+                Math.Max(
+                    0.0,
+                    Math.Min(
+                        1.0,
+                        openFraction));
+
             Point center =
                 new Point(
                     bounds.Left +
@@ -2215,12 +2687,32 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     bounds.Top +
                     bounds.Height / 2);
 
+            int separation =
+                (int)Math.Round(
+                    openFraction *
+                    Math.Max(
+                        4,
+                        bounds.Width /
+                        9));
+
+            Point leftTip =
+                new Point(
+                    center.X -
+                    separation,
+                    center.Y);
+
+            Point rightTip =
+                new Point(
+                    center.X +
+                    separation,
+                    center.Y);
+
             Point[] left =
             {
                 new Point(
                     bounds.Left,
                     bounds.Top + 4),
-                center,
+                leftTip,
                 new Point(
                     bounds.Left,
                     bounds.Bottom - 4)
@@ -2231,16 +2723,20 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 new Point(
                     bounds.Right,
                     bounds.Top + 4),
-                center,
+                rightTip,
                 new Point(
                     bounds.Right,
                     bounds.Bottom - 4)
             };
 
+            bool visuallyOpen =
+                openFraction >=
+                    0.98;
+
             using (Pen pen =
                 new Pen(
                     color,
-                    open
+                    visuallyOpen
                         ? 2.0f
                         : 1.4f))
             using (SolidBrush brush =
@@ -2263,12 +2759,9 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     pen,
                     right);
 
-                if (!open)
+                if (openFraction <
+                    0.05)
                 {
-                    /*
-                     * A center isolation bar makes the closed state obvious
-                     * without changing the familiar bow-tie valve symbol.
-                     */
                     graphics.DrawLine(
                         pen,
                         center.X,
@@ -2277,16 +2770,34 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         bounds.Bottom - 3);
                 }
 
+                string valveLabel;
+
+                if (openFraction <=
+                    0.02)
+                {
+                    valveLabel =
+                        "MAIN VALVE CLOSED";
+                }
+                else if (openFraction >=
+                         0.98)
+                {
+                    valveLabel =
+                        "MAIN VALVE OPEN";
+                }
+                else
+                {
+                    valveLabel =
+                        "MAIN VALVE TRANSIT";
+                }
+
                 graphics.DrawString(
-                    open
-                        ? "MAIN VALVE OPEN"
-                        : "MAIN VALVE CLOSED",
+                    valveLabel,
                     font,
                     brush,
                     new Rectangle(
-                        bounds.Left - 30,
+                        bounds.Left - 34,
                         bounds.Bottom + 2,
-                        bounds.Width + 60,
+                        bounds.Width + 68,
                         18),
                     centered);
             }

@@ -160,7 +160,13 @@ namespace KMC.MissionControl.Cards.Propulsion
                     ? StableStringKey(
                         graph.VesselName)
                     : 0L,
-                EngineStateTelemetryStore.GetRevision());
+                EngineStateTelemetryStore.GetRevision(),
+                telemetry.Throttle > 0.005
+                    ? DateTime.UtcNow.Ticks /
+                      TimeSpan.FromMilliseconds(
+                          100.0)
+                          .Ticks
+                    : 0L);
         }
 
         private static string BuildPerformanceSignature(
