@@ -15,6 +15,14 @@ namespace KMC.MissionControl.Cards
 
         long DrawCount { get; }
 
+        long PresentationCount { get; }
+
+        long CacheHitCount { get; }
+
+        long BitmapAllocationCount { get; }
+
+        long CachedBitmapBytes { get; }
+
         double LastDrawMilliseconds { get; }
 
         double AverageDrawMilliseconds { get; }

@@ -20,9 +20,10 @@ namespace KMC.MissionControl.Cards.Propulsion
             get { return false; }
         }
 
-        protected override Rectangle CalculateContentBounds()
+        protected override Rectangle CalculateContentBounds(
+            Rectangle localBounds)
         {
-            return Bounds;
+            return localBounds;
         }
 
         protected override void DrawContent(

@@ -4,11 +4,6 @@ using System.Drawing;
 
 namespace KMC.MissionControl.Cards
 {
-    /// <summary>
-    /// Central diagnostic store for card draw counts, bounds, dirty reasons,
-    /// and render duration. This is intentionally independent of the visual
-    /// performance overlay so future developer tools can consume it directly.
-    /// </summary>
     public static class CardDiagnosticsRegistry
     {
         private static readonly object SyncRoot =
@@ -19,11 +14,15 @@ namespace KMC.MissionControl.Cards
                 new Dictionary<string, CardDiagnosticSnapshot>(
                     StringComparer.Ordinal);
 
-        public static void RecordDraw(
+        public static void Record(
             string id,
             Rectangle bounds,
             CardDirtyState dirtyStateBeforeDraw,
             long drawCount,
+            long presentationCount,
+            long cacheHitCount,
+            long bitmapAllocationCount,
+            long cachedBitmapBytes,
             double lastDrawMilliseconds,
             double averageDrawMilliseconds)
         {
@@ -37,21 +36,21 @@ namespace KMC.MissionControl.Cards
                 Snapshots[id] =
                     new CardDiagnosticSnapshot
                     {
-                        Id =
-                            id,
-
-                        Bounds =
-                            bounds,
-
+                        Id = id,
+                        Bounds = bounds,
                         DirtyStateBeforeDraw =
                             dirtyStateBeforeDraw,
-
-                        DrawCount =
-                            drawCount,
-
+                        DrawCount = drawCount,
+                        PresentationCount =
+                            presentationCount,
+                        CacheHitCount =
+                            cacheHitCount,
+                        BitmapAllocationCount =
+                            bitmapAllocationCount,
+                        CachedBitmapBytes =
+                            cachedBitmapBytes,
                         LastDrawMilliseconds =
                             lastDrawMilliseconds,
-
                         AverageDrawMilliseconds =
                             averageDrawMilliseconds
                     };
@@ -66,29 +65,30 @@ namespace KMC.MissionControl.Cards
                     new List<CardDiagnosticSnapshot>(
                         Snapshots.Count);
 
-                foreach (CardDiagnosticSnapshot snapshot
+                foreach (CardDiagnosticSnapshot source
                     in Snapshots.Values)
                 {
                     result.Add(
                         new CardDiagnosticSnapshot
                         {
-                            Id =
-                                snapshot.Id,
-
-                            Bounds =
-                                snapshot.Bounds,
-
+                            Id = source.Id,
+                            Bounds = source.Bounds,
                             DirtyStateBeforeDraw =
-                                snapshot.DirtyStateBeforeDraw,
-
+                                source.DirtyStateBeforeDraw,
                             DrawCount =
-                                snapshot.DrawCount,
-
+                                source.DrawCount,
+                            PresentationCount =
+                                source.PresentationCount,
+                            CacheHitCount =
+                                source.CacheHitCount,
+                            BitmapAllocationCount =
+                                source.BitmapAllocationCount,
+                            CachedBitmapBytes =
+                                source.CachedBitmapBytes,
                             LastDrawMilliseconds =
-                                snapshot.LastDrawMilliseconds,
-
+                                source.LastDrawMilliseconds,
                             AverageDrawMilliseconds =
-                                snapshot.AverageDrawMilliseconds
+                                source.AverageDrawMilliseconds
                         });
                 }
 

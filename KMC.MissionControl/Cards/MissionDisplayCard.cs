@@ -2,16 +2,16 @@
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using KMC.MissionControl.Rendering;
 
 namespace KMC.MissionControl.Cards
 {
     /// <summary>
-    /// Base implementation for retained mission display cards.
+    /// Retained mission display card.
     ///
-    /// Cards still draw into the shared page bitmap in Build 0.9.0.2. The
-    /// dirty-state and timing lifecycle introduced here is the foundation for
-    /// independent card bitmap caching in a later milestone.
+    /// Dirty cards rebuild one reusable local bitmap. Clean cards only present
+    /// the cached bitmap onto the existing page canvas.
     /// </summary>
     public abstract class MissionDisplayCard<TModel> :
         IMissionDisplayCard<TModel>
@@ -23,7 +23,14 @@ namespace KMC.MissionControl.Cards
         private Rectangle _bounds;
         private bool _visible;
 
+        private Bitmap _cachedBitmap;
+        private Size _cachedBitmapSize;
+
         private long _drawCount;
+        private long _presentationCount;
+        private long _cacheHitCount;
+        private long _bitmapAllocationCount;
+
         private double _lastDrawMilliseconds;
         private double _averageDrawMilliseconds;
 
@@ -38,40 +45,23 @@ namespace KMC.MissionControl.Cards
                     nameof(id));
             }
 
-            Id =
-                id.Trim();
-
+            Id = id.Trim();
             Title =
                 string.IsNullOrWhiteSpace(title)
                     ? Id
                     : title.Trim();
 
-            _visible =
-                true;
-
-            DirtyState =
-                CardDirtyState.All;
+            _visible = true;
+            DirtyState = CardDirtyState.All;
         }
 
-        public string Id
-        {
-            get;
-            private set;
-        }
+        public string Id { get; private set; }
 
-        public string Title
-        {
-            get;
-            protected set;
-        }
+        public string Title { get; protected set; }
 
         public Rectangle Bounds
         {
-            get
-            {
-                return _bounds;
-            }
-
+            get { return _bounds; }
             set
             {
                 if (_bounds == value)
@@ -79,8 +69,7 @@ namespace KMC.MissionControl.Cards
                     return;
                 }
 
-                _bounds =
-                    value;
+                _bounds = value;
 
                 MarkDirty(
                     CardDirtyState.Layout |
@@ -90,11 +79,7 @@ namespace KMC.MissionControl.Cards
 
         public bool Visible
         {
-            get
-            {
-                return _visible;
-            }
-
+            get { return _visible; }
             set
             {
                 if (_visible == value)
@@ -102,11 +87,8 @@ namespace KMC.MissionControl.Cards
                     return;
                 }
 
-                _visible =
-                    value;
-
-                MarkDirty(
-                    CardDirtyState.Static);
+                _visible = value;
+                MarkDirty(CardDirtyState.Static);
             }
         }
 
@@ -119,6 +101,33 @@ namespace KMC.MissionControl.Cards
         public long DrawCount
         {
             get { return _drawCount; }
+        }
+
+        public long PresentationCount
+        {
+            get { return _presentationCount; }
+        }
+
+        public long CacheHitCount
+        {
+            get { return _cacheHitCount; }
+        }
+
+        public long BitmapAllocationCount
+        {
+            get { return _bitmapAllocationCount; }
+        }
+
+        public long CachedBitmapBytes
+        {
+            get
+            {
+                return _cachedBitmap == null
+                    ? 0L
+                    : (long)_cachedBitmap.Width *
+                      _cachedBitmap.Height *
+                      4L;
+            }
         }
 
         public double LastDrawMilliseconds
@@ -136,34 +145,10 @@ namespace KMC.MissionControl.Cards
             get { return true; }
         }
 
-        protected virtual Rectangle CalculateContentBounds()
-        {
-            if (!DrawStandardFrame)
-            {
-                return Bounds;
-            }
-
-            return new Rectangle(
-                Bounds.Left +
-                HorizontalContentInset,
-                Bounds.Top +
-                TopContentInset,
-                Math.Max(
-                    1,
-                    Bounds.Width -
-                    HorizontalContentInset * 2),
-                Math.Max(
-                    1,
-                    Bounds.Height -
-                    TopContentInset -
-                    BottomContentInset));
-        }
-
         public void MarkDirty(
             CardDirtyState dirtyState)
         {
-            DirtyState |=
-                dirtyState;
+            DirtyState |= dirtyState;
         }
 
         public void Draw(
@@ -181,65 +166,42 @@ namespace KMC.MissionControl.Cards
             CardDirtyState stateBeforeDraw =
                 DirtyState;
 
-            Stopwatch stopwatch =
-                Stopwatch.StartNew();
+            EnsureBitmap();
 
-            try
+            bool rebuild =
+                DirtyState != CardDirtyState.None;
+
+            if (rebuild)
             {
-                if (DrawStandardFrame)
-                {
-                    DrawFrame(
-                        context);
-                }
-
-                Rectangle contentBounds =
-                    CalculateContentBounds();
-
-                GraphicsState graphicsState =
-                    context.Graphics.Save();
-
-                try
-                {
-                    context.Graphics.SetClip(
-                        contentBounds);
-
-                    DrawContent(
-                        context,
-                        contentBounds,
-                        model);
-                }
-                finally
-                {
-                    context.Graphics.Restore(
-                        graphicsState);
-                }
-            }
-            finally
-            {
-                stopwatch.Stop();
-
-                _drawCount++;
-
-                _lastDrawMilliseconds =
-                    stopwatch.Elapsed.TotalMilliseconds;
-
-                _averageDrawMilliseconds =
-                    UpdateRunningAverage(
-                        _averageDrawMilliseconds,
-                        _lastDrawMilliseconds,
-                        _drawCount);
-
-                CardDiagnosticsRegistry.RecordDraw(
-                    Id,
-                    Bounds,
-                    stateBeforeDraw,
-                    _drawCount,
-                    _lastDrawMilliseconds,
-                    _averageDrawMilliseconds);
+                RebuildBitmap(
+                    context,
+                    model);
 
                 DirtyState =
                     CardDirtyState.None;
             }
+            else
+            {
+                _cacheHitCount++;
+            }
+
+            context.Graphics.DrawImageUnscaled(
+                _cachedBitmap,
+                Bounds.Location);
+
+            _presentationCount++;
+
+            CardDiagnosticsRegistry.Record(
+                Id,
+                Bounds,
+                stateBeforeDraw,
+                _drawCount,
+                _presentationCount,
+                _cacheHitCount,
+                _bitmapAllocationCount,
+                CachedBitmapBytes,
+                _lastDrawMilliseconds,
+                _averageDrawMilliseconds);
         }
 
         protected abstract void DrawContent(
@@ -247,8 +209,156 @@ namespace KMC.MissionControl.Cards
             Rectangle contentBounds,
             TModel model);
 
+        protected virtual Rectangle CalculateContentBounds(
+            Rectangle localBounds)
+        {
+            if (!DrawStandardFrame)
+            {
+                return localBounds;
+            }
+
+            return new Rectangle(
+                localBounds.Left +
+                HorizontalContentInset,
+                localBounds.Top +
+                TopContentInset,
+                Math.Max(
+                    1,
+                    localBounds.Width -
+                    HorizontalContentInset * 2),
+                Math.Max(
+                    1,
+                    localBounds.Height -
+                    TopContentInset -
+                    BottomContentInset));
+        }
+
+        private void EnsureBitmap()
+        {
+            Size required =
+                new Size(
+                    Math.Max(1, Bounds.Width),
+                    Math.Max(1, Bounds.Height));
+
+            if (_cachedBitmap != null &&
+                _cachedBitmapSize == required)
+            {
+                return;
+            }
+
+            if (_cachedBitmap != null)
+            {
+                _cachedBitmap.Dispose();
+            }
+
+            _cachedBitmap =
+                new Bitmap(
+                    required.Width,
+                    required.Height,
+                    PixelFormat.Format32bppPArgb);
+
+            _cachedBitmapSize =
+                required;
+
+            _bitmapAllocationCount++;
+
+            MarkDirty(
+                CardDirtyState.Layout |
+                CardDirtyState.Static);
+        }
+
+        private void RebuildBitmap(
+            MissionRenderContext parentContext,
+            TModel model)
+        {
+            Stopwatch stopwatch =
+                Stopwatch.StartNew();
+
+            using (Graphics graphics =
+                Graphics.FromImage(
+                    _cachedBitmap))
+            {
+                graphics.Clear(
+                    Color.Transparent);
+
+                graphics.SmoothingMode =
+                    SmoothingMode.AntiAlias;
+
+                graphics.PixelOffsetMode =
+                    PixelOffsetMode.HighQuality;
+
+                graphics.InterpolationMode =
+                    InterpolationMode.HighQualityBicubic;
+
+                graphics.TextRenderingHint =
+                    parentContext.Graphics
+                        .TextRenderingHint;
+
+                Rectangle localBounds =
+                    new Rectangle(
+                        0,
+                        0,
+                        _cachedBitmap.Width,
+                        _cachedBitmap.Height);
+
+                MissionRenderContext localContext =
+                    new MissionRenderContext(
+                        graphics,
+                        localBounds,
+                        parentContext.LargeFont,
+                        parentContext.SmallFont,
+                        parentContext.PhosphorColor,
+                        parentContext.DimPhosphorColor,
+                        parentContext.VirtualCanvasSize);
+
+                if (DrawStandardFrame)
+                {
+                    DrawFrame(
+                        localContext,
+                        localBounds);
+                }
+
+                Rectangle contentBounds =
+                    CalculateContentBounds(
+                        localBounds);
+
+                GraphicsState graphicsState =
+                    graphics.Save();
+
+                try
+                {
+                    graphics.SetClip(
+                        contentBounds);
+
+                    DrawContent(
+                        localContext,
+                        contentBounds,
+                        model);
+                }
+                finally
+                {
+                    graphics.Restore(
+                        graphicsState);
+                }
+            }
+
+            stopwatch.Stop();
+
+            _drawCount++;
+
+            _lastDrawMilliseconds =
+                stopwatch.Elapsed.TotalMilliseconds;
+
+            _averageDrawMilliseconds =
+                UpdateRunningAverage(
+                    _averageDrawMilliseconds,
+                    _lastDrawMilliseconds,
+                    _drawCount);
+        }
+
         private void DrawFrame(
-            MissionRenderContext context)
+            MissionRenderContext context,
+            Rectangle bounds)
         {
             using (SolidBrush fill =
                 new SolidBrush(
@@ -269,25 +379,28 @@ namespace KMC.MissionControl.Cards
             {
                 context.Graphics.FillRectangle(
                     fill,
-                    Bounds);
+                    bounds);
 
                 context.Graphics.DrawRectangle(
                     border,
-                    Bounds);
+                    bounds.Left,
+                    bounds.Top,
+                    Math.Max(0, bounds.Width - 1),
+                    Math.Max(0, bounds.Height - 1));
 
                 context.Graphics.DrawString(
                     Title,
                     context.SmallFont,
                     titleBrush,
-                    Bounds.Left + 14,
-                    Bounds.Top + 12);
+                    bounds.Left + 14,
+                    bounds.Top + 12);
 
                 context.Graphics.DrawLine(
                     border,
-                    Bounds.Left + 14,
-                    Bounds.Top + 39,
-                    Bounds.Right - 14,
-                    Bounds.Top + 39);
+                    bounds.Left + 14,
+                    bounds.Top + 39,
+                    bounds.Right - 14,
+                    bounds.Top + 39);
             }
         }
 
@@ -301,10 +414,8 @@ namespace KMC.MissionControl.Cards
                 return sample;
             }
 
-            return
-                currentAverage +
-                (sample -
-                 currentAverage) /
+            return currentAverage +
+                (sample - currentAverage) /
                 sampleCount;
         }
     }

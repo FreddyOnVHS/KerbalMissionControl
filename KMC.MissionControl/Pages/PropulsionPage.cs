@@ -34,6 +34,9 @@ namespace KMC.MissionControl.Pages
         private int _lastStage =
             int.MinValue;
 
+        private int _lastProducingEngineCount =
+            int.MinValue;
+
         public string Name
         {
             get { return "PROPULSION"; }
@@ -119,7 +122,25 @@ namespace KMC.MissionControl.Pages
             }
             else
             {
-                MarkAllCardsDirty(
+                /*
+                 * The engine-cluster card changes only when thrust-production
+                 * state changes. The remaining cards continue following live
+                 * telemetry conservatively in this first retained-cache build.
+                 */
+                if (telemetry.ProducingThrustEngineCount !=
+                    _lastProducingEngineCount)
+                {
+                    _engineClusterCard.MarkDirty(
+                        CardDirtyState.Telemetry);
+                }
+
+                _performanceCard.MarkDirty(
+                    CardDirtyState.Telemetry);
+
+                _propellantFlowCard.MarkDirty(
+                    CardDirtyState.Telemetry);
+
+                _footerCard.MarkDirty(
                     CardDirtyState.Telemetry);
             }
 
@@ -132,6 +153,9 @@ namespace KMC.MissionControl.Pages
                 graph != null
                     ? graph.CurrentStage
                     : int.MinValue;
+
+            _lastProducingEngineCount =
+                telemetry.ProducingThrustEngineCount;
 
             PropulsionPageRenderModel model =
                 new PropulsionPageRenderModel
