@@ -65,6 +65,9 @@ namespace KMC.MissionControl.Rendering.Propulsion
                         "Oxidizer"))
                 {
                     model.LiquidEngineCount++;
+
+                    model.LiquidEnginePartIds.Add(
+                        node.PartId);
                 }
 
                 if (node.IsSeparationBoundary &&

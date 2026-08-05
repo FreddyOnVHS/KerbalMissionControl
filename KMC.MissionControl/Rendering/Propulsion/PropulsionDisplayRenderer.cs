@@ -12,6 +12,46 @@ namespace KMC.MissionControl.Rendering.Propulsion
     /// </summary>
     public sealed class PropulsionDisplayRenderer
     {
+        private enum LiquidPropulsionState
+        {
+            Unavailable = 0,
+            Idle = 1,
+            Ignition = 2,
+            Running = 3,
+            Flameout = 4
+        }
+
+        private sealed class LiquidPropulsionSnapshot
+        {
+            public LiquidPropulsionState State { get; set; }
+
+            public int InstalledCount { get; set; }
+
+            public int ProducingCount { get; set; }
+
+            public bool FlowActive
+            {
+                get
+                {
+                    return
+                        State ==
+                            LiquidPropulsionState.Ignition ||
+                        State ==
+                            LiquidPropulsionState.Running ||
+                        State ==
+                            LiquidPropulsionState.Flameout;
+                }
+            }
+
+            public bool ValveOpen
+            {
+                get
+                {
+                    return FlowActive;
+                }
+            }
+        }
+
         // Topology-dependent analysis is supplied by the shared cache.
 
         public void Draw(
@@ -1295,6 +1335,16 @@ namespace KMC.MissionControl.Rendering.Propulsion
             bool showSolidBoosters =
                 srbAlerts.ShouldDisplay;
 
+            LiquidPropulsionSnapshot liquidState =
+                ResolveLiquidPropulsionState(
+                    system);
+
+            Color liquidFlowColor =
+                ResolveLiquidFlowColor(
+                    liquidState,
+                    lf,
+                    dimPhosphor);
+
             int centerX =
                 bounds.Left +
                 bounds.Width / 2;
@@ -1415,10 +1465,9 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     mixer.Left,
                     mixer.Top +
                     mixer.Height / 2),
-                lf,
+                liquidFlowColor,
                 "LF",
-                telemetry != null &&
-                telemetry.ProducingThrustEngineCount > 0,
+                liquidState.FlowActive,
                 smallFont);
 
             DrawPumpFlow(
@@ -1431,10 +1480,9 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     mixer.Right,
                     mixer.Top +
                     mixer.Height / 2),
-                ox,
+                liquidFlowColor,
                 "OX",
-                telemetry != null &&
-                telemetry.ProducingThrustEngineCount > 0,
+                liquidState.FlowActive,
                 smallFont);
 
             DrawBox(
@@ -1442,39 +1490,38 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 mixer,
                 "MIXER",
                 "LF / OX",
-                phosphor,
+                liquidFlowColor,
                 labelFont,
                 smallFont);
 
             DrawMixerDetail(
                 graphics,
                 mixer,
-                phosphor);
+                liquidFlowColor);
 
             DrawVerticalFlow(
                 graphics,
                 mixer,
                 valve,
-                lf);
+                liquidFlowColor,
+                liquidState.FlowActive);
 
             DrawValve(
                 graphics,
                 valve,
-                phosphor,
+                liquidFlowColor,
+                liquidState.ValveOpen,
                 smallFont);
 
             DrawVerticalFlow(
                 graphics,
                 valve,
                 chamber,
-                lf);
+                liquidFlowColor,
+                liquidState.FlowActive);
 
             int liquidEngineCount =
-                system != null
-                    ? Math.Max(
-                        0,
-                        system.LiquidEngineCount)
-                    : 0;
+                liquidState.InstalledCount;
 
             DrawBox(
                 graphics,
@@ -1483,15 +1530,18 @@ namespace KMC.MissionControl.Rendering.Propulsion
                 liquidEngineCount.ToString("00") +
                 (liquidEngineCount == 1
                     ? " ENGINE"
-                    : " ENGINES"),
-                Color.White,
+                    : " ENGINES") +
+                "  " +
+                GetLiquidStateLabel(
+                    liquidState.State),
+                liquidFlowColor,
                 labelFont,
                 smallFont);
 
             DrawNozzle(
                 graphics,
                 chamber,
-                phosphor);
+                liquidFlowColor);
 
             if (system.HasMonopropellant)
             {
@@ -1614,6 +1664,169 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     middleY,
                     detail.Right,
                     middleY);
+            }
+        }
+
+        private static LiquidPropulsionSnapshot
+            ResolveLiquidPropulsionState(
+                PropulsionSystemModel system)
+        {
+            LiquidPropulsionSnapshot snapshot =
+                new LiquidPropulsionSnapshot();
+
+            if (system == null)
+            {
+                snapshot.State =
+                    LiquidPropulsionState.Unavailable;
+
+                return snapshot;
+            }
+
+            snapshot.InstalledCount =
+                Math.Max(
+                    0,
+                    system.LiquidEngineCount);
+
+            if (snapshot.InstalledCount <= 0)
+            {
+                snapshot.State =
+                    LiquidPropulsionState.Unavailable;
+
+                return snapshot;
+            }
+
+            int known =
+                0;
+
+            int producing =
+                0;
+
+            int ignited =
+                0;
+
+            int flameout =
+                0;
+
+            for (int index = 0;
+                 index < system.LiquidEnginePartIds.Count;
+                 index++)
+            {
+                EngineStateTelemetry engine =
+                    EngineStateTelemetryStore.GetEngine(
+                        system.LiquidEnginePartIds[index]);
+
+                if (engine == null)
+                {
+                    continue;
+                }
+
+                known++;
+
+                switch (engine.OperatingState)
+                {
+                    case EngineOperatingState.Producing:
+                        producing++;
+                        break;
+
+                    case EngineOperatingState.Ignited:
+                        ignited++;
+                        break;
+
+                    case EngineOperatingState.Flameout:
+                        flameout++;
+                        break;
+                }
+            }
+
+            snapshot.ProducingCount =
+                producing;
+
+            if (flameout > 0)
+            {
+                snapshot.State =
+                    LiquidPropulsionState.Flameout;
+            }
+            else if (producing > 0)
+            {
+                snapshot.State =
+                    LiquidPropulsionState.Running;
+            }
+            else if (ignited > 0)
+            {
+                snapshot.State =
+                    LiquidPropulsionState.Ignition;
+            }
+            else
+            {
+                /*
+                 * Unknown, armed, and shutdown engines all represent no
+                 * current propellant flow in the schematic.
+                 */
+                snapshot.State =
+                    LiquidPropulsionState.Idle;
+            }
+
+            return snapshot;
+        }
+
+        private static Color ResolveLiquidFlowColor(
+            LiquidPropulsionSnapshot state,
+            Color normal,
+            Color dim)
+        {
+            if (state == null)
+            {
+                return dim;
+            }
+
+            switch (state.State)
+            {
+                case LiquidPropulsionState.Running:
+                    return normal;
+
+                case LiquidPropulsionState.Ignition:
+                    return Color.FromArgb(
+                        255,
+                        255,
+                        190,
+                        60);
+
+                case LiquidPropulsionState.Flameout:
+                    return Color.FromArgb(
+                        255,
+                        255,
+                        75,
+                        55);
+
+                case LiquidPropulsionState.Idle:
+                    return Color.FromArgb(
+                        120,
+                        normal);
+
+                default:
+                    return dim;
+            }
+        }
+
+        private static string GetLiquidStateLabel(
+            LiquidPropulsionState state)
+        {
+            switch (state)
+            {
+                case LiquidPropulsionState.Running:
+                    return "RUNNING";
+
+                case LiquidPropulsionState.Ignition:
+                    return "IGNITION";
+
+                case LiquidPropulsionState.Flameout:
+                    return "FLAMEOUT";
+
+                case LiquidPropulsionState.Idle:
+                    return "IDLE";
+
+                default:
+                    return "NO ENGINES";
             }
         }
 
@@ -1872,13 +2085,20 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Graphics graphics,
             Rectangle from,
             Rectangle to,
-            Color color)
+            Color color,
+            bool active)
         {
             using (Pen pen =
-                new Pen(color, 2.0f))
+                new Pen(
+                    color,
+                    active
+                        ? 2.2f
+                        : 1.2f))
             {
                 pen.EndCap =
-                    LineCap.ArrowAnchor;
+                    active
+                        ? LineCap.ArrowAnchor
+                        : LineCap.Flat;
 
                 graphics.DrawLine(
                     pen,
@@ -1895,6 +2115,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
             Graphics graphics,
             Rectangle bounds,
             Color color,
+            bool open,
             Font font)
         {
             Point center =
@@ -1927,9 +2148,14 @@ namespace KMC.MissionControl.Rendering.Propulsion
             };
 
             using (Pen pen =
-                new Pen(color, 1.6f))
+                new Pen(
+                    color,
+                    open
+                        ? 2.0f
+                        : 1.4f))
             using (SolidBrush brush =
-                new SolidBrush(color))
+                new SolidBrush(
+                    color))
             using (StringFormat centered =
                 new StringFormat
                 {
@@ -1947,14 +2173,30 @@ namespace KMC.MissionControl.Rendering.Propulsion
                     pen,
                     right);
 
+                if (!open)
+                {
+                    /*
+                     * A center isolation bar makes the closed state obvious
+                     * without changing the familiar bow-tie valve symbol.
+                     */
+                    graphics.DrawLine(
+                        pen,
+                        center.X,
+                        bounds.Top + 3,
+                        center.X,
+                        bounds.Bottom - 3);
+                }
+
                 graphics.DrawString(
-                    "MAIN VALVE",
+                    open
+                        ? "MAIN VALVE OPEN"
+                        : "MAIN VALVE CLOSED",
                     font,
                     brush,
                     new Rectangle(
-                        bounds.Left - 12,
+                        bounds.Left - 30,
                         bounds.Bottom + 2,
-                        bounds.Width + 24,
+                        bounds.Width + 60,
                         18),
                     centered);
             }

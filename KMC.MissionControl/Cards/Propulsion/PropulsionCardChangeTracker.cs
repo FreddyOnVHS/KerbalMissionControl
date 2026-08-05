@@ -241,7 +241,8 @@ namespace KMC.MissionControl.Cards.Propulsion
                 SrbBankAlertTracker.Update(
                     solidFuel,
                     DateTime.UtcNow)
-                    .AnimationRevision);
+                    .AnimationRevision,
+                EngineStateTelemetryStore.GetRevision());
         }
 
         private static string BuildFooterSignature(

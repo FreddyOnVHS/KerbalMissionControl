@@ -13,6 +13,7 @@ namespace KMC.MissionControl.Rendering.Propulsion
             VesselName = string.Empty;
             EngineGroups = new List<PropulsionEngineGroup>();
             SeparationStages = new List<int>();
+            LiquidEnginePartIds = new List<uint>();
         }
 
         public string VesselName { get; set; }
@@ -38,6 +39,13 @@ namespace KMC.MissionControl.Rendering.Propulsion
         /// LiquidFuel and Oxidizer.
         /// </summary>
         public int LiquidEngineCount { get; set; }
+
+        /// <summary>
+        /// Stable KSP PartIds for engines that consume both LiquidFuel and
+        /// Oxidizer. Runtime rendering uses these IDs to determine actual
+        /// liquid-system operating state without being affected by SRBs.
+        /// </summary>
+        public List<uint> LiquidEnginePartIds { get; private set; }
 
         public bool HasLiquidFuel { get; set; }
 
