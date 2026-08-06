@@ -13,7 +13,9 @@ namespace KMC.MissionControl.Controls
     /// </summary>
     public sealed class MissionSummary : Control
     {
-        private const int RequiredAnnunciatorHeight = 180;
+        private const int NormalAnnunciatorHeight = 180;
+        private const int CompactAnnunciatorHeight = 140;
+        private const int CompactHostHeightBreakpoint = 1050;
 
         private enum LampColor
         {
@@ -127,15 +129,29 @@ namespace KMC.MissionControl.Controls
             TabStop = true;
             Cursor = Cursors.Hand;
 
+            /*
+             * Do not impose a vertical MinimumSize here. MainForm may assign a
+             * compact row during resize; a fixed 180-pixel minimum would make
+             * WinForms draw the control outside that row and clip its bottom.
+             */
             MinimumSize =
                 new Size(
                     320,
-                    RequiredAnnunciatorHeight);
+                    0);
         }
 
         protected override void OnParentChanged(
             EventArgs e)
         {
+            TableLayoutPanel oldLayout =
+                Parent as TableLayoutPanel;
+
+            if (oldLayout != null)
+            {
+                oldLayout.SizeChanged -=
+                    OnHostLayoutSizeChanged;
+            }
+
             base.OnParentChanged(
                 e);
 
@@ -151,7 +167,7 @@ namespace KMC.MissionControl.Controls
                     OnHostLayoutSizeChanged;
             }
 
-            EnsureHostRowHeight();
+            QueueHostRowCorrection();
         }
 
         protected override void OnVisibleChanged(
@@ -162,20 +178,51 @@ namespace KMC.MissionControl.Controls
 
             if (Visible)
             {
-                EnsureHostRowHeight();
+                QueueHostRowCorrection();
             }
+        }
+
+        protected override void OnSizeChanged(
+            EventArgs e)
+        {
+            base.OnSizeChanged(
+                e);
+
+            Invalidate();
         }
 
         private void OnHostLayoutSizeChanged(
             object sender,
             EventArgs e)
         {
-            EnsureHostRowHeight();
+            /*
+             * MainForm also updates the same row from its Resize event.
+             * Queue this correction so it runs after MainForm completes that
+             * layout pass rather than racing it synchronously.
+             */
+            QueueHostRowCorrection();
+        }
+
+        private void QueueHostRowCorrection()
+        {
+            if (!Visible ||
+                IsDisposed ||
+                Disposing ||
+                !IsHandleCreated)
+            {
+                return;
+            }
+
+            BeginInvoke(
+                new MethodInvoker(
+                    EnsureHostRowHeight));
         }
 
         private void EnsureHostRowHeight()
         {
-            if (!Visible)
+            if (!Visible ||
+                IsDisposed ||
+                Disposing)
             {
                 return;
             }
@@ -187,6 +234,20 @@ namespace KMC.MissionControl.Controls
             {
                 return;
             }
+
+            Form hostForm =
+                FindForm();
+
+            int hostHeight =
+                hostForm != null
+                    ? hostForm.ClientSize.Height
+                    : layout.ClientSize.Height;
+
+            int requiredHeight =
+                hostHeight <
+                    CompactHostHeightBreakpoint
+                    ? CompactAnnunciatorHeight
+                    : NormalAnnunciatorHeight;
 
             TableLayoutPanelCellPosition position =
                 layout.GetPositionFromControl(
@@ -204,16 +265,26 @@ namespace KMC.MissionControl.Controls
 
             if (row.SizeType !=
                     SizeType.Absolute ||
-                row.Height <
-                    RequiredAnnunciatorHeight)
+                Math.Abs(
+                    row.Height -
+                    requiredHeight) >
+                    0.5f)
             {
-                row.SizeType =
-                    SizeType.Absolute;
+                layout.SuspendLayout();
 
-                row.Height =
-                    RequiredAnnunciatorHeight;
+                try
+                {
+                    row.SizeType =
+                        SizeType.Absolute;
 
-                layout.PerformLayout();
+                    row.Height =
+                        requiredHeight;
+                }
+                finally
+                {
+                    layout.ResumeLayout(
+                        performLayout: true);
+                }
             }
         }
 
@@ -294,6 +365,12 @@ namespace KMC.MissionControl.Controls
             Graphics graphics =
                 e.Graphics;
 
+            GraphicsState savedState =
+                graphics.Save();
+
+            graphics.SetClip(
+                ClientRectangle);
+
             graphics.SmoothingMode =
                 SmoothingMode.AntiAlias;
 
@@ -332,6 +409,9 @@ namespace KMC.MissionControl.Controls
             DrawLampGrid(
                 graphics,
                 grid);
+
+            graphics.Restore(
+                savedState);
         }
 
         private void DrawPanelFrame(
@@ -521,20 +601,30 @@ namespace KMC.MissionControl.Controls
             const int rows = 2;
             const int gap = 3;
 
+            int availableWidth =
+                Math.Max(
+                    columns,
+                    bounds.Width -
+                    gap *
+                    (columns - 1));
+
+            int availableHeight =
+                Math.Max(
+                    rows,
+                    bounds.Height -
+                    gap *
+                    (rows - 1));
+
             int cellWidth =
                 Math.Max(
-                    20,
-                    (bounds.Width -
-                     gap *
-                     (columns - 1)) /
+                    1,
+                    availableWidth /
                     columns);
 
             int cellHeight =
                 Math.Max(
-                    18,
-                    (bounds.Height -
-                     gap *
-                     (rows - 1)) /
+                    1,
+                    availableHeight /
                     rows);
 
             for (int index = 0;
