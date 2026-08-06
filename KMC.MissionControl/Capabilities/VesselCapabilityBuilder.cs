@@ -20,6 +20,7 @@ namespace KMC.MissionControl.Capabilities
                 return result;
             }
 
+            result.TransportVersion = topology.TransportVersion;
             result.VesselName = topology.VesselName;
             result.TopologyRevision = topology.Revision;
             result.CurrentStage = topology.CurrentStage;
@@ -66,7 +67,9 @@ namespace KMC.MissionControl.Capabilities
                 "Phase 1 uses existing roles, resources, and propellant requirements.");
 
             result.Diagnostics.Add(
-                "Raw module names and converter rates require the next packet phase.");
+                topology.TransportVersion >= 2
+                    ? "Raw module discovery is available from topology packet Version 2."
+                    : "Raw module discovery is unavailable because topology packet Version 1 was received.");
 
             return result;
         }

@@ -25,6 +25,14 @@ namespace KMC.MissionControl.Capabilities
                     SeparationStage = node.SeparationStage
                 };
 
+            for (int moduleIndex = 0;
+                 moduleIndex < node.Modules.Count;
+                 moduleIndex++)
+            {
+                result.Modules.Add(
+                    node.Modules[moduleIndex]);
+            }
+
             AddRoles(node, result);
             AddStoredResources(node, result);
             AddRequirements(node, result);

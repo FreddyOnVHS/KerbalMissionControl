@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace KMC.Shared.Topology
 {
@@ -13,6 +13,7 @@ namespace KMC.Shared.Topology
             StoredResourceNames = new List<string>();
             Resources = new List<VesselResourceState>();
             PropellantRequirements = new List<VesselPropellantRequirement>();
+            Modules = new List<VesselModuleDescriptor>();
 
             PartName = string.Empty;
             PartTitle = string.Empty;
@@ -45,10 +46,6 @@ namespace KMC.Shared.Topology
         public int SeparationStage { get; set; }
         public bool IsSeparationBoundary { get; set; }
         public bool WillSeparateOnNextStage { get; set; }
-
-        /// <summary>
-        /// Part-level crossfeed switch used by the Phase 2C physical graph.
-        /// </summary>
         public bool AllowsCrossFeed { get; set; }
 
         public bool SurvivesNextStage
@@ -63,6 +60,7 @@ namespace KMC.Shared.Topology
         public List<string> StoredResourceNames { get; private set; }
         public List<VesselResourceState> Resources { get; private set; }
         public List<VesselPropellantRequirement> PropellantRequirements { get; private set; }
+        public List<VesselModuleDescriptor> Modules { get; private set; }
 
         public bool HasRole(
             VesselNodeRole role)

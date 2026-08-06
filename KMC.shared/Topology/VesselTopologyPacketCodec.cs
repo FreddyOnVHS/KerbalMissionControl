@@ -1,19 +1,16 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 
 namespace KMC.Shared.Topology
 {
-    /// <summary>
-    /// Compact binary transport for infrequent vessel-topology snapshots.
-    /// The payload is independent of KSP and GDI+.
-    /// </summary>
     public static class VesselTopologyPacketCodec
     {
         public const int TopologyPort = 5082;
+        public const int CurrentVersion = 2;
 
-        private const int Magic = 0x4B4D4354; // KMCT
-        private const int Version = 1;
+        private const int Magic = 0x4B4D4354;
+        private const int MinimumSupportedVersion = 1;
 
         public static byte[] Encode(
             VesselTopology topology)
@@ -32,11 +29,10 @@ namespace KMC.Shared.Topology
                     Encoding.UTF8))
             {
                 writer.Write(Magic);
-                writer.Write(Version);
+                writer.Write(CurrentVersion);
 
                 WriteString(writer, topology.VesselId);
                 WriteString(writer, topology.VesselName);
-
                 writer.Write(topology.RootPartId);
                 writer.Write(topology.HasRootPart);
                 writer.Write(topology.PartCount);
@@ -46,7 +42,6 @@ namespace KMC.Shared.Topology
                 writer.Write(topology.SymmetryGroupCount);
                 writer.Write(topology.SeparationBoundaryCount);
                 writer.Write(topology.Revision);
-
                 writer.Write(topology.Nodes.Count);
 
                 for (int index = 0;
@@ -84,8 +79,16 @@ namespace KMC.Shared.Topology
                         stream,
                         Encoding.UTF8))
                 {
-                    if (reader.ReadInt32() != Magic ||
-                        reader.ReadInt32() != Version)
+                    if (reader.ReadInt32() != Magic)
+                    {
+                        return false;
+                    }
+
+                    int version =
+                        reader.ReadInt32();
+
+                    if (version < MinimumSupportedVersion ||
+                        version > CurrentVersion)
                     {
                         return false;
                     }
@@ -93,20 +96,17 @@ namespace KMC.Shared.Topology
                     VesselTopology result =
                         new VesselTopology
                         {
+                            TransportVersion = version,
                             VesselId = ReadString(reader),
                             VesselName = ReadString(reader),
                             RootPartId = reader.ReadUInt32(),
                             HasRootPart = reader.ReadBoolean(),
                             PartCount = reader.ReadInt32(),
-                            MaximumInverseStage =
-                                reader.ReadInt32(),
+                            MaximumInverseStage = reader.ReadInt32(),
                             CurrentStage = reader.ReadInt32(),
-                            StructuralBranchCount =
-                                reader.ReadInt32(),
-                            SymmetryGroupCount =
-                                reader.ReadInt32(),
-                            SeparationBoundaryCount =
-                                reader.ReadInt32(),
+                            StructuralBranchCount = reader.ReadInt32(),
+                            SymmetryGroupCount = reader.ReadInt32(),
+                            SeparationBoundaryCount = reader.ReadInt32(),
                             Revision = reader.ReadInt64()
                         };
 
@@ -118,7 +118,9 @@ namespace KMC.Shared.Topology
                          index++)
                     {
                         result.Nodes.Add(
-                            ReadNode(reader));
+                            ReadNode(
+                                reader,
+                                version));
                     }
 
                     topology = result;
@@ -178,8 +180,7 @@ namespace KMC.Shared.Topology
                 WriteString(writer, resource.Name);
                 writer.Write(resource.Amount);
                 writer.Write(resource.Capacity);
-                writer.Write(
-                    resource.DensityTonnesPerUnit);
+                writer.Write(resource.DensityTonnesPerUnit);
                 writer.Write(resource.FlowEnabled);
             }
 
@@ -187,8 +188,7 @@ namespace KMC.Shared.Topology
                 node.PropellantRequirements.Count);
 
             for (int index = 0;
-                 index <
-                    node.PropellantRequirements.Count;
+                 index < node.PropellantRequirements.Count;
                  index++)
             {
                 VesselPropellantRequirement requirement =
@@ -197,19 +197,28 @@ namespace KMC.Shared.Topology
                 writer.Write(requirement.ResourceId);
                 WriteString(writer, requirement.Name);
                 writer.Write(requirement.Ratio);
-                writer.Write(
-                    requirement.DensityTonnesPerUnit);
-                WriteString(
-                    writer,
-                    requirement.RawFlowMode);
+                writer.Write(requirement.DensityTonnesPerUnit);
+                WriteString(writer, requirement.RawFlowMode);
                 WriteUIntList(
                     writer,
                     requirement.ReachableSourcePartIds);
             }
+
+            writer.Write(node.Modules.Count);
+
+            for (int index = 0;
+                 index < node.Modules.Count;
+                 index++)
+            {
+                WriteModule(
+                    writer,
+                    node.Modules[index]);
+            }
         }
 
         private static VesselTopologyNode ReadNode(
-            BinaryReader reader)
+            BinaryReader reader,
+            int version)
         {
             VesselTopologyNode node =
                 new VesselTopologyNode
@@ -230,36 +239,25 @@ namespace KMC.Shared.Topology
                         (VesselNodeRole)
                         reader.ReadInt32(),
                     DryMassTonnes = reader.ReadDouble(),
-                    ResourceMassTonnes =
-                        reader.ReadDouble(),
+                    ResourceMassTonnes = reader.ReadDouble(),
                     VesselX = reader.ReadDouble(),
                     VesselY = reader.ReadDouble(),
                     VesselZ = reader.ReadDouble(),
-                    StructuralDepth =
-                        reader.ReadInt32(),
-                    SymmetryGroupId =
-                        reader.ReadUInt32(),
-                    BranchRootPartId =
-                        reader.ReadUInt32(),
-                    ActivationStage =
-                        reader.ReadInt32(),
-                    SeparationStage =
-                        reader.ReadInt32(),
-                    IsSeparationBoundary =
-                        reader.ReadBoolean(),
-                    WillSeparateOnNextStage =
-                        reader.ReadBoolean(),
-                    AllowsCrossFeed =
-                        reader.ReadBoolean()
+                    StructuralDepth = reader.ReadInt32(),
+                    SymmetryGroupId = reader.ReadUInt32(),
+                    BranchRootPartId = reader.ReadUInt32(),
+                    ActivationStage = reader.ReadInt32(),
+                    SeparationStage = reader.ReadInt32(),
+                    IsSeparationBoundary = reader.ReadBoolean(),
+                    WillSeparateOnNextStage = reader.ReadBoolean(),
+                    AllowsCrossFeed = reader.ReadBoolean()
                 };
 
             ReadUIntList(reader, node.ChildPartIds);
             ReadUIntList(reader, node.StackChildPartIds);
             ReadUIntList(reader, node.SurfaceChildPartIds);
             ReadUIntList(reader, node.SymmetryPartIds);
-            ReadStringList(
-                reader,
-                node.StoredResourceNames);
+            ReadStringList(reader, node.StoredResourceNames);
 
             int resourceCount =
                 ReadCount(reader, 1000);
@@ -271,15 +269,12 @@ namespace KMC.Shared.Topology
                 node.Resources.Add(
                     new VesselResourceState
                     {
-                        ResourceId =
-                            reader.ReadInt32(),
+                        ResourceId = reader.ReadInt32(),
                         Name = ReadString(reader),
                         Amount = reader.ReadDouble(),
                         Capacity = reader.ReadDouble(),
-                        DensityTonnesPerUnit =
-                            reader.ReadDouble(),
-                        FlowEnabled =
-                            reader.ReadBoolean()
+                        DensityTonnesPerUnit = reader.ReadDouble(),
+                        FlowEnabled = reader.ReadBoolean()
                     });
             }
 
@@ -293,14 +288,11 @@ namespace KMC.Shared.Topology
                 VesselPropellantRequirement requirement =
                     new VesselPropellantRequirement
                     {
-                        ResourceId =
-                            reader.ReadInt32(),
+                        ResourceId = reader.ReadInt32(),
                         Name = ReadString(reader),
                         Ratio = reader.ReadDouble(),
-                        DensityTonnesPerUnit =
-                            reader.ReadDouble(),
-                        RawFlowMode =
-                            ReadString(reader)
+                        DensityTonnesPerUnit = reader.ReadDouble(),
+                        RawFlowMode = ReadString(reader)
                     };
 
                 ReadUIntList(
@@ -311,16 +303,119 @@ namespace KMC.Shared.Topology
                     requirement);
             }
 
+            if (version >= 2)
+            {
+                int moduleCount =
+                    ReadCount(reader, 1000);
+
+                for (int index = 0;
+                     index < moduleCount;
+                     index++)
+                {
+                    node.Modules.Add(
+                        ReadModule(reader));
+                }
+            }
+
             return node;
+        }
+
+        private static void WriteModule(
+            BinaryWriter writer,
+            VesselModuleDescriptor module)
+        {
+            WriteString(writer, module.ModuleName);
+            WriteString(writer, module.ModuleTypeName);
+            WriteString(writer, module.DisplayName);
+            writer.Write(module.IsEnabled);
+            writer.Write(module.HasActiveState);
+            writer.Write(module.IsActive);
+            WriteString(writer, module.StatusText);
+            WriteModuleResources(writer, module.InputResources);
+            WriteModuleResources(writer, module.OutputResources);
+        }
+
+        private static VesselModuleDescriptor ReadModule(
+            BinaryReader reader)
+        {
+            VesselModuleDescriptor module =
+                new VesselModuleDescriptor
+                {
+                    ModuleName = ReadString(reader),
+                    ModuleTypeName = ReadString(reader),
+                    DisplayName = ReadString(reader),
+                    IsEnabled = reader.ReadBoolean(),
+                    HasActiveState = reader.ReadBoolean(),
+                    IsActive = reader.ReadBoolean(),
+                    StatusText = ReadString(reader)
+                };
+
+            ReadModuleResources(
+                reader,
+                module.InputResources);
+
+            ReadModuleResources(
+                reader,
+                module.OutputResources);
+
+            return module;
+        }
+
+        private static void WriteModuleResources(
+            BinaryWriter writer,
+            System.Collections.Generic.IList<VesselModuleResource> values)
+        {
+            writer.Write(
+                values != null
+                    ? values.Count
+                    : 0);
+
+            if (values == null)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < values.Count;
+                 index++)
+            {
+                WriteString(
+                    writer,
+                    values[index].Name);
+
+                writer.Write(
+                    values[index].Ratio);
+            }
+        }
+
+        private static void ReadModuleResources(
+            BinaryReader reader,
+            System.Collections.Generic.IList<VesselModuleResource> values)
+        {
+            int count =
+                ReadCount(reader, 1000);
+
+            for (int index = 0;
+                 index < count;
+                 index++)
+            {
+                values.Add(
+                    new VesselModuleResource
+                    {
+                        Name = ReadString(reader),
+                        Ratio = reader.ReadDouble()
+                    });
+            }
         }
 
         private static void WriteUIntList(
             BinaryWriter writer,
             System.Collections.Generic.IList<uint> values)
         {
-            writer.Write(values != null
-                ? values.Count
-                : 0);
+            writer.Write(
+                values != null
+                    ? values.Count
+                    : 0);
 
             if (values == null)
             {
@@ -354,9 +449,10 @@ namespace KMC.Shared.Topology
             BinaryWriter writer,
             System.Collections.Generic.IList<string> values)
         {
-            writer.Write(values != null
-                ? values.Count
-                : 0);
+            writer.Write(
+                values != null
+                    ? values.Count
+                    : 0);
 
             if (values == null)
             {
@@ -390,7 +486,9 @@ namespace KMC.Shared.Topology
             BinaryWriter writer,
             string value)
         {
-            writer.Write(value ?? string.Empty);
+            writer.Write(
+                value ??
+                string.Empty);
         }
 
         private static string ReadString(
@@ -404,7 +502,8 @@ namespace KMC.Shared.Topology
             BinaryReader reader,
             int maximum)
         {
-            int count = reader.ReadInt32();
+            int count =
+                reader.ReadInt32();
 
             if (count < 0 ||
                 count > maximum)

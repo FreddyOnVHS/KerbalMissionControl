@@ -17,6 +17,7 @@ namespace KMC.MissionControl.Debugging.Capabilities
         private readonly DataGridView _parts;
         private readonly DataGridView _capabilities;
         private readonly DataGridView _resources;
+        private readonly DataGridView _modules;
         private readonly Timer _timer;
 
         public CapabilityDebuggerForm()
@@ -40,11 +41,13 @@ namespace KMC.MissionControl.Debugging.Capabilities
             _parts = CreateGrid();
             _capabilities = CreateGrid();
             _resources = CreateGrid();
+            _modules = CreateGrid();
 
             tabs.TabPages.Add(CreatePage("OVERVIEW", _overview));
             tabs.TabPages.Add(CreatePage("PARTS", _parts));
             tabs.TabPages.Add(CreatePage("CAPABILITIES", _capabilities));
             tabs.TabPages.Add(CreatePage("RESOURCES", _resources));
+            tabs.TabPages.Add(CreatePage("MODULES", _modules));
 
             FlowLayoutPanel commands =
                 new FlowLayoutPanel
@@ -103,6 +106,7 @@ namespace KMC.MissionControl.Debugging.Capabilities
             PopulateParts(snapshot);
             PopulateCapabilities(snapshot);
             PopulateResources(snapshot);
+            PopulateModules(snapshot);
         }
 
         private void CopySnapshot(
@@ -296,6 +300,11 @@ namespace KMC.MissionControl.Debugging.Capabilities
 
             AppendSnapshotValue(
                 text,
+                "Packet version",
+                snapshot.TransportVersion.ToString());
+
+            AppendSnapshotValue(
+                text,
                 "Topology revision",
                 snapshot.TopologyRevision.ToString());
 
@@ -315,6 +324,13 @@ namespace KMC.MissionControl.Debugging.Capabilities
                 snapshot.Parts.Sum(
                     part =>
                         part.Capabilities.Count)
+                    .ToString());
+
+            AppendSnapshotValue(
+                text,
+                "Module count",
+                snapshot.Parts.Sum(
+                    part => part.Modules.Count)
                     .ToString());
 
             AppendSnapshotValue(
@@ -475,6 +491,85 @@ namespace KMC.MissionControl.Debugging.Capabilities
                 }
             }
 
+            text.AppendLine();
+
+            AppendSectionHeader(
+                text,
+                "MODULES");
+
+            text.AppendLine(
+                "PART ID\tPART\tMODULE\tTYPE\tDISPLAY\tENABLED\tHAS ACTIVE STATE\tACTIVE\tSTATUS\tINPUTS\tOUTPUTS");
+
+            for (int partIndex = 0;
+                 partIndex < snapshot.Parts.Count;
+                 partIndex++)
+            {
+                PartCapabilitySnapshot part =
+                    snapshot.Parts[partIndex];
+
+                for (int moduleIndex = 0;
+                     moduleIndex < part.Modules.Count;
+                     moduleIndex++)
+                {
+                    VesselModuleDescriptor module =
+                        part.Modules[moduleIndex];
+
+                    AppendRow(
+                        text,
+                        part.PartId,
+                        part.PartTitle,
+                        module.ModuleName,
+                        module.ModuleTypeName,
+                        module.DisplayName,
+                        module.IsEnabled,
+                        module.HasActiveState,
+                        module.IsActive,
+                        module.StatusText,
+                        FormatModuleResources(
+                            module.InputResources),
+                        FormatModuleResources(
+                            module.OutputResources));
+                }
+            }
+
+            return text.ToString();
+        }
+
+        private static string FormatModuleResources(
+            System.Collections.Generic.IList<VesselModuleResource> resources)
+        {
+            if (resources == null ||
+                resources.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            StringBuilder text =
+                new StringBuilder();
+
+            for (int index = 0;
+                 index < resources.Count;
+                 index++)
+            {
+                if (index > 0)
+                {
+                    text.Append(" | ");
+                }
+
+                text.Append(
+                    resources[index].Name);
+
+                if (Math.Abs(
+                        resources[index].Ratio) >
+                    0.000001)
+                {
+                    text.Append("=");
+                    text.Append(
+                        resources[index].Ratio.ToString(
+                            "0.###"));
+                }
+            }
+
             return text.ToString();
         }
 
@@ -603,6 +698,7 @@ namespace KMC.MissionControl.Debugging.Capabilities
             text.AppendLine("KMC CAPABILITY COMPATIBILITY DEBUGGER");
             text.AppendLine();
             Append(text, "Vessel", snapshot.VesselName);
+            Append(text, "Packet version", snapshot.TransportVersion.ToString());
             Append(text, "Topology revision", snapshot.TopologyRevision.ToString());
             Append(text, "Current stage", snapshot.CurrentStage.ToString());
             Append(text, "Part count", snapshot.Parts.Count.ToString());
@@ -611,6 +707,13 @@ namespace KMC.MissionControl.Debugging.Capabilities
                 "Capability count",
                 snapshot.Parts.Sum(
                     part => part.Capabilities.Count)
+                    .ToString());
+
+            Append(
+                text,
+                "Module count",
+                snapshot.Parts.Sum(
+                    part => part.Modules.Count)
                     .ToString());
 
             Append(
@@ -730,6 +833,53 @@ namespace KMC.MissionControl.Debugging.Capabilities
                         resource.Amount.ToString("0.###"),
                         resource.Capacity.ToString("0.###"),
                         resource.RequiredRatio.ToString("0.###"));
+                }
+            }
+        }
+
+        private void PopulateModules(
+            VesselCapabilitySnapshot snapshot)
+        {
+            ResetGrid(
+                _modules,
+                "PART ID",
+                "PART",
+                "MODULE",
+                "TYPE",
+                "ENABLED",
+                "ACTIVE",
+                "STATUS",
+                "INPUTS",
+                "OUTPUTS");
+
+            for (int partIndex = 0;
+                 partIndex < snapshot.Parts.Count;
+                 partIndex++)
+            {
+                PartCapabilitySnapshot part =
+                    snapshot.Parts[partIndex];
+
+                for (int moduleIndex = 0;
+                     moduleIndex < part.Modules.Count;
+                     moduleIndex++)
+                {
+                    VesselModuleDescriptor module =
+                        part.Modules[moduleIndex];
+
+                    _modules.Rows.Add(
+                        part.PartId,
+                        part.PartTitle,
+                        module.ModuleName,
+                        module.ModuleTypeName,
+                        module.IsEnabled,
+                        module.HasActiveState
+                            ? module.IsActive.ToString()
+                            : "--",
+                        module.StatusText,
+                        FormatModuleResources(
+                            module.InputResources),
+                        FormatModuleResources(
+                            module.OutputResources));
                 }
             }
         }

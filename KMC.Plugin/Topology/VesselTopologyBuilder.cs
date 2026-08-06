@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using KMC.Shared.Topology;
 using UnityEngine;
@@ -14,8 +14,9 @@ namespace KMC.Plugin.Topology
             VesselTopology topology =
                 new VesselTopology
                 {
-                    Revision =
-                        revision
+                    Revision = revision,
+                    TransportVersion =
+                        VesselTopologyPacketCodec.CurrentVersion
                 };
 
             if (vessel == null)
@@ -195,6 +196,10 @@ namespace KMC.Plugin.Topology
             }
 
             VesselPartClassifier.Classify(
+                part,
+                node);
+
+            VesselModuleDiscoveryAnalyzer.AnalyzePart(
                 part,
                 node);
 

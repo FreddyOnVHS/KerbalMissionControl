@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using KMC.Shared.Topology;
 
 namespace KMC.MissionControl.Capabilities
 {
@@ -48,6 +49,7 @@ namespace KMC.MissionControl.Capabilities
             PartTitle = string.Empty;
             Capabilities = new List<PartCapability>();
             Resources = new List<ResourceDescriptor>();
+            Modules = new List<VesselModuleDescriptor>();
             Diagnostics = new List<string>();
         }
 
@@ -60,13 +62,17 @@ namespace KMC.MissionControl.Capabilities
         public int SeparationStage { get; set; }
         public List<PartCapability> Capabilities { get; private set; }
         public List<ResourceDescriptor> Resources { get; private set; }
+        public List<VesselModuleDescriptor> Modules { get; private set; }
         public List<string> Diagnostics { get; private set; }
 
-        public bool HasCapability(PartCapabilityType type)
+        public bool HasCapability(
+            PartCapabilityType type)
         {
-            for (int i = 0; i < Capabilities.Count; i++)
+            for (int index = 0;
+                 index < Capabilities.Count;
+                 index++)
             {
-                if (Capabilities[i].Type == type)
+                if (Capabilities[index].Type == type)
                 {
                     return true;
                 }
@@ -86,6 +92,7 @@ namespace KMC.MissionControl.Capabilities
             Diagnostics = new List<string>();
         }
 
+        public int TransportVersion { get; set; }
         public string VesselName { get; set; }
         public long TopologyRevision { get; set; }
         public int CurrentStage { get; set; }
