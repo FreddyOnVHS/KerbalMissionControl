@@ -31,9 +31,12 @@ namespace KMC.MissionControl.Rendering.Power
         {
             public PowerNode()
             {
-                Name = string.Empty;
+                Name =
+                    string.Empty;
+
                 Sections =
-                    new List<ElectricalSectionModel>();
+                    new List<
+                        ElectricalSectionModel>();
             }
 
             public string Name;
@@ -51,7 +54,12 @@ namespace KMC.MissionControl.Rendering.Power
 
             public bool HasLocalStorage
             {
-                get { return ChargeCapacity > 0.0001; }
+                get
+                {
+                    return
+                        ChargeCapacity >
+                        0.0001;
+                }
             }
 
             public double ChargePercent
@@ -63,9 +71,10 @@ namespace KMC.MissionControl.Rendering.Power
                         return 0.0;
                     }
 
-                    return ChargeAmount /
-                           ChargeCapacity *
-                           100.0;
+                    return
+                        ChargeAmount /
+                        ChargeCapacity *
+                        100.0;
                 }
             }
         }
@@ -88,12 +97,15 @@ namespace KMC.MissionControl.Rendering.Power
                     nameof(context));
             }
 
-            Graphics graphics = context.Graphics;
+            Graphics graphics =
+                context.Graphics;
+
             graphics.SmoothingMode =
                 SmoothingMode.AntiAlias;
 
             MissionPageLayout layout =
-                new MissionPageLayout(context);
+                new MissionPageLayout(
+                    context);
 
             layout.DrawHeader(
                 "ELECTRICAL POWER",
@@ -111,12 +123,13 @@ namespace KMC.MissionControl.Rendering.Power
                     working.Left,
                     working.Top,
                     working.Width,
-                    84);
+                    96);
 
             int inspectorWidth =
                 Math.Max(
-                    370,
-                    working.Width / 3);
+                    390,
+                    working.Width /
+                    3);
 
             Rectangle map =
                 new Rectangle(
@@ -155,7 +168,8 @@ namespace KMC.MissionControl.Rendering.Power
                 context);
 
             List<PowerNode> nodes =
-                BuildNodes(model);
+                BuildNodes(
+                    model);
 
             DrawSummary(
                 graphics,
@@ -181,24 +195,29 @@ namespace KMC.MissionControl.Rendering.Power
 
             double vesselAmount =
                 nodes.Sum(
-                    node => node.ChargeAmount);
+                    node =>
+                        node.ChargeAmount);
 
             double vesselCapacity =
                 nodes.Sum(
-                    node => node.ChargeCapacity);
+                    node =>
+                        node.ChargeCapacity);
 
             bool vesselPowered =
-                vesselAmount > 0.0001;
+                vesselAmount >
+                0.0001;
 
             double vesselPercent =
-                vesselCapacity > 0.0001
+                vesselCapacity >
+                0.0001
                     ? vesselAmount /
                       vesselCapacity *
                       100.0
                     : 0.0;
 
             List<StackRow> rows =
-                BuildRows(nodes);
+                BuildRows(
+                    nodes);
 
             DrawTopology(
                 graphics,
@@ -224,8 +243,9 @@ namespace KMC.MissionControl.Rendering.Power
                 context);
         }
 
-        private static List<PowerNode> BuildNodes(
-            ElectricalTopologyModel model)
+        private static List<PowerNode>
+            BuildNodes(
+                ElectricalTopologyModel model)
         {
             List<PowerNode> nodes =
                 new List<PowerNode>();
@@ -252,7 +272,9 @@ namespace KMC.MissionControl.Rendering.Power
             }
 
             foreach (
-                IGrouping<int, ElectricalSectionModel> group
+                IGrouping<
+                    int,
+                    ElectricalSectionModel> group
                 in model.Sections
                     .Where(
                         section =>
@@ -265,13 +287,16 @@ namespace KMC.MissionControl.Rendering.Power
                 nodes.Add(
                     CreateNode(
                         "STAGE " +
-                        FormatStage(group.Key),
+                        FormatStage(
+                            group.Key),
                         NodeKind.CoreStage,
                         group.ToList()));
             }
 
             foreach (
-                IGrouping<int, ElectricalSectionModel> group
+                IGrouping<
+                    int,
+                    ElectricalSectionModel> group
                 in model.Sections
                     .Where(
                         section =>
@@ -295,9 +320,11 @@ namespace KMC.MissionControl.Rendering.Power
                         node.Kind ==
                         NodeKind.Command)
                 .ThenByDescending(
-                    node => node.AverageY)
+                    node =>
+                        node.AverageY)
                 .ThenByDescending(
-                    node => node.SeparationStage)
+                    node =>
+                        node.SeparationStage)
                 .ToList();
         }
 
@@ -309,9 +336,14 @@ namespace KMC.MissionControl.Rendering.Power
             PowerNode node =
                 new PowerNode();
 
-            node.Name = name;
-            node.Kind = kind;
-            node.Sections.AddRange(sections);
+            node.Name =
+                name;
+
+            node.Kind =
+                kind;
+
+            node.Sections.AddRange(
+                sections);
 
             node.SeparationStage =
                 MostCommon(
@@ -370,7 +402,9 @@ namespace KMC.MissionControl.Rendering.Power
         {
             List<int> valid =
                 values
-                    .Where(value => value >= 0)
+                    .Where(
+                        value =>
+                            value >= 0)
                     .ToList();
 
             if (valid.Count == 0)
@@ -379,17 +413,22 @@ namespace KMC.MissionControl.Rendering.Power
             }
 
             return valid
-                .GroupBy(value => value)
+                .GroupBy(
+                    value =>
+                        value)
                 .OrderByDescending(
-                    group => group.Count())
+                    group =>
+                        group.Count())
                 .ThenByDescending(
-                    group => group.Key)
+                    group =>
+                        group.Key)
                 .First()
                 .Key;
         }
 
-        private static List<StackRow> BuildRows(
-            List<PowerNode> nodes)
+        private static List<StackRow>
+            BuildRows(
+                List<PowerNode> nodes)
         {
             List<PowerNode> cores =
                 nodes
@@ -398,7 +437,8 @@ namespace KMC.MissionControl.Rendering.Power
                             node.Kind !=
                             NodeKind.RadialBank)
                     .OrderByDescending(
-                        node => node.AverageY)
+                        node =>
+                            node.AverageY)
                     .ToList();
 
             List<PowerNode> radial =
@@ -414,11 +454,14 @@ namespace KMC.MissionControl.Rendering.Power
                     core =>
                         new StackRow
                         {
-                            Core = core
+                            Core =
+                                core
                         })
                     .ToList();
 
-            foreach (PowerNode bank in radial)
+            foreach (
+                PowerNode bank
+                in radial)
             {
                 StackRow nearest =
                     rows
@@ -436,7 +479,8 @@ namespace KMC.MissionControl.Rendering.Power
 
                 if (nearest.Radial == null)
                 {
-                    nearest.Radial = bank;
+                    nearest.Radial =
+                        bank;
                 }
                 else
                 {
@@ -495,7 +539,9 @@ namespace KMC.MissionControl.Rendering.Power
                     panel.Height - 58);
 
             int count =
-                Math.Max(1, rows.Count);
+                Math.Max(
+                    1,
+                    rows.Count);
 
             int gap =
                 count > 9
@@ -505,14 +551,17 @@ namespace KMC.MissionControl.Rendering.Power
             int available =
                 content.Height -
                 gap *
-                Math.Max(0, count - 1);
+                Math.Max(
+                    0,
+                    count - 1);
 
             int rowHeight =
                 Math.Max(
                     44,
                     Math.Min(
                         92,
-                        available / count));
+                        available /
+                        count));
 
             int centerWidth =
                 Math.Max(
@@ -534,13 +583,16 @@ namespace KMC.MissionControl.Rendering.Power
 
             int centerX =
                 content.Left +
-                content.Width / 2;
+                content.Width /
+                2;
 
             int totalHeight =
                 rowHeight *
                 count +
                 gap *
-                Math.Max(0, count - 1);
+                Math.Max(
+                    0,
+                    count - 1);
 
             int startY =
                 content.Top +
@@ -557,10 +609,12 @@ namespace KMC.MissionControl.Rendering.Power
                 rows[index].Bounds =
                     new Rectangle(
                         centerX -
-                        centerWidth / 2,
+                        centerWidth /
+                        2,
                         startY +
                         index *
-                        (rowHeight + gap),
+                        (rowHeight +
+                         gap),
                         centerWidth,
                         rowHeight);
             }
@@ -573,7 +627,8 @@ namespace KMC.MissionControl.Rendering.Power
                  index < rows.Count;
                  index++)
             {
-                StackRow row = rows[index];
+                StackRow row =
+                    rows[index];
 
                 DrawCoreNode(
                     graphics,
@@ -616,14 +671,17 @@ namespace KMC.MissionControl.Rendering.Power
                         rows[index]
                             .Bounds.Left +
                         rows[index]
-                            .Bounds.Width / 2;
+                            .Bounds.Width /
+                        2;
 
                     graphics.DrawLine(
                         pen,
                         x,
-                        rows[index].Bounds.Bottom,
+                        rows[index]
+                            .Bounds.Bottom,
                         x,
-                        rows[index + 1].Bounds.Top);
+                        rows[index + 1]
+                            .Bounds.Top);
                 }
             }
         }
@@ -643,7 +701,8 @@ namespace KMC.MissionControl.Rendering.Power
                     vesselPercent);
 
             Color color =
-                ResolveStateColor(state);
+                ResolveStateColor(
+                    state);
 
             using (SolidBrush fill =
                 new SolidBrush(
@@ -675,17 +734,23 @@ namespace KMC.MissionControl.Rendering.Power
                     {
                         new Point(
                             bounds.Left +
-                            bounds.Width / 2,
-                            bounds.Top - 24),
+                            bounds.Width /
+                            2,
+                            bounds.Top -
+                            24),
 
                         new Point(
                             bounds.Left +
-                            bounds.Width / 2 - 24,
+                            bounds.Width /
+                            2 -
+                            24,
                             bounds.Top),
 
                         new Point(
                             bounds.Left +
-                            bounds.Width / 2 + 24,
+                            bounds.Width /
+                            2 +
+                            24,
                             bounds.Top)
                     };
 
@@ -701,7 +766,8 @@ namespace KMC.MissionControl.Rendering.Power
             }
 
             Font font =
-                bounds.Height >= 70
+                bounds.Height >=
+                70
                     ? context.LargeFont
                     : context.SmallFont;
 
@@ -711,9 +777,9 @@ namespace KMC.MissionControl.Rendering.Power
                 font,
                 new Rectangle(
                     bounds.Left + 36,
-                    bounds.Top + 4,
+                    bounds.Top + 7,
                     bounds.Width - 110,
-                    bounds.Height - 8),
+                    bounds.Height - 14),
                 color,
                 TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
@@ -725,7 +791,8 @@ namespace KMC.MissionControl.Rendering.Power
                 new Point(
                     bounds.Left + 18,
                     bounds.Top +
-                    bounds.Height / 2),
+                    bounds.Height /
+                    2),
                 color);
 
             DrawHardwareIcons(
@@ -743,14 +810,16 @@ namespace KMC.MissionControl.Rendering.Power
             double vesselPercent,
             MissionRenderContext context)
         {
-            Rectangle core = row.Bounds;
+            Rectangle core =
+                row.Bounds;
 
             int height =
                 Math.Max(
                     34,
                     Math.Min(
                         52,
-                        core.Height - 8));
+                        core.Height -
+                        8));
 
             Rectangle badge =
                 new Rectangle(
@@ -759,7 +828,8 @@ namespace KMC.MissionControl.Rendering.Power
                     22,
                     core.Top +
                     (core.Height -
-                     height) / 2,
+                     height) /
+                    2,
                     width,
                     height);
 
@@ -770,7 +840,8 @@ namespace KMC.MissionControl.Rendering.Power
                     vesselPercent);
 
             Color color =
-                ResolveStateColor(state);
+                ResolveStateColor(
+                    state);
 
             using (Pen connector =
                 new Pen(
@@ -784,10 +855,12 @@ namespace KMC.MissionControl.Rendering.Power
                     connector,
                     badge.Right,
                     badge.Top +
-                    badge.Height / 2,
+                    badge.Height /
+                    2,
                     core.Left,
                     core.Top +
-                    core.Height / 2);
+                    core.Height /
+                    2);
             }
 
             using (SolidBrush fill =
@@ -815,9 +888,9 @@ namespace KMC.MissionControl.Rendering.Power
                 context.SmallFont,
                 new Rectangle(
                     badge.Left + 6,
-                    badge.Top + 3,
+                    badge.Top + 6,
                     badge.Width - 12,
-                    badge.Height - 6),
+                    badge.Height - 12),
                 color,
                 TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
@@ -863,10 +936,14 @@ namespace KMC.MissionControl.Rendering.Power
             PowerNode node,
             MissionRenderContext context)
         {
-            int x = bounds.Right - 14;
+            int x =
+                bounds.Right -
+                14;
+
             int centerY =
                 bounds.Top +
-                bounds.Height / 2;
+                bounds.Height /
+                2;
 
             if (node.GeneratorCount > 0)
             {
@@ -940,13 +1017,18 @@ namespace KMC.MissionControl.Rendering.Power
                 graphics,
                 label,
                 context.SmallFont,
-                box,
+                new Rectangle(
+                    box.Left,
+                    box.Top + 2,
+                    box.Width,
+                    box.Height - 4),
                 color,
                 TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding);
 
-            x -= 23;
+            x -=
+                23;
         }
 
         private static PowerState ResolveState(
@@ -956,26 +1038,34 @@ namespace KMC.MissionControl.Rendering.Power
         {
             if (node.HasLocalStorage)
             {
-                if (node.ChargePercent <= 5.0)
+                if (node.ChargePercent <=
+                    5.0)
                 {
-                    return PowerState.Dead;
+                    return
+                        PowerState.Dead;
                 }
 
-                if (node.ChargePercent <= 15.0)
+                if (node.ChargePercent <=
+                    15.0)
                 {
-                    return PowerState.Low;
+                    return
+                        PowerState.Low;
                 }
 
-                return PowerState.Local;
+                return
+                    PowerState.Local;
             }
 
             if (!vesselPowered ||
-                vesselPercent <= 0.1)
+                vesselPercent <=
+                0.1)
             {
-                return PowerState.Dead;
+                return
+                    PowerState.Dead;
             }
 
-            return PowerState.Bus;
+            return
+                PowerState.Bus;
         }
 
         private static Color ResolveStateColor(
@@ -1045,10 +1135,26 @@ namespace KMC.MissionControl.Rendering.Power
         {
             Rectangle content =
                 new Rectangle(
-                    panel.Left + 20,
-                    panel.Top + 44,
-                    panel.Width - 40,
-                    panel.Height - 60);
+                    panel.Left + 22,
+                    panel.Top + 46,
+                    panel.Width - 44,
+                    panel.Height - 64);
+
+            Rectangle footer =
+                new Rectangle(
+                    content.Left,
+                    content.Bottom - 30,
+                    content.Width,
+                    24);
+
+            Rectangle body =
+                new Rectangle(
+                    content.Left,
+                    content.Top,
+                    content.Width,
+                    footer.Top -
+                    content.Top -
+                    12);
 
             PowerState state =
                 ResolveState(
@@ -1057,16 +1163,17 @@ namespace KMC.MissionControl.Rendering.Power
                     vesselPercent);
 
             Color color =
-                ResolveStateColor(state);
+                ResolveStateColor(
+                    state);
 
             TextRenderer.DrawText(
                 graphics,
                 selected.Name,
                 context.LargeFont,
                 new Rectangle(
-                    content.Left,
-                    content.Top,
-                    content.Width,
+                    body.Left,
+                    body.Top + 2,
+                    body.Width,
                     34),
                 color,
                 TextFormatFlags.Left |
@@ -1081,22 +1188,42 @@ namespace KMC.MissionControl.Rendering.Power
                     selected),
                 context.LargeFont,
                 new Rectangle(
-                    content.Left,
-                    content.Top + 40,
-                    content.Width,
+                    body.Left,
+                    body.Top + 42,
+                    body.Width,
                     32),
                 color,
                 TextFormatFlags.Left |
                 TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding);
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
 
             int y =
-                content.Top + 96;
+                body.Top +
+                92;
+
+            int availableRowsHeight =
+                Math.Max(
+                    0,
+                    body.Bottom -
+                    y);
+
+            int rowCount =
+                5;
+
+            int rowHeight =
+                Math.Max(
+                    48,
+                    Math.Min(
+                        66,
+                        availableRowsHeight /
+                        rowCount));
 
             DrawInspectorRow(
                 graphics,
-                content,
+                body,
                 ref y,
+                rowHeight,
                 "POWER SOURCE",
                 selected.HasLocalStorage
                     ? "LOCAL STORAGE"
@@ -1107,8 +1234,9 @@ namespace KMC.MissionControl.Rendering.Power
 
             DrawInspectorRow(
                 graphics,
-                content,
+                body,
                 ref y,
+                rowHeight,
                 "ELECTRIC CHARGE",
                 selected.HasLocalStorage
                     ? selected.ChargeAmount
@@ -1122,35 +1250,26 @@ namespace KMC.MissionControl.Rendering.Power
 
             DrawInspectorRow(
                 graphics,
-                content,
+                body,
                 ref y,
-                "BATTERIES",
+                rowHeight,
+                "HARDWARE",
+                "B " +
                 selected.BatteryCount
-                    .ToString("00"),
-                context);
-
-            DrawInspectorRow(
-                graphics,
-                content,
-                ref y,
-                "SOLAR PANELS",
+                    .ToString("00") +
+                "   S " +
                 selected.SolarCount
-                    .ToString("00"),
-                context);
-
-            DrawInspectorRow(
-                graphics,
-                content,
-                ref y,
-                "GENERATORS",
+                    .ToString("00") +
+                "   G " +
                 selected.GeneratorCount
                     .ToString("00"),
                 context);
 
             DrawInspectorRow(
                 graphics,
-                content,
+                body,
                 ref y,
+                rowHeight,
                 "PARTS",
                 selected.PartCount
                     .ToString("00"),
@@ -1158,8 +1277,9 @@ namespace KMC.MissionControl.Rendering.Power
 
             DrawInspectorRow(
                 graphics,
-                content,
+                body,
                 ref y,
+                rowHeight,
                 "SEP / ACT",
                 FormatStage(
                     selected.SeparationStage) +
@@ -1172,54 +1292,81 @@ namespace KMC.MissionControl.Rendering.Power
                 graphics,
                 "PHASE 2: CLICK A SECTION TO INSPECT",
                 context.SmallFont,
-                new Rectangle(
-                    content.Left,
-                    content.Bottom - 32,
-                    content.Width,
-                    24),
+                footer,
                 context.DimPhosphorColor,
                 TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding);
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
         }
 
         private static void DrawInspectorRow(
             Graphics graphics,
-            Rectangle content,
+            Rectangle body,
             ref int y,
+            int rowHeight,
             string label,
             string value,
             MissionRenderContext context)
         {
-            if (y + 56 >
-                content.Bottom - 36)
+            if (y >=
+                body.Bottom)
             {
                 return;
             }
+
+            Rectangle row =
+                new Rectangle(
+                    body.Left,
+                    y,
+                    body.Width,
+                    Math.Min(
+                        rowHeight,
+                        body.Bottom -
+                        y));
+
+            int labelHeight =
+                Math.Max(
+                    16,
+                    Math.Min(
+                        20,
+                        row.Height /
+                        3));
+
+            Rectangle labelBounds =
+                new Rectangle(
+                    row.Left,
+                    row.Top + 2,
+                    row.Width,
+                    labelHeight);
+
+            Rectangle valueBounds =
+                new Rectangle(
+                    row.Left,
+                    labelBounds.Bottom + 3,
+                    row.Width,
+                    Math.Max(
+                        18,
+                        row.Bottom -
+                        labelBounds.Bottom -
+                        9));
 
             TextRenderer.DrawText(
                 graphics,
                 label,
                 context.SmallFont,
-                new Rectangle(
-                    content.Left,
-                    y,
-                    content.Width,
-                    17),
+                labelBounds,
                 context.DimPhosphorColor,
                 TextFormatFlags.Left |
                 TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding);
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
 
             TextRenderer.DrawText(
                 graphics,
                 value,
-                context.LargeFont,
-                new Rectangle(
-                    content.Left,
-                    y + 18,
-                    content.Width,
-                    28),
+                context.SmallFont,
+                valueBounds,
                 context.PhosphorColor,
                 TextFormatFlags.Left |
                 TextFormatFlags.VerticalCenter |
@@ -1236,13 +1383,14 @@ namespace KMC.MissionControl.Rendering.Power
             {
                 graphics.DrawLine(
                     divider,
-                    content.Left,
-                    y + 50,
-                    content.Right,
-                    y + 50);
+                    row.Left,
+                    row.Bottom - 2,
+                    row.Right,
+                    row.Bottom - 2);
             }
 
-            y += 57;
+            y =
+                row.Bottom;
         }
 
         private static void DrawSummary(
@@ -1254,28 +1402,32 @@ namespace KMC.MissionControl.Rendering.Power
         {
             Rectangle content =
                 new Rectangle(
-                    panel.Left + 12,
-                    panel.Top + 31,
-                    panel.Width - 24,
-                    panel.Height - 36);
+                    panel.Left + 14,
+                    panel.Top + 34,
+                    panel.Width - 28,
+                    panel.Height - 42);
 
             double amount =
                 nodes.Sum(
-                    node => node.ChargeAmount);
+                    node =>
+                        node.ChargeAmount);
 
             double capacity =
                 nodes.Sum(
-                    node => node.ChargeCapacity);
+                    node =>
+                        node.ChargeCapacity);
 
             double percent =
-                capacity > 0.0001
+                capacity >
+                0.0001
                     ? amount /
                       capacity *
                       100.0
                     : 0.0;
 
             int width =
-                content.Width / 4;
+                content.Width /
+                4;
 
             DrawSummaryCell(
                 graphics,
@@ -1285,7 +1437,8 @@ namespace KMC.MissionControl.Rendering.Power
                     width,
                     content.Height),
                 "EC RESERVE",
-                percent.ToString("0") + "%",
+                percent.ToString("0") +
+                "%",
                 ResolveVesselColor(
                     percent,
                     capacity),
@@ -1294,15 +1447,18 @@ namespace KMC.MissionControl.Rendering.Power
             DrawSummaryCell(
                 graphics,
                 new Rectangle(
-                    content.Left + width,
+                    content.Left +
+                    width,
                     content.Top,
                     width,
                     content.Height),
                 "BUS",
-                amount > 0.0001
+                amount >
+                0.0001
                     ? "ONLINE"
                     : "OFFLINE",
-                amount > 0.0001
+                amount >
+                0.0001
                     ? Color.FromArgb(
                         75,
                         235,
@@ -1317,12 +1473,14 @@ namespace KMC.MissionControl.Rendering.Power
                 graphics,
                 new Rectangle(
                     content.Left +
-                    width * 2,
+                    width *
+                    2,
                     content.Top,
                     width,
                     content.Height),
                 "SECTIONS",
-                nodes.Count.ToString("00"),
+                nodes.Count
+                    .ToString("00"),
                 context.PhosphorColor,
                 context);
 
@@ -1330,10 +1488,12 @@ namespace KMC.MissionControl.Rendering.Power
                 graphics,
                 new Rectangle(
                     content.Left +
-                    width * 3,
+                    width *
+                    3,
                     content.Top,
                     content.Width -
-                    width * 3,
+                    width *
+                    3,
                     content.Height),
                 "VESSEL",
                 model != null &&
@@ -1349,7 +1509,8 @@ namespace KMC.MissionControl.Rendering.Power
             double percent,
             double capacity)
         {
-            if (capacity <= 0.0001)
+            if (capacity <=
+                0.0001)
             {
                 return Color.FromArgb(
                     105,
@@ -1357,7 +1518,8 @@ namespace KMC.MissionControl.Rendering.Power
                     150);
             }
 
-            if (percent <= 5.0)
+            if (percent <=
+                5.0)
             {
                 return Color.FromArgb(
                     255,
@@ -1365,7 +1527,8 @@ namespace KMC.MissionControl.Rendering.Power
                     55);
             }
 
-            if (percent <= 15.0)
+            if (percent <=
+                15.0)
             {
                 return Color.FromArgb(
                     255,
@@ -1398,34 +1561,51 @@ namespace KMC.MissionControl.Rendering.Power
                 graphics.DrawLine(
                     divider,
                     bounds.Right,
-                    bounds.Top,
+                    bounds.Top + 2,
                     bounds.Right,
-                    bounds.Bottom);
+                    bounds.Bottom - 2);
             }
+
+            int labelHeight =
+                Math.Max(
+                    18,
+                    bounds.Height /
+                    3);
+
+            Rectangle labelBounds =
+                new Rectangle(
+                    bounds.Left + 6,
+                    bounds.Top + 2,
+                    bounds.Width - 12,
+                    labelHeight);
+
+            Rectangle valueBounds =
+                new Rectangle(
+                    bounds.Left + 6,
+                    labelBounds.Bottom + 2,
+                    bounds.Width - 12,
+                    Math.Max(
+                        22,
+                        bounds.Bottom -
+                        labelBounds.Bottom -
+                        4));
 
             TextRenderer.DrawText(
                 graphics,
                 label,
                 context.SmallFont,
-                new Rectangle(
-                    bounds.Left + 4,
-                    bounds.Top,
-                    bounds.Width - 8,
-                    17),
+                labelBounds,
                 context.DimPhosphorColor,
                 TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding);
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
 
             TextRenderer.DrawText(
                 graphics,
                 value,
                 context.LargeFont,
-                new Rectangle(
-                    bounds.Left + 4,
-                    bounds.Top + 18,
-                    bounds.Width - 8,
-                    bounds.Height - 18),
+                valueBounds,
                 color,
                 TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
@@ -1454,9 +1634,9 @@ namespace KMC.MissionControl.Rendering.Power
                 graphics.DrawLine(
                     outline,
                     bounds.Left + 8,
-                    bounds.Top + 27,
+                    bounds.Top + 30,
                     bounds.Right - 8,
-                    bounds.Top + 27);
+                    bounds.Top + 30);
             }
 
             TextRenderer.DrawText(
@@ -1465,13 +1645,14 @@ namespace KMC.MissionControl.Rendering.Power
                 context.SmallFont,
                 new Rectangle(
                     bounds.Left + 8,
-                    bounds.Top + 3,
+                    bounds.Top + 5,
                     bounds.Width - 16,
-                    20),
+                    21),
                 context.PhosphorColor,
                 TextFormatFlags.Left |
                 TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding);
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
         }
 
         private static void DrawWaiting(
@@ -1485,21 +1666,23 @@ namespace KMC.MissionControl.Rendering.Power
                 context.LargeFont,
                 new Rectangle(
                     panel.Left + 16,
-                    panel.Top + 36,
+                    panel.Top + 38,
                     panel.Width - 32,
-                    panel.Height - 52),
+                    panel.Height - 56),
                 context.DimPhosphorColor,
                 TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding);
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
         }
 
         private static string FormatStage(
             int stage)
         {
-            return stage >= 0
-                ? stage.ToString("00")
-                : "--";
+            return
+                stage >= 0
+                    ? stage.ToString("00")
+                    : "--";
         }
     }
 }
