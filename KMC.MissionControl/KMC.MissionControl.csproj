@@ -169,6 +169,8 @@
     <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs"><Link>Shared\Topology\VesselTopologyNode.cs</Link></Compile>
     <Compile Include="..\KMC.shared\Topology\VesselTopology.cs"><Link>Shared\Topology\VesselTopology.cs</Link></Compile>
     <Compile Include="..\KMC.shared\Topology\VesselTopologyPacketCodec.cs"><Link>Shared\Topology\VesselTopologyPacketCodec.cs</Link></Compile>
+    <Compile Include="Pages\PowerPage.cs" />
+    <Compile Include="Rendering\Power\PowerPageRenderer.cs" />  
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
