@@ -6,14 +6,44 @@ using System.Windows.Forms;
 
 namespace KMC.MissionControl.Controls
 {
+    /// <summary>
+    /// Persistent lower-console annunciator panel.
+    /// Build 2.0.1 provides the panel foundation and lamp test only.
+    /// Live event evaluation will be connected in later milestones.
+    /// </summary>
     public sealed class MissionSummary : Control
     {
-        private readonly Font _titleFont;
-        private readonly Font _labelFont;
-        private readonly Font _valueFont;
-        private readonly Font _channelFont;
+        private enum LampColor
+        {
+            Blue,
+            Green,
+            Amber,
+            Red
+        }
 
-        private MissionTelemetry _telemetry;
+        private sealed class LampDefinition
+        {
+            public LampDefinition(
+                string label,
+                LampColor color)
+            {
+                Label = label;
+                Color = color;
+            }
+
+            public string Label { get; private set; }
+            public LampColor Color { get; private set; }
+        }
+
+        private readonly Font _titleFont;
+        private readonly Font _lampFont;
+        private readonly Font _smallFont;
+        private readonly Timer _lampTestTimer;
+        private readonly LampDefinition[] _lamps;
+
+        private Rectangle _ackBounds;
+        private Rectangle _lampTestBounds;
+        private bool _lampTestActive;
 
         public MissionSummary()
         {
@@ -26,45 +56,104 @@ namespace KMC.MissionControl.Controls
                     40,
                     38);
 
-            _titleFont = new Font(
-                "Consolas",
-                11f,
-                FontStyle.Bold);
+            _titleFont =
+                new Font(
+                    "Consolas",
+                    9.5f,
+                    FontStyle.Bold);
 
-            _labelFont = new Font(
-                "Consolas",
-                10f,
-                FontStyle.Regular);
+            _lampFont =
+                new Font(
+                    "Consolas",
+                    7.5f,
+                    FontStyle.Bold);
 
-            _valueFont = new Font(
-                "Consolas",
-                10f,
-                FontStyle.Bold);
+            _smallFont =
+                new Font(
+                    "Consolas",
+                    7.5f,
+                    FontStyle.Bold);
 
-            _channelFont = new Font(
-                "Consolas",
-                9f,
-                FontStyle.Regular);
+            _lamps =
+                CreateLampDefinitions();
 
-            _telemetry =
-                new MissionTelemetry();
+            _lampTestTimer =
+                new Timer
+                {
+                    Interval = 3000
+                };
+
+            _lampTestTimer.Tick +=
+                OnLampTestTimerTick;
 
             SetStyle(
                 ControlStyles.AllPaintingInWmPaint |
                 ControlStyles.UserPaint |
                 ControlStyles.OptimizedDoubleBuffer |
-                ControlStyles.ResizeRedraw,
+                ControlStyles.ResizeRedraw |
+                ControlStyles.Selectable,
                 true);
+
+            TabStop = true;
+            Cursor = Cursors.Hand;
         }
 
         public void UpdateTelemetry(
             MissionTelemetry telemetry)
         {
-            _telemetry =
-                telemetry ??
-                new MissionTelemetry();
-
+            // Live event logic is intentionally deferred.
             Invalidate();
+        }
+
+        protected override void Dispose(
+            bool disposing)
+        {
+            if (disposing)
+            {
+                _lampTestTimer.Stop();
+                _lampTestTimer.Dispose();
+
+                _titleFont.Dispose();
+                _lampFont.Dispose();
+                _smallFont.Dispose();
+            }
+
+            base.Dispose(
+                disposing);
+        }
+
+        protected override void OnMouseDown(
+            MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+
+            Focus();
+
+            if (_lampTestBounds.Contains(
+                    e.Location))
+            {
+                StartLampTest();
+                return;
+            }
+
+            if (_ackBounds.Contains(
+                    e.Location))
+            {
+                Invalidate(
+                    _ackBounds);
+            }
+        }
+
+        protected override void OnKeyDown(
+            KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+
+            if (e.KeyCode == Keys.T)
+            {
+                StartLampTest();
+                e.Handled = true;
+            }
         }
 
         protected override void OnPaint(
@@ -81,73 +170,100 @@ namespace KMC.MissionControl.Controls
             graphics.PixelOffsetMode =
                 PixelOffsetMode.HighQuality;
 
-            DrawOuterFrame(graphics);
-            DrawBezel(graphics);
-            DrawGlass(graphics);
-            DrawHeader(graphics);
-            DrawRows(graphics);
-            DrawScanLines(graphics);
-            DrawGlassReflection(graphics);
+            DrawPanelFrame(
+                graphics);
+
+            Rectangle inner =
+                new Rectangle(
+                    18,
+                    9,
+                    Math.Max(
+                        1,
+                        Width - 36),
+                    Math.Max(
+                        1,
+                        Height - 18));
+
+            DrawHeader(
+                graphics,
+                inner);
+
+            Rectangle grid =
+                new Rectangle(
+                    inner.Left + 5,
+                    inner.Top + 25,
+                    Math.Max(
+                        1,
+                        inner.Width - 10),
+                    Math.Max(
+                        1,
+                        inner.Height - 29));
+
+            DrawLampGrid(
+                graphics,
+                grid);
         }
 
-        private void DrawOuterFrame(
+        private void DrawPanelFrame(
             Graphics graphics)
         {
-            Rectangle outerBounds =
+            Rectangle bounds =
                 new Rectangle(
                     0,
                     0,
-                    Width - 1,
-                    Height - 1);
+                    Math.Max(
+                        1,
+                        Width - 1),
+                    Math.Max(
+                        1,
+                        Height - 1));
 
-            using (LinearGradientBrush frameBrush =
+            using (LinearGradientBrush frame =
                 new LinearGradientBrush(
-                    outerBounds,
+                    bounds,
                     Color.FromArgb(
-                        108,
-                        112,
-                        103),
+                        102,
+                        106,
+                        99),
                     Color.FromArgb(
-                        40,
-                        44,
-                        41),
+                        35,
+                        39,
+                        36),
                     LinearGradientMode.Vertical))
             {
                 graphics.FillRectangle(
-                    frameBrush,
-                    outerBounds);
+                    frame,
+                    bounds);
             }
 
-            using (Pen outerBorder =
+            using (Pen dark =
                 new Pen(
                     Color.FromArgb(
-                        15,
-                        18,
-                        16),
-                    2f))
+                        14,
+                        17,
+                        15),
+                    2.0f))
+            using (Pen highlight =
+                new Pen(
+                    Color.FromArgb(
+                        145,
+                        150,
+                        140),
+                    1.0f))
             {
                 graphics.DrawRectangle(
-                    outerBorder,
-                    outerBounds);
-            }
+                    dark,
+                    bounds);
 
-            using (Pen highlightPen =
-                new Pen(
-                    Color.FromArgb(
-                        155,
-                        160,
-                        150),
-                    1f))
-            {
                 graphics.DrawLine(
-                    highlightPen,
+                    highlight,
                     3,
                     3,
                     Width - 4,
                     3);
 
                 graphics.DrawLine(
-                    highlightPen,
+                    highlight,
                     3,
                     3,
                     3,
@@ -156,429 +272,555 @@ namespace KMC.MissionControl.Controls
 
             DrawFastener(
                 graphics,
-                8,
-                8);
+                7,
+                7);
 
             DrawFastener(
                 graphics,
-                Width - 16,
-                8);
+                Width - 15,
+                7);
 
             DrawFastener(
                 graphics,
-                8,
-                Height - 16);
+                7,
+                Height - 15);
 
             DrawFastener(
                 graphics,
-                Width - 16,
-                Height - 16);
-        }
-
-        private void DrawBezel(
-            Graphics graphics)
-        {
-            Rectangle bezelBounds =
-                new Rectangle(
-                    18,
-                    14,
-                    Width - 36,
-                    Height - 28);
-
-            using (GraphicsPath bezelPath =
-                CreateRoundedRectangle(
-                    bezelBounds,
-                    14))
-            {
-                using (LinearGradientBrush bezelBrush =
-                    new LinearGradientBrush(
-                        bezelBounds,
-                        Color.FromArgb(
-                            28,
-                            33,
-                            31),
-                        Color.FromArgb(
-                            8,
-                            11,
-                            10),
-                        LinearGradientMode.Vertical))
-                {
-                    graphics.FillPath(
-                        bezelBrush,
-                        bezelPath);
-                }
-
-                using (Pen bezelBorder =
-                    new Pen(
-                        Color.FromArgb(
-                            7,
-                            10,
-                            8),
-                        2f))
-                {
-                    graphics.DrawPath(
-                        bezelBorder,
-                        bezelPath);
-                }
-            }
-        }
-
-        private void DrawGlass(
-            Graphics graphics)
-        {
-            Rectangle glassBounds =
-                GetGlassBounds();
-
-            using (GraphicsPath glassPath =
-                CreateRoundedRectangle(
-                    glassBounds,
-                    10))
-            {
-                using (LinearGradientBrush glassBrush =
-                    new LinearGradientBrush(
-                        glassBounds,
-                        Color.FromArgb(
-                            9,
-                            35,
-                            42),
-                        Color.FromArgb(
-                            3,
-                            19,
-                            24),
-                        LinearGradientMode.Vertical))
-                {
-                    graphics.FillPath(
-                        glassBrush,
-                        glassPath);
-                }
-
-                using (Pen glassBorder =
-                    new Pen(
-                        Color.FromArgb(
-                            42,
-                            86,
-                            91),
-                        1.5f))
-                {
-                    graphics.DrawPath(
-                        glassBorder,
-                        glassPath);
-                }
-            }
+                Width - 15,
+                Height - 15);
         }
 
         private void DrawHeader(
-            Graphics graphics)
+            Graphics graphics,
+            Rectangle inner)
         {
-            Rectangle glassBounds =
-                GetGlassBounds();
-
-            Rectangle titleBounds =
+            Rectangle title =
                 new Rectangle(
-                    glassBounds.Left + 20,
-                    glassBounds.Top + 13,
-                    260,
-                    22);
+                    inner.Left + 4,
+                    inner.Top,
+                    310,
+                    21);
 
-            Rectangle channelBounds =
-                new Rectangle(
-                    glassBounds.Right - 90,
-                    glassBounds.Top + 13,
-                    70,
-                    22);
-
-            Color phosphor =
-                Color.FromArgb(
-                    185,
-                    240,
-                    245);
-
-            TextRenderer.DrawText(
-                graphics,
-                "MISSION SUMMARY",
-                _titleFont,
-                titleBounds,
-                phosphor,
-                TextFormatFlags.Left |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding);
-
-            TextRenderer.DrawText(
-                graphics,
-                "CH 03",
-                _channelFont,
-                channelBounds,
-                phosphor,
-                TextFormatFlags.Right |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding);
-
-            int lineY =
-                titleBounds.Bottom + 2;
-
-            using (Pen linePen =
-                new Pen(
-                    Color.FromArgb(
-                        95,
-                        155,
-                        165),
-                    1f))
-            {
-                graphics.DrawLine(
-                    linePen,
-                    glassBounds.Left + 20,
-                    lineY,
-                    glassBounds.Right - 20,
-                    lineY);
-            }
-        }
-
-        private void DrawRows(
-    Graphics graphics)
-        {
-            Rectangle glassBounds =
-                GetGlassBounds();
-
-            const int rowCount = 7;
-
-            int rowTop =
-                glassBounds.Top + 48;
-
-            int bottomPadding = 10;
-
-            int availableHeight =
+            int buttonWidth =
                 Math.Max(
-                    rowCount,
-                    glassBounds.Bottom -
-                    bottomPadding -
-                    rowTop);
-
-            int rowHeight =
-                Math.Max(
-                    16,
+                    72,
                     Math.Min(
-                        25,
-                        availableHeight /
-                        rowCount));
+                        104,
+                        inner.Width / 12));
 
-            DrawRow(
-                graphics,
-                "VESSEL",
-                FormatText(
-                    _telemetry.VesselName),
-                rowTop + rowHeight * 0,
-                rowHeight);
-
-            DrawRow(
-                graphics,
-                "BODY",
-                FormatText(
-                    _telemetry.BodyName),
-                rowTop + rowHeight * 1,
-                rowHeight);
-
-            DrawRow(
-                graphics,
-                "MET",
-                FormatMissionTime(
-                    _telemetry.MissionTime),
-                rowTop + rowHeight * 2,
-                rowHeight);
-
-            DrawRow(
-                graphics,
-                "ALTITUDE",
-                FormatDistance(
-                    _telemetry.Altitude),
-                rowTop + rowHeight * 3,
-                rowHeight);
-
-            DrawRow(
-                graphics,
-                "SURF SPEED",
-                FormatSpeed(
-                    _telemetry.SurfaceSpeed),
-                rowTop + rowHeight * 4,
-                rowHeight);
-
-            DrawRow(
-                graphics,
-                "VERT SPEED",
-                FormatSignedSpeed(
-                    _telemetry.VerticalSpeed),
-                rowTop + rowHeight * 5,
-                rowHeight);
-
-            DrawRow(
-                graphics,
-                "ORBIT SPEED",
-                FormatSpeed(
-                    _telemetry.OrbitalSpeed),
-                rowTop + rowHeight * 6,
-                rowHeight);
-        }
-
-        private void DrawRow(
-    Graphics graphics,
-    string label,
-    string value,
-    int top,
-    int rowHeight)
-        {
-            Rectangle glassBounds =
-                GetGlassBounds();
-
-            Rectangle labelBounds =
+            _lampTestBounds =
                 new Rectangle(
-                    glassBounds.Left + 22,
-                    top,
-                    150,
-                    rowHeight);
+                    inner.Right - buttonWidth,
+                    inner.Top,
+                    buttonWidth,
+                    20);
 
-            Rectangle valueBounds =
+            _ackBounds =
                 new Rectangle(
-                    glassBounds.Left + 205,
-                    top,
+                    _lampTestBounds.Left -
+                    buttonWidth -
+                    7,
+                    inner.Top,
+                    buttonWidth,
+                    20);
+
+            Rectangle status =
+                new Rectangle(
+                    title.Right + 8,
+                    inner.Top,
                     Math.Max(
                         1,
-                        glassBounds.Width - 230),
-                    rowHeight);
-
-            Color labelColor =
-                Color.FromArgb(
-                    145,
-                    205,
-                    220);
-
-            Color valueColor =
-                Color.FromArgb(
-                    205,
-                    250,
-                    255);
+                        _ackBounds.Left -
+                        title.Right -
+                        14),
+                    20);
 
             TextRenderer.DrawText(
                 graphics,
-                label,
-                _labelFont,
-                labelBounds,
-                labelColor,
+                "EVENT / CAUTION INDICATOR",
+                _titleFont,
+                title,
+                Color.FromArgb(
+                    205,
+                    240,
+                    245),
                 TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
+
+            TextRenderer.DrawText(
+                graphics,
+                _lampTestActive
+                    ? "LAMP TEST ACTIVE"
+                    : "FOUNDATION MODE",
+                _smallFont,
+                status,
+                _lampTestActive
+                    ? Color.FromArgb(
+                        255,
+                        215,
+                        70)
+                    : Color.FromArgb(
+                        135,
+                        175,
+                        185),
+                TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding |
                 TextFormatFlags.EndEllipsis);
 
-            DrawLeaderDots(
+            DrawControlButton(
                 graphics,
-                labelBounds.Right,
-                valueBounds.Left,
-                top + rowHeight / 2);
+                _ackBounds,
+                "ACK",
+                false);
 
-            TextRenderer.DrawText(
+            DrawControlButton(
                 graphics,
-                value,
-                _valueFont,
-                valueBounds,
-                valueColor,
-                TextFormatFlags.Left |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding |
-                TextFormatFlags.EndEllipsis);
+                _lampTestBounds,
+                "LAMP TEST",
+                _lampTestActive);
         }
 
-        private static void DrawLeaderDots(
+        private void DrawLampGrid(
             Graphics graphics,
-            int startX,
-            int endX,
-            int y)
+            Rectangle bounds)
         {
-            using (SolidBrush dotBrush =
-                new SolidBrush(
-                    Color.FromArgb(
-                        55,
-                        100,
-                        110)))
+            const int columns = 12;
+            const int rows = 2;
+            const int gap = 3;
+
+            int cellWidth =
+                Math.Max(
+                    20,
+                    (bounds.Width -
+                     gap *
+                     (columns - 1)) /
+                    columns);
+
+            int cellHeight =
+                Math.Max(
+                    18,
+                    (bounds.Height -
+                     gap *
+                     (rows - 1)) /
+                    rows);
+
+            for (int index = 0;
+                 index < _lamps.Length;
+                 index++)
             {
-                for (int x = startX + 5;
-                     x < endX - 7;
-                     x += 7)
-                {
-                    graphics.FillRectangle(
-                        dotBrush,
-                        x,
-                        y,
-                        2,
-                        1);
-                }
+                int row =
+                    index /
+                    columns;
+
+                int column =
+                    index %
+                    columns;
+
+                Rectangle lamp =
+                    new Rectangle(
+                        bounds.Left +
+                        column *
+                        (cellWidth + gap),
+                        bounds.Top +
+                        row *
+                        (cellHeight + gap),
+                        cellWidth,
+                        cellHeight);
+
+                DrawLamp(
+                    graphics,
+                    lamp,
+                    _lamps[index],
+                    _lampTestActive);
             }
         }
 
-        private void DrawScanLines(
-            Graphics graphics)
+        private void DrawLamp(
+            Graphics graphics,
+            Rectangle bounds,
+            LampDefinition lamp,
+            bool illuminated)
         {
-            Rectangle glassBounds =
-                GetGlassBounds();
+            Rectangle lens =
+                Rectangle.Inflate(
+                    bounds,
+                    -3,
+                    -3);
 
-            using (Pen scanLinePen =
+            Color active =
+                GetLampColor(
+                    lamp.Color);
+
+            Color faceTop =
+                illuminated
+                    ? Lighten(
+                        active,
+                        0.24)
+                    : Color.FromArgb(
+                        57,
+                        61,
+                        58);
+
+            Color faceBottom =
+                illuminated
+                    ? Darken(
+                        active,
+                        0.18)
+                    : Color.FromArgb(
+                        24,
+                        27,
+                        25);
+
+            using (LinearGradientBrush housing =
+                new LinearGradientBrush(
+                    bounds,
+                    Color.FromArgb(
+                        115,
+                        120,
+                        112),
+                    Color.FromArgb(
+                        32,
+                        35,
+                        32),
+                    LinearGradientMode.Vertical))
+            using (Pen outerBorder =
                 new Pen(
                     Color.FromArgb(
                         18,
-                        0,
-                        0,
-                        0),
-                    1f))
+                        20,
+                        18),
+                    1.0f))
             {
-                for (int y = glassBounds.Top + 2;
-                     y < glassBounds.Bottom - 2;
-                     y += 3)
-                {
-                    graphics.DrawLine(
-                        scanLinePen,
-                        glassBounds.Left + 3,
-                        y,
-                        glassBounds.Right - 3,
-                        y);
-                }
+                graphics.FillRectangle(
+                    housing,
+                    bounds);
+
+                graphics.DrawRectangle(
+                    outerBorder,
+                    bounds);
+            }
+
+            using (LinearGradientBrush lensBrush =
+                new LinearGradientBrush(
+                    lens,
+                    faceTop,
+                    faceBottom,
+                    LinearGradientMode.Vertical))
+            using (Pen lensBorder =
+                new Pen(
+                    illuminated
+                        ? Lighten(
+                            active,
+                            0.35)
+                        : Color.FromArgb(
+                            92,
+                            97,
+                            91),
+                    1.0f))
+            {
+                graphics.FillRectangle(
+                    lensBrush,
+                    lens);
+
+                graphics.DrawRectangle(
+                    lensBorder,
+                    lens);
+            }
+
+            Color textColor =
+                illuminated
+                    ? GetReadableTextColor(
+                        lamp.Color)
+                    : Color.FromArgb(
+                        118,
+                        124,
+                        119);
+
+            TextRenderer.DrawText(
+                graphics,
+                lamp.Label,
+                _lampFont,
+                new Rectangle(
+                    lens.Left + 2,
+                    lens.Top + 1,
+                    Math.Max(
+                        1,
+                        lens.Width - 4),
+                    Math.Max(
+                        1,
+                        lens.Height - 2)),
+                textColor,
+                TextFormatFlags.HorizontalCenter |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.WordBreak |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+        }
+
+        private void DrawControlButton(
+            Graphics graphics,
+            Rectangle bounds,
+            string text,
+            bool active)
+        {
+            Color accent =
+                active
+                    ? Color.FromArgb(
+                        255,
+                        210,
+                        55)
+                    : Color.FromArgb(
+                        125,
+                        160,
+                        165);
+
+            using (LinearGradientBrush brush =
+                new LinearGradientBrush(
+                    bounds,
+                    active
+                        ? Color.FromArgb(
+                            125,
+                            105,
+                            24)
+                        : Color.FromArgb(
+                            58,
+                            63,
+                            59),
+                    Color.FromArgb(
+                        22,
+                        25,
+                        23),
+                    LinearGradientMode.Vertical))
+            using (Pen pen =
+                new Pen(
+                    accent,
+                    1.0f))
+            {
+                graphics.FillRectangle(
+                    brush,
+                    bounds);
+
+                graphics.DrawRectangle(
+                    pen,
+                    bounds);
+            }
+
+            TextRenderer.DrawText(
+                graphics,
+                text,
+                _smallFont,
+                bounds,
+                accent,
+                TextFormatFlags.HorizontalCenter |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
+        }
+
+        private void StartLampTest()
+        {
+            _lampTestActive = true;
+
+            _lampTestTimer.Stop();
+            _lampTestTimer.Start();
+
+            Invalidate();
+        }
+
+        private void OnLampTestTimerTick(
+            object sender,
+            EventArgs e)
+        {
+            _lampTestTimer.Stop();
+
+            _lampTestActive = false;
+
+            Invalidate();
+        }
+
+        private static LampDefinition[]
+            CreateLampDefinitions()
+        {
+            return new[]
+            {
+                new LampDefinition(
+                    "MASTER\nCAUTION",
+                    LampColor.Amber),
+                new LampDefinition(
+                    "MASTER\nWARNING",
+                    LampColor.Red),
+                new LampDefinition(
+                    "ENGINE\nFAULT",
+                    LampColor.Red),
+                new LampDefinition(
+                    "LOW\nPOWER",
+                    LampColor.Amber),
+                new LampDefinition(
+                    "LINK\nLOST",
+                    LampColor.Red),
+                new LampDefinition(
+                    "ABORT\nREQ",
+                    LampColor.Red),
+                new LampDefinition(
+                    "ASCENT",
+                    LampColor.Blue),
+                new LampDefinition(
+                    "ORBIT",
+                    LampColor.Blue),
+                new LampDefinition(
+                    "DESCENT",
+                    LampColor.Blue),
+                new LampDefinition(
+                    "LANDED",
+                    LampColor.Green),
+                new LampDefinition(
+                    "DOCKED",
+                    LampColor.Green),
+                new LampDefinition(
+                    "LINK\nOK",
+                    LampColor.Green),
+
+                new LampDefinition(
+                    "ENG\nIGN",
+                    LampColor.Blue),
+                new LampDefinition(
+                    "MAIN\nENG",
+                    LampColor.Green),
+                new LampDefinition(
+                    "SRB\nBURN",
+                    LampColor.Amber),
+                new LampDefinition(
+                    "SRB\nSEP",
+                    LampColor.Green),
+                new LampDefinition(
+                    "STAGE\nSEP",
+                    LampColor.Green),
+                new LampDefinition(
+                    "FLAMEOUT",
+                    LampColor.Red),
+                new LampDefinition(
+                    "LOW LF",
+                    LampColor.Amber),
+                new LampDefinition(
+                    "LOW OX",
+                    LampColor.Amber),
+                new LampDefinition(
+                    "LOW\nMONO",
+                    LampColor.Amber),
+                new LampDefinition(
+                    "HEAT\nHIGH",
+                    LampColor.Red),
+                new LampDefinition(
+                    "G FORCE",
+                    LampColor.Amber),
+                new LampDefinition(
+                    "SAS ON",
+                    LampColor.Blue)
+            };
+        }
+
+        private static Color GetLampColor(
+            LampColor color)
+        {
+            switch (color)
+            {
+                case LampColor.Blue:
+                    return Color.FromArgb(
+                        48,
+                        90,
+                        255);
+
+                case LampColor.Green:
+                    return Color.FromArgb(
+                        30,
+                        245,
+                        75);
+
+                case LampColor.Amber:
+                    return Color.FromArgb(
+                        255,
+                        205,
+                        35);
+
+                case LampColor.Red:
+                    return Color.FromArgb(
+                        235,
+                        38,
+                        28);
+
+                default:
+                    return Color.White;
             }
         }
 
-        private void DrawGlassReflection(
-            Graphics graphics)
+        private static Color GetReadableTextColor(
+            LampColor color)
         {
-            Rectangle glassBounds =
-                GetGlassBounds();
-
-            Rectangle reflectionBounds =
-                new Rectangle(
-                    glassBounds.Left + 8,
-                    glassBounds.Top + 6,
-                    glassBounds.Width - 16,
-                    glassBounds.Height / 3);
-
-            using (GraphicsPath reflectionPath =
-                CreateRoundedRectangle(
-                    reflectionBounds,
-                    8))
+            switch (color)
             {
-                using (LinearGradientBrush reflectionBrush =
-                    new LinearGradientBrush(
-                        reflectionBounds,
-                        Color.FromArgb(
-                            24,
-                            185,
-                            225,
-                            235),
-                        Color.FromArgb(
-                            0,
-                            185,
-                            225,
-                            235),
-                        LinearGradientMode.Vertical))
-                {
-                    graphics.FillPath(
-                        reflectionBrush,
-                        reflectionPath);
-                }
+                case LampColor.Blue:
+                case LampColor.Red:
+                    return Color.White;
+
+                default:
+                    return Color.FromArgb(
+                        12,
+                        16,
+                        13);
             }
+        }
+
+        private static Color Lighten(
+            Color color,
+            double amount)
+        {
+            amount =
+                Math.Max(
+                    0.0,
+                    Math.Min(
+                        1.0,
+                        amount));
+
+            return Color.FromArgb(
+                color.A,
+                color.R +
+                (int)
+                ((255 - color.R) *
+                 amount),
+                color.G +
+                (int)
+                ((255 - color.G) *
+                 amount),
+                color.B +
+                (int)
+                ((255 - color.B) *
+                 amount));
+        }
+
+        private static Color Darken(
+            Color color,
+            double amount)
+        {
+            amount =
+                Math.Max(
+                    0.0,
+                    Math.Min(
+                        1.0,
+                        amount));
+
+            return Color.FromArgb(
+                color.A,
+                (int)
+                (color.R *
+                 (1.0 - amount)),
+                (int)
+                (color.G *
+                 (1.0 - amount)),
+                (int)
+                (color.B *
+                 (1.0 - amount)));
         }
 
         private static void DrawFastener(
@@ -597,193 +839,42 @@ namespace KMC.MissionControl.Controls
                 new LinearGradientBrush(
                     bounds,
                     Color.FromArgb(
-                        160,
-                        165,
-                        155),
+                        170,
+                        174,
+                        164),
                     Color.FromArgb(
                         45,
                         48,
                         44),
                     LinearGradientMode.Vertical))
+            using (Pen outline =
+                new Pen(
+                    Color.FromArgb(
+                        18,
+                        20,
+                        18)))
+            using (Pen slot =
+                new Pen(
+                    Color.FromArgb(
+                        35,
+                        37,
+                        34)))
             {
                 graphics.FillEllipse(
                     brush,
                     bounds);
-            }
 
-            using (Pen outlinePen =
-                new Pen(
-                    Color.FromArgb(
-                        16,
-                        18,
-                        16)))
-            {
                 graphics.DrawEllipse(
-                    outlinePen,
+                    outline,
                     bounds);
-            }
 
-            using (Pen slotPen =
-                new Pen(
-                    Color.FromArgb(
-                        30,
-                        32,
-                        29)))
-            {
                 graphics.DrawLine(
-                    slotPen,
+                    slot,
                     x + 2,
                     y + 6,
                     x + 6,
                     y + 2);
             }
-        }
-
-        private Rectangle GetGlassBounds()
-        {
-            return new Rectangle(
-                28,
-                24,
-                Math.Max(
-                    1,
-                    Width - 56),
-                Math.Max(
-                    1,
-                    Height - 48));
-        }
-
-        private static GraphicsPath CreateRoundedRectangle(
-            Rectangle bounds,
-            int radius)
-        {
-            GraphicsPath path =
-                new GraphicsPath();
-
-            int diameter =
-                radius * 2;
-
-            Rectangle arc =
-                new Rectangle(
-                    bounds.Left,
-                    bounds.Top,
-                    diameter,
-                    diameter);
-
-            path.AddArc(
-                arc,
-                180,
-                90);
-
-            arc.X =
-                bounds.Right - diameter;
-
-            path.AddArc(
-                arc,
-                270,
-                90);
-
-            arc.Y =
-                bounds.Bottom - diameter;
-
-            path.AddArc(
-                arc,
-                0,
-                90);
-
-            arc.X =
-                bounds.Left;
-
-            path.AddArc(
-                arc,
-                90,
-                90);
-
-            path.CloseFigure();
-
-            return path;
-        }
-
-        private static string FormatText(
-            string value)
-        {
-            return string.IsNullOrWhiteSpace(value)
-                ? "---"
-                : value.ToUpperInvariant();
-        }
-
-        private static string FormatDistance(
-            double meters)
-        {
-            if (Math.Abs(meters) >= 1000000.0)
-            {
-                return
-                    (meters / 1000000.0)
-                    .ToString("N2")
-                    + " Mm";
-            }
-
-            if (Math.Abs(meters) >= 1000.0)
-            {
-                return
-                    (meters / 1000.0)
-                    .ToString("N2")
-                    + " km";
-            }
-
-            return
-                meters.ToString("N1")
-                + " m";
-        }
-
-        private static string FormatSpeed(
-            double metersPerSecond)
-        {
-            return
-                metersPerSecond.ToString("N1")
-                + " m/s";
-        }
-
-        private static string FormatSignedSpeed(
-            double metersPerSecond)
-        {
-            return
-                metersPerSecond
-                .ToString(
-                    "+0.0;-0.0;0.0")
-                + " m/s";
-        }
-
-        private static string FormatMissionTime(
-            double seconds)
-        {
-            if (seconds < 0)
-            {
-                seconds = 0;
-            }
-
-            TimeSpan time =
-                TimeSpan.FromSeconds(
-                    seconds);
-
-            return string.Format(
-                "{0:000}:{1:00}:{2:00}",
-                (int)time.TotalHours,
-                time.Minutes,
-                time.Seconds);
-        }
-
-        protected override void Dispose(
-            bool disposing)
-        {
-            if (disposing)
-            {
-                _titleFont.Dispose();
-                _labelFont.Dispose();
-                _valueFont.Dispose();
-                _channelFont.Dispose();
-            }
-
-            base.Dispose(disposing);
         }
     }
 }
