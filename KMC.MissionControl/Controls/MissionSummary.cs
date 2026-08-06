@@ -23,6 +23,8 @@ namespace KMC.MissionControl.Controls
 
         private const int SasTelemetryPort = 5060;
         private const string SasProtocolId = "KMCSAS1";
+        private const int SystemsTelemetryPort = 5061;
+        private const string SystemsProtocolId = "KMCSYS1";
         private const double TimedEventSeconds = 5.0;
 
         private sealed class SasStateReceiver :
@@ -181,6 +183,223 @@ namespace KMC.MissionControl.Controls
             }
         }
 
+        private sealed class SystemsStateSnapshot
+        {
+            public bool Online { get; set; }
+            public double ElectricChargeAmount { get; set; }
+            public double ElectricChargeCapacity { get; set; }
+            public double MaximumThermalRatio { get; set; }
+            public bool Docked { get; set; }
+
+            public double ElectricChargeFraction
+            {
+                get
+                {
+                    if (ElectricChargeCapacity <= 0.0001)
+                    {
+                        return 1.0;
+                    }
+
+                    return Math.Max(
+                        0.0,
+                        Math.Min(
+                            1.0,
+                            ElectricChargeAmount /
+                            ElectricChargeCapacity));
+                }
+            }
+        }
+
+        private sealed class SystemsStateReceiver :
+            IDisposable
+        {
+            private readonly object _syncRoot =
+                new object();
+
+            private UdpClient _client;
+            private bool _disposed;
+            private double _electricChargeAmount;
+            private double _electricChargeCapacity;
+            private double _maximumThermalRatio;
+            private bool _docked;
+            private DateTime _lastReceivedUtc =
+                DateTime.MinValue;
+
+            public void Start()
+            {
+                if (_client != null)
+                {
+                    return;
+                }
+
+                try
+                {
+                    _client =
+                        new UdpClient(
+                            SystemsTelemetryPort);
+
+                    BeginReceive();
+                }
+                catch
+                {
+                    Dispose();
+                }
+            }
+
+            public SystemsStateSnapshot GetSnapshot()
+            {
+                lock (_syncRoot)
+                {
+                    bool online =
+                        DateTime.UtcNow -
+                            _lastReceivedUtc <
+                        TimeSpan.FromSeconds(
+                            2.0);
+
+                    return new SystemsStateSnapshot
+                    {
+                        Online = online,
+                        ElectricChargeAmount =
+                            online
+                                ? _electricChargeAmount
+                                : 0.0,
+                        ElectricChargeCapacity =
+                            online
+                                ? _electricChargeCapacity
+                                : 0.0,
+                        MaximumThermalRatio =
+                            online
+                                ? _maximumThermalRatio
+                                : 0.0,
+                        Docked =
+                            online &&
+                            _docked
+                    };
+                }
+            }
+
+            private void BeginReceive()
+            {
+                UdpClient client =
+                    _client;
+
+                if (client == null ||
+                    _disposed)
+                {
+                    return;
+                }
+
+                try
+                {
+                    client.BeginReceive(
+                        OnReceive,
+                        client);
+                }
+                catch
+                {
+                }
+            }
+
+            private void OnReceive(
+                IAsyncResult result)
+            {
+                UdpClient client =
+                    result.AsyncState as UdpClient;
+
+                if (client == null ||
+                    _disposed)
+                {
+                    return;
+                }
+
+                try
+                {
+                    IPEndPoint endpoint =
+                        new IPEndPoint(
+                            IPAddress.Loopback,
+                            0);
+
+                    byte[] payload =
+                        client.EndReceive(
+                            result,
+                            ref endpoint);
+
+                    string[] parts =
+                        Encoding.UTF8
+                            .GetString(payload)
+                            .Split('|');
+
+                    double amount;
+                    double capacity;
+                    double thermalRatio;
+
+                    if (parts.Length == 5 &&
+                        string.Equals(
+                            parts[0],
+                            SystemsProtocolId,
+                            StringComparison.Ordinal) &&
+                        double.TryParse(
+                            parts[1],
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out amount) &&
+                        double.TryParse(
+                            parts[2],
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out capacity) &&
+                        double.TryParse(
+                            parts[3],
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out thermalRatio))
+                    {
+                        lock (_syncRoot)
+                        {
+                            _electricChargeAmount =
+                                Math.Max(0.0, amount);
+                            _electricChargeCapacity =
+                                Math.Max(0.0, capacity);
+                            _maximumThermalRatio =
+                                Math.Max(0.0, thermalRatio);
+                            _docked =
+                                parts[4] == "1";
+                            _lastReceivedUtc =
+                                DateTime.UtcNow;
+                        }
+                    }
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    BeginReceive();
+                }
+            }
+
+            public void Dispose()
+            {
+                _disposed = true;
+
+                UdpClient client =
+                    _client;
+
+                _client = null;
+
+                if (client != null)
+                {
+                    try
+                    {
+                        client.Close();
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+        }
+
         private enum LampColor
         {
             Blue,
@@ -217,6 +436,7 @@ namespace KMC.MissionControl.Controls
         private readonly Timer _linkStateTimer;
         private readonly LampDefinition[] _lamps;
         private readonly SasStateReceiver _sasStateReceiver;
+        private readonly SystemsStateReceiver _systemsStateReceiver;
 
         private MissionTelemetry _telemetry;
         private DateTime _lastTelemetryUtc;
@@ -287,6 +507,11 @@ namespace KMC.MissionControl.Controls
                 new SasStateReceiver();
 
             _sasStateReceiver.Start();
+
+            _systemsStateReceiver =
+                new SystemsStateReceiver();
+
+            _systemsStateReceiver.Start();
 
             _lampTestTimer =
                 new Timer
@@ -506,6 +731,7 @@ namespace KMC.MissionControl.Controls
                 _linkStateTimer.Dispose();
 
                 _sasStateReceiver.Dispose();
+                _systemsStateReceiver.Dispose();
 
                 _titleFont.Dispose();
                 _lampFont.Dispose();
@@ -1057,6 +1283,8 @@ namespace KMC.MissionControl.Controls
             EvaluateLinkIndicators();
             EvaluateTimedEventIndicators();
             EvaluateGuidanceIndicators();
+            EvaluateSystemsIndicators();
+            EvaluateAbortRecommendation();
             EvaluateMasterIndicators();
 
             bool linkChanged =
@@ -1073,7 +1301,10 @@ namespace KMC.MissionControl.Controls
                     _stageSeparationUntilUtc) ||
                 IsTimedEventActive(
                     _srbSeparationUntilUtc) ||
-                _sasStateReceiver.IsSasEnabled)
+                _sasStateReceiver.IsSasEnabled ||
+                _systemsStateReceiver
+                    .GetSnapshot()
+                    .Online)
             {
                 Invalidate();
             }
@@ -1100,6 +1331,8 @@ namespace KMC.MissionControl.Controls
             EvaluateGuidanceIndicators();
             EvaluateResourceIndicators();
             EvaluateLoadIndicators();
+            EvaluateSystemsIndicators();
+            EvaluateAbortRecommendation();
             EvaluateMasterIndicators();
         }
 
@@ -1377,6 +1610,59 @@ namespace KMC.MissionControl.Controls
                 liquidFlameout);
         }
 
+        private void EvaluateSystemsIndicators()
+        {
+            SystemsStateSnapshot systems =
+                _systemsStateReceiver.GetSnapshot();
+
+            SetLampActive(
+                "power.low",
+                systems.Online &&
+                systems.ElectricChargeCapacity > 0.0001 &&
+                systems.ElectricChargeFraction <= 0.15);
+
+            SetLampActive(
+                "flight.heat",
+                systems.Online &&
+                systems.MaximumThermalRatio >= 0.90);
+
+            SetLampActive(
+                "vessel.docked",
+                systems.Docked);
+        }
+
+        private void EvaluateAbortRecommendation()
+        {
+            SystemsStateSnapshot systems =
+                _systemsStateReceiver.GetSnapshot();
+
+            bool criticalPower =
+                systems.Online &&
+                systems.ElectricChargeCapacity > 0.0001 &&
+                systems.ElectricChargeFraction <= 0.05;
+
+            bool criticalHeat =
+                systems.Online &&
+                systems.MaximumThermalRatio >= 0.95;
+
+            bool poweredFlight =
+                IsLampActive("prop.main_engine") ||
+                IsLampActive("prop.srb_burn") ||
+                _telemetry.Throttle > 0.05;
+
+            bool abortRecommended =
+                criticalPower ||
+                criticalHeat ||
+                (IsLampActive("phase.ascent") &&
+                 IsLampActive("prop.flameout")) ||
+                (poweredFlight &&
+                 IsLampActive("comm.link_lost"));
+
+            SetLampActive(
+                "flight.abort",
+                abortRecommended);
+        }
+
         private void EvaluateResourceIndicators()
         {
             SetLampActive(
@@ -1543,7 +1829,11 @@ namespace KMC.MissionControl.Controls
                 IsLampActive(
                     "comm.link_lost") ||
                 IsLampActive(
-                    "prop.flameout");
+                    "prop.flameout") ||
+                IsLampActive(
+                    "flight.heat") ||
+                IsLampActive(
+                    "flight.abort");
         }
 
         private bool HasCurrentCautionCondition()
@@ -1556,7 +1846,9 @@ namespace KMC.MissionControl.Controls
                 IsLampActive(
                     "resource.low_mono") ||
                 IsLampActive(
-                    "flight.gforce");
+                    "flight.gforce") ||
+                IsLampActive(
+                    "power.low");
         }
 
         private bool HasUnacknowledgedMasterAlarm()

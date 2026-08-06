@@ -89,6 +89,7 @@
     <Compile Include="Topology\VesselTopologyAnalyzer.cs" />
     <Compile Include="Topology\VesselResourceAnalyzer.cs" />
     <Compile Include="SasStateTelemetrySender.cs" />
+    <Compile Include="SystemsStateTelemetrySender.cs" />
 
     <Compile Include="..\KMC.shared\TelemetryPacket.cs">
       <Link>Shared\TelemetryPacket.cs</Link>
