@@ -59,6 +59,10 @@ namespace KMC.MissionControl.Debugging.Capabilities
             refresh.Click += delegate { RefreshSnapshot(); };
             commands.Controls.Add(refresh);
 
+            Button copy = CreateButton("COPY");
+            copy.Click += delegate { CopySnapshot(copy); };
+            commands.Controls.Add(copy);
+
             Button snapshot = CreateButton("SNAPSHOT");
             snapshot.Click += delegate { SaveSnapshot(); };
             commands.Controls.Add(snapshot);
@@ -99,6 +103,80 @@ namespace KMC.MissionControl.Debugging.Capabilities
             PopulateParts(snapshot);
             PopulateCapabilities(snapshot);
             PopulateResources(snapshot);
+        }
+
+        private void CopySnapshot(
+            Button copyButton)
+        {
+            try
+            {
+                VesselTopology topology =
+                    PropulsionDebugSnapshotStore.GetTopology();
+
+                VesselCapabilitySnapshot snapshot =
+                    VesselCapabilityBuilder.Build(topology);
+
+                Clipboard.SetText(
+                    BuildSnapshotText(snapshot));
+
+                ShowCopiedFeedback(
+                    copyButton);
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(
+                    this,
+                    "The capability report could not be copied." +
+                    Environment.NewLine +
+                    Environment.NewLine +
+                    exception.Message,
+                    "KMC Capability Debugger",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private static void ShowCopiedFeedback(
+            Button copyButton)
+        {
+            if (copyButton == null ||
+                copyButton.IsDisposed)
+            {
+                return;
+            }
+
+            copyButton.Text =
+                "COPIED";
+
+            copyButton.Enabled =
+                false;
+
+            Timer feedbackTimer =
+                new Timer
+                {
+                    Interval =
+                        1200
+                };
+
+            feedbackTimer.Tick +=
+                delegate
+                {
+                    feedbackTimer.Stop();
+                    feedbackTimer.Dispose();
+
+                    if (copyButton.IsDisposed)
+                    {
+                        return;
+                    }
+
+                    copyButton.Text =
+                        "COPY";
+
+                    copyButton.Enabled =
+                        true;
+                };
+
+            feedbackTimer.Start();
         }
 
         private void SaveSnapshot()
