@@ -24,6 +24,12 @@ namespace KMC.MissionControl.Rendering.Power
             MissionTelemetry telemetry,
             ElectricalTopologyModel model)
         {
+            if (context == null)
+            {
+                throw new ArgumentNullException(
+                    nameof(context));
+            }
+
             Graphics graphics =
                 context.Graphics;
 
@@ -45,19 +51,30 @@ namespace KMC.MissionControl.Rendering.Power
                     context.ContentBounds.Width - 36,
                     context.ContentBounds.Height - 98);
 
+            int summaryHeight =
+                142;
+
             Rectangle summaryBounds =
                 new Rectangle(
                     working.Left,
                     working.Top,
                     working.Width,
-                    160);
+                    summaryHeight);
+
+            int detailWidth =
+                Math.Max(
+                    500,
+                    (int)Math.Round(
+                        working.Width *
+                        0.30));
 
             Rectangle stackBounds =
                 new Rectangle(
                     working.Left,
                     summaryBounds.Bottom + 12,
-                    (int)Math.Round(
-                        working.Width * 0.64),
+                    working.Width -
+                    detailWidth -
+                    12,
                     working.Bottom -
                     summaryBounds.Bottom -
                     12);
@@ -66,9 +83,7 @@ namespace KMC.MissionControl.Rendering.Power
                 new Rectangle(
                     stackBounds.Right + 12,
                     stackBounds.Top,
-                    working.Right -
-                    stackBounds.Right -
-                    12,
+                    detailWidth,
                     stackBounds.Height);
 
             DrawPanel(
@@ -87,7 +102,13 @@ namespace KMC.MissionControl.Rendering.Power
                 graphics,
                 detailBounds,
                 context,
-                "SECTION STATUS");
+                "SECTION DETAIL");
+
+            DrawSummary(
+                graphics,
+                summaryBounds,
+                context,
+                model);
 
             if (model == null ||
                 model.Sections.Count == 0)
@@ -102,20 +123,8 @@ namespace KMC.MissionControl.Rendering.Power
                     detailBounds,
                     context);
 
-                DrawSummary(
-                    graphics,
-                    summaryBounds,
-                    context,
-                    model);
-
                 return;
             }
-
-            DrawSummary(
-                graphics,
-                summaryBounds,
-                context,
-                model);
 
             List<SectionPlacement> placements =
                 CalculatePlacements(
@@ -124,17 +133,21 @@ namespace KMC.MissionControl.Rendering.Power
 
             DrawStackConnections(
                 graphics,
-                placements,
-                context);
+                placements);
 
             DrawStackSections(
                 graphics,
                 placements,
                 context);
 
-            DrawSectionDetails(
+            ElectricalSectionModel primary =
+                SelectPrimarySection(
+                    model);
+
+            DrawPrimarySectionDetail(
                 graphics,
                 detailBounds,
+                primary,
                 model,
                 context);
         }
@@ -147,34 +160,24 @@ namespace KMC.MissionControl.Rendering.Power
         {
             Rectangle content =
                 new Rectangle(
-                    bounds.Left + 18,
+                    bounds.Left + 16,
                     bounds.Top + 42,
-                    bounds.Width - 36,
+                    bounds.Width - 32,
                     bounds.Height - 52);
 
-            int totalSections =
+            int sectionCount =
                 model != null
                     ? model.Sections.Count
                     : 0;
 
-            int poweredSections =
-                model != null
-                    ? model.Sections.Count(
-                        section =>
-                            section.ElectricChargeCapacity >
-                                0.0001 &&
-                            section.ElectricChargeAmount >
-                                0.0001)
-                    : 0;
-
-            int batteries =
+            int batteryCount =
                 model != null
                     ? model.Sections.Sum(
                         section =>
                             section.BatteryPartCount)
                     : 0;
 
-            int solar =
+            int solarCount =
                 model != null
                     ? model.Sections.Sum(
                         section =>
@@ -202,18 +205,23 @@ namespace KMC.MissionControl.Rendering.Power
                       100.0
                     : 0.0;
 
+            int cellWidth =
+                content.Width /
+                4;
+
             DrawSummaryCell(
                 graphics,
                 new Rectangle(
                     content.Left,
                     content.Top,
-                    content.Width / 5,
+                    cellWidth,
                     content.Height),
-                "TOTAL CHARGE",
+                "VESSEL CHARGE",
+                percent.ToString("0") + "%",
                 amount.ToString("0.0") +
                 " / " +
-                capacity.ToString("0.0"),
-                percent.ToString("0") + "%",
+                capacity.ToString("0.0") +
+                " EC",
                 ResolvePowerColor(
                     percent,
                     capacity),
@@ -223,14 +231,13 @@ namespace KMC.MissionControl.Rendering.Power
                 graphics,
                 new Rectangle(
                     content.Left +
-                    content.Width / 5,
+                    cellWidth,
                     content.Top,
-                    content.Width / 5,
+                    cellWidth,
                     content.Height),
                 "STACK SECTIONS",
-                totalSections.ToString("00"),
-                poweredSections.ToString("00") +
-                " POWERED",
+                sectionCount.ToString("00"),
+                "TOPOLOGY GROUPS",
                 context.PhosphorColor,
                 context);
 
@@ -238,13 +245,14 @@ namespace KMC.MissionControl.Rendering.Power
                 graphics,
                 new Rectangle(
                     content.Left +
-                    content.Width * 2 / 5,
+                    cellWidth *
+                    2,
                     content.Top,
-                    content.Width / 5,
+                    cellWidth,
                     content.Height),
-                "BATTERY PARTS",
-                batteries.ToString("00"),
-                "LOCATED",
+                "BATTERIES",
+                batteryCount.ToString("00"),
+                "PART LOCATIONS",
                 Color.FromArgb(
                     255,
                     190,
@@ -255,38 +263,24 @@ namespace KMC.MissionControl.Rendering.Power
                 graphics,
                 new Rectangle(
                     content.Left +
-                    content.Width * 3 / 5,
-                    content.Top,
-                    content.Width / 5,
-                    content.Height),
-                "SOLAR PARTS",
-                solar.ToString("00"),
-                "LOCATED",
-                Color.FromArgb(
-                    80,
-                    205,
-                    255),
-                context);
-
-            DrawSummaryCell(
-                graphics,
-                new Rectangle(
-                    content.Left +
-                    content.Width * 4 / 5,
+                    cellWidth *
+                    3,
                     content.Top,
                     content.Width -
-                    content.Width * 4 / 5,
+                    cellWidth *
+                    3,
                     content.Height),
-                "TOPOLOGY REV",
-                model != null
-                    ? model.TopologyRevision.ToString()
-                    : "--",
+                "SOLAR ARRAYS",
+                solarCount.ToString("00"),
                 model != null &&
                 !string.IsNullOrEmpty(
                     model.VesselName)
                     ? model.VesselName
                     : "WAITING",
-                context.DimPhosphorColor,
+                Color.FromArgb(
+                    80,
+                    205,
+                    255),
                 context);
         }
 
@@ -318,9 +312,9 @@ namespace KMC.MissionControl.Rendering.Power
             Rectangle content =
                 new Rectangle(
                     panel.Left + 34,
-                    panel.Top + 52,
+                    panel.Top + 62,
                     panel.Width - 68,
-                    panel.Height - 74);
+                    panel.Height - 86);
 
             int coreCount =
                 Math.Max(
@@ -328,7 +322,9 @@ namespace KMC.MissionControl.Rendering.Power
                     core.Count);
 
             int gap =
-                12;
+                coreCount >= 6
+                    ? 7
+                    : 12;
 
             int availableHeight =
                 content.Height -
@@ -339,7 +335,7 @@ namespace KMC.MissionControl.Rendering.Power
 
             int sectionHeight =
                 Math.Max(
-                    74,
+                    94,
                     Math.Min(
                         150,
                         availableHeight /
@@ -347,9 +343,9 @@ namespace KMC.MissionControl.Rendering.Power
 
             int coreWidth =
                 Math.Max(
-                    260,
+                    300,
                     Math.Min(
-                        420,
+                        450,
                         content.Width /
                         3));
 
@@ -358,7 +354,7 @@ namespace KMC.MissionControl.Rendering.Power
                 content.Width /
                 2;
 
-            int totalCoreHeight =
+            int totalHeight =
                 sectionHeight *
                 coreCount +
                 gap *
@@ -371,7 +367,7 @@ namespace KMC.MissionControl.Rendering.Power
                 Math.Max(
                     0,
                     (content.Height -
-                     totalCoreHeight) /
+                     totalHeight) /
                     2);
 
             List<SectionPlacement> placements =
@@ -381,30 +377,28 @@ namespace KMC.MissionControl.Rendering.Power
                  index < core.Count;
                  index++)
             {
-                ElectricalSectionModel section =
-                    core[index];
-
-                Rectangle bounds =
-                    new Rectangle(
-                        centerX -
-                        coreWidth /
-                        2,
-                        startY +
-                        index *
-                        (sectionHeight + gap),
-                        coreWidth,
-                        sectionHeight);
-
                 placements.Add(
                     new SectionPlacement
                     {
                         Section =
-                            section,
+                            core[index],
 
                         Bounds =
-                            bounds
+                            new Rectangle(
+                                centerX -
+                                coreWidth /
+                                2,
+                                startY +
+                                index *
+                                (sectionHeight +
+                                 gap),
+                                coreWidth,
+                                sectionHeight)
                     });
             }
+
+            Dictionary<int, int> sideUse =
+                new Dictionary<int, int>();
 
             for (int index = 0;
                  index < radial.Count;
@@ -413,57 +407,73 @@ namespace KMC.MissionControl.Rendering.Power
                 ElectricalSectionModel section =
                     radial[index];
 
-                int nearestCore =
+                int coreIndex =
                     FindNearestCoreIndex(
                         core,
                         section);
 
-                Rectangle coreBounds =
+                Rectangle anchor =
                     placements.Count > 0
                         ? placements[
                             Math.Max(
                                 0,
                                 Math.Min(
                                     placements.Count - 1,
-                                    nearestCore))]
+                                    coreIndex))]
                             .Bounds
                         : new Rectangle(
                             centerX -
                             coreWidth /
                             2,
-                            content.Top +
-                            content.Height /
-                            2 -
-                            sectionHeight /
-                            2,
+                            content.Top,
                             coreWidth,
                             sectionHeight);
 
+                int useCount;
+
+                if (!sideUse.TryGetValue(
+                        coreIndex,
+                        out useCount))
+                {
+                    useCount =
+                        0;
+                }
+
+                sideUse[coreIndex] =
+                    useCount + 1;
+
                 bool left =
-                    index %
+                    useCount %
                     2 ==
                     0;
 
                 int radialWidth =
                     Math.Max(
-                        180,
+                        210,
                         coreWidth -
-                        90);
+                        105);
+
+                int verticalOffset =
+                    (useCount /
+                     2) *
+                    Math.Max(
+                        10,
+                        sectionHeight /
+                        4);
 
                 Rectangle bounds =
                     new Rectangle(
                         left
-                            ? coreBounds.Left -
+                            ? anchor.Left -
                               radialWidth -
                               34
-                            : coreBounds.Right +
+                            : anchor.Right +
                               34,
-                        coreBounds.Top +
-                        Math.Max(
-                            0,
-                            (coreBounds.Height -
-                             sectionHeight) /
-                            2),
+                        Math.Min(
+                            content.Bottom -
+                            sectionHeight,
+                            anchor.Top +
+                            verticalOffset),
                         radialWidth,
                         sectionHeight);
 
@@ -524,8 +534,7 @@ namespace KMC.MissionControl.Rendering.Power
 
         private static void DrawStackConnections(
             Graphics graphics,
-            List<SectionPlacement> placements,
-            MissionRenderContext context)
+            List<SectionPlacement> placements)
         {
             List<SectionPlacement> core =
                 placements
@@ -541,46 +550,37 @@ namespace KMC.MissionControl.Rendering.Power
             using (Pen corePen =
                 new Pen(
                     Color.FromArgb(
-                        105,
-                        165,
-                        175),
+                        95,
+                        160,
+                        170),
                     2.0f))
             using (Pen radialPen =
                 new Pen(
                     Color.FromArgb(
-                        105,
-                        145,
-                        155),
-                    1.5f))
+                        75,
+                        125,
+                        135),
+                    1.4f))
             {
                 for (int index = 0;
                      index < core.Count - 1;
                      index++)
                 {
-                    Point start =
-                        new Point(
-                            core[index]
-                                .Bounds.Left +
-                            core[index]
-                                .Bounds.Width /
-                            2,
-                            core[index]
-                                .Bounds.Bottom);
-
-                    Point end =
-                        new Point(
-                            core[index + 1]
-                                .Bounds.Left +
-                            core[index + 1]
-                                .Bounds.Width /
-                            2,
-                            core[index + 1]
-                                .Bounds.Top);
+                    int centerX =
+                        core[index]
+                            .Bounds.Left +
+                        core[index]
+                            .Bounds.Width /
+                        2;
 
                     graphics.DrawLine(
                         corePen,
-                        start,
-                        end);
+                        centerX,
+                        core[index]
+                            .Bounds.Bottom,
+                        centerX,
+                        core[index + 1]
+                            .Bounds.Top);
                 }
 
                 for (int index = 0;
@@ -612,28 +612,20 @@ namespace KMC.MissionControl.Rendering.Power
                         continue;
                     }
 
-                    Point start =
-                        new Point(
-                            radial.IsLeft
-                                ? radial.Bounds.Right
-                                : radial.Bounds.Left,
-                            radial.Bounds.Top +
-                            radial.Bounds.Height /
-                            2);
-
-                    Point end =
-                        new Point(
-                            radial.IsLeft
-                                ? nearest.Bounds.Left
-                                : nearest.Bounds.Right,
-                            nearest.Bounds.Top +
-                            nearest.Bounds.Height /
-                            2);
-
                     graphics.DrawLine(
                         radialPen,
-                        start,
-                        end);
+                        radial.IsLeft
+                            ? radial.Bounds.Right
+                            : radial.Bounds.Left,
+                        radial.Bounds.Top +
+                        radial.Bounds.Height /
+                        2,
+                        radial.IsLeft
+                            ? nearest.Bounds.Left
+                            : nearest.Bounds.Right,
+                        nearest.Bounds.Top +
+                        nearest.Bounds.Height /
+                        2);
                 }
             }
         }
@@ -647,18 +639,15 @@ namespace KMC.MissionControl.Rendering.Power
                  index < placements.Count;
                  index++)
             {
-                SectionPlacement placement =
-                    placements[index];
-
-                DrawSection(
+                DrawSectionCard(
                     graphics,
-                    placement.Bounds,
-                    placement.Section,
+                    placements[index].Bounds,
+                    placements[index].Section,
                     context);
             }
         }
 
-        private static void DrawSection(
+        private static void DrawSectionCard(
             Graphics graphics,
             Rectangle bounds,
             ElectricalSectionModel section,
@@ -675,14 +664,14 @@ namespace KMC.MissionControl.Rendering.Power
             using (SolidBrush fill =
                 new SolidBrush(
                     Color.FromArgb(
-                        18,
+                        13,
                         state)))
             using (Pen outline =
                 new Pen(
                     state,
                     section.IsCommandSection
-                        ? 2.4f
-                        : 1.6f))
+                        ? 2.3f
+                        : 1.5f))
             {
                 graphics.FillRectangle(
                     fill,
@@ -704,20 +693,20 @@ namespace KMC.MissionControl.Rendering.Power
                             bounds.Width /
                             2,
                             bounds.Top -
-                            42),
+                            38),
 
                         new Point(
                             bounds.Left +
                             bounds.Width /
                             2 -
-                            38,
+                            36,
                             bounds.Top),
 
                         new Point(
                             bounds.Left +
                             bounds.Width /
                             2 +
-                            38,
+                            36,
                             bounds.Top)
                     };
 
@@ -732,86 +721,109 @@ namespace KMC.MissionControl.Rendering.Power
                 }
             }
 
-            Rectangle title =
-                new Rectangle(
-                    bounds.Left + 8,
-                    bounds.Top + 8,
-                    bounds.Width - 16,
-                    24);
+            string title =
+                GetCompactSectionName(
+                    section);
 
             TextRenderer.DrawText(
                 graphics,
-                section.Name,
-                context.SmallFont,
                 title,
+                context.LargeFont,
+                new Rectangle(
+                    bounds.Left + 10,
+                    bounds.Top + 8,
+                    bounds.Width - 20,
+                    28),
                 state,
                 TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding |
                 TextFormatFlags.EndEllipsis);
 
-            string stageText =
+            string stage =
                 "SEP " +
                 FormatStage(
                     section.SeparationStage) +
-                "  ACT " +
+                "   ACT " +
                 FormatStage(
                     section.ActivationStage);
 
-            DrawCenteredText(
+            TextRenderer.DrawText(
                 graphics,
-                stageText,
-                new Rectangle(
-                    bounds.Left + 6,
-                    bounds.Top + 34,
-                    bounds.Width - 12,
-                    18),
+                stage,
                 context.SmallFont,
-                context.DimPhosphorColor);
+                new Rectangle(
+                    bounds.Left + 8,
+                    bounds.Top + 37,
+                    bounds.Width - 16,
+                    19),
+                context.DimPhosphorColor,
+                TextFormatFlags.HorizontalCenter |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
 
-            string chargeText =
+            string charge =
                 section.ElectricChargeCapacity >
                     0.0001
-                    ? "EC " +
-                      section.ElectricChargeAmount
-                          .ToString("0.0") +
-                      " / " +
-                      section.ElectricChargeCapacity
-                          .ToString("0.0") +
-                      "  " +
+                    ? section.ElectricChargeAmount
+                        .ToString("0.0") +
+                      " EC   " +
                       percent.ToString("0") +
                       "%"
                     : "NO LOCAL STORAGE";
 
-            DrawCenteredText(
+            TextRenderer.DrawText(
                 graphics,
-                chargeText,
-                new Rectangle(
-                    bounds.Left + 6,
-                    bounds.Top + 55,
-                    bounds.Width - 12,
-                    22),
+                charge,
                 context.SmallFont,
+                new Rectangle(
+                    bounds.Left + 8,
+                    bounds.Top + 58,
+                    bounds.Width - 16,
+                    22),
+                state,
+                TextFormatFlags.HorizontalCenter |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+
+            Rectangle bar =
+                new Rectangle(
+                    bounds.Left + 18,
+                    bounds.Top + 84,
+                    bounds.Width - 36,
+                    10);
+
+            DrawChargeBar(
+                graphics,
+                bar,
+                percent,
+                section.ElectricChargeCapacity,
                 state);
 
             string hardware =
-                "BAT " +
+                "B" +
                 section.BatteryPartCount.ToString("00") +
-                "  SOL " +
+                "   S" +
                 section.SolarPartCount.ToString("00") +
-                "  GEN " +
-                section.GeneratorPartCount.ToString("00");
+                "   G" +
+                section.GeneratorPartCount.ToString("00") +
+                "   P" +
+                section.PartCount.ToString("00");
 
-            DrawCenteredText(
+            TextRenderer.DrawText(
                 graphics,
                 hardware,
-                new Rectangle(
-                    bounds.Left + 6,
-                    bounds.Bottom - 28,
-                    bounds.Width - 12,
-                    18),
                 context.SmallFont,
-                context.DimPhosphorColor);
+                new Rectangle(
+                    bounds.Left + 8,
+                    bounds.Bottom - 27,
+                    bounds.Width - 16,
+                    18),
+                context.DimPhosphorColor,
+                TextFormatFlags.HorizontalCenter |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
 
             DrawBatteryMarkers(
                 graphics,
@@ -825,6 +837,542 @@ namespace KMC.MissionControl.Rendering.Power
                 section);
         }
 
+        private static void DrawPrimarySectionDetail(
+            Graphics graphics,
+            Rectangle panel,
+            ElectricalSectionModel primary,
+            ElectricalTopologyModel model,
+            MissionRenderContext context)
+        {
+            Rectangle content =
+                new Rectangle(
+                    panel.Left + 18,
+                    panel.Top + 50,
+                    panel.Width - 36,
+                    panel.Height - 68);
+
+            if (primary == null)
+            {
+                DrawNoDataDetails(
+                    graphics,
+                    panel,
+                    context);
+
+                return;
+            }
+
+            Color state =
+                ResolvePowerColor(
+                    primary.ElectricChargePercent,
+                    primary.ElectricChargeCapacity);
+
+            TextRenderer.DrawText(
+                graphics,
+                GetCompactSectionName(
+                    primary),
+                context.LargeFont,
+                new Rectangle(
+                    content.Left,
+                    content.Top,
+                    content.Width,
+                    34),
+                state,
+                TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+
+            TextRenderer.DrawText(
+                graphics,
+                primary.IsCommandSection
+                    ? "PRIMARY COMMAND / POWER SECTION"
+                    : primary.IsRadialSection
+                        ? "RADIAL POWER SECTION"
+                        : "CORE POWER SECTION",
+                context.SmallFont,
+                new Rectangle(
+                    content.Left,
+                    content.Top + 36,
+                    content.Width,
+                    22),
+                context.DimPhosphorColor,
+                TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
+
+            Rectangle chargeCard =
+                new Rectangle(
+                    content.Left,
+                    content.Top + 72,
+                    content.Width,
+                    138);
+
+            DrawDetailCard(
+                graphics,
+                chargeCard,
+                state);
+
+            DrawLabelValue(
+                graphics,
+                chargeCard,
+                "ELECTRIC CHARGE",
+                primary.ElectricChargeAmount
+                    .ToString("0.0") +
+                " / " +
+                primary.ElectricChargeCapacity
+                    .ToString("0.0") +
+                " EC",
+                12,
+                context,
+                state);
+
+            DrawLabelValue(
+                graphics,
+                chargeCard,
+                "RESERVE",
+                primary.ElectricChargePercent
+                    .ToString("0") +
+                "%",
+                62,
+                context,
+                state);
+
+            DrawChargeBar(
+                graphics,
+                new Rectangle(
+                    chargeCard.Left + 16,
+                    chargeCard.Bottom - 26,
+                    chargeCard.Width - 32,
+                    12),
+                primary.ElectricChargePercent,
+                primary.ElectricChargeCapacity,
+                state);
+
+            Rectangle hardwareCard =
+                new Rectangle(
+                    content.Left,
+                    chargeCard.Bottom + 14,
+                    content.Width,
+                    196);
+
+            DrawDetailCard(
+                graphics,
+                hardwareCard,
+                context.PhosphorColor);
+
+            int columnWidth =
+                hardwareCard.Width /
+                2;
+
+            DrawDetailMetric(
+                graphics,
+                new Rectangle(
+                    hardwareCard.Left,
+                    hardwareCard.Top,
+                    columnWidth,
+                    82),
+                "BATTERIES",
+                primary.BatteryPartCount
+                    .ToString("00"),
+                Color.FromArgb(
+                    255,
+                    190,
+                    55),
+                context);
+
+            DrawDetailMetric(
+                graphics,
+                new Rectangle(
+                    hardwareCard.Left +
+                    columnWidth,
+                    hardwareCard.Top,
+                    hardwareCard.Width -
+                    columnWidth,
+                    82),
+                "SOLAR ARRAYS",
+                primary.SolarPartCount
+                    .ToString("00"),
+                Color.FromArgb(
+                    80,
+                    205,
+                    255),
+                context);
+
+            DrawDetailMetric(
+                graphics,
+                new Rectangle(
+                    hardwareCard.Left,
+                    hardwareCard.Top + 88,
+                    columnWidth,
+                    82),
+                "GENERATORS",
+                primary.GeneratorPartCount
+                    .ToString("00"),
+                context.PhosphorColor,
+                context);
+
+            DrawDetailMetric(
+                graphics,
+                new Rectangle(
+                    hardwareCard.Left +
+                    columnWidth,
+                    hardwareCard.Top + 88,
+                    hardwareCard.Width -
+                    columnWidth,
+                    82),
+                "SECTION PARTS",
+                primary.PartCount
+                    .ToString("00"),
+                context.DimPhosphorColor,
+                context);
+
+            int directoryTop =
+                hardwareCard.Bottom +
+                22;
+
+            TextRenderer.DrawText(
+                graphics,
+                "SECTION DIRECTORY",
+                context.SmallFont,
+                new Rectangle(
+                    content.Left,
+                    directoryTop,
+                    content.Width,
+                    22),
+                context.PhosphorColor,
+                TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
+
+            int y =
+                directoryTop +
+                32;
+
+            int rowHeight =
+                34;
+
+            int maxRows =
+                Math.Max(
+                    1,
+                    (content.Bottom -
+                     y) /
+                    rowHeight);
+
+            for (int index = 0;
+                 index < model.Sections.Count &&
+                 index < maxRows;
+                 index++)
+            {
+                ElectricalSectionModel section =
+                    model.Sections[index];
+
+                Color rowColor =
+                    ResolvePowerColor(
+                        section.ElectricChargePercent,
+                        section.ElectricChargeCapacity);
+
+                string rowText =
+                    GetCompactSectionName(
+                        section)
+                    .PadRight(18) +
+                    " EC " +
+                    (section.ElectricChargeCapacity >
+                        0.0001
+                        ? section.ElectricChargePercent
+                            .ToString("0") +
+                          "%"
+                        : "--");
+
+                TextRenderer.DrawText(
+                    graphics,
+                    rowText,
+                    context.SmallFont,
+                    new Rectangle(
+                        content.Left,
+                        y,
+                        content.Width,
+                        rowHeight - 4),
+                    rowColor,
+                    TextFormatFlags.Left |
+                    TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.NoPadding |
+                    TextFormatFlags.EndEllipsis);
+
+                using (Pen divider =
+                    new Pen(
+                        Color.FromArgb(
+                            55,
+                            90,
+                            100),
+                        1.0f))
+                {
+                    graphics.DrawLine(
+                        divider,
+                        content.Left,
+                        y +
+                        rowHeight -
+                        3,
+                        content.Right,
+                        y +
+                        rowHeight -
+                        3);
+                }
+
+                y +=
+                    rowHeight;
+            }
+
+            if (model.Sections.Count >
+                maxRows)
+            {
+                TextRenderer.DrawText(
+                    graphics,
+                    "+" +
+                    (model.Sections.Count -
+                     maxRows) +
+                    " MORE — CTRL+SHIFT+F11",
+                    context.SmallFont,
+                    new Rectangle(
+                        content.Left,
+                        content.Bottom - 28,
+                        content.Width,
+                        24),
+                    Color.FromArgb(
+                        255,
+                        190,
+                        55),
+                    TextFormatFlags.Left |
+                    TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.NoPadding);
+            }
+        }
+
+        private static ElectricalSectionModel
+            SelectPrimarySection(
+                ElectricalTopologyModel model)
+        {
+            if (model == null)
+            {
+                return null;
+            }
+
+            ElectricalSectionModel command =
+                model.Sections
+                    .Where(
+                        section =>
+                            section.IsCommandSection)
+                    .OrderByDescending(
+                        section =>
+                            section.ElectricChargeCapacity)
+                    .FirstOrDefault();
+
+            if (command != null)
+            {
+                return command;
+            }
+
+            return
+                model.Sections
+                    .OrderByDescending(
+                        section =>
+                            section.ElectricChargeCapacity)
+                    .ThenByDescending(
+                        section =>
+                            section.AverageY)
+                    .FirstOrDefault();
+        }
+
+        private static string GetCompactSectionName(
+            ElectricalSectionModel section)
+        {
+            if (section == null)
+            {
+                return "--";
+            }
+
+            if (section.IsCommandSection)
+            {
+                return "COMMAND";
+            }
+
+            if (section.IsRadialSection)
+            {
+                return section.Name
+                    .Replace(
+                        "RADIAL GROUP",
+                        "RADIAL");
+            }
+
+            return section.Name
+                .Replace(
+                    "STACK SECTION",
+                    "STAGE");
+        }
+
+        private static void DrawDetailCard(
+            Graphics graphics,
+            Rectangle bounds,
+            Color outline)
+        {
+            using (SolidBrush fill =
+                new SolidBrush(
+                    Color.FromArgb(
+                        12,
+                        outline)))
+            using (Pen pen =
+                new Pen(
+                    Color.FromArgb(
+                        105,
+                        outline),
+                    1.2f))
+            {
+                graphics.FillRectangle(
+                    fill,
+                    bounds);
+
+                graphics.DrawRectangle(
+                    pen,
+                    bounds);
+            }
+        }
+
+        private static void DrawLabelValue(
+            Graphics graphics,
+            Rectangle card,
+            string label,
+            string value,
+            int offsetY,
+            MissionRenderContext context,
+            Color valueColor)
+        {
+            TextRenderer.DrawText(
+                graphics,
+                label,
+                context.SmallFont,
+                new Rectangle(
+                    card.Left + 16,
+                    card.Top + offsetY,
+                    card.Width - 32,
+                    20),
+                context.DimPhosphorColor,
+                TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
+
+            TextRenderer.DrawText(
+                graphics,
+                value,
+                context.LargeFont,
+                new Rectangle(
+                    card.Left + 16,
+                    card.Top + offsetY + 20,
+                    card.Width - 32,
+                    30),
+                valueColor,
+                TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+        }
+
+        private static void DrawDetailMetric(
+            Graphics graphics,
+            Rectangle bounds,
+            string label,
+            string value,
+            Color color,
+            MissionRenderContext context)
+        {
+            TextRenderer.DrawText(
+                graphics,
+                label,
+                context.SmallFont,
+                new Rectangle(
+                    bounds.Left + 10,
+                    bounds.Top + 7,
+                    bounds.Width - 20,
+                    22),
+                context.DimPhosphorColor,
+                TextFormatFlags.HorizontalCenter |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
+
+            TextRenderer.DrawText(
+                graphics,
+                value,
+                context.LargeFont,
+                new Rectangle(
+                    bounds.Left + 10,
+                    bounds.Top + 31,
+                    bounds.Width - 20,
+                    38),
+                color,
+                TextFormatFlags.HorizontalCenter |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
+        }
+
+        private static void DrawChargeBar(
+            Graphics graphics,
+            Rectangle bounds,
+            double percent,
+            double capacity,
+            Color state)
+        {
+            using (Pen outline =
+                new Pen(
+                    Color.FromArgb(
+                        90,
+                        130,
+                        140),
+                    1.0f))
+            {
+                graphics.DrawRectangle(
+                    outline,
+                    bounds);
+            }
+
+            if (capacity <=
+                0.0001)
+            {
+                return;
+            }
+
+            int fillWidth =
+                (int)Math.Round(
+                    Math.Max(
+                        0.0,
+                        Math.Min(
+                            100.0,
+                            percent)) /
+                    100.0 *
+                    Math.Max(
+                        0,
+                        bounds.Width - 4));
+
+            if (fillWidth <= 0)
+            {
+                return;
+            }
+
+            using (SolidBrush fill =
+                new SolidBrush(
+                    Color.FromArgb(
+                        180,
+                        state)))
+            {
+                graphics.FillRectangle(
+                    fill,
+                    new Rectangle(
+                        bounds.Left + 2,
+                        bounds.Top + 2,
+                        fillWidth,
+                        Math.Max(
+                            1,
+                            bounds.Height - 3)));
+            }
+        }
+
         private static void DrawBatteryMarkers(
             Graphics graphics,
             Rectangle bounds,
@@ -833,7 +1381,7 @@ namespace KMC.MissionControl.Rendering.Power
         {
             int count =
                 Math.Min(
-                    4,
+                    3,
                     section.BatteryPartCount);
 
             for (int index = 0;
@@ -844,13 +1392,13 @@ namespace KMC.MissionControl.Rendering.Power
                     bounds.Top +
                     18 +
                     index *
-                    19;
+                    20;
 
                 Rectangle battery =
                     new Rectangle(
                         bounds.Left - 22,
                         markerY,
-                        15,
+                        14,
                         10);
 
                 using (Pen pen =
@@ -886,7 +1434,7 @@ namespace KMC.MissionControl.Rendering.Power
         {
             int count =
                 Math.Min(
-                    4,
+                    3,
                     section.SolarPartCount);
 
             Color solar =
@@ -903,11 +1451,11 @@ namespace KMC.MissionControl.Rendering.Power
                     bounds.Top +
                     18 +
                     index *
-                    19;
+                    20;
 
                 Rectangle panel =
                     new Rectangle(
-                        bounds.Right + 7,
+                        bounds.Right + 8,
                         markerY,
                         20,
                         11);
@@ -946,155 +1494,6 @@ namespace KMC.MissionControl.Rendering.Power
             }
         }
 
-        private static void DrawSectionDetails(
-            Graphics graphics,
-            Rectangle panel,
-            ElectricalTopologyModel model,
-            MissionRenderContext context)
-        {
-            Rectangle content =
-                new Rectangle(
-                    panel.Left + 16,
-                    panel.Top + 46,
-                    panel.Width - 32,
-                    panel.Height - 60);
-
-            int rowHeight =
-                Math.Max(
-                    58,
-                    Math.Min(
-                        86,
-                        content.Height /
-                        Math.Max(
-                            1,
-                            model.Sections.Count)));
-
-            int y =
-                content.Top;
-
-            for (int index = 0;
-                 index < model.Sections.Count &&
-                 y + rowHeight <=
-                    content.Bottom;
-                 index++)
-            {
-                ElectricalSectionModel section =
-                    model.Sections[index];
-
-                Color state =
-                    ResolvePowerColor(
-                        section.ElectricChargePercent,
-                        section.ElectricChargeCapacity);
-
-                Rectangle row =
-                    new Rectangle(
-                        content.Left,
-                        y,
-                        content.Width,
-                        rowHeight - 6);
-
-                using (Pen pen =
-                    new Pen(
-                        Color.FromArgb(
-                            90,
-                            125,
-                            135),
-                        1.0f))
-                {
-                    graphics.DrawRectangle(
-                        pen,
-                        row);
-                }
-
-                TextRenderer.DrawText(
-                    graphics,
-                    section.Name,
-                    context.SmallFont,
-                    new Rectangle(
-                        row.Left + 7,
-                        row.Top + 5,
-                        row.Width - 14,
-                        18),
-                    state,
-                    TextFormatFlags.Left |
-                    TextFormatFlags.VerticalCenter |
-                    TextFormatFlags.NoPadding |
-                    TextFormatFlags.EndEllipsis);
-
-                string line =
-                    "EC " +
-                    section.ElectricChargePercent
-                        .ToString("0") +
-                    "%  PRT " +
-                    section.PartCount.ToString("00") +
-                    "  ELEC " +
-                    section.ElectricalPartCount
-                        .ToString("00");
-
-                TextRenderer.DrawText(
-                    graphics,
-                    line,
-                    context.SmallFont,
-                    new Rectangle(
-                        row.Left + 7,
-                        row.Top + 26,
-                        row.Width - 14,
-                        18),
-                    context.DimPhosphorColor,
-                    TextFormatFlags.Left |
-                    TextFormatFlags.VerticalCenter |
-                    TextFormatFlags.NoPadding |
-                    TextFormatFlags.EndEllipsis);
-
-                string hardware =
-                    "BAT " +
-                    section.BatteryPartCount.ToString("00") +
-                    " SOL " +
-                    section.SolarPartCount.ToString("00") +
-                    " GEN " +
-                    section.GeneratorPartCount.ToString("00") +
-                    " CMD " +
-                    section.CommandPartCount.ToString("00");
-
-                TextRenderer.DrawText(
-                    graphics,
-                    hardware,
-                    context.SmallFont,
-                    new Rectangle(
-                        row.Left + 7,
-                        row.Top + 45,
-                        row.Width - 14,
-                        18),
-                    context.DimPhosphorColor,
-                    TextFormatFlags.Left |
-                    TextFormatFlags.VerticalCenter |
-                    TextFormatFlags.NoPadding |
-                    TextFormatFlags.EndEllipsis);
-
-                y +=
-                    rowHeight;
-            }
-
-            if (model.Sections.Count *
-                rowHeight >
-                content.Height)
-            {
-                DrawCenteredText(
-                    graphics,
-                    "ADDITIONAL SECTIONS IN DEBUGGER",
-                    new Rectangle(
-                        content.Left,
-                        content.Bottom - 22,
-                        content.Width,
-                        18),
-                    context.SmallFont,
-                    Color.FromArgb(
-                        255,
-                        190,
-                        55));
-            }
-        }
-
         private static void DrawWaitingState(
             Graphics graphics,
             Rectangle panel,
@@ -1123,7 +1522,7 @@ namespace KMC.MissionControl.Rendering.Power
 
             DrawCenteredText(
                 graphics,
-                "LOAD OR LAUNCH A VESSEL — TOPOLOGY MAP WILL BUILD AUTOMATICALLY",
+                "LOAD OR LAUNCH A VESSEL",
                 new Rectangle(
                     content.Left,
                     content.Top +
@@ -1224,7 +1623,7 @@ namespace KMC.MissionControl.Rendering.Power
                 title,
                 new Rectangle(
                     bounds.Left + 4,
-                    bounds.Top + 2,
+                    bounds.Top + 1,
                     bounds.Width - 8,
                     18),
                 context.SmallFont,
@@ -1235,7 +1634,7 @@ namespace KMC.MissionControl.Rendering.Power
                 value,
                 new Rectangle(
                     bounds.Left + 4,
-                    bounds.Top + 24,
+                    bounds.Top + 23,
                     bounds.Width - 8,
                     34),
                 context.LargeFont,
@@ -1261,9 +1660,9 @@ namespace KMC.MissionControl.Rendering.Power
                 0.0001)
             {
                 return Color.FromArgb(
-                    110,
-                    145,
-                    155);
+                    105,
+                    140,
+                    150);
             }
 
             if (percent <=
