@@ -26,22 +26,33 @@ namespace KMC.MissionControl.Controls
         private sealed class LampDefinition
         {
             public LampDefinition(
+                string id,
                 string label,
                 LampColor color)
             {
+                Id = id;
                 Label = label;
                 Color = color;
             }
 
+            public string Id { get; private set; }
+
             public string Label { get; private set; }
+
             public LampColor Color { get; private set; }
+
+            public bool Active { get; set; }
         }
 
         private readonly Font _titleFont;
         private readonly Font _lampFont;
         private readonly Font _smallFont;
         private readonly Timer _lampTestTimer;
+        private readonly Timer _linkStateTimer;
         private readonly LampDefinition[] _lamps;
+
+        private MissionTelemetry _telemetry;
+        private DateTime _lastTelemetryUtc;
 
         private Rectangle _ackBounds;
         private Rectangle _lampTestBounds;
@@ -76,6 +87,12 @@ namespace KMC.MissionControl.Controls
                     7.5f,
                     FontStyle.Bold);
 
+            _telemetry =
+                new MissionTelemetry();
+
+            _lastTelemetryUtc =
+                DateTime.MinValue;
+
             _lamps =
                 CreateLampDefinitions();
 
@@ -87,6 +104,17 @@ namespace KMC.MissionControl.Controls
 
             _lampTestTimer.Tick +=
                 OnLampTestTimerTick;
+
+            _linkStateTimer =
+                new Timer
+                {
+                    Interval = 500
+                };
+
+            _linkStateTimer.Tick +=
+                OnLinkStateTimerTick;
+
+            _linkStateTimer.Start();
 
             SetStyle(
                 ControlStyles.AllPaintingInWmPaint |
@@ -192,7 +220,15 @@ namespace KMC.MissionControl.Controls
         public void UpdateTelemetry(
             MissionTelemetry telemetry)
         {
-            // Live event logic is intentionally deferred.
+            _telemetry =
+                telemetry ??
+                new MissionTelemetry();
+
+            _lastTelemetryUtc =
+                DateTime.UtcNow;
+
+            EvaluateLiveIndicators();
+
             Invalidate();
         }
 
@@ -203,6 +239,9 @@ namespace KMC.MissionControl.Controls
             {
                 _lampTestTimer.Stop();
                 _lampTestTimer.Dispose();
+
+                _linkStateTimer.Stop();
+                _linkStateTimer.Dispose();
 
                 _titleFont.Dispose();
                 _lampFont.Dispose();
@@ -444,7 +483,7 @@ namespace KMC.MissionControl.Controls
                 graphics,
                 _lampTestActive
                     ? "LAMP TEST ACTIVE"
-                    : "FOUNDATION MODE",
+                    : GetPanelStatusText(),
                 _smallFont,
                 status,
                 _lampTestActive
@@ -525,7 +564,8 @@ namespace KMC.MissionControl.Controls
                     graphics,
                     lamp,
                     _lamps[index],
-                    _lampTestActive);
+                    _lampTestActive ||
+                    _lamps[index].Active);
             }
         }
 
@@ -710,6 +750,326 @@ namespace KMC.MissionControl.Controls
                 TextFormatFlags.NoPadding);
         }
 
+        private void OnLinkStateTimerTick(
+            object sender,
+            EventArgs e)
+        {
+            bool previousLinkOk =
+                IsLampActive(
+                    "comm.link_ok");
+
+            bool previousLinkLost =
+                IsLampActive(
+                    "comm.link_lost");
+
+            EvaluateLinkIndicators();
+            EvaluateMasterIndicators();
+
+            if (previousLinkOk !=
+                    IsLampActive(
+                        "comm.link_ok") ||
+                previousLinkLost !=
+                    IsLampActive(
+                        "comm.link_lost"))
+            {
+                Invalidate();
+            }
+        }
+
+        private void EvaluateLiveIndicators()
+        {
+            ClearLiveIndicators();
+
+            bool linkOnline =
+                IsLinkOnline();
+
+            SetLampActive(
+                "comm.link_ok",
+                linkOnline);
+
+            SetLampActive(
+                "comm.link_lost",
+                !linkOnline);
+
+            EvaluateFlightPhaseIndicators();
+            EvaluatePropulsionIndicators();
+            EvaluateResourceIndicators();
+            EvaluateLoadIndicators();
+            EvaluateMasterIndicators();
+        }
+
+        private void EvaluateLinkIndicators()
+        {
+            bool linkOnline =
+                IsLinkOnline();
+
+            SetLampActive(
+                "comm.link_ok",
+                linkOnline);
+
+            SetLampActive(
+                "comm.link_lost",
+                !linkOnline);
+        }
+
+        private void EvaluateFlightPhaseIndicators()
+        {
+            double radarAltitude =
+                Math.Max(
+                    0.0,
+                    _telemetry.RadarAltitude);
+
+            double verticalSpeed =
+                _telemetry.VerticalSpeed;
+
+            double horizontalSpeed =
+                Math.Abs(
+                    _telemetry.HorizontalSpeed);
+
+            bool landed =
+                radarAltitude <= 5.0 &&
+                Math.Abs(
+                    verticalSpeed) <= 2.0 &&
+                horizontalSpeed <= 2.0;
+
+            bool orbit =
+                !landed &&
+                _telemetry.Apoapsis > 0.0 &&
+                _telemetry.Periapsis > 0.0;
+
+            bool ascent =
+                !landed &&
+                !orbit &&
+                verticalSpeed >= 5.0;
+
+            bool descent =
+                !landed &&
+                !orbit &&
+                verticalSpeed <= -5.0;
+
+            SetLampActive(
+                "phase.landed",
+                landed);
+
+            SetLampActive(
+                "phase.orbit",
+                orbit);
+
+            SetLampActive(
+                "phase.ascent",
+                ascent);
+
+            SetLampActive(
+                "phase.descent",
+                descent);
+        }
+
+        private void EvaluatePropulsionIndicators()
+        {
+            bool engineIgnited =
+                _telemetry.IgnitedEngineCount >
+                    0;
+
+            bool engineProducing =
+                _telemetry.ProducingThrustEngineCount >
+                    0 &&
+                _telemetry.CurrentThrust >
+                    0.05;
+
+            bool flameout =
+                _telemetry.FlameoutEngineCount >
+                    0;
+
+            SetLampActive(
+                "prop.engine_ignition",
+                engineIgnited);
+
+            /*
+             * This first milestone uses aggregate engine telemetry. A later
+             * propulsion-specific pass can distinguish LF/OX main engines
+             * from SRBs using the per-engine store.
+             */
+            SetLampActive(
+                "prop.main_engine",
+                engineProducing);
+
+            SetLampActive(
+                "prop.flameout",
+                flameout);
+
+            SetLampActive(
+                "prop.engine_fault",
+                flameout);
+        }
+
+        private void EvaluateResourceIndicators()
+        {
+            SetLampActive(
+                "resource.low_lf",
+                IsLowResource(
+                    _telemetry.StageLiquidFuelAmount,
+                    _telemetry.StageLiquidFuelCapacity));
+
+            SetLampActive(
+                "resource.low_ox",
+                IsLowResource(
+                    _telemetry.StageOxidizerAmount,
+                    _telemetry.StageOxidizerCapacity));
+
+            SetLampActive(
+                "resource.low_mono",
+                IsLowResource(
+                    _telemetry.StageMonopropellantAmount,
+                    _telemetry.StageMonopropellantCapacity));
+        }
+
+        private void EvaluateLoadIndicators()
+        {
+            SetLampActive(
+                "flight.gforce",
+                _telemetry.GForce >= 5.0);
+        }
+
+        private void EvaluateMasterIndicators()
+        {
+            bool warning =
+                IsLampActive(
+                    "prop.engine_fault") ||
+                IsLampActive(
+                    "comm.link_lost") ||
+                IsLampActive(
+                    "prop.flameout");
+
+            bool caution =
+                IsLampActive(
+                    "resource.low_lf") ||
+                IsLampActive(
+                    "resource.low_ox") ||
+                IsLampActive(
+                    "resource.low_mono") ||
+                IsLampActive(
+                    "flight.gforce");
+
+            SetLampActive(
+                "master.warning",
+                warning);
+
+            SetLampActive(
+                "master.caution",
+                caution);
+        }
+
+        private void ClearLiveIndicators()
+        {
+            for (int index = 0;
+                 index < _lamps.Length;
+                 index++)
+            {
+                _lamps[index].Active =
+                    false;
+            }
+        }
+
+        private bool IsLinkOnline()
+        {
+            return
+                _lastTelemetryUtc !=
+                    DateTime.MinValue &&
+                DateTime.UtcNow -
+                    _lastTelemetryUtc <
+                TimeSpan.FromSeconds(
+                    2.0);
+        }
+
+        private static bool IsLowResource(
+            double amount,
+            double capacity)
+        {
+            if (capacity <= 0.0001)
+            {
+                return false;
+            }
+
+            return
+                amount /
+                capacity <=
+                0.15;
+        }
+
+        private void SetLampActive(
+            string id,
+            bool active)
+        {
+            for (int index = 0;
+                 index < _lamps.Length;
+                 index++)
+            {
+                if (string.Equals(
+                        _lamps[index].Id,
+                        id,
+                        StringComparison.Ordinal))
+                {
+                    _lamps[index].Active =
+                        active;
+
+                    return;
+                }
+            }
+        }
+
+        private bool IsLampActive(
+            string id)
+        {
+            for (int index = 0;
+                 index < _lamps.Length;
+                 index++)
+            {
+                if (string.Equals(
+                        _lamps[index].Id,
+                        id,
+                        StringComparison.Ordinal))
+                {
+                    return
+                        _lamps[index].Active;
+                }
+            }
+
+            return false;
+        }
+
+        private string GetPanelStatusText()
+        {
+            int activeCount =
+                0;
+
+            int warningCount =
+                0;
+
+            for (int index = 0;
+                 index < _lamps.Length;
+                 index++)
+            {
+                if (!_lamps[index].Active)
+                {
+                    continue;
+                }
+
+                activeCount++;
+
+                if (_lamps[index].Color ==
+                    LampColor.Red)
+                {
+                    warningCount++;
+                }
+            }
+
+            return
+                activeCount.ToString("00") +
+                " ACTIVE  •  " +
+                warningCount.ToString("00") +
+                " WARNING";
+        }
+
         private void StartLampTest()
         {
             _lampTestActive = true;
@@ -737,76 +1097,100 @@ namespace KMC.MissionControl.Controls
             return new[]
             {
                 new LampDefinition(
+                    "master.caution",
                     "MASTER\nCAUTION",
                     LampColor.Amber),
                 new LampDefinition(
+                    "master.warning",
                     "MASTER\nWARNING",
                     LampColor.Red),
                 new LampDefinition(
+                    "prop.engine_fault",
                     "ENGINE\nFAULT",
                     LampColor.Red),
                 new LampDefinition(
+                    "power.low",
                     "LOW\nPOWER",
                     LampColor.Amber),
                 new LampDefinition(
+                    "comm.link_lost",
                     "LINK\nLOST",
                     LampColor.Red),
                 new LampDefinition(
+                    "flight.abort",
                     "ABORT\nREQ",
                     LampColor.Red),
                 new LampDefinition(
+                    "phase.ascent",
                     "ASCENT",
                     LampColor.Blue),
                 new LampDefinition(
+                    "phase.orbit",
                     "ORBIT",
                     LampColor.Blue),
                 new LampDefinition(
+                    "phase.descent",
                     "DESCENT",
                     LampColor.Blue),
                 new LampDefinition(
+                    "phase.landed",
                     "LANDED",
                     LampColor.Green),
                 new LampDefinition(
+                    "vessel.docked",
                     "DOCKED",
                     LampColor.Green),
                 new LampDefinition(
+                    "comm.link_ok",
                     "LINK\nOK",
                     LampColor.Green),
 
                 new LampDefinition(
+                    "prop.engine_ignition",
                     "ENG\nIGN",
                     LampColor.Blue),
                 new LampDefinition(
+                    "prop.main_engine",
                     "MAIN\nENG",
                     LampColor.Green),
                 new LampDefinition(
+                    "prop.srb_burn",
                     "SRB\nBURN",
                     LampColor.Amber),
                 new LampDefinition(
+                    "prop.srb_separation",
                     "SRB\nSEP",
                     LampColor.Green),
                 new LampDefinition(
+                    "prop.stage_separation",
                     "STAGE\nSEP",
                     LampColor.Green),
                 new LampDefinition(
+                    "prop.flameout",
                     "FLAMEOUT",
                     LampColor.Red),
                 new LampDefinition(
+                    "resource.low_lf",
                     "LOW LF",
                     LampColor.Amber),
                 new LampDefinition(
+                    "resource.low_ox",
                     "LOW OX",
                     LampColor.Amber),
                 new LampDefinition(
+                    "resource.low_mono",
                     "LOW\nMONO",
                     LampColor.Amber),
                 new LampDefinition(
+                    "flight.heat",
                     "HEAT\nHIGH",
                     LampColor.Red),
                 new LampDefinition(
+                    "flight.gforce",
                     "G FORCE",
                     LampColor.Amber),
                 new LampDefinition(
+                    "guidance.sas",
                     "SAS ON",
                     LampColor.Blue)
             };
