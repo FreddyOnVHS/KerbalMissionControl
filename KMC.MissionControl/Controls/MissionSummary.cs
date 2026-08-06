@@ -1276,32 +1276,89 @@ namespace KMC.MissionControl.Controls
 
         private void EvaluatePropulsionIndicators()
         {
-            bool engineIgnited =
-                _telemetry.IgnitedEngineCount >
-                    0;
+            System.Collections.Generic.Dictionary<
+                uint,
+                EngineStateTelemetry> engines =
+                    EngineStateTelemetryStore.GetSnapshot();
 
-            bool engineProducing =
-                _telemetry.ProducingThrustEngineCount >
-                    0 &&
-                _telemetry.CurrentThrust >
-                    0.05;
+            bool hasPerEngineTelemetry =
+                engines.Count > 0;
 
-            bool flameout =
-                _telemetry.FlameoutEngineCount >
-                    0;
+            bool liquidIgnited =
+                false;
+
+            bool liquidProducing =
+                false;
+
+            bool liquidFlameout =
+                false;
+
+            foreach (
+                EngineStateTelemetry engine
+                in engines.Values)
+            {
+                if (engine == null ||
+                    engine.IsSolidBooster)
+                {
+                    continue;
+                }
+
+                if (engine.OperatingState ==
+                        EngineOperatingState.Ignited ||
+                    engine.OperatingState ==
+                        EngineOperatingState.Producing)
+                {
+                    liquidIgnited =
+                        true;
+                }
+
+                if (engine.OperatingState ==
+                        EngineOperatingState.Producing &&
+                    engine.CurrentThrust >
+                        0.05)
+                {
+                    liquidProducing =
+                        true;
+                }
+
+                if (engine.OperatingState ==
+                    EngineOperatingState.Flameout)
+                {
+                    liquidFlameout =
+                        true;
+                }
+            }
+
+            if (!hasPerEngineTelemetry)
+            {
+                /*
+                 * Preserve useful behavior during receiver startup. Once the
+                 * first per-engine packet arrives, propulsion lamps become
+                 * fully type-aware and SRBs cannot trigger liquid-engine
+                 * indications.
+                 */
+                liquidIgnited =
+                    _telemetry.IgnitedEngineCount >
+                        0;
+
+                liquidProducing =
+                    _telemetry.ProducingThrustEngineCount >
+                        0 &&
+                    _telemetry.CurrentThrust >
+                        0.05;
+
+                liquidFlameout =
+                    _telemetry.FlameoutEngineCount >
+                        0;
+            }
 
             SetLampActive(
                 "prop.engine_ignition",
-                engineIgnited);
+                liquidIgnited);
 
-            /*
-             * This first milestone uses aggregate engine telemetry. A later
-             * propulsion-specific pass can distinguish LF/OX main engines
-             * from SRBs using the per-engine store.
-             */
             SetLampActive(
                 "prop.main_engine",
-                engineProducing);
+                liquidProducing);
 
             SolidFuelTelemetrySnapshot solidFuel =
                 SolidFuelTelemetryStore.GetSnapshot();
@@ -1313,11 +1370,11 @@ namespace KMC.MissionControl.Controls
 
             SetLampActive(
                 "prop.flameout",
-                flameout);
+                liquidFlameout);
 
             SetLampActive(
                 "prop.engine_fault",
-                flameout);
+                liquidFlameout);
         }
 
         private void EvaluateResourceIndicators()
