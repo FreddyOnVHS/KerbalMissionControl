@@ -29,8 +29,8 @@ namespace KMC.MissionControl.Pages
             get
             {
                 return new Size(
-                    2400,
-                    1350);
+                    1600,
+                    900);
             }
         }
 
@@ -39,7 +39,7 @@ namespace KMC.MissionControl.Pages
             get
             {
                 return
-                    MissionPageContentProfile.DenseEngineering;
+                    MissionPageContentProfile.Standard;
             }
         }
 
