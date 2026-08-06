@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Drawing;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Windows.Forms;
 using KMC.MissionControl.Capabilities;
@@ -57,6 +59,10 @@ namespace KMC.MissionControl.Debugging.Capabilities
             refresh.Click += delegate { RefreshSnapshot(); };
             commands.Controls.Add(refresh);
 
+            Button snapshot = CreateButton("SNAPSHOT");
+            snapshot.Click += delegate { SaveSnapshot(); };
+            commands.Controls.Add(snapshot);
+
             Controls.Add(tabs);
             Controls.Add(commands);
 
@@ -93,6 +99,422 @@ namespace KMC.MissionControl.Debugging.Capabilities
             PopulateParts(snapshot);
             PopulateCapabilities(snapshot);
             PopulateResources(snapshot);
+        }
+
+        private void SaveSnapshot()
+        {
+            VesselTopology topology =
+                PropulsionDebugSnapshotStore.GetTopology();
+
+            VesselCapabilitySnapshot snapshot =
+                VesselCapabilityBuilder.Build(topology);
+
+            string safeVesselName =
+                MakeSafeFileName(
+                    string.IsNullOrWhiteSpace(snapshot.VesselName)
+                        ? "NoVessel"
+                        : snapshot.VesselName);
+
+            using (SaveFileDialog dialog =
+                new SaveFileDialog())
+            {
+                dialog.Title =
+                    "Save KMC Capability Snapshot";
+
+                dialog.Filter =
+                    "Text files (*.txt)|*.txt|All files (*.*)|*.*";
+
+                dialog.DefaultExt =
+                    "txt";
+
+                dialog.AddExtension =
+                    true;
+
+                dialog.FileName =
+                    "KMC_CapabilitySnapshot_" +
+                    safeVesselName +
+                    "_" +
+                    DateTime.Now.ToString(
+                        "yyyyMMdd_HHmmss") +
+                    ".txt";
+
+                if (dialog.ShowDialog(this) !=
+                    DialogResult.OK)
+                {
+                    return;
+                }
+
+                try
+                {
+                    File.WriteAllText(
+                        dialog.FileName,
+                        BuildSnapshotText(snapshot),
+                        new UTF8Encoding(
+                            false));
+
+                    MessageBox.Show(
+                        this,
+                        "Snapshot saved successfully." +
+                        Environment.NewLine +
+                        Environment.NewLine +
+                        dialog.FileName,
+                        "KMC Capability Debugger",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+                catch (Exception exception)
+                {
+                    MessageBox.Show(
+                        this,
+                        "The snapshot could not be saved." +
+                        Environment.NewLine +
+                        Environment.NewLine +
+                        exception.Message,
+                        "KMC Capability Debugger",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private static string BuildSnapshotText(
+            VesselCapabilitySnapshot snapshot)
+        {
+            StringBuilder text =
+                new StringBuilder();
+
+            text.AppendLine(
+                "KMC CAPABILITY COMPATIBILITY SNAPSHOT");
+
+            text.AppendLine(
+                "Generated UTC\t" +
+                DateTime.UtcNow.ToString(
+                    "yyyy-MM-dd HH:mm:ss"));
+
+            text.AppendLine(
+                "Generated Local\t" +
+                DateTime.Now.ToString(
+                    "yyyy-MM-dd HH:mm:ss"));
+
+            text.AppendLine(
+                "KMC Version\t" +
+                GetKmcVersion());
+
+            text.AppendLine(
+                "Plugin Version\t" +
+                GetPluginVersion());
+
+            text.AppendLine();
+
+
+            AppendSectionHeader(
+                text,
+                "OVERVIEW");
+
+            AppendSnapshotValue(
+                text,
+                "Vessel",
+                snapshot.VesselName);
+
+            AppendSnapshotValue(
+                text,
+                "Topology revision",
+                snapshot.TopologyRevision.ToString());
+
+            AppendSnapshotValue(
+                text,
+                "Current stage",
+                snapshot.CurrentStage.ToString());
+
+            AppendSnapshotValue(
+                text,
+                "Part count",
+                snapshot.Parts.Count.ToString());
+
+            AppendSnapshotValue(
+                text,
+                "Capability count",
+                snapshot.Parts.Sum(
+                    part =>
+                        part.Capabilities.Count)
+                    .ToString());
+
+            AppendSnapshotValue(
+                text,
+                "Unknown resource count",
+                snapshot.UnknownResources.Count.ToString());
+
+            text.AppendLine();
+
+            AppendSectionHeader(
+                text,
+                "UNKNOWN RESOURCES");
+
+            if (snapshot.UnknownResources.Count == 0)
+            {
+                text.AppendLine("None");
+            }
+            else
+            {
+                for (int index = 0;
+                     index < snapshot.UnknownResources.Count;
+                     index++)
+                {
+                    text.AppendLine(
+                        CleanCell(
+                            snapshot.UnknownResources[index]));
+                }
+            }
+
+            text.AppendLine();
+
+            AppendSectionHeader(
+                text,
+                "VESSEL DIAGNOSTICS");
+
+            if (snapshot.Diagnostics.Count == 0)
+            {
+                text.AppendLine("None");
+            }
+            else
+            {
+                for (int index = 0;
+                     index < snapshot.Diagnostics.Count;
+                     index++)
+                {
+                    text.AppendLine(
+                        CleanCell(
+                            snapshot.Diagnostics[index]));
+                }
+            }
+
+            text.AppendLine();
+
+            AppendSectionHeader(
+                text,
+                "PARTS");
+
+            text.AppendLine(
+                "PART ID\tPARENT ID\tHAS PARENT\tTITLE\tNAME\tSEP\tACT\tCAPABILITY COUNT\tRESOURCE COUNT\tDIAGNOSTICS");
+
+            for (int index = 0;
+                 index < snapshot.Parts.Count;
+                 index++)
+            {
+                PartCapabilitySnapshot part =
+                    snapshot.Parts[index];
+
+                AppendRow(
+                    text,
+                    part.PartId,
+                    part.ParentPartId,
+                    part.HasParent,
+                    part.PartTitle,
+                    part.PartName,
+                    part.SeparationStage,
+                    part.ActivationStage,
+                    part.Capabilities.Count,
+                    part.Resources.Count,
+                    string.Join(
+                        " | ",
+                        part.Diagnostics.ToArray()));
+            }
+
+            text.AppendLine();
+
+            AppendSectionHeader(
+                text,
+                "CAPABILITIES");
+
+            text.AppendLine(
+                "PART ID\tPART\tTYPE\tSUBTYPE\tSOURCE\tCONFIDENCE\tDESCRIPTION");
+
+            for (int partIndex = 0;
+                 partIndex < snapshot.Parts.Count;
+                 partIndex++)
+            {
+                PartCapabilitySnapshot part =
+                    snapshot.Parts[partIndex];
+
+                for (int index = 0;
+                     index < part.Capabilities.Count;
+                     index++)
+                {
+                    PartCapability capability =
+                        part.Capabilities[index];
+
+                    AppendRow(
+                        text,
+                        part.PartId,
+                        part.PartTitle,
+                        capability.Type,
+                        capability.Subtype,
+                        capability.Source,
+                        capability.Confidence,
+                        capability.Description);
+                }
+            }
+
+            text.AppendLine();
+
+            AppendSectionHeader(
+                text,
+                "RESOURCES");
+
+            text.AppendLine(
+                "PART ID\tPART\tRESOURCE\tDISPLAY\tCATEGORY\tKNOWN\tSTORED\tCONSUMED\tAMOUNT\tCAPACITY\tRATIO");
+
+            for (int partIndex = 0;
+                 partIndex < snapshot.Parts.Count;
+                 partIndex++)
+            {
+                PartCapabilitySnapshot part =
+                    snapshot.Parts[partIndex];
+
+                for (int index = 0;
+                     index < part.Resources.Count;
+                     index++)
+                {
+                    ResourceDescriptor resource =
+                        part.Resources[index];
+
+                    AppendRow(
+                        text,
+                        part.PartId,
+                        part.PartTitle,
+                        resource.InternalName,
+                        resource.DisplayName,
+                        resource.Category,
+                        resource.IsKnown,
+                        resource.IsStored,
+                        resource.IsConsumed,
+                        resource.Amount.ToString(
+                            "0.###"),
+                        resource.Capacity.ToString(
+                            "0.###"),
+                        resource.RequiredRatio.ToString(
+                            "0.###"));
+                }
+            }
+
+            return text.ToString();
+        }
+
+        private static string GetKmcVersion()
+        {
+            Version version =
+                Assembly.GetExecutingAssembly()
+                    .GetName()
+                    .Version;
+
+            return version != null
+                ? version.ToString()
+                : "UNKNOWN";
+        }
+
+        private static string GetPluginVersion()
+        {
+            /*
+             * The plugin does not currently transmit its runtime assembly
+             * version to Mission Control. This value matches the current
+             * KMC.Plugin AssemblyVersion in source and is intentionally
+             * labeled as expected rather than runtime-verified.
+             */
+            return "1.0.0.0 (EXPECTED; NOT TELEMETRY-VERIFIED)";
+        }
+
+        private static void AppendSectionHeader(
+            StringBuilder text,
+            string title)
+        {
+            text.AppendLine(
+                "============================================================");
+
+            text.AppendLine(title);
+
+            text.AppendLine(
+                "============================================================");
+        }
+
+        private static void AppendSnapshotValue(
+            StringBuilder text,
+            string label,
+            string value)
+        {
+            text.Append(
+                CleanCell(label));
+
+            text.Append('\t');
+
+            text.AppendLine(
+                CleanCell(
+                    string.IsNullOrEmpty(value)
+                        ? "--"
+                        : value));
+        }
+
+        private static void AppendRow(
+            StringBuilder text,
+            params object[] values)
+        {
+            for (int index = 0;
+                 index < values.Length;
+                 index++)
+            {
+                if (index > 0)
+                {
+                    text.Append('\t');
+                }
+
+                text.Append(
+                    CleanCell(
+                        values[index] == null
+                            ? string.Empty
+                            : values[index].ToString()));
+            }
+
+            text.AppendLine();
+        }
+
+        private static string CleanCell(
+            string value)
+        {
+            return (value ?? string.Empty)
+                .Replace(
+                    "\r",
+                    " ")
+                .Replace(
+                    "\n",
+                    " ")
+                .Replace(
+                    "\t",
+                    " ");
+        }
+
+        private static string MakeSafeFileName(
+            string value)
+        {
+            char[] invalid =
+                Path.GetInvalidFileNameChars();
+
+            StringBuilder result =
+                new StringBuilder(
+                    value.Length);
+
+            for (int index = 0;
+                 index < value.Length;
+                 index++)
+            {
+                char character =
+                    value[index];
+
+                result.Append(
+                    invalid.Contains(character)
+                        ? '_'
+                        : character);
+            }
+
+            return result.ToString();
         }
 
         private void PopulateOverview(
