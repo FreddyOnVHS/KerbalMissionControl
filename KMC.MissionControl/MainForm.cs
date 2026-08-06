@@ -549,8 +549,7 @@ namespace KMC.MissionControl
 
             _navigationBar.AddPage(
                 "POWER",
-                new AscentPage(),
-                enabled: false);
+                new PowerPage());
 
             _navigationBar.AddPage(
                 "COMM",
