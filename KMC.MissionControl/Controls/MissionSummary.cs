@@ -13,6 +13,8 @@ namespace KMC.MissionControl.Controls
     /// </summary>
     public sealed class MissionSummary : Control
     {
+        private const int RequiredAnnunciatorHeight = 180;
+
         private enum LampColor
         {
             Blue,
@@ -96,6 +98,95 @@ namespace KMC.MissionControl.Controls
 
             TabStop = true;
             Cursor = Cursors.Hand;
+
+            MinimumSize =
+                new Size(
+                    320,
+                    RequiredAnnunciatorHeight);
+        }
+
+        protected override void OnParentChanged(
+            EventArgs e)
+        {
+            base.OnParentChanged(
+                e);
+
+            TableLayoutPanel layout =
+                Parent as TableLayoutPanel;
+
+            if (layout != null)
+            {
+                layout.SizeChanged -=
+                    OnHostLayoutSizeChanged;
+
+                layout.SizeChanged +=
+                    OnHostLayoutSizeChanged;
+            }
+
+            EnsureHostRowHeight();
+        }
+
+        protected override void OnVisibleChanged(
+            EventArgs e)
+        {
+            base.OnVisibleChanged(
+                e);
+
+            if (Visible)
+            {
+                EnsureHostRowHeight();
+            }
+        }
+
+        private void OnHostLayoutSizeChanged(
+            object sender,
+            EventArgs e)
+        {
+            EnsureHostRowHeight();
+        }
+
+        private void EnsureHostRowHeight()
+        {
+            if (!Visible)
+            {
+                return;
+            }
+
+            TableLayoutPanel layout =
+                Parent as TableLayoutPanel;
+
+            if (layout == null)
+            {
+                return;
+            }
+
+            TableLayoutPanelCellPosition position =
+                layout.GetPositionFromControl(
+                    this);
+
+            if (position.Row < 0 ||
+                position.Row >=
+                    layout.RowStyles.Count)
+            {
+                return;
+            }
+
+            RowStyle row =
+                layout.RowStyles[position.Row];
+
+            if (row.SizeType !=
+                    SizeType.Absolute ||
+                row.Height <
+                    RequiredAnnunciatorHeight)
+            {
+                row.SizeType =
+                    SizeType.Absolute;
+
+                row.Height =
+                    RequiredAnnunciatorHeight;
+
+                layout.PerformLayout();
+            }
         }
 
         public void UpdateTelemetry(
