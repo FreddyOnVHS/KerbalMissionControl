@@ -1090,120 +1090,476 @@ namespace KMC.MissionControl.Controls
             LampDefinition lamp,
             bool illuminated)
         {
-            Rectangle lens =
-                Rectangle.Inflate(
-                    bounds,
-                    -3,
-                    -3);
+            if (bounds.Width < 8 ||
+                bounds.Height < 8)
+            {
+                return;
+            }
 
             Color active =
                 GetLampColor(
                     lamp.Color);
 
-            Color faceTop =
-                illuminated
-                    ? Lighten(
-                        active,
-                        0.24)
-                    : Color.FromArgb(
-                        57,
-                        61,
-                        58);
+            int bezelRadius =
+                Math.Max(
+                    2,
+                    Math.Min(
+                        7,
+                        bounds.Height / 8));
 
-            Color faceBottom =
-                illuminated
-                    ? Darken(
-                        active,
-                        0.18)
-                    : Color.FromArgb(
-                        24,
-                        27,
-                        25);
+            Rectangle shadowBounds =
+                new Rectangle(
+                    bounds.Left + 2,
+                    bounds.Top + 3,
+                    Math.Max(
+                        1,
+                        bounds.Width - 2),
+                    Math.Max(
+                        1,
+                        bounds.Height - 2));
 
-            using (LinearGradientBrush housing =
-                new LinearGradientBrush(
+            Rectangle bezelBounds =
+                Rectangle.Inflate(
                     bounds,
+                    -1,
+                    -1);
+
+            Rectangle innerBezel =
+                Rectangle.Inflate(
+                    bezelBounds,
+                    -2,
+                    -2);
+
+            Rectangle lensBounds =
+                Rectangle.Inflate(
+                    innerBezel,
+                    -3,
+                    -3);
+
+            int lensRadius =
+                Math.Max(
+                    2,
+                    bezelRadius - 2);
+
+            using (GraphicsPath shadowPath =
+                CreateRoundedRectanglePath(
+                    shadowBounds,
+                    bezelRadius))
+            using (SolidBrush shadow =
+                new SolidBrush(
                     Color.FromArgb(
-                        115,
-                        120,
-                        112),
+                        105,
+                        0,
+                        0,
+                        0)))
+            {
+                graphics.FillPath(
+                    shadow,
+                    shadowPath);
+            }
+
+            using (GraphicsPath bezelPath =
+                CreateRoundedRectanglePath(
+                    bezelBounds,
+                    bezelRadius))
+            using (LinearGradientBrush bezelBrush =
+                new LinearGradientBrush(
+                    bezelBounds,
                     Color.FromArgb(
-                        32,
-                        35,
-                        32),
+                        104,
+                        101,
+                        88),
+                    Color.FromArgb(
+                        25,
+                        24,
+                        21),
                     LinearGradientMode.Vertical))
-            using (Pen outerBorder =
+            using (Pen bezelOutline =
                 new Pen(
+                    Color.FromArgb(
+                        10,
+                        10,
+                        9),
+                    1.4f))
+            {
+                graphics.FillPath(
+                    bezelBrush,
+                    bezelPath);
+
+                graphics.DrawPath(
+                    bezelOutline,
+                    bezelPath);
+            }
+
+            using (GraphicsPath innerPath =
+                CreateRoundedRectanglePath(
+                    innerBezel,
+                    Math.Max(
+                        2,
+                        bezelRadius - 1)))
+            using (LinearGradientBrush innerBrush =
+                new LinearGradientBrush(
+                    innerBezel,
                     Color.FromArgb(
                         18,
-                        20,
-                        18),
-                    1.0f))
+                        18,
+                        16),
+                    Color.FromArgb(
+                        52,
+                        50,
+                        43),
+                    LinearGradientMode.Vertical))
+            using (Pen innerOutline =
+                new Pen(
+                    Color.FromArgb(
+                        126,
+                        119,
+                        98),
+                    0.8f))
             {
-                graphics.FillRectangle(
-                    housing,
-                    bounds);
+                graphics.FillPath(
+                    innerBrush,
+                    innerPath);
 
-                graphics.DrawRectangle(
-                    outerBorder,
-                    bounds);
+                graphics.DrawPath(
+                    innerOutline,
+                    innerPath);
             }
 
+            Color lensTop;
+            Color lensMiddle;
+            Color lensBottom;
+
+            if (illuminated)
+            {
+                lensTop =
+                    Darken(
+                        active,
+                        0.30);
+
+                lensMiddle =
+                    Lighten(
+                        active,
+                        0.18);
+
+                lensBottom =
+                    Darken(
+                        active,
+                        0.12);
+            }
+            else
+            {
+                lensTop =
+                    Color.FromArgb(
+                        24,
+                        24,
+                        20);
+
+                lensMiddle =
+                    Color.FromArgb(
+                        38,
+                        37,
+                        31);
+
+                lensBottom =
+                    Color.FromArgb(
+                        13,
+                        13,
+                        11);
+            }
+
+            using (GraphicsPath lensPath =
+                CreateRoundedRectanglePath(
+                    lensBounds,
+                    lensRadius))
             using (LinearGradientBrush lensBrush =
                 new LinearGradientBrush(
-                    lens,
-                    faceTop,
-                    faceBottom,
+                    lensBounds,
+                    lensTop,
+                    lensBottom,
                     LinearGradientMode.Vertical))
-            using (Pen lensBorder =
-                new Pen(
-                    illuminated
-                        ? Lighten(
-                            active,
-                            0.35)
-                        : Color.FromArgb(
-                            92,
-                            97,
-                            91),
-                    1.0f))
             {
-                graphics.FillRectangle(
-                    lensBrush,
-                    lens);
+                ColorBlend blend =
+                    new ColorBlend
+                    {
+                        Colors =
+                            new[]
+                            {
+                                lensTop,
+                                lensMiddle,
+                                lensBottom
+                            },
 
-                graphics.DrawRectangle(
-                    lensBorder,
-                    lens);
+                        Positions =
+                            new[]
+                            {
+                                0.0f,
+                                0.55f,
+                                1.0f
+                            }
+                    };
+
+                lensBrush.InterpolationColors =
+                    blend;
+
+                graphics.FillPath(
+                    lensBrush,
+                    lensPath);
+
+                if (illuminated)
+                {
+                    using (PathGradientBrush glow =
+                        new PathGradientBrush(
+                            lensPath))
+                    {
+                        glow.CenterColor =
+                            Color.FromArgb(
+                                100,
+                                Lighten(
+                                    active,
+                                    0.40));
+
+                        glow.SurroundColors =
+                            new[]
+                            {
+                                Color.FromArgb(
+                                    0,
+                                    active)
+                            };
+
+                        graphics.FillPath(
+                            glow,
+                            lensPath);
+                    }
+                }
+
+                DrawDiffusedLensTexture(
+                    graphics,
+                    lensPath,
+                    lensBounds,
+                    illuminated
+                        ? active
+                        : Color.FromArgb(
+                            72,
+                            66,
+                            52));
+
+                using (Pen lensOutline =
+                    new Pen(
+                        illuminated
+                            ? Lighten(
+                                active,
+                                0.30)
+                            : Color.FromArgb(
+                                74,
+                                70,
+                                59),
+                        1.0f))
+                {
+                    graphics.DrawPath(
+                        lensOutline,
+                        lensPath);
+                }
+
+                using (Pen upperReflection =
+                    new Pen(
+                        Color.FromArgb(
+                            illuminated
+                                ? 88
+                                : 35,
+                            255,
+                            245,
+                            215),
+                        1.0f))
+                {
+                    int reflectionY =
+                        lensBounds.Top + 2;
+
+                    graphics.DrawLine(
+                        upperReflection,
+                        lensBounds.Left +
+                            lensRadius,
+                        reflectionY,
+                        lensBounds.Right -
+                            lensRadius,
+                        reflectionY);
+                }
             }
 
-            Color textColor =
-                illuminated
-                    ? GetReadableTextColor(
-                        lamp.Color)
-                    : Color.FromArgb(
-                        118,
-                        124,
-                        119);
+            Color textColor;
+
+            if (!illuminated)
+            {
+                textColor =
+                    Color.FromArgb(
+                        111,
+                        101,
+                        77);
+            }
+            else if (lamp.Color ==
+                     LampColor.Blue)
+            {
+                textColor =
+                    Color.FromArgb(
+                        238,
+                        236,
+                        213);
+            }
+            else
+            {
+                textColor =
+                    Color.FromArgb(
+                        24,
+                        21,
+                        14);
+            }
+
+            Rectangle textBounds =
+                new Rectangle(
+                    lensBounds.Left + 3,
+                    lensBounds.Top + 2,
+                    Math.Max(
+                        1,
+                        lensBounds.Width - 6),
+                    Math.Max(
+                        1,
+                        lensBounds.Height - 4));
 
             TextRenderer.DrawText(
                 graphics,
                 lamp.Label,
                 _lampFont,
-                new Rectangle(
-                    lens.Left + 2,
-                    lens.Top + 1,
-                    Math.Max(
-                        1,
-                        lens.Width - 4),
-                    Math.Max(
-                        1,
-                        lens.Height - 2)),
+                textBounds,
                 textColor,
                 TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
                 TextFormatFlags.WordBreak |
                 TextFormatFlags.NoPadding |
                 TextFormatFlags.EndEllipsis);
+        }
+
+        private static void DrawDiffusedLensTexture(
+            Graphics graphics,
+            GraphicsPath lensPath,
+            Rectangle lensBounds,
+            Color color)
+        {
+            GraphicsState state =
+                graphics.Save();
+
+            graphics.SetClip(
+                lensPath);
+
+            using (Pen vertical =
+                new Pen(
+                    Color.FromArgb(
+                        33,
+                        color),
+                    1.0f))
+            using (Pen horizontal =
+                new Pen(
+                    Color.FromArgb(
+                        24,
+                        0,
+                        0,
+                        0),
+                    1.0f))
+            {
+                for (int x =
+                        lensBounds.Left + 2;
+                     x <
+                        lensBounds.Right;
+                     x += 3)
+                {
+                    graphics.DrawLine(
+                        vertical,
+                        x,
+                        lensBounds.Top + 1,
+                        x,
+                        lensBounds.Bottom - 1);
+                }
+
+                for (int y =
+                        lensBounds.Top + 3;
+                     y <
+                        lensBounds.Bottom;
+                     y += 4)
+                {
+                    graphics.DrawLine(
+                        horizontal,
+                        lensBounds.Left + 1,
+                        y,
+                        lensBounds.Right - 1,
+                        y);
+                }
+            }
+
+            graphics.Restore(
+                state);
+        }
+
+        private static GraphicsPath
+            CreateRoundedRectanglePath(
+                Rectangle bounds,
+                int radius)
+        {
+            GraphicsPath path =
+                new GraphicsPath();
+
+            radius =
+                Math.Max(
+                    1,
+                    Math.Min(
+                        radius,
+                        Math.Min(
+                            bounds.Width,
+                            bounds.Height) /
+                        2));
+
+            int diameter =
+                radius * 2;
+
+            Rectangle arc =
+                new Rectangle(
+                    bounds.Left,
+                    bounds.Top,
+                    diameter,
+                    diameter);
+
+            path.AddArc(
+                arc,
+                180,
+                90);
+
+            arc.X =
+                bounds.Right -
+                diameter;
+
+            path.AddArc(
+                arc,
+                270,
+                90);
+
+            arc.Y =
+                bounds.Bottom -
+                diameter;
+
+            path.AddArc(
+                arc,
+                0,
+                90);
+
+            arc.X =
+                bounds.Left;
+
+            path.AddArc(
+                arc,
+                90,
+                90);
+
+            path.CloseFigure();
+
+            return path;
         }
 
         private void DrawControlButton(
@@ -1633,34 +1989,19 @@ namespace KMC.MissionControl.Controls
 
         private void EvaluateAbortRecommendation()
         {
-            SystemsStateSnapshot systems =
-                _systemsStateReceiver.GetSnapshot();
-
-            bool criticalPower =
-                systems.Online &&
-                systems.ElectricChargeCapacity > 0.0001 &&
-                systems.ElectricChargeFraction <= 0.05;
-
-            bool criticalHeat =
-                systems.Online &&
-                systems.MaximumThermalRatio >= 0.95;
-
-            bool poweredFlight =
-                IsLampActive("prop.main_engine") ||
-                IsLampActive("prop.srb_burn") ||
-                _telemetry.Throttle > 0.05;
-
-            bool abortRecommended =
-                criticalPower ||
-                criticalHeat ||
-                (IsLampActive("phase.ascent") &&
-                 IsLampActive("prop.flameout")) ||
-                (poweredFlight &&
-                 IsLampActive("comm.link_lost"));
-
+            /*
+             * ABORT REQ is intentionally disabled.
+             *
+             * Mission intent is not yet available to KMC, so a generic abort
+             * recommendation can be misleading for suborbital, atmospheric,
+             * test, or intentionally non-orbital vehicles. The lamp remains
+             * installed and participates in LAMP TEST, but runtime telemetry
+             * cannot illuminate it until a future mission-profile system is
+             * introduced.
+             */
             SetLampActive(
                 "flight.abort",
-                abortRecommended);
+                false);
         }
 
         private void EvaluateResourceIndicators()
@@ -1831,9 +2172,7 @@ namespace KMC.MissionControl.Controls
                 IsLampActive(
                     "prop.flameout") ||
                 IsLampActive(
-                    "flight.heat") ||
-                IsLampActive(
-                    "flight.abort");
+                    "flight.heat");
         }
 
         private bool HasCurrentCautionCondition()
@@ -2140,27 +2479,27 @@ namespace KMC.MissionControl.Controls
             {
                 case LampColor.Blue:
                     return Color.FromArgb(
-                        48,
-                        90,
-                        255);
+                        58,
+                        88,
+                        160);
 
                 case LampColor.Green:
                     return Color.FromArgb(
-                        30,
-                        245,
-                        75);
+                        126,
+                        176,
+                        55);
 
                 case LampColor.Amber:
                     return Color.FromArgb(
-                        255,
-                        205,
-                        35);
+                        224,
+                        151,
+                        28);
 
                 case LampColor.Red:
                     return Color.FromArgb(
-                        235,
-                        38,
-                        28);
+                        206,
+                        57,
+                        35);
 
                 default:
                     return Color.White;
