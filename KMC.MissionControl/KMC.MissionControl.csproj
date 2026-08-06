@@ -47,12 +47,29 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Controls\ConsolePanel.cs"><SubType>Component</SubType></Compile>
-    <Compile Include="Controls\MissionDisplay.cs"><SubType>Component</SubType></Compile>
-    <Compile Include="Controls\MissionSummary.cs"><SubType>Component</SubType></Compile>
-    <Compile Include="Controls\NavigationBar.cs"><SubType>Component</SubType></Compile>
-    <Compile Include="Controls\PerformanceOverlay.cs"><SubType>Component</SubType></Compile>
-    <Compile Include="Controls\TelemetryValue.cs"><SubType>UserControl</SubType></Compile>
+    <Compile Include="Capabilities\CapabilityEnums.cs" />
+    <Compile Include="Capabilities\CapabilityModels.cs" />
+    <Compile Include="Capabilities\PartCapabilityClassifier.cs" />
+    <Compile Include="Capabilities\ResourceClassifier.cs" />
+    <Compile Include="Capabilities\VesselCapabilityBuilder.cs" />
+    <Compile Include="Controls\ConsolePanel.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="Controls\MissionDisplay.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="Controls\MissionSummary.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="Controls\NavigationBar.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="Controls\PerformanceOverlay.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="Controls\TelemetryValue.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="Cards\CardDirtyState.cs" />
     <Compile Include="Cards\CardDiagnosticSnapshot.cs" />
     <Compile Include="Cards\CardDiagnosticsRegistry.cs" />
@@ -64,13 +81,23 @@
     <Compile Include="Cards\Propulsion\PropellantFlowCard.cs" />
     <Compile Include="Cards\Propulsion\PropulsionFooterCard.cs" />
     <Compile Include="Cards\Propulsion\PropulsionCardChangeTracker.cs" />
+    <Compile Include="Debugging\Capabilities\CapabilityDebuggerForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Debugging\Capabilities\CapabilityDebuggerHost.cs" />
     <Compile Include="Debugging\PropulsionDebugSnapshotStore.cs" />
     <Compile Include="Debugging\PropulsionDebuggerHost.cs" />
-    <Compile Include="Debugging\PropulsionDebuggerForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Include="Debugging\PropulsionDebuggerForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Debugging\Electrical\ElectricalTopologyModel.cs" />
     <Compile Include="Debugging\Electrical\ElectricalTopologyBuilder.cs" />
-    <Compile Include="Debugging\Electrical\ElectricalStackPreview.cs"><SubType>Component</SubType></Compile>
-    <Compile Include="Debugging\Electrical\ElectricalTopologyDebuggerForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Include="Debugging\Electrical\ElectricalStackPreview.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="Debugging\Electrical\ElectricalTopologyDebuggerForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Debugging\Electrical\ElectricalTopologyDebuggerHost.cs" />
     <Compile Include="Diagnostics\AscentDebugRecord.cs" />
     <Compile Include="Diagnostics\AscentDebugLogger.cs" />
@@ -97,7 +124,9 @@
     <Compile Include="Guidance\PeriapsisRecoveryInput.cs" />
     <Compile Include="Guidance\PeriapsisRecoverySolution.cs" />
     <Compile Include="Guidance\PeriapsisRecoveryController.cs" />
-    <Compile Include="MainForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Include="MainForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="MissionControlReceiver.cs" />
     <Compile Include="SolidFuelTelemetryReceiver.cs" />
     <Compile Include="EngineStateTelemetryReceiver.cs" />
@@ -160,17 +189,35 @@
     <Compile Include="Widgets\HorizontalResourceBarWidget.cs" />
     <Compile Include="Widgets\IMissionWidget.cs" />
     <Compile Include="Widgets\OrbitPlotWidget.cs" />
-    <Compile Include="..\KMC.shared\TelemetryPacket.cs"><Link>Shared\TelemetryPacket.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselAttachmentType.cs"><Link>Shared\Topology\VesselAttachmentType.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselNodeCategory.cs"><Link>Shared\Topology\VesselNodeCategory.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselNodeRole.cs"><Link>Shared\Topology\VesselNodeRole.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselResourceState.cs"><Link>Shared\Topology\VesselResourceState.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselPropellantRequirement.cs"><Link>Shared\Topology\VesselPropellantRequirement.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs"><Link>Shared\Topology\VesselTopologyNode.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselTopology.cs"><Link>Shared\Topology\VesselTopology.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselTopologyPacketCodec.cs"><Link>Shared\Topology\VesselTopologyPacketCodec.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\TelemetryPacket.cs">
+      <Link>Shared\TelemetryPacket.cs</Link>
+    </Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselAttachmentType.cs">
+      <Link>Shared\Topology\VesselAttachmentType.cs</Link>
+    </Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselNodeCategory.cs">
+      <Link>Shared\Topology\VesselNodeCategory.cs</Link>
+    </Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselNodeRole.cs">
+      <Link>Shared\Topology\VesselNodeRole.cs</Link>
+    </Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselResourceState.cs">
+      <Link>Shared\Topology\VesselResourceState.cs</Link>
+    </Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselPropellantRequirement.cs">
+      <Link>Shared\Topology\VesselPropellantRequirement.cs</Link>
+    </Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs">
+      <Link>Shared\Topology\VesselTopologyNode.cs</Link>
+    </Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselTopology.cs">
+      <Link>Shared\Topology\VesselTopology.cs</Link>
+    </Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselTopologyPacketCodec.cs">
+      <Link>Shared\Topology\VesselTopologyPacketCodec.cs</Link>
+    </Compile>
     <Compile Include="Pages\PowerPage.cs" />
-    <Compile Include="Rendering\Power\PowerPageRenderer.cs" />  
+    <Compile Include="Rendering\Power\PowerPageRenderer.cs" />
   </ItemGroup>
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

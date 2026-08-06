@@ -193,7 +193,7 @@ namespace KMC.MissionControl.Capabilities
                 ResourceDescriptor resource =
                     FindOrCreate(
                         result,
-                        requirement.ResourceName);
+                        requirement.Name);
 
                 resource.IsConsumed = true;
                 resource.RequiredRatio = requirement.Ratio;
