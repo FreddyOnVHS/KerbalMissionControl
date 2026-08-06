@@ -1,7 +1,11 @@
 ﻿using KMC.MissionControl.Models;
+using KMC.MissionControl.Telemetry;
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using System.Windows.Forms;
 
 namespace KMC.MissionControl.Controls
@@ -16,6 +20,166 @@ namespace KMC.MissionControl.Controls
         private const int NormalAnnunciatorHeight = 180;
         private const int CompactAnnunciatorHeight = 140;
         private const int CompactHostHeightBreakpoint = 1050;
+
+        private const int SasTelemetryPort = 5060;
+        private const string SasProtocolId = "KMCSAS1";
+        private const double TimedEventSeconds = 5.0;
+
+        private sealed class SasStateReceiver :
+            IDisposable
+        {
+            private readonly object _syncRoot =
+                new object();
+
+            private UdpClient _client;
+            private bool _disposed;
+            private bool _sasEnabled;
+            private DateTime _lastReceivedUtc =
+                DateTime.MinValue;
+
+            public void Start()
+            {
+                if (_client != null)
+                {
+                    return;
+                }
+
+                try
+                {
+                    _client =
+                        new UdpClient(
+                            SasTelemetryPort);
+
+                    BeginReceive();
+                }
+                catch
+                {
+                    Dispose();
+                }
+            }
+
+            public bool IsSasEnabled
+            {
+                get
+                {
+                    lock (_syncRoot)
+                    {
+                        return
+                            DateTime.UtcNow -
+                                _lastReceivedUtc <
+                            TimeSpan.FromSeconds(
+                                2.0) &&
+                            _sasEnabled;
+                    }
+                }
+            }
+
+            private void BeginReceive()
+            {
+                UdpClient client =
+                    _client;
+
+                if (client == null ||
+                    _disposed)
+                {
+                    return;
+                }
+
+                try
+                {
+                    client.BeginReceive(
+                        OnReceive,
+                        client);
+                }
+                catch
+                {
+                    // Receiver shutdown or socket disposal.
+                }
+            }
+
+            private void OnReceive(
+                IAsyncResult result)
+            {
+                UdpClient client =
+                    result.AsyncState as UdpClient;
+
+                if (client == null ||
+                    _disposed)
+                {
+                    return;
+                }
+
+                try
+                {
+                    IPEndPoint endpoint =
+                        new IPEndPoint(
+                            IPAddress.Loopback,
+                            0);
+
+                    byte[] payload =
+                        client.EndReceive(
+                            result,
+                            ref endpoint);
+
+                    string message =
+                        Encoding.UTF8.GetString(
+                            payload);
+
+                    string[] parts =
+                        message.Split('|');
+
+                    if (parts.Length == 2 &&
+                        string.Equals(
+                            parts[0],
+                            SasProtocolId,
+                            StringComparison.Ordinal))
+                    {
+                        bool enabled =
+                            parts[1] == "1";
+
+                        lock (_syncRoot)
+                        {
+                            _sasEnabled =
+                                enabled;
+
+                            _lastReceivedUtc =
+                                DateTime.UtcNow;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Ignore malformed packets and shutdown races.
+                }
+                finally
+                {
+                    BeginReceive();
+                }
+            }
+
+            public void Dispose()
+            {
+                _disposed =
+                    true;
+
+                UdpClient client =
+                    _client;
+
+                _client =
+                    null;
+
+                if (client != null)
+                {
+                    try
+                    {
+                        client.Close();
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+        }
 
         private enum LampColor
         {
@@ -52,6 +216,7 @@ namespace KMC.MissionControl.Controls
         private readonly Timer _lampTestTimer;
         private readonly Timer _linkStateTimer;
         private readonly LampDefinition[] _lamps;
+        private readonly SasStateReceiver _sasStateReceiver;
 
         private MissionTelemetry _telemetry;
         private DateTime _lastTelemetryUtc;
@@ -67,6 +232,18 @@ namespace KMC.MissionControl.Controls
         private bool _previousCautionCondition;
         private bool _previousWarningCondition;
         private bool _alarmFlashOn = true;
+
+        private bool _stageTrackingInitialized;
+        private int _previousStage;
+
+        private bool _srbTrackingInitialized;
+        private int _previousSrbBoosterCount;
+
+        private DateTime _stageSeparationUntilUtc =
+            DateTime.MinValue;
+
+        private DateTime _srbSeparationUntilUtc =
+            DateTime.MinValue;
 
         public MissionSummary()
         {
@@ -105,6 +282,11 @@ namespace KMC.MissionControl.Controls
 
             _lamps =
                 CreateLampDefinitions();
+
+            _sasStateReceiver =
+                new SasStateReceiver();
+
+            _sasStateReceiver.Start();
 
             _lampTestTimer =
                 new Timer
@@ -306,6 +488,7 @@ namespace KMC.MissionControl.Controls
             _lastTelemetryUtc =
                 DateTime.UtcNow;
 
+            UpdateTimedMissionEvents();
             EvaluateLiveIndicators();
 
             Invalidate();
@@ -321,6 +504,8 @@ namespace KMC.MissionControl.Controls
 
                 _linkStateTimer.Stop();
                 _linkStateTimer.Dispose();
+
+                _sasStateReceiver.Dispose();
 
                 _titleFont.Dispose();
                 _lampFont.Dispose();
@@ -870,6 +1055,8 @@ namespace KMC.MissionControl.Controls
                 !_alarmFlashOn;
 
             EvaluateLinkIndicators();
+            EvaluateTimedEventIndicators();
+            EvaluateGuidanceIndicators();
             EvaluateMasterIndicators();
 
             bool linkChanged =
@@ -881,7 +1068,12 @@ namespace KMC.MissionControl.Controls
                         "comm.link_lost");
 
             if (linkChanged ||
-                HasUnacknowledgedMasterAlarm())
+                HasUnacknowledgedMasterAlarm() ||
+                IsTimedEventActive(
+                    _stageSeparationUntilUtc) ||
+                IsTimedEventActive(
+                    _srbSeparationUntilUtc) ||
+                _sasStateReceiver.IsSasEnabled)
             {
                 Invalidate();
             }
@@ -904,6 +1096,8 @@ namespace KMC.MissionControl.Controls
 
             EvaluateFlightPhaseIndicators();
             EvaluatePropulsionIndicators();
+            EvaluateTimedEventIndicators();
+            EvaluateGuidanceIndicators();
             EvaluateResourceIndicators();
             EvaluateLoadIndicators();
             EvaluateMasterIndicators();
@@ -921,6 +1115,111 @@ namespace KMC.MissionControl.Controls
             SetLampActive(
                 "comm.link_lost",
                 !linkOnline);
+        }
+
+        private void UpdateTimedMissionEvents()
+        {
+            int currentStage =
+                _telemetry.CurrentStage;
+
+            if (!_stageTrackingInitialized)
+            {
+                _stageTrackingInitialized =
+                    true;
+
+                _previousStage =
+                    currentStage;
+            }
+            else
+            {
+                if (currentStage <
+                    _previousStage)
+                {
+                    _stageSeparationUntilUtc =
+                        DateTime.UtcNow +
+                        TimeSpan.FromSeconds(
+                            TimedEventSeconds);
+                }
+
+                _previousStage =
+                    currentStage;
+            }
+
+            SolidFuelTelemetrySnapshot solidFuel =
+                SolidFuelTelemetryStore.GetSnapshot();
+
+            int boosterCount =
+                Math.Max(
+                    0,
+                    solidFuel.BoosterCount);
+
+            if (!_srbTrackingInitialized)
+            {
+                _srbTrackingInitialized =
+                    true;
+
+                _previousSrbBoosterCount =
+                    boosterCount;
+            }
+            else
+            {
+                if (_previousSrbBoosterCount > 0 &&
+                    boosterCount <
+                        _previousSrbBoosterCount)
+                {
+                    _srbSeparationUntilUtc =
+                        DateTime.UtcNow +
+                        TimeSpan.FromSeconds(
+                            TimedEventSeconds);
+                }
+
+                _previousSrbBoosterCount =
+                    boosterCount;
+            }
+        }
+
+        private void EvaluateTimedEventIndicators()
+        {
+            DateTime nowUtc =
+                DateTime.UtcNow;
+
+            SetLampActive(
+                "prop.stage_separation",
+                IsTimedEventActive(
+                    _stageSeparationUntilUtc,
+                    nowUtc));
+
+            SetLampActive(
+                "prop.srb_separation",
+                IsTimedEventActive(
+                    _srbSeparationUntilUtc,
+                    nowUtc));
+        }
+
+        private void EvaluateGuidanceIndicators()
+        {
+            SetLampActive(
+                "guidance.sas",
+                _sasStateReceiver.IsSasEnabled);
+        }
+
+        private static bool IsTimedEventActive(
+            DateTime untilUtc)
+        {
+            return IsTimedEventActive(
+                untilUtc,
+                DateTime.UtcNow);
+        }
+
+        private static bool IsTimedEventActive(
+            DateTime untilUtc,
+            DateTime nowUtc)
+        {
+            return
+                untilUtc !=
+                    DateTime.MinValue &&
+                nowUtc <
+                    untilUtc;
         }
 
         private void EvaluateFlightPhaseIndicators()
@@ -1003,6 +1302,14 @@ namespace KMC.MissionControl.Controls
             SetLampActive(
                 "prop.main_engine",
                 engineProducing);
+
+            SolidFuelTelemetrySnapshot solidFuel =
+                SolidFuelTelemetryStore.GetSnapshot();
+
+            SetLampActive(
+                "prop.srb_burn",
+                solidFuel.BurningBoosterCount >
+                    0);
 
             SetLampActive(
                 "prop.flameout",
