@@ -1,5 +1,6 @@
 ﻿using System;
 using KMC.MissionControl.Debugging;
+using KMC.MissionControl.Debugging.Capabilities;
 using KMC.MissionControl.Debugging.Electrical;
 
 namespace KMC.MissionControl
@@ -13,20 +14,19 @@ namespace KMC.MissionControl
                 .EnableVisualStyles();
 
             System.Windows.Forms.Application
-                .SetCompatibleTextRenderingDefault(
-                    false);
+                .SetCompatibleTextRenderingDefault(false);
 
-            MainForm mainForm =
-                new MainForm();
+            MainForm mainForm = new MainForm();
 
             using (
                 PropulsionDebuggerHost propulsionDebugger =
-                    PropulsionDebuggerHost.Attach(
-                        mainForm))
+                    PropulsionDebuggerHost.Attach(mainForm))
             using (
                 ElectricalTopologyDebuggerHost electricalDebugger =
-                    ElectricalTopologyDebuggerHost.Attach(
-                        mainForm))
+                    ElectricalTopologyDebuggerHost.Attach(mainForm))
+            using (
+                CapabilityDebuggerHost capabilityDebugger =
+                    CapabilityDebuggerHost.Attach(mainForm))
             using (
                 SolidFuelTelemetryReceiver solidFuel =
                     new SolidFuelTelemetryReceiver())
@@ -37,8 +37,7 @@ namespace KMC.MissionControl
                 solidFuel.Start();
                 engineStates.Start();
 
-                System.Windows.Forms.Application.Run(
-                    mainForm);
+                System.Windows.Forms.Application.Run(mainForm);
             }
         }
     }
