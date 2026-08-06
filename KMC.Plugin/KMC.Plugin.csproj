@@ -82,6 +82,7 @@
 
     <Compile Include="Topology\ActivePropellantAnalyzer.cs" />
     <Compile Include="Topology\VesselPartClassifier.cs" />
+    <Compile Include="Topology\VesselModuleDiscoveryAnalyzer.cs" />
     <Compile Include="Topology\VesselTopologyBuilder.cs" />
     <Compile Include="Topology\VesselTopologyService.cs" />
     <Compile Include="Topology\VesselTopologyDiagnostics.cs" />
@@ -105,6 +106,12 @@
     </Compile>
     <Compile Include="..\KMC.shared\Topology\VesselResourceState.cs">
       <Link>Shared\Topology\VesselResourceState.cs</Link>
+    </Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselModuleResource.cs">
+      <Link>Shared\Topology\VesselModuleResource.cs</Link>
+    </Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselModuleDescriptor.cs">
+      <Link>Shared\Topology\VesselModuleDescriptor.cs</Link>
     </Compile>
     <Compile Include="..\KMC.shared\Topology\VesselPropellantRequirement.cs">
       <Link>Shared\Topology\VesselPropellantRequirement.cs</Link>
