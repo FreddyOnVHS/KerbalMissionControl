@@ -60,6 +60,14 @@ namespace KMC.MissionControl.Controls
         private Rectangle _lampTestBounds;
         private bool _lampTestActive;
 
+        private bool _masterCautionLatched;
+        private bool _masterWarningLatched;
+        private bool _masterCautionAcknowledged;
+        private bool _masterWarningAcknowledged;
+        private bool _previousCautionCondition;
+        private bool _previousWarningCondition;
+        private bool _alarmFlashOn = true;
+
         public MissionSummary()
         {
             DoubleBuffered = true;
@@ -340,8 +348,8 @@ namespace KMC.MissionControl.Controls
             if (_ackBounds.Contains(
                     e.Location))
             {
-                Invalidate(
-                    _ackBounds);
+                AcknowledgeMasterAlarms();
+                return;
             }
         }
 
@@ -353,6 +361,11 @@ namespace KMC.MissionControl.Controls
             if (e.KeyCode == Keys.T)
             {
                 StartLampTest();
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.A)
+            {
+                AcknowledgeMasterAlarms();
                 e.Handled = true;
             }
         }
@@ -584,7 +597,7 @@ namespace KMC.MissionControl.Controls
                 graphics,
                 _ackBounds,
                 "ACK",
-                false);
+                HasUnacknowledgedMasterAlarm());
 
             DrawControlButton(
                 graphics,
@@ -655,7 +668,8 @@ namespace KMC.MissionControl.Controls
                     lamp,
                     _lamps[index],
                     _lampTestActive ||
-                    _lamps[index].Active);
+                    ShouldIlluminateLamp(
+                        _lamps[index]));
             }
         }
 
@@ -852,15 +866,22 @@ namespace KMC.MissionControl.Controls
                 IsLampActive(
                     "comm.link_lost");
 
+            _alarmFlashOn =
+                !_alarmFlashOn;
+
             EvaluateLinkIndicators();
             EvaluateMasterIndicators();
 
-            if (previousLinkOk !=
+            bool linkChanged =
+                previousLinkOk !=
                     IsLampActive(
                         "comm.link_ok") ||
                 previousLinkLost !=
                     IsLampActive(
-                        "comm.link_lost"))
+                        "comm.link_lost");
+
+            if (linkChanged ||
+                HasUnacknowledgedMasterAlarm())
             {
                 Invalidate();
             }
@@ -1022,15 +1043,148 @@ namespace KMC.MissionControl.Controls
 
         private void EvaluateMasterIndicators()
         {
-            bool warning =
+            bool warningCondition =
+                HasCurrentWarningCondition();
+
+            bool cautionCondition =
+                HasCurrentCautionCondition();
+
+            /*
+             * A new occurrence always re-arms the master alarm, even if an
+             * earlier occurrence was acknowledged.
+             */
+            if (warningCondition &&
+                !_previousWarningCondition)
+            {
+                _masterWarningLatched =
+                    true;
+
+                _masterWarningAcknowledged =
+                    false;
+
+                _alarmFlashOn =
+                    true;
+            }
+
+            if (cautionCondition &&
+                !_previousCautionCondition)
+            {
+                _masterCautionLatched =
+                    true;
+
+                _masterCautionAcknowledged =
+                    false;
+
+                _alarmFlashOn =
+                    true;
+            }
+
+            if (warningCondition)
+            {
+                _masterWarningLatched =
+                    true;
+            }
+            else if (_masterWarningAcknowledged)
+            {
+                _masterWarningLatched =
+                    false;
+
+                _masterWarningAcknowledged =
+                    false;
+            }
+
+            if (cautionCondition)
+            {
+                _masterCautionLatched =
+                    true;
+            }
+            else if (_masterCautionAcknowledged)
+            {
+                _masterCautionLatched =
+                    false;
+
+                _masterCautionAcknowledged =
+                    false;
+            }
+
+            _previousWarningCondition =
+                warningCondition;
+
+            _previousCautionCondition =
+                cautionCondition;
+
+            SetLampActive(
+                "master.warning",
+                _masterWarningLatched);
+
+            SetLampActive(
+                "master.caution",
+                _masterCautionLatched);
+        }
+
+        private void AcknowledgeMasterAlarms()
+        {
+            bool warningCondition =
+                HasCurrentWarningCondition();
+
+            bool cautionCondition =
+                HasCurrentCautionCondition();
+
+            if (_masterWarningLatched)
+            {
+                _masterWarningAcknowledged =
+                    true;
+
+                if (!warningCondition)
+                {
+                    _masterWarningLatched =
+                        false;
+
+                    _masterWarningAcknowledged =
+                        false;
+                }
+            }
+
+            if (_masterCautionLatched)
+            {
+                _masterCautionAcknowledged =
+                    true;
+
+                if (!cautionCondition)
+                {
+                    _masterCautionLatched =
+                        false;
+
+                    _masterCautionAcknowledged =
+                        false;
+                }
+            }
+
+            SetLampActive(
+                "master.warning",
+                _masterWarningLatched);
+
+            SetLampActive(
+                "master.caution",
+                _masterCautionLatched);
+
+            Invalidate();
+        }
+
+        private bool HasCurrentWarningCondition()
+        {
+            return
                 IsLampActive(
                     "prop.engine_fault") ||
                 IsLampActive(
                     "comm.link_lost") ||
                 IsLampActive(
                     "prop.flameout");
+        }
 
-            bool caution =
+        private bool HasCurrentCautionCondition()
+        {
+            return
                 IsLampActive(
                     "resource.low_lf") ||
                 IsLampActive(
@@ -1039,14 +1193,47 @@ namespace KMC.MissionControl.Controls
                     "resource.low_mono") ||
                 IsLampActive(
                     "flight.gforce");
+        }
 
-            SetLampActive(
-                "master.warning",
-                warning);
+        private bool HasUnacknowledgedMasterAlarm()
+        {
+            return
+                (_masterWarningLatched &&
+                 !_masterWarningAcknowledged) ||
+                (_masterCautionLatched &&
+                 !_masterCautionAcknowledged);
+        }
 
-            SetLampActive(
-                "master.caution",
-                caution);
+        private bool ShouldIlluminateLamp(
+            LampDefinition lamp)
+        {
+            if (lamp == null ||
+                !lamp.Active)
+            {
+                return false;
+            }
+
+            if (string.Equals(
+                    lamp.Id,
+                    "master.warning",
+                    StringComparison.Ordinal))
+            {
+                return
+                    _masterWarningAcknowledged ||
+                    _alarmFlashOn;
+            }
+
+            if (string.Equals(
+                    lamp.Id,
+                    "master.caution",
+                    StringComparison.Ordinal))
+            {
+                return
+                    _masterCautionAcknowledged ||
+                    _alarmFlashOn;
+            }
+
+            return true;
         }
 
         private void ClearLiveIndicators()
@@ -1132,32 +1319,36 @@ namespace KMC.MissionControl.Controls
             int activeCount =
                 0;
 
-            int warningCount =
-                0;
-
             for (int index = 0;
                  index < _lamps.Length;
                  index++)
             {
-                if (!_lamps[index].Active)
+                if (_lamps[index].Active)
                 {
-                    continue;
+                    activeCount++;
                 }
+            }
 
-                activeCount++;
+            int unacknowledgedCount =
+                0;
 
-                if (_lamps[index].Color ==
-                    LampColor.Red)
-                {
-                    warningCount++;
-                }
+            if (_masterWarningLatched &&
+                !_masterWarningAcknowledged)
+            {
+                unacknowledgedCount++;
+            }
+
+            if (_masterCautionLatched &&
+                !_masterCautionAcknowledged)
+            {
+                unacknowledgedCount++;
             }
 
             return
                 activeCount.ToString("00") +
                 " ACTIVE  •  " +
-                warningCount.ToString("00") +
-                " WARNING";
+                unacknowledgedCount.ToString("00") +
+                " UNACK";
         }
 
         private void StartLampTest()
