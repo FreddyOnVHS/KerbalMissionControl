@@ -457,9 +457,6 @@ namespace KMC.Engine.Electrical
             ElectricalFlowModel flow,
             ElectricalProcedureModel model)
         {
-            PopulateBaseline(
-                model);
-
             if (!_hasBaseline)
             {
                 model.RecoveryState =
@@ -474,6 +471,9 @@ namespace KMC.Engine.Electrical
             if (flow == null ||
                 !flow.HasMeasuredNetStorageRate)
             {
+                PopulateBaseline(
+                    model);
+
                 model.RecoveryState =
                     ElectricalRecoveryState.Unobservable;
 
@@ -492,6 +492,68 @@ namespace KMC.Engine.Electrical
             model.CurrentStorageRateEcPerSecond =
                 current;
 
+            model.RecoveryIsObservedOnly =
+                true;
+
+            /*
+             * Recovery baseline policy:
+             *
+             * The first actionable deficit establishes the baseline, but that
+             * value is not frozen while the electrical condition is still
+             * getting worse.
+             *
+             * If a later observable storage rate is materially MORE negative
+             * than the stored baseline, move the baseline down to that worse
+             * rate. This preserves the meaningful pre-recovery condition for
+             * the eventual before/after comparison.
+             *
+             * Example:
+             *   initial advisory  -1.6 EC/s
+             *   heavy load       -11.1 EC/s  -> baseline updates
+             *   worse load       -13.8 EC/s  -> baseline updates
+             *   recovery          -4.0 EC/s  -> baseline stays -13.8
+             *   housekeeping      -0.028 EC/s -> improvement ~13.8 EC/s
+             */
+            if (current <
+                _baselineStorageRate -
+                ImprovementThresholdEcPerSecond)
+            {
+                _baselineStorageRate =
+                    current;
+
+                _baselineUtc =
+                    receivedUtc;
+
+                _hasImprovementSince =
+                    false;
+
+                model.HasBaseline =
+                    true;
+
+                model.BaselineStorageRateEcPerSecond =
+                    _baselineStorageRate;
+
+                model.HasImprovement =
+                    false;
+
+                model.ImprovementEcPerSecond =
+                    0.0;
+
+                model.DeficitCleared =
+                    false;
+
+                model.RecoveryState =
+                    ElectricalRecoveryState.Worsening;
+
+                model.Verification =
+                    "Observed storage deficit worsened; recovery baseline updated to the new worst rate.";
+
+                return;
+            }
+
+            PopulateBaseline(
+                model);
+
             model.ImprovementEcPerSecond =
                 current -
                 _baselineStorageRate;
@@ -503,9 +565,6 @@ namespace KMC.Engine.Electrical
             model.DeficitCleared =
                 current >=
                 -DeficitClearedToleranceEcPerSecond;
-
-            model.RecoveryIsObservedOnly =
-                true;
 
             if (model.DeficitCleared)
             {
@@ -541,7 +600,7 @@ namespace KMC.Engine.Electrical
                         ElectricalRecoveryState.StableImprovement;
 
                     model.Verification =
-                        "Observed storage deficit has improved and remained improved for at least two seconds.";
+                        "Observed storage deficit has improved from the worst tracked baseline and remained improved for at least two seconds.";
                 }
                 else
                 {
@@ -549,7 +608,7 @@ namespace KMC.Engine.Electrical
                         ElectricalRecoveryState.Improving;
 
                     model.Verification =
-                        "Observed storage deficit is improving.";
+                        "Observed storage deficit is improving from the worst tracked baseline.";
                 }
 
                 return;
@@ -558,24 +617,11 @@ namespace KMC.Engine.Electrical
             _hasImprovementSince =
                 false;
 
-            if (current <
-                _baselineStorageRate -
-                ImprovementThresholdEcPerSecond)
-            {
-                model.RecoveryState =
-                    ElectricalRecoveryState.Worsening;
+            model.RecoveryState =
+                ElectricalRecoveryState.BaselineEstablished;
 
-                model.Verification =
-                    "Observed storage deficit is worse than the established baseline.";
-            }
-            else
-            {
-                model.RecoveryState =
-                    ElectricalRecoveryState.BaselineEstablished;
-
-                model.Verification =
-                    "Electrical recovery baseline established; awaiting a measurable response.";
-            }
+            model.Verification =
+                "Electrical recovery baseline established; awaiting a measurable improvement.";
         }
 
         private static void SetRecoveryConfidence(
