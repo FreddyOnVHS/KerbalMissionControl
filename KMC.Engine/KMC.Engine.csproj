@@ -45,6 +45,8 @@
     <Compile Include="Electrical\PowerComponents.cs" />
     <Compile Include="Electrical\ElectricalNetwork.cs" />
     <Compile Include="Electrical\ElectricalNetworkBuilder.cs" />
+    <Compile Include="Electrical\ElectricalStorageModel.cs" />
+    <Compile Include="Electrical\ElectricalStorageAnalyzer.cs" />
     <Compile Include="EngineeringEngine.cs" />
     <Compile Include="Models\CapabilityEnums.cs" />
     <Compile Include="Models\CapabilityDetails.cs" />

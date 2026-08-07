@@ -23,6 +23,11 @@ namespace KMC.Engine.Systems
                 ElectricalNetworkBuilder.Build(
                     context.Vessel.Topology);
 
+            network.Storage =
+                ElectricalStorageAnalyzer.Analyze(
+                    context.Vessel.Topology,
+                    network);
+
             context.Power.ElectricalNetwork =
                 network;
 
@@ -36,18 +41,28 @@ namespace KMC.Engine.Systems
                     network.Diagnostics[index]);
             }
 
+            for (int index = 0;
+                 index < network.Storage.Diagnostics.Count;
+                 index++)
+            {
+                context.Power.Diagnostics.Add(
+                    network.Storage.Diagnostics[index]);
+            }
+
             context.AddDiagnostic(
-                "Electrical domain model built. " +
+                "Electrical engineering model built. " +
                 "Nodes=" +
                 network.Nodes.Count +
-                ", Sources=" +
-                network.SourceNodeCount +
-                ", Storage=" +
-                network.StorageNodeCount +
-                ", Consumers=" +
-                network.ConsumerNodeCount +
-                ", Connections=" +
-                network.Connections.Count +
+                ", BusMembers=" +
+                network.BusMemberships.Count +
+                ", StructuralLinks=" +
+                network.StructuralConnections.Count +
+                ", StorageParts=" +
+                network.Storage.Parts.Count +
+                ", EC=" +
+                network.Storage.StoredEc.ToString("0.###") +
+                "/" +
+                network.Storage.CapacityEc.ToString("0.###") +
                 ".");
         }
     }

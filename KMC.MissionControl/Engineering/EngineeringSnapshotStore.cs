@@ -131,6 +131,35 @@ namespace KMC.MissionControl.Engineering
                     electrical.StoredElectricCharge.ToString("0.###") +
                     "/" +
                     electrical.ElectricChargeCapacity.ToString("0.###"));
+
+                ElectricalStorageModel storage =
+                    electrical.Storage;
+
+                Debug.WriteLine(
+                    "KMC.Engine STORAGE | Parts=" +
+                    storage.Parts.Count +
+                    " | Sections=" +
+                    storage.StageSections.Count +
+                    " | Branches=" +
+                    storage.BranchSections.Count +
+                    " | EC=" +
+                    storage.StoredEc.ToString("0.###") +
+                    "/" +
+                    storage.CapacityEc.ToString("0.###") +
+                    " | Charge=" +
+                    storage.ChargePercent.ToString("0.0") +
+                    "% | NextStage=" +
+                    storage.NextStage +
+                    " | LoseEC=" +
+                    storage.NextStageLostStoredEc.ToString("0.###") +
+                    "/" +
+                    storage.NextStageLostCapacityEc.ToString("0.###") +
+                    " | RemainEC=" +
+                    storage.NextStageRemainingStoredEc.ToString("0.###") +
+                    "/" +
+                    storage.NextStageRemainingCapacityEc.ToString("0.###") +
+                    " | LoseAll=" +
+                    storage.LosesAllStorageOnNextStage);
             }
         }
 

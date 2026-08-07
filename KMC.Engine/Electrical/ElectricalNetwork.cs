@@ -15,11 +15,6 @@ namespace KMC.Engine.Electrical
             Nodes =
                 new List<PowerNode>();
 
-            /*
-             * Connections remains for compatibility with the Build 8.0
-             * domain. Build 8.1 uses BusMemberships + StructuralConnections
-             * as the authoritative connectivity model.
-             */
             Connections =
                 new List<PowerConnection>();
 
@@ -28,6 +23,9 @@ namespace KMC.Engine.Electrical
 
             StructuralConnections =
                 new List<StructuralConnection>();
+
+            Storage =
+                new ElectricalStorageModel();
 
             Diagnostics =
                 new List<string>();
@@ -46,6 +44,8 @@ namespace KMC.Engine.Electrical
         public List<ElectricalBusMembership> BusMemberships { get; private set; }
 
         public List<StructuralConnection> StructuralConnections { get; private set; }
+
+        public ElectricalStorageModel Storage { get; internal set; }
 
         public List<string> Diagnostics { get; private set; }
 
