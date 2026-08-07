@@ -1,24 +1,23 @@
 ﻿using System;
 using System.Drawing;
-using KMC.MissionControl.Debugging;
-using KMC.MissionControl.Debugging.Electrical;
+using KMC.Engine.Analysis;
+using KMC.MissionControl.Engineering;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering;
 using KMC.MissionControl.Rendering.Power;
-using KMC.Shared.Topology;
 
 namespace KMC.MissionControl.Pages
 {
+    /// <summary>
+    /// Electrical engineering display.
+    ///
+    /// Build 8.10 replaces the former topology/inspector page with a
+    /// read-only schematic presentation of the Engine-owned electrical model.
+    /// </summary>
     public sealed class PowerPage :
         IMissionPage,
         IMissionPageCanvasProvider
     {
-        private long _lastTopologyRevision =
-            long.MinValue;
-
-        private ElectricalTopologyModel _cachedModel =
-            new ElectricalTopologyModel();
-
         public string Name
         {
             get { return "POWER"; }
@@ -53,33 +52,15 @@ namespace KMC.MissionControl.Pages
                     nameof(context));
             }
 
-            VesselTopology topology =
-                PropulsionDebugSnapshotStore
-                    .GetTopology();
+            AnalysisPipelineResult engineering;
 
-            if (topology == null)
-            {
-                _cachedModel =
-                    new ElectricalTopologyModel();
-
-                _lastTopologyRevision =
-                    long.MinValue;
-            }
-            else if (topology.Revision !=
-                     _lastTopologyRevision)
-            {
-                _cachedModel =
-                    ElectricalTopologyBuilder.Build(
-                        topology);
-
-                _lastTopologyRevision =
-                    topology.Revision;
-            }
+            EngineeringSnapshotStore.TryGetLatest(
+                out engineering);
 
             PowerPageRenderer.Draw(
                 context,
                 telemetry,
-                _cachedModel);
+                engineering);
         }
     }
 }

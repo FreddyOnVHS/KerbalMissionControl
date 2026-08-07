@@ -1,95 +1,57 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
-using System.Linq;
 using System.Windows.Forms;
-using KMC.MissionControl.Debugging.Electrical;
+using KMC.Engine.Analysis;
+using KMC.Engine.Electrical;
+using KMC.Engine.Models;
 using KMC.MissionControl.Models;
-using KMC.MissionControl.Rendering;
 
 namespace KMC.MissionControl.Rendering.Power
 {
+    /// <summary>
+    /// Apollo/MOCR-inspired electrical schematic display.
+    ///
+    /// This renderer deliberately shows an engineering block schematic rather
+    /// than claiming to know physical spacecraft wire routing. The Engine is
+    /// the source of truth for every displayed electrical value.
+    /// </summary>
     public static class PowerPageRenderer
     {
-        private enum NodeKind
-        {
-            Command,
-            CoreStage,
-            RadialBank
-        }
+        private static readonly Color Amber =
+            Color.FromArgb(
+                232,
+                188,
+                84);
 
-        private enum PowerState
-        {
-            Local,
-            Bus,
-            Low,
-            Dead
-        }
+        private static readonly Color Warning =
+            Color.FromArgb(
+                236,
+                142,
+                66);
 
-        private sealed class PowerNode
-        {
-            public PowerNode()
-            {
-                Name =
-                    string.Empty;
+        private static readonly Color Critical =
+            Color.FromArgb(
+                236,
+                92,
+                76);
 
-                Sections =
-                    new List<
-                        ElectricalSectionModel>();
-            }
+        private static readonly Color Dead =
+            Color.FromArgb(
+                196,
+                72,
+                72);
 
-            public string Name;
-            public NodeKind Kind;
-            public int SeparationStage;
-            public int ActivationStage;
-            public double AverageY;
-            public int BatteryCount;
-            public int SolarCount;
-            public int GeneratorCount;
-            public int PartCount;
-            public double ChargeAmount;
-            public double ChargeCapacity;
-            public List<ElectricalSectionModel> Sections;
-
-            public bool HasLocalStorage
-            {
-                get
-                {
-                    return
-                        ChargeCapacity >
-                        0.0001;
-                }
-            }
-
-            public double ChargePercent
-            {
-                get
-                {
-                    if (!HasLocalStorage)
-                    {
-                        return 0.0;
-                    }
-
-                    return
-                        ChargeAmount /
-                        ChargeCapacity *
-                        100.0;
-                }
-            }
-        }
-
-        private sealed class StackRow
-        {
-            public PowerNode Core;
-            public PowerNode Radial;
-            public Rectangle Bounds;
-        }
+        private static readonly Color Healthy =
+            Color.FromArgb(
+                112,
+                202,
+                154);
 
         public static void Draw(
             MissionRenderContext context,
             MissionTelemetry telemetry,
-            ElectricalTopologyModel model)
+            AnalysisPipelineResult engineering)
         {
             if (context == null)
             {
@@ -103,1514 +65,1026 @@ namespace KMC.MissionControl.Rendering.Power
             graphics.SmoothingMode =
                 SmoothingMode.AntiAlias;
 
-            MissionPageLayout layout =
+            MissionPageLayout page =
                 new MissionPageLayout(
                     context);
 
-            layout.DrawHeader(
-                "ELECTRICAL POWER",
+            page.DrawHeader(
+                "ELECTRICAL SYSTEMS",
                 "CH 05");
 
-            Rectangle working =
+            Rectangle area =
                 new Rectangle(
-                    context.ContentBounds.Left + 14,
-                    context.ContentBounds.Top + 66,
-                    context.ContentBounds.Width - 28,
-                    context.ContentBounds.Height - 82);
+                    context.ContentBounds.Left + 20,
+                    context.ContentBounds.Top + 68,
+                    context.ContentBounds.Width - 40,
+                    context.ContentBounds.Height - 88);
 
-            Rectangle summary =
-                new Rectangle(
-                    working.Left,
-                    working.Top,
-                    working.Width,
-                    96);
-
-            int inspectorWidth =
-                Math.Max(
-                    390,
-                    working.Width /
-                    3);
-
-            Rectangle map =
-                new Rectangle(
-                    working.Left,
-                    summary.Bottom + 10,
-                    working.Width -
-                    inspectorWidth -
-                    10,
-                    working.Bottom -
-                    summary.Bottom -
-                    10);
-
-            Rectangle inspector =
-                new Rectangle(
-                    map.Right + 10,
-                    map.Top,
-                    inspectorWidth,
-                    map.Height);
-
-            DrawPanel(
-                graphics,
-                summary,
-                "VESSEL POWER",
-                context);
-
-            DrawPanel(
-                graphics,
-                map,
-                "SPACECRAFT ELECTRICAL TOPOLOGY",
-                context);
-
-            DrawPanel(
-                graphics,
-                inspector,
-                "SECTION INSPECTOR",
-                context);
-
-            List<PowerNode> nodes =
-                BuildNodes(
-                    model);
-
-            DrawSummary(
-                graphics,
-                summary,
-                nodes,
-                model,
-                context);
-
-            if (nodes.Count == 0)
+            if (engineering == null ||
+                engineering.Snapshot == null ||
+                engineering.Snapshot.Power == null)
             {
                 DrawWaiting(
                     graphics,
-                    map,
-                    context);
-
-                DrawWaiting(
-                    graphics,
-                    inspector,
+                    area,
                     context);
 
                 return;
             }
 
-            double vesselAmount =
-                nodes.Sum(
-                    node =>
-                        node.ChargeAmount);
+            PowerModel power =
+                engineering.Snapshot.Power;
 
-            double vesselCapacity =
-                nodes.Sum(
-                    node =>
-                        node.ChargeCapacity);
+            ElectricalNetwork network =
+                power.ElectricalNetwork;
 
-            bool vesselPowered =
-                vesselAmount >
-                0.0001;
+            ElectricalStorageModel storage =
+                network != null
+                    ? network.Storage
+                    : null;
 
-            double vesselPercent =
-                vesselCapacity >
-                0.0001
-                    ? vesselAmount /
-                      vesselCapacity *
-                      100.0
-                    : 0.0;
+            ElectricalFlowModel flow =
+                power.Flow;
 
-            List<StackRow> rows =
-                BuildRows(
-                    nodes);
+            ElectricalLoadModel load =
+                power.Load;
 
-            DrawTopology(
-                graphics,
-                map,
-                rows,
-                vesselPowered,
-                vesselPercent,
-                context);
+            ElectricalAttributionModel attribution =
+                power.Attribution;
 
-            PowerNode selected =
-                nodes.FirstOrDefault(
-                    node =>
-                        node.Kind ==
-                        NodeKind.Command) ??
-                nodes.First();
+            ElectricalPowerDiagnosticModel status =
+                power.Diagnostic;
 
-            DrawInspector(
-                graphics,
-                inspector,
-                selected,
-                vesselPowered,
-                vesselPercent,
-                context);
-        }
+            ElectricalLoadSheddingModel shedding =
+                power.LoadShedding;
 
-        private static List<PowerNode>
-            BuildNodes(
-                ElectricalTopologyModel model)
-        {
-            List<PowerNode> nodes =
-                new List<PowerNode>();
+            ElectricalProcedureModel procedure =
+                power.Procedure;
 
-            if (model == null)
-            {
-                return nodes;
-            }
+            int topHeight =
+                258;
 
-            List<ElectricalSectionModel> command =
-                model.Sections
-                    .Where(
-                        section =>
-                            section.IsCommandSection)
-                    .ToList();
-
-            if (command.Count > 0)
-            {
-                nodes.Add(
-                    CreateNode(
-                        "COMMAND",
-                        NodeKind.Command,
-                        command));
-            }
-
-            foreach (
-                IGrouping<
-                    int,
-                    ElectricalSectionModel> group
-                in model.Sections
-                    .Where(
-                        section =>
-                            !section.IsCommandSection &&
-                            !section.IsRadialSection)
-                    .GroupBy(
-                        section =>
-                            section.SeparationStage))
-            {
-                nodes.Add(
-                    CreateNode(
-                        "STAGE " +
-                        FormatStage(
-                            group.Key),
-                        NodeKind.CoreStage,
-                        group.ToList()));
-            }
-
-            foreach (
-                IGrouping<
-                    int,
-                    ElectricalSectionModel> group
-                in model.Sections
-                    .Where(
-                        section =>
-                            !section.IsCommandSection &&
-                            section.IsRadialSection)
-                    .GroupBy(
-                        section =>
-                            section.SeparationStage))
-            {
-                nodes.Add(
-                    CreateNode(
-                        "RADIAL ×" +
-                        group.Count(),
-                        NodeKind.RadialBank,
-                        group.ToList()));
-            }
-
-            return nodes
-                .OrderByDescending(
-                    node =>
-                        node.Kind ==
-                        NodeKind.Command)
-                .ThenByDescending(
-                    node =>
-                        node.AverageY)
-                .ThenByDescending(
-                    node =>
-                        node.SeparationStage)
-                .ToList();
-        }
-
-        private static PowerNode CreateNode(
-            string name,
-            NodeKind kind,
-            List<ElectricalSectionModel> sections)
-        {
-            PowerNode node =
-                new PowerNode();
-
-            node.Name =
-                name;
-
-            node.Kind =
-                kind;
-
-            node.Sections.AddRange(
-                sections);
-
-            node.SeparationStage =
-                MostCommon(
-                    sections.Select(
-                        section =>
-                            section.SeparationStage));
-
-            node.ActivationStage =
-                MostCommon(
-                    sections.Select(
-                        section =>
-                            section.ActivationStage));
-
-            node.AverageY =
-                sections.Count > 0
-                    ? sections.Average(
-                        section =>
-                            section.AverageY)
-                    : 0.0;
-
-            node.BatteryCount =
-                sections.Sum(
-                    section =>
-                        section.BatteryPartCount);
-
-            node.SolarCount =
-                sections.Sum(
-                    section =>
-                        section.SolarPartCount);
-
-            node.GeneratorCount =
-                sections.Sum(
-                    section =>
-                        section.GeneratorPartCount);
-
-            node.PartCount =
-                sections.Sum(
-                    section =>
-                        section.PartCount);
-
-            node.ChargeAmount =
-                sections.Sum(
-                    section =>
-                        section.ElectricChargeAmount);
-
-            node.ChargeCapacity =
-                sections.Sum(
-                    section =>
-                        section.ElectricChargeCapacity);
-
-            return node;
-        }
-
-        private static int MostCommon(
-            IEnumerable<int> values)
-        {
-            List<int> valid =
-                values
-                    .Where(
-                        value =>
-                            value >= 0)
-                    .ToList();
-
-            if (valid.Count == 0)
-            {
-                return -1;
-            }
-
-            return valid
-                .GroupBy(
-                    value =>
-                        value)
-                .OrderByDescending(
-                    group =>
-                        group.Count())
-                .ThenByDescending(
-                    group =>
-                        group.Key)
-                .First()
-                .Key;
-        }
-
-        private static List<StackRow>
-            BuildRows(
-                List<PowerNode> nodes)
-        {
-            List<PowerNode> cores =
-                nodes
-                    .Where(
-                        node =>
-                            node.Kind !=
-                            NodeKind.RadialBank)
-                    .OrderByDescending(
-                        node =>
-                            node.AverageY)
-                    .ToList();
-
-            List<PowerNode> radial =
-                nodes
-                    .Where(
-                        node =>
-                            node.Kind ==
-                            NodeKind.RadialBank)
-                    .ToList();
-
-            List<StackRow> rows =
-                cores.Select(
-                    core =>
-                        new StackRow
-                        {
-                            Core =
-                                core
-                        })
-                    .ToList();
-
-            foreach (
-                PowerNode bank
-                in radial)
-            {
-                StackRow nearest =
-                    rows
-                        .OrderBy(
-                            row =>
-                                Math.Abs(
-                                    row.Core.AverageY -
-                                    bank.AverageY))
-                        .FirstOrDefault();
-
-                if (nearest == null)
-                {
-                    continue;
-                }
-
-                if (nearest.Radial == null)
-                {
-                    nearest.Radial =
-                        bank;
-                }
-                else
-                {
-                    MergeNode(
-                        nearest.Radial,
-                        bank);
-                }
-            }
-
-            return rows;
-        }
-
-        private static void MergeNode(
-            PowerNode target,
-            PowerNode source)
-        {
-            target.Sections.AddRange(
-                source.Sections);
-
-            target.Name =
-                "RADIAL ×" +
-                target.Sections.Count;
-
-            target.BatteryCount +=
-                source.BatteryCount;
-
-            target.SolarCount +=
-                source.SolarCount;
-
-            target.GeneratorCount +=
-                source.GeneratorCount;
-
-            target.PartCount +=
-                source.PartCount;
-
-            target.ChargeAmount +=
-                source.ChargeAmount;
-
-            target.ChargeCapacity +=
-                source.ChargeCapacity;
-        }
-
-        private static void DrawTopology(
-            Graphics graphics,
-            Rectangle panel,
-            List<StackRow> rows,
-            bool vesselPowered,
-            double vesselPercent,
-            MissionRenderContext context)
-        {
-            Rectangle content =
-                new Rectangle(
-                    panel.Left + 26,
-                    panel.Top + 42,
-                    panel.Width - 52,
-                    panel.Height - 58);
-
-            int count =
-                Math.Max(
-                    1,
-                    rows.Count);
+            int middleHeight =
+                254;
 
             int gap =
-                count > 9
-                    ? 5
-                    : 10;
+                12;
 
-            int available =
-                content.Height -
-                gap *
-                Math.Max(
-                    0,
-                    count - 1);
+            Rectangle sources =
+                new Rectangle(
+                    area.Left,
+                    area.Top,
+                    340,
+                    topHeight);
 
-            int rowHeight =
-                Math.Max(
-                    44,
-                    Math.Min(
-                        92,
-                        available /
-                        count));
+            Rectangle bus =
+                new Rectangle(
+                    sources.Right + gap,
+                    area.Top,
+                    area.Width -
+                    340 -
+                    420 -
+                    gap * 2,
+                    topHeight);
 
-            int centerWidth =
-                Math.Max(
-                    230,
-                    Math.Min(
-                        340,
-                        content.Width *
-                        44 /
-                        100));
+            Rectangle loads =
+                new Rectangle(
+                    bus.Right + gap,
+                    area.Top,
+                    420,
+                    topHeight);
 
-            int radialWidth =
-                Math.Max(
-                    120,
-                    Math.Min(
-                        180,
-                        content.Width *
-                        22 /
-                        100));
+            Rectangle procedureBox =
+                new Rectangle(
+                    area.Left,
+                    sources.Bottom + gap,
+                    470,
+                    middleHeight);
 
-            int centerX =
-                content.Left +
-                content.Width /
-                2;
+            Rectangle storageBox =
+                new Rectangle(
+                    procedureBox.Right + gap,
+                    sources.Bottom + gap,
+                    area.Width -
+                    470 -
+                    470 -
+                    gap * 2,
+                    middleHeight);
 
-            int totalHeight =
-                rowHeight *
-                count +
-                gap *
-                Math.Max(
-                    0,
-                    count - 1);
+            Rectangle recoveryBox =
+                new Rectangle(
+                    storageBox.Right + gap,
+                    sources.Bottom + gap,
+                    470,
+                    middleHeight);
 
-            int startY =
-                content.Top +
-                Math.Max(
-                    0,
-                    (content.Height -
-                     totalHeight) /
-                    2);
+            Rectangle stageBox =
+                new Rectangle(
+                    area.Left,
+                    procedureBox.Bottom + gap,
+                    area.Width,
+                    area.Bottom -
+                    procedureBox.Bottom -
+                    gap);
 
-            for (int index = 0;
-                 index < rows.Count;
-                 index++)
-            {
-                rows[index].Bounds =
-                    new Rectangle(
-                        centerX -
-                        centerWidth /
-                        2,
-                        startY +
-                        index *
-                        (rowHeight +
-                         gap),
-                        centerWidth,
-                        rowHeight);
-            }
-
-            DrawCoreConnectors(
+            DrawPanel(
                 graphics,
-                rows);
+                sources,
+                "POWER SOURCES",
+                context);
 
-            for (int index = 0;
-                 index < rows.Count;
-                 index++)
-            {
-                StackRow row =
-                    rows[index];
+            DrawPanel(
+                graphics,
+                bus,
+                "MAIN ELECTRICAL BUS",
+                context);
 
-                DrawCoreNode(
-                    graphics,
-                    row.Bounds,
-                    row.Core,
-                    vesselPowered,
-                    vesselPercent,
-                    context);
+            DrawPanel(
+                graphics,
+                loads,
+                "LOAD / SHEDDING",
+                context);
 
-                if (row.Radial != null)
-                {
-                    DrawRadialLaneNode(
-                        graphics,
-                        row,
-                        radialWidth,
-                        vesselPowered,
-                        vesselPercent,
-                        context);
-                }
-            }
+            DrawPanel(
+                graphics,
+                procedureBox,
+                "ENGINEERING PROCEDURE",
+                context);
+
+            DrawPanel(
+                graphics,
+                storageBox,
+                "EC STORAGE",
+                context);
+
+            DrawPanel(
+                graphics,
+                recoveryBox,
+                "RECOVERY VERIFICATION",
+                context);
+
+            DrawPanel(
+                graphics,
+                stageBox,
+                "NEXT STAGE ELECTRICAL RISK",
+                context);
+
+            DrawSchematicConnectors(
+                graphics,
+                sources,
+                bus,
+                loads,
+                storageBox,
+                context,
+                status);
+
+            DrawSources(
+                graphics,
+                sources,
+                network,
+                load,
+                attribution,
+                context);
+
+            DrawBus(
+                graphics,
+                bus,
+                status,
+                flow,
+                load,
+                context);
+
+            DrawLoads(
+                graphics,
+                loads,
+                load,
+                attribution,
+                shedding,
+                context);
+
+            DrawProcedure(
+                graphics,
+                procedureBox,
+                procedure,
+                context);
+
+            DrawStorage(
+                graphics,
+                storageBox,
+                storage,
+                context);
+
+            DrawRecovery(
+                graphics,
+                recoveryBox,
+                procedure,
+                context);
+
+            DrawStageRisk(
+                graphics,
+                stageBox,
+                status,
+                storage,
+                context);
         }
 
-        private static void DrawCoreConnectors(
+        private static void DrawSources(
             Graphics graphics,
-            List<StackRow> rows)
-        {
-            using (Pen pen =
-                new Pen(
-                    Color.FromArgb(
-                        80,
-                        135,
-                        145),
-                    2.0f))
-            {
-                for (int index = 0;
-                     index < rows.Count - 1;
-                     index++)
-                {
-                    int x =
-                        rows[index]
-                            .Bounds.Left +
-                        rows[index]
-                            .Bounds.Width /
-                        2;
-
-                    graphics.DrawLine(
-                        pen,
-                        x,
-                        rows[index]
-                            .Bounds.Bottom,
-                        x,
-                        rows[index + 1]
-                            .Bounds.Top);
-                }
-            }
-        }
-
-        private static void DrawCoreNode(
-            Graphics graphics,
-            Rectangle bounds,
-            PowerNode node,
-            bool vesselPowered,
-            double vesselPercent,
+            Rectangle panel,
+            ElectricalNetwork network,
+            ElectricalLoadModel load,
+            ElectricalAttributionModel attribution,
             MissionRenderContext context)
         {
-            PowerState state =
-                ResolveState(
-                    node,
-                    vesselPowered,
-                    vesselPercent);
+            Rectangle body =
+                Body(
+                    panel);
+
+            int producers =
+                attribution != null
+                    ? attribution.ProducerCount
+                    : 0;
+
+            int sourceNodes =
+                network != null
+                    ? network.SourceNodeCount
+                    : 0;
+
+            string generation =
+                load != null &&
+                load.GenerationRateComplete
+                    ? FormatRate(
+                        load.GenerationEcPerSecond)
+                    : "UNKNOWN";
+
+            string maxGeneration =
+                attribution != null &&
+                attribution.TelemetryAvailable
+                    ? FormatRate(
+                        attribution.DeclaredMaximumGenerationEcPerSecond)
+                    : "UNKNOWN";
+
+            string evidence =
+                attribution != null &&
+                attribution.TelemetryAvailable
+                    ? attribution.KnownCurrentProducerCount +
+                      "/" +
+                      producers +
+                      " CURRENT"
+                    : "WAITING";
+
+            DrawMetric(
+                graphics,
+                body,
+                0,
+                "SOURCE NODES",
+                sourceNodes.ToString(),
+                context,
+                context.PhosphorColor);
+
+            DrawMetric(
+                graphics,
+                body,
+                1,
+                "PRODUCERS",
+                producers.ToString(),
+                context,
+                context.PhosphorColor);
+
+            DrawMetric(
+                graphics,
+                body,
+                2,
+                "KNOWN GENERATION",
+                generation,
+                context,
+                Healthy);
+
+            DrawMetric(
+                graphics,
+                body,
+                3,
+                "DECLARED MAX",
+                maxGeneration,
+                context,
+                context.PhosphorColor);
+
+            DrawMetric(
+                graphics,
+                body,
+                4,
+                "EVIDENCE",
+                evidence,
+                context,
+                context.DimPhosphorColor);
+        }
+
+        private static void DrawBus(
+            Graphics graphics,
+            Rectangle panel,
+            ElectricalPowerDiagnosticModel status,
+            ElectricalFlowModel flow,
+            ElectricalLoadModel load,
+            MissionRenderContext context)
+        {
+            Rectangle body =
+                Body(
+                    panel);
+
+            Color stateColor =
+                SeverityColor(
+                    status,
+                    context);
+
+            string stored =
+                status != null &&
+                status.TelemetryAvailable
+                    ? status.StoredEc.ToString("0.0") +
+                      " / " +
+                      status.CapacityEc.ToString("0.0") +
+                      " EC"
+                    : "--";
+
+            string reserve =
+                status != null &&
+                status.TelemetryAvailable
+                    ? status.ReservePercent.ToString("0.0") +
+                      "%"
+                    : "--";
+
+            string flowRate =
+                flow != null &&
+                flow.HasMeasuredNetStorageRate
+                    ? FormatSignedRate(
+                        flow.NetStorageRateEcPerSecond)
+                    : "UNOBSERVABLE";
+
+            string endurance =
+                status != null &&
+                status.HasEndurance
+                    ? FormatDuration(
+                        status.EnduranceSeconds)
+                    : "--";
+
+            string severity =
+                status != null
+                    ? status.Severity.ToString()
+                    : "UNKNOWN";
+
+            string condition =
+                status != null
+                    ? SplitWords(
+                        status.Condition.ToString())
+                    : "UNKNOWN";
+
+            DrawCenteredValue(
+                graphics,
+                new Rectangle(
+                    body.Left,
+                    body.Top,
+                    body.Width,
+                    36),
+                severity,
+                context.LargeFont,
+                stateColor);
+
+            DrawCenteredValue(
+                graphics,
+                new Rectangle(
+                    body.Left,
+                    body.Top + 34,
+                    body.Width,
+                    26),
+                condition,
+                context.SmallFont,
+                stateColor);
+
+            DrawTwoColumnMetric(
+                graphics,
+                body,
+                74,
+                "EC",
+                stored,
+                "RESERVE",
+                reserve,
+                context);
+
+            DrawTwoColumnMetric(
+                graphics,
+                body,
+                112,
+                "NET FLOW",
+                flowRate,
+                "ENDURANCE",
+                endurance,
+                context);
+
+            string demand =
+                load != null &&
+                load.HasInferredTotalLoad
+                    ? FormatRate(
+                        load.InferredTotalLoadEcPerSecond)
+                    : "UNKNOWN";
+
+            string margin =
+                status != null &&
+                status.HasPowerMargin
+                    ? FormatSignedRate(
+                        status.PowerMarginEcPerSecond)
+                    : "--";
+
+            DrawTwoColumnMetric(
+                graphics,
+                body,
+                150,
+                "DEMAND",
+                demand,
+                "MARGIN",
+                margin,
+                context);
+        }
+
+        private static void DrawLoads(
+            Graphics graphics,
+            Rectangle panel,
+            ElectricalLoadModel load,
+            ElectricalAttributionModel attribution,
+            ElectricalLoadSheddingModel shedding,
+            MissionRenderContext context)
+        {
+            Rectangle body =
+                Body(
+                    panel);
+
+            int consumers =
+                attribution != null
+                    ? attribution.ConsumerCount
+                    : 0;
+
+            int known =
+                attribution != null
+                    ? attribution.KnownCurrentConsumerCount
+                    : 0;
+
+            string coverage =
+                load != null &&
+                load.HasInferredTotalLoad
+                    ? load.AttributionCoveragePercent.ToString("0.0") +
+                      "%"
+                    : "UNKNOWN";
+
+            DrawTwoColumnMetric(
+                graphics,
+                body,
+                0,
+                "CONSUMERS",
+                consumers.ToString(),
+                "CURRENT KNOWN",
+                known.ToString(),
+                context);
+
+            DrawTwoColumnMetric(
+                graphics,
+                body,
+                40,
+                "ATTRIBUTED",
+                load != null
+                    ? FormatRate(
+                        load.AttributedCurrentLoadEcPerSecond)
+                    : "--",
+                "COVERAGE",
+                coverage,
+                context);
+
+            DrawTwoColumnMetric(
+                graphics,
+                body,
+                80,
+                "PROTECTED",
+                shedding != null
+                    ? shedding.ProtectedConsumerCount.ToString()
+                    : "--",
+                "CANDIDATES",
+                shedding != null
+                    ? shedding.CandidateCount.ToString()
+                    : "--",
+                context);
+
+            DrawTwoColumnMetric(
+                graphics,
+                body,
+                120,
+                "QUANTIFIED",
+                shedding != null
+                    ? FormatRate(
+                        shedding.QuantifiedRecoverableEcPerSecond)
+                    : "--",
+                "POTENTIAL MAX",
+                shedding != null
+                    ? FormatRate(
+                        shedding.PotentialMaximumRecoverableEcPerSecond)
+                    : "--",
+                context);
+
+            string recommendation =
+                shedding != null
+                    ? shedding.State.ToString()
+                    : "UNAVAILABLE";
 
             Color color =
-                ResolveStateColor(
-                    state);
+                shedding != null &&
+                shedding.SheddingRecommended
+                    ? Warning
+                    : context.PhosphorColor;
 
-            using (SolidBrush fill =
-                new SolidBrush(
-                    Color.FromArgb(
-                        10,
-                        color)))
-            using (Pen outline =
-                new Pen(
-                    color,
-                    node.Kind ==
-                    NodeKind.Command
-                        ? 2.2f
-                        : 1.4f))
-            {
-                graphics.FillRectangle(
-                    fill,
-                    bounds);
-
-                graphics.DrawRectangle(
-                    outline,
-                    bounds);
-            }
-
-            if (node.Kind ==
-                NodeKind.Command)
-            {
-                Point[] nose =
-                    new[]
-                    {
-                        new Point(
-                            bounds.Left +
-                            bounds.Width /
-                            2,
-                            bounds.Top -
-                            24),
-
-                        new Point(
-                            bounds.Left +
-                            bounds.Width /
-                            2 -
-                            24,
-                            bounds.Top),
-
-                        new Point(
-                            bounds.Left +
-                            bounds.Width /
-                            2 +
-                            24,
-                            bounds.Top)
-                    };
-
-                using (Pen pen =
-                    new Pen(
-                        color,
-                        1.7f))
-                {
-                    graphics.DrawPolygon(
-                        pen,
-                        nose);
-                }
-            }
-
-            Font font =
-                bounds.Height >=
-                70
-                    ? context.LargeFont
-                    : context.SmallFont;
-
-            TextRenderer.DrawText(
+            DrawMetric(
                 graphics,
-                node.Name,
-                font,
-                new Rectangle(
-                    bounds.Left + 36,
-                    bounds.Top + 7,
-                    bounds.Width - 110,
-                    bounds.Height - 14),
-                color,
-                TextFormatFlags.HorizontalCenter |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding |
-                TextFormatFlags.EndEllipsis);
+                body,
+                4,
+                "SHEDDING",
+                SplitWords(
+                    recommendation),
+                context,
+                color);
+        }
 
-            DrawStateLamp(
+        private static void DrawProcedure(
+            Graphics graphics,
+            Rectangle panel,
+            ElectricalProcedureModel procedure,
+            MissionRenderContext context)
+        {
+            Rectangle body =
+                Body(
+                    panel);
+
+            if (procedure == null)
+            {
+                DrawCenteredValue(
+                    graphics,
+                    body,
+                    "PROCEDURE UNAVAILABLE",
+                    context.LargeFont,
+                    context.DimPhosphorColor);
+
+                return;
+            }
+
+            Color stateColor =
+                procedure.ActionRequired
+                    ? Warning
+                    : context.PhosphorColor;
+
+            DrawMetric(
+                graphics,
+                body,
+                0,
+                "STATE",
+                SplitWords(
+                    procedure.State.ToString()),
+                context,
+                stateColor);
+
+            DrawMetric(
+                graphics,
+                body,
+                1,
+                "ACTION REQUIRED",
+                procedure.ActionRequired
+                    ? "YES"
+                    : "NO",
+                context,
+                stateColor);
+
+            DrawMetric(
+                graphics,
+                body,
+                2,
+                "CONFIDENCE",
+                procedure.RecoveryConfidence.ToString(),
+                context,
+                context.PhosphorColor);
+
+            DrawWrappedText(
+                graphics,
+                new Rectangle(
+                    body.Left,
+                    body.Top + 116,
+                    body.Width,
+                    54),
+                procedure.PrimaryAction,
+                context.SmallFont,
+                stateColor);
+
+            DrawWrappedText(
+                graphics,
+                new Rectangle(
+                    body.Left,
+                    body.Top + 174,
+                    body.Width,
+                    body.Bottom -
+                    body.Top -
+                    174),
+                procedure.Objective,
+                context.SmallFont,
+                context.DimPhosphorColor);
+        }
+
+        private static void DrawStorage(
+            Graphics graphics,
+            Rectangle panel,
+            ElectricalStorageModel storage,
+            MissionRenderContext context)
+        {
+            Rectangle body =
+                Body(
+                    panel);
+
+            if (storage == null)
+            {
+                DrawCenteredValue(
+                    graphics,
+                    body,
+                    "STORAGE MODEL UNAVAILABLE",
+                    context.LargeFont,
+                    context.DimPhosphorColor);
+
+                return;
+            }
+
+            string amount =
+                storage.StoredEc.ToString("0.0") +
+                " / " +
+                storage.CapacityEc.ToString("0.0") +
+                " EC";
+
+            DrawMetric(
+                graphics,
+                body,
+                0,
+                "TOTAL EC",
+                amount,
+                context,
+                context.PhosphorColor);
+
+            DrawMetric(
+                graphics,
+                body,
+                1,
+                "CHARGE",
+                storage.ChargePercent.ToString("0.0") +
+                "%",
+                context,
+                ReserveColor(
+                    storage.ChargePercent,
+                    context));
+
+            DrawTwoColumnMetric(
+                graphics,
+                body,
+                82,
+                "STORAGE PARTS",
+                storage.Parts.Count.ToString(),
+                "SECTIONS",
+                storage.StageSections.Count.ToString(),
+                context);
+
+            DrawTwoColumnMetric(
+                graphics,
+                body,
+                122,
+                "BRANCHES",
+                storage.BranchSections.Count.ToString(),
+                "NEXT STAGE",
+                FormatStage(
+                    storage.NextStage),
+                context);
+
+            Rectangle bar =
+                new Rectangle(
+                    body.Left,
+                    body.Bottom - 28,
+                    body.Width,
+                    16);
+
+            DrawChargeBar(
+                graphics,
+                bar,
+                storage.ChargePercent,
+                context);
+        }
+
+        private static void DrawRecovery(
+            Graphics graphics,
+            Rectangle panel,
+            ElectricalProcedureModel procedure,
+            MissionRenderContext context)
+        {
+            Rectangle body =
+                Body(
+                    panel);
+
+            if (procedure == null)
+            {
+                DrawCenteredValue(
+                    graphics,
+                    body,
+                    "RECOVERY DATA UNAVAILABLE",
+                    context.LargeFont,
+                    context.DimPhosphorColor);
+
+                return;
+            }
+
+            string baseline =
+                procedure.HasBaseline
+                    ? FormatSignedRate(
+                        procedure.BaselineStorageRateEcPerSecond)
+                    : "--";
+
+            string current =
+                procedure.CurrentStorageRateObservable
+                    ? FormatSignedRate(
+                        procedure.CurrentStorageRateEcPerSecond)
+                    : "UNOBSERVABLE";
+
+            string improvement =
+                procedure.HasImprovement
+                    ? "+" +
+                      procedure.ImprovementEcPerSecond.ToString("0.###") +
+                      " EC/s"
+                    : "--";
+
+            Color recoveryColor =
+                procedure.DeficitCleared
+                    ? Healthy
+                    : procedure.HasImprovement
+                        ? context.PhosphorColor
+                        : context.DimPhosphorColor;
+
+            DrawMetric(
+                graphics,
+                body,
+                0,
+                "RECOVERY STATE",
+                SplitWords(
+                    procedure.RecoveryState.ToString()),
+                context,
+                recoveryColor);
+
+            DrawTwoColumnMetric(
+                graphics,
+                body,
+                44,
+                "BASELINE",
+                baseline,
+                "CURRENT",
+                current,
+                context);
+
+            DrawTwoColumnMetric(
+                graphics,
+                body,
+                84,
+                "IMPROVEMENT",
+                improvement,
+                "DEFICIT CLEAR",
+                procedure.DeficitCleared
+                    ? "YES"
+                    : "NO",
+                context);
+
+            DrawWrappedText(
+                graphics,
+                new Rectangle(
+                    body.Left,
+                    body.Top + 142,
+                    body.Width,
+                    body.Height - 142),
+                procedure.Verification,
+                context.SmallFont,
+                context.DimPhosphorColor);
+        }
+
+        private static void DrawStageRisk(
+            Graphics graphics,
+            Rectangle panel,
+            ElectricalPowerDiagnosticModel status,
+            ElectricalStorageModel storage,
+            MissionRenderContext context)
+        {
+            Rectangle body =
+                Body(
+                    panel);
+
+            bool losesStorage =
+                status != null &&
+                status.NextStageLosesStorage;
+
+            bool losesAll =
+                status != null &&
+                status.NextStageLosesAllStorage;
+
+            Color riskColor =
+                losesAll
+                    ? Critical
+                    : losesStorage
+                        ? Warning
+                        : Healthy;
+
+            string headline =
+                losesAll
+                    ? "CRITICAL — NEXT STAGE REMOVES ALL KNOWN EC STORAGE"
+                    : losesStorage
+                        ? "CAUTION — NEXT STAGE REMOVES EC STORAGE"
+                        : "NO NEXT-STAGE STORAGE HAZARD";
+
+            DrawCenteredValue(
+                graphics,
+                new Rectangle(
+                    body.Left,
+                    body.Top,
+                    body.Width,
+                    34),
+                headline,
+                context.LargeFont,
+                riskColor);
+
+            double lostStored =
+                status != null
+                    ? status.NextStageLostStoredEc
+                    : storage != null
+                        ? storage.NextStageLostStoredEc
+                        : 0.0;
+
+            double lostCapacity =
+                status != null
+                    ? status.NextStageLostCapacityEc
+                    : storage != null
+                        ? storage.NextStageLostCapacityEc
+                        : 0.0;
+
+            double remainStored =
+                status != null
+                    ? status.NextStageRemainingStoredEc
+                    : storage != null
+                        ? storage.NextStageRemainingStoredEc
+                        : 0.0;
+
+            double remainCapacity =
+                status != null
+                    ? status.NextStageRemainingCapacityEc
+                    : storage != null
+                        ? storage.NextStageRemainingCapacityEc
+                        : 0.0;
+
+            string lost =
+                lostStored.ToString("0.0") +
+                " / " +
+                lostCapacity.ToString("0.0") +
+                " EC";
+
+            string remaining =
+                remainStored.ToString("0.0") +
+                " / " +
+                remainCapacity.ToString("0.0") +
+                " EC";
+
+            DrawTwoColumnMetric(
+                graphics,
+                body,
+                44,
+                "LOST ON STAGE",
+                lost,
+                "REMAINING",
+                remaining,
+                context);
+
+            string reserveAfter =
+                status != null &&
+                status.NextStageRemainingCapacityEc >
+                    0.000001
+                    ? status.NextStageRemainingReservePercent.ToString("0.0") +
+                      "%"
+                    : storage != null &&
+                      storage.NextStageRemainingCapacityEc >
+                        0.000001
+                        ? storage.NextStageRemainingChargePercent.ToString("0.0") +
+                          "%"
+                        : "--";
+
+            DrawTwoColumnMetric(
+                graphics,
+                body,
+                84,
+                "LOSE ALL",
+                losesAll
+                    ? "YES"
+                    : "NO",
+                "RESERVE AFTER",
+                reserveAfter,
+                context);
+        }
+
+        private static void DrawSchematicConnectors(
+            Graphics graphics,
+            Rectangle sources,
+            Rectangle bus,
+            Rectangle loads,
+            Rectangle storage,
+            MissionRenderContext context,
+            ElectricalPowerDiagnosticModel status)
+        {
+            Color color =
+                SeverityColor(
+                    status,
+                    context);
+
+            using (Pen line =
+                new Pen(
+                    Color.FromArgb(
+                        150,
+                        color),
+                    3.0f))
+            {
+                line.StartCap =
+                    LineCap.Flat;
+
+                line.EndCap =
+                    LineCap.Flat;
+
+                int y =
+                    sources.Top +
+                    sources.Height /
+                    2;
+
+                graphics.DrawLine(
+                    line,
+                    sources.Right,
+                    y,
+                    bus.Left,
+                    y);
+
+                graphics.DrawLine(
+                    line,
+                    bus.Right,
+                    y,
+                    loads.Left,
+                    y);
+
+                int busX =
+                    bus.Left +
+                    bus.Width /
+                    2;
+
+                int storageX =
+                    storage.Left +
+                    storage.Width /
+                    2;
+
+                int elbowY =
+                    bus.Bottom +
+                    6;
+
+                graphics.DrawLine(
+                    line,
+                    busX,
+                    bus.Bottom,
+                    busX,
+                    elbowY);
+
+                graphics.DrawLine(
+                    line,
+                    busX,
+                    elbowY,
+                    storageX,
+                    elbowY);
+
+                graphics.DrawLine(
+                    line,
+                    storageX,
+                    elbowY,
+                    storageX,
+                    storage.Top);
+            }
+
+            DrawJunction(
                 graphics,
                 new Point(
-                    bounds.Left + 18,
-                    bounds.Top +
-                    bounds.Height /
+                    bus.Left,
+                    sources.Top +
+                    sources.Height /
                     2),
                 color);
 
-            DrawHardwareIcons(
+            DrawJunction(
                 graphics,
-                bounds,
-                node,
-                context);
-        }
-
-        private static void DrawRadialLaneNode(
-            Graphics graphics,
-            StackRow row,
-            int width,
-            bool vesselPowered,
-            double vesselPercent,
-            MissionRenderContext context)
-        {
-            Rectangle core =
-                row.Bounds;
-
-            int height =
-                Math.Max(
-                    34,
-                    Math.Min(
-                        52,
-                        core.Height -
-                        8));
-
-            Rectangle badge =
-                new Rectangle(
-                    core.Left -
-                    width -
-                    22,
-                    core.Top +
-                    (core.Height -
-                     height) /
-                    2,
-                    width,
-                    height);
-
-            PowerState state =
-                ResolveState(
-                    row.Radial,
-                    vesselPowered,
-                    vesselPercent);
-
-            Color color =
-                ResolveStateColor(
-                    state);
-
-            using (Pen connector =
-                new Pen(
-                    Color.FromArgb(
-                        70,
-                        115,
-                        125),
-                    1.2f))
-            {
-                graphics.DrawLine(
-                    connector,
-                    badge.Right,
-                    badge.Top +
-                    badge.Height /
-                    2,
-                    core.Left,
-                    core.Top +
-                    core.Height /
-                    2);
-            }
-
-            using (SolidBrush fill =
-                new SolidBrush(
-                    Color.FromArgb(
-                        9,
-                        color)))
-            using (Pen outline =
-                new Pen(
-                    color,
-                    1.2f))
-            {
-                graphics.FillRectangle(
-                    fill,
-                    badge);
-
-                graphics.DrawRectangle(
-                    outline,
-                    badge);
-            }
-
-            TextRenderer.DrawText(
-                graphics,
-                row.Radial.Name,
-                context.SmallFont,
-                new Rectangle(
-                    badge.Left + 6,
-                    badge.Top + 6,
-                    badge.Width - 12,
-                    badge.Height - 12),
-                color,
-                TextFormatFlags.HorizontalCenter |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding |
-                TextFormatFlags.EndEllipsis);
-        }
-
-        private static void DrawStateLamp(
-            Graphics graphics,
-            Point center,
-            Color color)
-        {
-            Rectangle lamp =
-                new Rectangle(
-                    center.X - 6,
-                    center.Y - 6,
-                    12,
-                    12);
-
-            using (SolidBrush fill =
-                new SolidBrush(
-                    Color.FromArgb(
-                        150,
-                        color)))
-            using (Pen outline =
-                new Pen(
-                    color,
-                    1.0f))
-            {
-                graphics.FillEllipse(
-                    fill,
-                    lamp);
-
-                graphics.DrawEllipse(
-                    outline,
-                    lamp);
-            }
-        }
-
-        private static void DrawHardwareIcons(
-            Graphics graphics,
-            Rectangle bounds,
-            PowerNode node,
-            MissionRenderContext context)
-        {
-            int x =
-                bounds.Right -
-                14;
-
-            int centerY =
-                bounds.Top +
-                bounds.Height /
-                2;
-
-            if (node.GeneratorCount > 0)
-            {
-                DrawIcon(
-                    graphics,
-                    "G",
-                    ref x,
-                    centerY,
-                    Color.FromArgb(
-                        155,
-                        235,
-                        155),
-                    context);
-            }
-
-            if (node.SolarCount > 0)
-            {
-                DrawIcon(
-                    graphics,
-                    "S",
-                    ref x,
-                    centerY,
-                    Color.FromArgb(
-                        80,
-                        205,
-                        255),
-                    context);
-            }
-
-            if (node.BatteryCount > 0)
-            {
-                DrawIcon(
-                    graphics,
-                    "B",
-                    ref x,
-                    centerY,
-                    Color.FromArgb(
-                        255,
-                        190,
-                        55),
-                    context);
-            }
-        }
-
-        private static void DrawIcon(
-            Graphics graphics,
-            string label,
-            ref int x,
-            int centerY,
-            Color color,
-            MissionRenderContext context)
-        {
-            Rectangle box =
-                new Rectangle(
-                    x - 18,
-                    centerY - 10,
-                    18,
-                    20);
-
-            using (Pen pen =
-                new Pen(
-                    color,
-                    1.0f))
-            {
-                graphics.DrawRectangle(
-                    pen,
-                    box);
-            }
-
-            TextRenderer.DrawText(
-                graphics,
-                label,
-                context.SmallFont,
-                new Rectangle(
-                    box.Left,
-                    box.Top + 2,
-                    box.Width,
-                    box.Height - 4),
-                color,
-                TextFormatFlags.HorizontalCenter |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding);
-
-            x -=
-                23;
-        }
-
-        private static PowerState ResolveState(
-            PowerNode node,
-            bool vesselPowered,
-            double vesselPercent)
-        {
-            if (node.HasLocalStorage)
-            {
-                if (node.ChargePercent <=
-                    5.0)
-                {
-                    return
-                        PowerState.Dead;
-                }
-
-                if (node.ChargePercent <=
-                    15.0)
-                {
-                    return
-                        PowerState.Low;
-                }
-
-                return
-                    PowerState.Local;
-            }
-
-            if (!vesselPowered ||
-                vesselPercent <=
-                0.1)
-            {
-                return
-                    PowerState.Dead;
-            }
-
-            return
-                PowerState.Bus;
-        }
-
-        private static Color ResolveStateColor(
-            PowerState state)
-        {
-            switch (state)
-            {
-                case PowerState.Local:
-                    return Color.FromArgb(
-                        75,
-                        235,
-                        105);
-
-                case PowerState.Bus:
-                    return Color.FromArgb(
-                        115,
-                        195,
-                        225);
-
-                case PowerState.Low:
-                    return Color.FromArgb(
-                        255,
-                        190,
-                        55);
-
-                default:
-                    return Color.FromArgb(
-                        255,
-                        75,
-                        55);
-            }
-        }
-
-        private static string GetStateText(
-            PowerState state,
-            PowerNode node)
-        {
-            switch (state)
-            {
-                case PowerState.Local:
-                    return "LOCAL " +
-                           node.ChargePercent
-                               .ToString("0") +
-                           "%";
-
-                case PowerState.Bus:
-                    return "BUS POWER";
-
-                case PowerState.Low:
-                    return "LOW " +
-                           node.ChargePercent
-                               .ToString("0") +
-                           "%";
-
-                default:
-                    return "NO POWER";
-            }
-        }
-
-        private static void DrawInspector(
-            Graphics graphics,
-            Rectangle panel,
-            PowerNode selected,
-            bool vesselPowered,
-            double vesselPercent,
-            MissionRenderContext context)
-        {
-            Rectangle content =
-                new Rectangle(
-                    panel.Left + 22,
-                    panel.Top + 46,
-                    panel.Width - 44,
-                    panel.Height - 64);
-
-            Rectangle footer =
-                new Rectangle(
-                    content.Left,
-                    content.Bottom - 30,
-                    content.Width,
-                    24);
-
-            Rectangle body =
-                new Rectangle(
-                    content.Left,
-                    content.Top,
-                    content.Width,
-                    footer.Top -
-                    content.Top -
-                    12);
-
-            PowerState state =
-                ResolveState(
-                    selected,
-                    vesselPowered,
-                    vesselPercent);
-
-            Color color =
-                ResolveStateColor(
-                    state);
-
-            TextRenderer.DrawText(
-                graphics,
-                selected.Name,
-                context.LargeFont,
-                new Rectangle(
-                    body.Left,
-                    body.Top + 2,
-                    body.Width,
-                    34),
-                color,
-                TextFormatFlags.Left |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding |
-                TextFormatFlags.EndEllipsis);
-
-            TextRenderer.DrawText(
-                graphics,
-                GetStateText(
-                    state,
-                    selected),
-                context.LargeFont,
-                new Rectangle(
-                    body.Left,
-                    body.Top + 42,
-                    body.Width,
-                    32),
-                color,
-                TextFormatFlags.Left |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding |
-                TextFormatFlags.EndEllipsis);
-
-            int y =
-                body.Top +
-                92;
-
-            int availableRowsHeight =
-                Math.Max(
-                    0,
-                    body.Bottom -
-                    y);
-
-            int rowCount =
-                5;
-
-            int rowHeight =
-                Math.Max(
-                    48,
-                    Math.Min(
-                        66,
-                        availableRowsHeight /
-                        rowCount));
-
-            DrawInspectorRow(
-                graphics,
-                body,
-                ref y,
-                rowHeight,
-                "POWER SOURCE",
-                selected.HasLocalStorage
-                    ? "LOCAL STORAGE"
-                    : vesselPowered
-                        ? "VESSEL BUS"
-                        : "NONE",
-                context);
-
-            DrawInspectorRow(
-                graphics,
-                body,
-                ref y,
-                rowHeight,
-                "ELECTRIC CHARGE",
-                selected.HasLocalStorage
-                    ? selected.ChargeAmount
-                        .ToString("0.0") +
-                      " / " +
-                      selected.ChargeCapacity
-                        .ToString("0.0") +
-                      " EC"
-                    : "SHARED",
-                context);
-
-            DrawInspectorRow(
-                graphics,
-                body,
-                ref y,
-                rowHeight,
-                "HARDWARE",
-                "B " +
-                selected.BatteryCount
-                    .ToString("00") +
-                "   S " +
-                selected.SolarCount
-                    .ToString("00") +
-                "   G " +
-                selected.GeneratorCount
-                    .ToString("00"),
-                context);
-
-            DrawInspectorRow(
-                graphics,
-                body,
-                ref y,
-                rowHeight,
-                "PARTS",
-                selected.PartCount
-                    .ToString("00"),
-                context);
-
-            DrawInspectorRow(
-                graphics,
-                body,
-                ref y,
-                rowHeight,
-                "SEP / ACT",
-                FormatStage(
-                    selected.SeparationStage) +
-                " / " +
-                FormatStage(
-                    selected.ActivationStage),
-                context);
-
-            TextRenderer.DrawText(
-                graphics,
-                "PHASE 2: CLICK A SECTION TO INSPECT",
-                context.SmallFont,
-                footer,
-                context.DimPhosphorColor,
-                TextFormatFlags.HorizontalCenter |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding |
-                TextFormatFlags.EndEllipsis);
-        }
-
-        private static void DrawInspectorRow(
-            Graphics graphics,
-            Rectangle body,
-            ref int y,
-            int rowHeight,
-            string label,
-            string value,
-            MissionRenderContext context)
-        {
-            if (y >=
-                body.Bottom)
-            {
-                return;
-            }
-
-            Rectangle row =
-                new Rectangle(
-                    body.Left,
-                    y,
-                    body.Width,
-                    Math.Min(
-                        rowHeight,
-                        body.Bottom -
-                        y));
-
-            int labelHeight =
-                Math.Max(
-                    16,
-                    Math.Min(
-                        20,
-                        row.Height /
-                        3));
-
-            Rectangle labelBounds =
-                new Rectangle(
-                    row.Left,
-                    row.Top + 2,
-                    row.Width,
-                    labelHeight);
-
-            Rectangle valueBounds =
-                new Rectangle(
-                    row.Left,
-                    labelBounds.Bottom + 3,
-                    row.Width,
-                    Math.Max(
-                        18,
-                        row.Bottom -
-                        labelBounds.Bottom -
-                        9));
-
-            TextRenderer.DrawText(
-                graphics,
-                label,
-                context.SmallFont,
-                labelBounds,
-                context.DimPhosphorColor,
-                TextFormatFlags.Left |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding |
-                TextFormatFlags.EndEllipsis);
-
-            TextRenderer.DrawText(
-                graphics,
-                value,
-                context.SmallFont,
-                valueBounds,
-                context.PhosphorColor,
-                TextFormatFlags.Left |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding |
-                TextFormatFlags.EndEllipsis);
-
-            using (Pen divider =
-                new Pen(
-                    Color.FromArgb(
-                        50,
-                        85,
-                        95),
-                    1.0f))
-            {
-                graphics.DrawLine(
-                    divider,
-                    row.Left,
-                    row.Bottom - 2,
-                    row.Right,
-                    row.Bottom - 2);
-            }
-
-            y =
-                row.Bottom;
-        }
-
-        private static void DrawSummary(
-            Graphics graphics,
-            Rectangle panel,
-            List<PowerNode> nodes,
-            ElectricalTopologyModel model,
-            MissionRenderContext context)
-        {
-            Rectangle content =
-                new Rectangle(
-                    panel.Left + 14,
-                    panel.Top + 34,
-                    panel.Width - 28,
-                    panel.Height - 42);
-
-            double amount =
-                nodes.Sum(
-                    node =>
-                        node.ChargeAmount);
-
-            double capacity =
-                nodes.Sum(
-                    node =>
-                        node.ChargeCapacity);
-
-            double percent =
-                capacity >
-                0.0001
-                    ? amount /
-                      capacity *
-                      100.0
-                    : 0.0;
-
-            int width =
-                content.Width /
-                4;
-
-            DrawSummaryCell(
-                graphics,
-                new Rectangle(
-                    content.Left,
-                    content.Top,
-                    width,
-                    content.Height),
-                "EC RESERVE",
-                percent.ToString("0") +
-                "%",
-                ResolveVesselColor(
-                    percent,
-                    capacity),
-                context);
-
-            DrawSummaryCell(
-                graphics,
-                new Rectangle(
-                    content.Left +
-                    width,
-                    content.Top,
-                    width,
-                    content.Height),
-                "BUS",
-                amount >
-                0.0001
-                    ? "ONLINE"
-                    : "OFFLINE",
-                amount >
-                0.0001
-                    ? Color.FromArgb(
-                        75,
-                        235,
-                        105)
-                    : Color.FromArgb(
-                        255,
-                        75,
-                        55),
-                context);
-
-            DrawSummaryCell(
-                graphics,
-                new Rectangle(
-                    content.Left +
-                    width *
-                    2,
-                    content.Top,
-                    width,
-                    content.Height),
-                "SECTIONS",
-                nodes.Count
-                    .ToString("00"),
-                context.PhosphorColor,
-                context);
-
-            DrawSummaryCell(
-                graphics,
-                new Rectangle(
-                    content.Left +
-                    width *
-                    3,
-                    content.Top,
-                    content.Width -
-                    width *
-                    3,
-                    content.Height),
-                "VESSEL",
-                model != null &&
-                !string.IsNullOrEmpty(
-                    model.VesselName)
-                    ? model.VesselName
-                    : "--",
-                context.DimPhosphorColor,
-                context);
-        }
-
-        private static Color ResolveVesselColor(
-            double percent,
-            double capacity)
-        {
-            if (capacity <=
-                0.0001)
-            {
-                return Color.FromArgb(
-                    105,
-                    140,
-                    150);
-            }
-
-            if (percent <=
-                5.0)
-            {
-                return Color.FromArgb(
-                    255,
-                    75,
-                    55);
-            }
-
-            if (percent <=
-                15.0)
-            {
-                return Color.FromArgb(
-                    255,
-                    190,
-                    55);
-            }
-
-            return Color.FromArgb(
-                75,
-                235,
-                105);
-        }
-
-        private static void DrawSummaryCell(
-            Graphics graphics,
-            Rectangle bounds,
-            string label,
-            string value,
-            Color color,
-            MissionRenderContext context)
-        {
-            using (Pen divider =
-                new Pen(
-                    Color.FromArgb(
-                        65,
-                        100,
-                        110),
-                    1.0f))
-            {
-                graphics.DrawLine(
-                    divider,
-                    bounds.Right,
-                    bounds.Top + 2,
-                    bounds.Right,
-                    bounds.Bottom - 2);
-            }
-
-            int labelHeight =
-                Math.Max(
-                    18,
-                    bounds.Height /
-                    3);
-
-            Rectangle labelBounds =
-                new Rectangle(
-                    bounds.Left + 6,
-                    bounds.Top + 2,
-                    bounds.Width - 12,
-                    labelHeight);
-
-            Rectangle valueBounds =
-                new Rectangle(
-                    bounds.Left + 6,
-                    labelBounds.Bottom + 2,
-                    bounds.Width - 12,
-                    Math.Max(
-                        22,
-                        bounds.Bottom -
-                        labelBounds.Bottom -
-                        4));
-
-            TextRenderer.DrawText(
-                graphics,
-                label,
-                context.SmallFont,
-                labelBounds,
-                context.DimPhosphorColor,
-                TextFormatFlags.HorizontalCenter |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding |
-                TextFormatFlags.EndEllipsis);
-
-            TextRenderer.DrawText(
-                graphics,
-                value,
-                context.LargeFont,
-                valueBounds,
-                color,
-                TextFormatFlags.HorizontalCenter |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding |
-                TextFormatFlags.EndEllipsis);
+                new Point(
+                    bus.Right,
+                    sources.Top +
+                    sources.Height /
+                    2),
+                color);
         }
 
         private static void DrawPanel(
@@ -1619,61 +1093,441 @@ namespace KMC.MissionControl.Rendering.Power
             string title,
             MissionRenderContext context)
         {
-            using (Pen outline =
+            using (SolidBrush fill =
+                new SolidBrush(
+                    Color.FromArgb(
+                        7,
+                        context.PhosphorColor)))
+            using (Pen border =
                 new Pen(
                     Color.FromArgb(
-                        95,
-                        145,
-                        155),
-                    1.2f))
+                        150,
+                        context.DimPhosphorColor),
+                    1.4f))
+            using (SolidBrush titleBrush =
+                new SolidBrush(
+                    context.DimPhosphorColor))
             {
-                graphics.DrawRectangle(
-                    outline,
+                graphics.FillRectangle(
+                    fill,
                     bounds);
 
-                graphics.DrawLine(
-                    outline,
-                    bounds.Left + 8,
-                    bounds.Top + 30,
-                    bounds.Right - 8,
-                    bounds.Top + 30);
-            }
+                graphics.DrawRectangle(
+                    border,
+                    bounds);
 
+                graphics.DrawString(
+                    title,
+                    context.SmallFont,
+                    titleBrush,
+                    bounds.Left + 12,
+                    bounds.Top + 8);
+
+                graphics.DrawLine(
+                    border,
+                    bounds.Left + 10,
+                    bounds.Top + 32,
+                    bounds.Right - 10,
+                    bounds.Top + 32);
+            }
+        }
+
+        private static Rectangle Body(
+            Rectangle panel)
+        {
+            return new Rectangle(
+                panel.Left + 14,
+                panel.Top + 40,
+                Math.Max(
+                    0,
+                    panel.Width - 28),
+                Math.Max(
+                    0,
+                    panel.Height - 52));
+        }
+
+        private static void DrawMetric(
+            Graphics graphics,
+            Rectangle body,
+            int row,
+            string label,
+            string value,
+            MissionRenderContext context,
+            Color valueColor)
+        {
+            int y =
+                body.Top +
+                row * 36;
+
+            DrawLabel(
+                graphics,
+                new Rectangle(
+                    body.Left,
+                    y,
+                    body.Width,
+                    15),
+                label,
+                context);
+
+            DrawValue(
+                graphics,
+                new Rectangle(
+                    body.Left,
+                    y + 14,
+                    body.Width,
+                    24),
+                value,
+                context,
+                valueColor);
+        }
+
+        private static void DrawTwoColumnMetric(
+            Graphics graphics,
+            Rectangle body,
+            int yOffset,
+            string leftLabel,
+            string leftValue,
+            string rightLabel,
+            string rightValue,
+            MissionRenderContext context)
+        {
+            int gap =
+                14;
+
+            int width =
+                (body.Width -
+                 gap) /
+                2;
+
+            Rectangle left =
+                new Rectangle(
+                    body.Left,
+                    body.Top + yOffset,
+                    width,
+                    38);
+
+            Rectangle right =
+                new Rectangle(
+                    left.Right + gap,
+                    body.Top + yOffset,
+                    width,
+                    38);
+
+            DrawLabel(
+                graphics,
+                new Rectangle(
+                    left.Left,
+                    left.Top,
+                    left.Width,
+                    14),
+                leftLabel,
+                context);
+
+            DrawValue(
+                graphics,
+                new Rectangle(
+                    left.Left,
+                    left.Top + 14,
+                    left.Width,
+                    24),
+                leftValue,
+                context,
+                context.PhosphorColor);
+
+            DrawLabel(
+                graphics,
+                new Rectangle(
+                    right.Left,
+                    right.Top,
+                    right.Width,
+                    14),
+                rightLabel,
+                context);
+
+            DrawValue(
+                graphics,
+                new Rectangle(
+                    right.Left,
+                    right.Top + 14,
+                    right.Width,
+                    24),
+                rightValue,
+                context,
+                context.PhosphorColor);
+        }
+
+        private static void DrawLabel(
+            Graphics graphics,
+            Rectangle bounds,
+            string text,
+            MissionRenderContext context)
+        {
             TextRenderer.DrawText(
                 graphics,
-                title,
+                Safe(
+                    text),
                 context.SmallFont,
-                new Rectangle(
-                    bounds.Left + 8,
-                    bounds.Top + 5,
-                    bounds.Width - 16,
-                    21),
-                context.PhosphorColor,
+                bounds,
+                context.DimPhosphorColor,
+                TextFormatFlags.Left |
+                TextFormatFlags.Top |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+        }
+
+        private static void DrawValue(
+            Graphics graphics,
+            Rectangle bounds,
+            string text,
+            MissionRenderContext context,
+            Color color)
+        {
+            TextRenderer.DrawText(
+                graphics,
+                Safe(
+                    text),
+                context.SmallFont,
+                bounds,
+                color,
                 TextFormatFlags.Left |
                 TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding |
                 TextFormatFlags.EndEllipsis);
         }
 
-        private static void DrawWaiting(
+        private static void DrawCenteredValue(
             Graphics graphics,
-            Rectangle panel,
-            MissionRenderContext context)
+            Rectangle bounds,
+            string text,
+            Font font,
+            Color color)
         {
             TextRenderer.DrawText(
                 graphics,
-                "WAITING FOR VESSEL TOPOLOGY",
-                context.LargeFont,
-                new Rectangle(
-                    panel.Left + 16,
-                    panel.Top + 38,
-                    panel.Width - 32,
-                    panel.Height - 56),
-                context.DimPhosphorColor,
+                Safe(
+                    text),
+                font,
+                bounds,
+                color,
                 TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding |
                 TextFormatFlags.EndEllipsis);
+        }
+
+        private static void DrawWrappedText(
+            Graphics graphics,
+            Rectangle bounds,
+            string text,
+            Font font,
+            Color color)
+        {
+            TextRenderer.DrawText(
+                graphics,
+                Safe(
+                    text),
+                font,
+                bounds,
+                color,
+                TextFormatFlags.Left |
+                TextFormatFlags.Top |
+                TextFormatFlags.WordBreak |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+        }
+
+        private static void DrawChargeBar(
+            Graphics graphics,
+            Rectangle bounds,
+            double percent,
+            MissionRenderContext context)
+        {
+            double clamped =
+                Math.Max(
+                    0.0,
+                    Math.Min(
+                        100.0,
+                        percent));
+
+            using (Pen outline =
+                new Pen(
+                    context.DimPhosphorColor,
+                    1.0f))
+            using (SolidBrush fill =
+                new SolidBrush(
+                    ReserveColor(
+                        clamped,
+                        context)))
+            {
+                graphics.DrawRectangle(
+                    outline,
+                    bounds);
+
+                Rectangle level =
+                    new Rectangle(
+                        bounds.Left + 2,
+                        bounds.Top + 2,
+                        (int)Math.Round(
+                            (bounds.Width - 3) *
+                            clamped /
+                            100.0),
+                        Math.Max(
+                            0,
+                            bounds.Height - 3));
+
+                if (level.Width > 0 &&
+                    level.Height > 0)
+                {
+                    graphics.FillRectangle(
+                        fill,
+                        level);
+                }
+            }
+        }
+
+        private static void DrawJunction(
+            Graphics graphics,
+            Point point,
+            Color color)
+        {
+            using (SolidBrush brush =
+                new SolidBrush(
+                    color))
+            {
+                graphics.FillEllipse(
+                    brush,
+                    point.X - 4,
+                    point.Y - 4,
+                    8,
+                    8);
+            }
+        }
+
+        private static void DrawWaiting(
+            Graphics graphics,
+            Rectangle bounds,
+            MissionRenderContext context)
+        {
+            DrawPanel(
+                graphics,
+                bounds,
+                "ELECTRICAL SYSTEMS",
+                context);
+
+            DrawCenteredValue(
+                graphics,
+                Body(
+                    bounds),
+                "WAITING FOR ENGINEERING TELEMETRY",
+                context.LargeFont,
+                context.DimPhosphorColor);
+        }
+
+        private static Color SeverityColor(
+            ElectricalPowerDiagnosticModel status,
+            MissionRenderContext context)
+        {
+            if (status == null)
+            {
+                return
+                    context.DimPhosphorColor;
+            }
+
+            switch (status.Severity)
+            {
+                case ElectricalPowerSeverity.Normal:
+                    return Healthy;
+
+                case ElectricalPowerSeverity.Advisory:
+                    return Amber;
+
+                case ElectricalPowerSeverity.Warning:
+                    return Warning;
+
+                case ElectricalPowerSeverity.Critical:
+                    return Critical;
+
+                case ElectricalPowerSeverity.Blackout:
+                    return Dead;
+
+                default:
+                    return context.DimPhosphorColor;
+            }
+        }
+
+        private static Color ReserveColor(
+            double percent,
+            MissionRenderContext context)
+        {
+            if (percent <= 5.0)
+            {
+                return Critical;
+            }
+
+            if (percent <= 15.0)
+            {
+                return Warning;
+            }
+
+            if (percent <= 30.0)
+            {
+                return Amber;
+            }
+
+            return
+                context.PhosphorColor;
+        }
+
+        private static string FormatRate(
+            double value)
+        {
+            return
+                value.ToString("0.###") +
+                " EC/s";
+        }
+
+        private static string FormatSignedRate(
+            double value)
+        {
+            string prefix =
+                value > 0.000001
+                    ? "+"
+                    : string.Empty;
+
+            return
+                prefix +
+                value.ToString("0.###") +
+                " EC/s";
+        }
+
+        private static string FormatDuration(
+            double seconds)
+        {
+            if (double.IsNaN(seconds) ||
+                double.IsInfinity(seconds) ||
+                seconds < 0.0)
+            {
+                return "--";
+            }
+
+            TimeSpan time =
+                TimeSpan.FromSeconds(
+                    seconds);
+
+            if (time.TotalHours >= 1.0)
+            {
+                return
+                    ((int)time.TotalHours).ToString("00") +
+                    ":" +
+                    time.Minutes.ToString("00") +
+                    ":" +
+                    time.Seconds.ToString("00");
+            }
+
+            return
+                time.Minutes.ToString("00") +
+                ":" +
+                time.Seconds.ToString("00");
         }
 
         private static string FormatStage(
@@ -1681,8 +1535,58 @@ namespace KMC.MissionControl.Rendering.Power
         {
             return
                 stage >= 0
-                    ? stage.ToString("00")
+                    ? stage.ToString()
                     : "--";
+        }
+
+        private static string SplitWords(
+            string value)
+        {
+            if (string.IsNullOrWhiteSpace(
+                value))
+            {
+                return "---";
+            }
+
+            System.Text.StringBuilder builder =
+                new System.Text.StringBuilder();
+
+            for (int index = 0;
+                 index < value.Length;
+                 index++)
+            {
+                char current =
+                    value[index];
+
+                if (index > 0 &&
+                    char.IsUpper(current) &&
+                    !char.IsUpper(
+                        value[index - 1]))
+                {
+                    builder.Append(' ');
+                }
+
+                builder.Append(
+                    current);
+            }
+
+            return
+                builder.ToString()
+                    .ToUpperInvariant();
+        }
+
+        private static string Safe(
+            string value)
+        {
+            if (string.IsNullOrWhiteSpace(
+                value))
+            {
+                return "---";
+            }
+
+            return
+                value.Trim()
+                    .ToUpperInvariant();
         }
     }
 }
