@@ -102,6 +102,11 @@ namespace KMC.MissionControl.Engineering
                     result.Snapshot.Capabilities.ClassifiedPartCount +
                     " | UnclassifiedParts=" +
                     result.Snapshot.Capabilities.UnclassifiedPartCount);
+
+                Debug.WriteLine(
+                    CapabilityComparison.Compare(
+                        result.Snapshot.Vessel.Topology,
+                        result.Snapshot.Capabilities));
             }
         }
 

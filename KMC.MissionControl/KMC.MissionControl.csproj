@@ -83,6 +83,7 @@
     <Compile Include="Diagnostics\AscentDebugLogger.cs" />
     <Compile Include="Diagnostics\PropulsionGraphFileLogger.cs" />
     <Compile Include="Diagnostics\PerformanceSnapshot.cs" />
+    <Compile Include="Engineering\CapabilityComparison.cs" />
     <Compile Include="Engineering\EngineeringSnapshotStore.cs" />
     <Compile Include="Flight\AscentFlightHistory.cs" />
     <Compile Include="Flight\AscentFlightHistoryUpdate.cs" />
