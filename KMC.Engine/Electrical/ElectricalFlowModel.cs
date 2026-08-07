@@ -8,7 +8,8 @@ namespace KMC.Engine.Electrical
         InsufficientData,
         Stable,
         Charging,
-        Discharging
+        Discharging,
+        Depleted
     }
 
     /// <summary>
@@ -17,6 +18,9 @@ namespace KMC.Engine.Electrical
     /// NetStorageRateEcPerSecond is the measured rate of change of stored EC.
     /// It is not claimed to be total generation minus total consumption while
     /// storage is clamped at empty/full capacity.
+    ///
+    /// When storage is depleted, delta-EC can no longer observe vessel demand.
+    /// Depleted is therefore an explicit engineering state rather than Stable.
     /// </summary>
     public sealed class ElectricalFlowModel
     {
@@ -72,6 +76,16 @@ namespace KMC.Engine.Electrical
                 return
                     CapacityEc > 0.000001 &&
                     StoredEc >= CapacityEc - 0.001;
+            }
+        }
+
+        public bool IsDepleted
+        {
+            get
+            {
+                return
+                    CapacityEc > 0.000001 &&
+                    StoredEc <= 0.001;
             }
         }
 

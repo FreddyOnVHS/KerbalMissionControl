@@ -16,6 +16,7 @@ namespace KMC.Engine.Electrical
         private const double StableRateThreshold = 0.005;
         private const double CapacityResetTolerance = 0.01;
         private const double MaximumGapSeconds = 1.0;
+        private const double DepletedStoredEcThreshold = 0.001;
 
         private readonly object _syncRoot =
             new object();
@@ -129,6 +130,34 @@ namespace KMC.Engine.Electrical
                     (newest.ReceivedUtc -
                      _samples[0].ReceivedUtc)
                         .TotalSeconds;
+            }
+
+            /*
+             * Depletion is a physical boundary condition, not a zero-flow
+             * equilibrium. Once storage reaches zero, delta-EC can no longer
+             * reveal continuing vessel demand because EC cannot fall below
+             * zero. Mark the state immediately and invalidate storage-rate
+             * demand inference.
+             */
+            if (model.CapacityEc > 0.000001 &&
+                model.StoredEc <= DepletedStoredEcThreshold)
+            {
+                model.State =
+                    ElectricalStorageFlowState.Depleted;
+
+                model.HasMeasuredNetStorageRate =
+                    false;
+
+                model.NetStorageRateEcPerSecond =
+                    0.0;
+
+                model.HasEstimatedSecondsToEmpty =
+                    true;
+
+                model.EstimatedSecondsToEmpty =
+                    0.0;
+
+                return model;
             }
 
             if (_samples.Count < MinimumSamples ||

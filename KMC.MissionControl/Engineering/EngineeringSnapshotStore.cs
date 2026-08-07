@@ -250,7 +250,9 @@ namespace KMC.MissionControl.Engineering
                 " | ToFull=" +
                 toFull +
                 " | AtCapacity=" +
-                flow.IsAtCapacity);
+                flow.IsAtCapacity +
+                " | Depleted=" +
+                flow.IsDepleted);
         }
 
         private static void WriteAttributionDiagnostic(
@@ -308,6 +310,21 @@ namespace KMC.MissionControl.Engineering
             {
                 Debug.WriteLine(
                     "KMC.Engine POWER LOAD | State=Unavailable");
+
+                return;
+            }
+
+            if (load.State ==
+                ElectricalLoadInferenceState.StorageDepleted)
+            {
+                Debug.WriteLine(
+                    "KMC.Engine POWER LOAD | State=StorageDepleted" +
+                    " | TotalDemand=UNKNOWN" +
+                    " | StorageRate=UNOBSERVABLE" +
+                    " | Attributed=" +
+                    load.AttributedCurrentLoadEcPerSecond.ToString("0.###") +
+                    " EC/s" +
+                    " | Coverage=UNKNOWN");
 
                 return;
             }

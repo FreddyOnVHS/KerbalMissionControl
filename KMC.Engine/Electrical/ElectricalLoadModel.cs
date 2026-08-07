@@ -7,6 +7,7 @@ namespace KMC.Engine.Electrical
         Unavailable = 0,
         WaitingForFlow,
         GenerationIncomplete,
+        StorageDepleted,
         Available
     }
 
@@ -103,6 +104,29 @@ namespace KMC.Engine.Electrical
 
             if (network == null)
             {
+                return model;
+            }
+
+            /*
+             * At zero stored EC, storage delta is clamped by the physical
+             * boundary and can no longer reveal vessel demand. Do not convert
+             * a flat 0 EC buffer into a false zero-load measurement.
+             */
+            if (flow != null &&
+                flow.TelemetryAvailable &&
+                flow.State ==
+                    ElectricalStorageFlowState.Depleted)
+            {
+                model.State =
+                    ElectricalLoadInferenceState.StorageDepleted;
+
+                model.AttributedCurrentLoadEcPerSecond =
+                    attribution != null
+                        ? Math.Max(
+                            0.0,
+                            attribution.KnownCurrentConsumptionEcPerSecond)
+                        : 0.0;
+
                 return model;
             }
 
