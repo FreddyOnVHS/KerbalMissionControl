@@ -25,6 +25,9 @@ namespace KMC.Engine.Models
             LoadShedding =
                 new ElectricalLoadSheddingModel();
 
+            Procedure =
+                new ElectricalProcedureModel();
+
             Diagnostics =
                 new List<string>();
         }
@@ -60,6 +63,12 @@ namespace KMC.Engine.Models
         }
 
         public ElectricalLoadSheddingModel LoadShedding
+        {
+            get;
+            internal set;
+        }
+
+        public ElectricalProcedureModel Procedure
         {
             get;
             internal set;

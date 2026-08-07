@@ -249,17 +249,23 @@ namespace KMC.Engine.Electrical
             bool diagnosticNeedsAction =
                 diagnostic != null &&
                 (diagnostic.Severity ==
+                     ElectricalPowerSeverity.Advisory ||
+                 diagnostic.Severity ==
                      ElectricalPowerSeverity.Warning ||
                  diagnostic.Severity ==
                      ElectricalPowerSeverity.Critical ||
                  diagnostic.Severity ==
                      ElectricalPowerSeverity.Blackout);
 
+            /*
+             * A measurable deficit is not automatically an operational
+             * emergency. Long-duration housekeeping drain can be perfectly
+             * acceptable. Recommend shedding only when the higher-level power
+             * status has reached an actionable severity.
+             */
             model.SheddingRecommended =
                 model.HasCurrentDeficit &&
-                (diagnosticNeedsAction ||
-                 model.CurrentDeficitEcPerSecond >
-                    0.005);
+                diagnosticNeedsAction;
 
             if (!model.SheddingRecommended)
             {

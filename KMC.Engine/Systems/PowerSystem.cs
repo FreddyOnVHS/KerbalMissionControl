@@ -6,6 +6,13 @@ namespace KMC.Engine.Systems
     public sealed class PowerSystem :
         IEngineeringSystem
     {
+        private readonly ElectricalProcedureTracker _procedureTracker;
+
+        public PowerSystem()
+        {
+            _procedureTracker =
+                new ElectricalProcedureTracker();
+        }
         public string Name
         {
             get { return "Power"; }
@@ -58,6 +65,14 @@ namespace KMC.Engine.Systems
                     context.Power.Load,
                     context.Power.Attribution,
                     context.Power.Diagnostic);
+
+            context.Power.Procedure =
+                _procedureTracker.Analyze(
+                    context.Telemetry.ReceivedUtc,
+                    context.Power.Flow,
+                    context.Power.Load,
+                    context.Power.Diagnostic,
+                    context.Power.LoadShedding);
 
             context.Power.Diagnostics.Clear();
 
@@ -121,6 +136,14 @@ namespace KMC.Engine.Systems
                 context.Power.LoadShedding.State +
                 " - " +
                 context.Power.LoadShedding.Summary);
+
+            context.Power.Diagnostics.Add(
+                "Electrical procedure: " +
+                context.Power.Procedure.State +
+                " / " +
+                context.Power.Procedure.RecoveryState +
+                " - " +
+                context.Power.Procedure.PrimaryAction);
 
         }
     }

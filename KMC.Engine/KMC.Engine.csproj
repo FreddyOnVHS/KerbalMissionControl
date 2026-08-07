@@ -53,6 +53,7 @@
     <Compile Include="Electrical\ElectricalLoadModel.cs" />
     <Compile Include="Electrical\ElectricalPowerDiagnosticModel.cs" />
     <Compile Include="Electrical\ElectricalLoadSheddingModel.cs" />
+    <Compile Include="Electrical\ElectricalProcedureModel.cs" />
     <Compile Include="EngineeringEngine.cs" />
     <Compile Include="Models\CapabilityEnums.cs" />
     <Compile Include="Models\CapabilityDetails.cs" />

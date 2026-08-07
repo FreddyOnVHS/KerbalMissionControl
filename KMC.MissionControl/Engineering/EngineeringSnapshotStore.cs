@@ -111,6 +111,9 @@ namespace KMC.MissionControl.Engineering
 
                 WriteLoadSheddingDiagnostic(
                     result);
+
+                WriteProcedureDiagnostic(
+                    result);
             }
         }
 
@@ -490,6 +493,67 @@ namespace KMC.MissionControl.Engineering
                 shedding.QuantifiedRecoveryEliminatesDeficit +
                 " | Summary=" +
                 shedding.Summary);
+        }
+
+        private static void WriteProcedureDiagnostic(
+            AnalysisPipelineResult result)
+        {
+            ElectricalProcedureModel procedure =
+                result.Snapshot.Power.Procedure;
+
+            if (procedure == null)
+            {
+                Debug.WriteLine(
+                    "KMC.Engine ELECTRICAL PROCEDURE | State=Unavailable");
+
+                return;
+            }
+
+            string baseline =
+                procedure.HasBaseline
+                    ? procedure.BaselineStorageRateEcPerSecond.ToString("0.###") +
+                      " EC/s"
+                    : "--";
+
+            string current =
+                procedure.CurrentStorageRateObservable
+                    ? procedure.CurrentStorageRateEcPerSecond.ToString("0.###") +
+                      " EC/s"
+                    : "UNOBSERVABLE";
+
+            string improvement =
+                procedure.HasImprovement
+                    ? procedure.ImprovementEcPerSecond.ToString("0.###") +
+                      " EC/s"
+                    : "--";
+
+            Debug.WriteLine(
+                "KMC.Engine ELECTRICAL PROCEDURE | State=" +
+                procedure.State +
+                " | ActionRequired=" +
+                procedure.ActionRequired +
+                " | RecoveryState=" +
+                procedure.RecoveryState +
+                " | Confidence=" +
+                procedure.RecoveryConfidence +
+                " | Baseline=" +
+                baseline +
+                " | Current=" +
+                current +
+                " | Improvement=" +
+                improvement +
+                " | DeficitCleared=" +
+                procedure.DeficitCleared +
+                " | ShedCandidates=" +
+                procedure.ShedCandidateCount +
+                " | Protected=" +
+                procedure.ProtectedConsumerCount +
+                " | PrimaryAction=" +
+                procedure.PrimaryAction +
+                " | Objective=" +
+                procedure.Objective +
+                " | Verification=" +
+                procedure.Verification);
         }
 
         private static string FormatDuration(
