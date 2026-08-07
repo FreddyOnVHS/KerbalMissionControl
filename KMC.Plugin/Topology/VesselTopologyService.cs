@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using KMC.Shared.Topology;
 
 namespace KMC.Plugin.Topology
 {
     /// <summary>
     /// Maintains a cached topology snapshot and rebuilds it only when the
-    /// active vessel structure appears to have changed.
+    /// active vessel structure or staging state appears to have changed.
     /// </summary>
     internal sealed class VesselTopologyService
     {
@@ -19,6 +19,9 @@ namespace KMC.Plugin.Topology
             -1;
 
         private uint _rootPartId;
+
+        private int _currentStage =
+            -1;
 
         private long _revision;
 
@@ -51,6 +54,9 @@ namespace KMC.Plugin.Topology
                     ? vessel.rootPart.flightID
                     : 0U;
 
+            int currentStage =
+                vessel.currentStage;
+
             bool changed =
                 !string.Equals(
                     vesselId,
@@ -59,7 +65,9 @@ namespace KMC.Plugin.Topology
                 partCount !=
                     _partCount ||
                 rootPartId !=
-                    _rootPartId;
+                    _rootPartId ||
+                currentStage !=
+                    _currentStage;
 
             if (!changed)
             {
@@ -74,6 +82,9 @@ namespace KMC.Plugin.Topology
 
             _rootPartId =
                 rootPartId;
+
+            _currentStage =
+                currentStage;
 
             _revision++;
 
@@ -105,6 +116,9 @@ namespace KMC.Plugin.Topology
 
             _rootPartId =
                 0U;
+
+            _currentStage =
+                -1;
 
             _revision =
                 0;

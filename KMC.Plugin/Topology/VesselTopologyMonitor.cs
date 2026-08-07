@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Net;
 using System.Net.Sockets;
 using KMC.Shared.Topology;
@@ -15,17 +15,22 @@ namespace KMC.Plugin.Topology
         private const float ScanIntervalSeconds =
             0.50f;
 
+        private const float ResyncIntervalSeconds =
+            2.00f;
+
         private readonly VesselTopologyService _service =
             new VesselTopologyService();
 
         private UdpClient _udpClient;
         private IPEndPoint _missionControlEndpoint;
         private float _nextScanTime;
+        private float _nextResyncTime;
 
         public void Start()
         {
             _service.Reset();
             _nextScanTime = 0.0f;
+            _nextResyncTime = 0.0f;
 
             try
             {
@@ -70,20 +75,43 @@ namespace KMC.Plugin.Topology
 
             try
             {
-                if (!_service.Update(vessel))
+                bool topologyChanged =
+                    _service.Update(
+                        vessel);
+
+                if (topologyChanged)
                 {
+                    string report =
+                        VesselTopologyDiagnostics
+                            .CreateReport(
+                                _service.Current);
+
+                    Debug.Log(report);
+
+                    SendTopology(
+                        _service.Current,
+                        "updated");
+
+                    _nextResyncTime =
+                        Time.realtimeSinceStartup +
+                        ResyncIntervalSeconds;
+
                     return;
                 }
 
-                string report =
-                    VesselTopologyDiagnostics
-                        .CreateReport(
-                            _service.Current);
+                if (Time.realtimeSinceStartup >=
+                    _nextResyncTime &&
+                    _service.Current != null &&
+                    _service.Current.Revision > 0)
+                {
+                    SendTopology(
+                        _service.Current,
+                        "resync");
 
-                Debug.Log(report);
-
-                SendTopology(
-                    _service.Current);
+                    _nextResyncTime =
+                        Time.realtimeSinceStartup +
+                        ResyncIntervalSeconds;
+                }
             }
             catch (Exception ex)
             {
@@ -94,7 +122,8 @@ namespace KMC.Plugin.Topology
         }
 
         private void SendTopology(
-            VesselTopology topology)
+            VesselTopology topology,
+            string reason)
         {
             if (_udpClient == null ||
                 _missionControlEndpoint == null ||
@@ -117,7 +146,9 @@ namespace KMC.Plugin.Topology
                 topology.Revision +
                 " sent to Mission Control (" +
                 payload.Length +
-                " bytes).");
+                " bytes, " +
+                reason +
+                ").");
         }
 
         public void OnDestroy()
