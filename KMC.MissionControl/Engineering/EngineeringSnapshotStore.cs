@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using KMC.Engine.Analysis;
 
@@ -8,9 +8,9 @@ namespace KMC.MissionControl.Engineering
     /// Thread-safe bridge between the background telemetry receiver and
     /// Mission Control consumers that need the latest engineering analysis.
     ///
-    /// Milestone 7.1 deliberately exposes the complete pipeline result so
-    /// diagnostics can confirm which engineering systems executed. UI pages
-    /// should not perform engineering analysis themselves.
+    /// The complete pipeline result remains exposed while Engine subsystems
+    /// are migrated and verified in parallel with existing Mission Control
+    /// analysis.
     /// </summary>
     public static class EngineeringSnapshotStore
     {
@@ -49,10 +49,13 @@ namespace KMC.MissionControl.Engineering
         {
             if (result == null)
             {
-                throw new ArgumentNullException(nameof(result));
+                throw new ArgumentNullException(
+                    nameof(result));
             }
 
-            bool logSnapshot = false;
+            bool logSnapshot =
+                false;
+
             long topologyRevision =
                 result.Snapshot.Vessel.TopologyRevision;
 
@@ -79,18 +82,26 @@ namespace KMC.MissionControl.Engineering
             if (logSnapshot)
             {
                 Debug.WriteLine(
-                    "KMC.Engine LIVE | Vessel="
-                    + result.Snapshot.Vessel.VesselName
-                    + " | Parts="
-                    + result.Snapshot.Vessel.PartCount
-                    + " | Stage="
-                    + result.Snapshot.Vessel.CurrentStage
-                    + " | TopologyRevision="
-                    + topologyRevision
-                    + " | Systems="
-                    + string.Join(
+                    "KMC.Engine LIVE | Vessel=" +
+                    result.Snapshot.Vessel.VesselName +
+                    " | Parts=" +
+                    result.Snapshot.Vessel.PartCount +
+                    " | Stage=" +
+                    result.Snapshot.Vessel.CurrentStage +
+                    " | TopologyRevision=" +
+                    topologyRevision +
+                    " | Systems=" +
+                    string.Join(
                         ", ",
                         result.ExecutedSystems));
+
+                Debug.WriteLine(
+                    "KMC.Engine CAPABILITIES | " +
+                    result.Snapshot.Capabilities.CreateSummary() +
+                    " | ClassifiedParts=" +
+                    result.Snapshot.Capabilities.ClassifiedPartCount +
+                    " | UnclassifiedParts=" +
+                    result.Snapshot.Capabilities.UnclassifiedPartCount);
             }
         }
 
@@ -102,7 +113,8 @@ namespace KMC.MissionControl.Engineering
                 result =
                     _latest;
 
-                return result != null;
+                return result !=
+                    null;
             }
         }
 
@@ -121,8 +133,8 @@ namespace KMC.MissionControl.Engineering
             }
 
             Debug.WriteLine(
-                "KMC.Engine ERROR | "
-                + exception);
+                "KMC.Engine ERROR | " +
+                exception);
         }
 
         public static void Clear()
