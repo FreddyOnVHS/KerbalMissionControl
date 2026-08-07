@@ -40,6 +40,11 @@
     <Compile Include="Analysis\AnalysisPipeline.cs" />
     <Compile Include="Analysis\AnalysisPipelineResult.cs" />
     <Compile Include="Analysis\IEngineeringSystem.cs" />
+    <Compile Include="Electrical\ElectricalEnums.cs" />
+    <Compile Include="Electrical\PowerNode.cs" />
+    <Compile Include="Electrical\PowerComponents.cs" />
+    <Compile Include="Electrical\ElectricalNetwork.cs" />
+    <Compile Include="Electrical\ElectricalNetworkBuilder.cs" />
     <Compile Include="EngineeringEngine.cs" />
     <Compile Include="Models\CapabilityEnums.cs" />
     <Compile Include="Models\CapabilityDetails.cs" />

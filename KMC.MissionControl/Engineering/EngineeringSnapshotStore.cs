@@ -1,17 +1,10 @@
 ﻿using System;
 using System.Diagnostics;
 using KMC.Engine.Analysis;
+using KMC.Engine.Electrical;
 
 namespace KMC.MissionControl.Engineering
 {
-    /// <summary>
-    /// Thread-safe bridge between the background telemetry receiver and
-    /// Mission Control consumers that need the latest engineering analysis.
-    ///
-    /// KMC.Engine is now the source of truth for capability analysis.
-    /// Mission Control consumers read the published engineering snapshot and
-    /// do not perform capability classification themselves.
-    /// </summary>
     public static class EngineeringSnapshotStore
     {
         private static readonly object SyncRoot =
@@ -30,8 +23,7 @@ namespace KMC.MissionControl.Engineering
             {
                 lock (SyncRoot)
                 {
-                    return
-                        _publishedSnapshotCount;
+                    return _publishedSnapshotCount;
                 }
             }
         }
@@ -42,8 +34,7 @@ namespace KMC.MissionControl.Engineering
             {
                 lock (SyncRoot)
                 {
-                    return
-                        _lastError;
+                    return _lastError;
                 }
             }
         }
@@ -111,6 +102,27 @@ namespace KMC.MissionControl.Engineering
                 Debug.WriteLine(
                     "KMC.Engine CAPABILITY SOURCE | EngineOwned | DetailedParts=" +
                     result.Snapshot.Capabilities.Details.Parts.Count);
+
+                ElectricalNetwork electrical =
+                    result.Snapshot.Power.ElectricalNetwork;
+
+                Debug.WriteLine(
+                    "KMC.Engine ELECTRICAL | Vessel=" +
+                    electrical.VesselName +
+                    " | Nodes=" +
+                    electrical.Nodes.Count +
+                    " | Sources=" +
+                    electrical.SourceNodeCount +
+                    " | Storage=" +
+                    electrical.StorageNodeCount +
+                    " | Consumers=" +
+                    electrical.ConsumerNodeCount +
+                    " | Connections=" +
+                    electrical.Connections.Count +
+                    " | StoredEC=" +
+                    electrical.StoredElectricCharge.ToString("0.###") +
+                    "/" +
+                    electrical.ElectricChargeCapacity.ToString("0.###"));
             }
         }
 
