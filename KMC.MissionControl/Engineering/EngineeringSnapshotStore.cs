@@ -111,14 +111,22 @@ namespace KMC.MissionControl.Engineering
                     electrical.VesselName +
                     " | Nodes=" +
                     electrical.Nodes.Count +
+                    " | BusMembers=" +
+                    electrical.BusMemberships.Count +
+                    " | StructuralParts=" +
+                    electrical.StructuralPartCount +
+                    " | StructuralLinks=" +
+                    electrical.StructuralConnections.Count +
                     " | Sources=" +
                     electrical.SourceNodeCount +
                     " | Storage=" +
                     electrical.StorageNodeCount +
                     " | Consumers=" +
                     electrical.ConsumerNodeCount +
-                    " | Connections=" +
-                    electrical.Connections.Count +
+                    " | ExplicitConsumers=" +
+                    electrical.ExplicitConsumerNodeCount +
+                    " | PotentialConsumers=" +
+                    electrical.PotentialConsumerNodeCount +
                     " | StoredEC=" +
                     electrical.StoredElectricCharge.ToString("0.###") +
                     "/" +

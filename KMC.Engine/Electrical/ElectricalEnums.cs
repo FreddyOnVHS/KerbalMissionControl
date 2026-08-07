@@ -38,6 +38,16 @@
     public enum ElectricalConnectionType
     {
         Unknown = 0,
-        StructuralParentChild
+        SharedVesselElectricChargeBus
+    }
+
+    public enum ElectricalEvidenceType
+    {
+        Unknown = 0,
+        ExistingRole,
+        StoredResource,
+        ModuleInput,
+        ModuleOutput,
+        PropellantRequirement
     }
 }

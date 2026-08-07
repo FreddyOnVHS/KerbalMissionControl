@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using KMC.Engine.Capabilities;
 using KMC.Shared.Topology;
 
 namespace KMC.Engine.Electrical
@@ -30,111 +29,179 @@ namespace KMC.Engine.Electrical
             network.CurrentStage =
                 topology.CurrentStage;
 
-            Dictionary<uint, PowerNode> nodes =
+            network.StructuralPartCount =
+                topology.Nodes != null
+                    ? topology.Nodes.Count
+                    : 0;
+
+            Dictionary<uint, PowerNode> electricalNodes =
                 new Dictionary<uint, PowerNode>();
 
+            if (topology.Nodes != null)
+            {
+                for (int index = 0;
+                     index < topology.Nodes.Count;
+                     index++)
+                {
+                    VesselTopologyNode topologyNode =
+                        topology.Nodes[index];
+
+                    if (topologyNode == null)
+                    {
+                        continue;
+                    }
+
+                    PowerNode node =
+                        BuildNode(
+                            topologyNode);
+
+                    if (node == null)
+                    {
+                        continue;
+                    }
+
+                    electricalNodes[node.PartId] =
+                        node;
+
+                    network.Nodes.Add(
+                        node);
+
+                    network.BusMemberships.Add(
+                        new ElectricalBusMembership
+                        {
+                            BusId =
+                                ElectricalNetwork.VesselElectricChargeBusId,
+
+                            PartId =
+                                node.PartId
+                        });
+
+                    if (node.Sources.Count > 0)
+                    {
+                        network.SourceNodeCount++;
+                    }
+
+                    if (node.Storage.Count > 0)
+                    {
+                        network.StorageNodeCount++;
+                    }
+
+                    if (node.Consumers.Count > 0)
+                    {
+                        network.ConsumerNodeCount++;
+
+                        bool hasExplicit =
+                            false;
+
+                        bool hasPotential =
+                            false;
+
+                        for (int consumerIndex = 0;
+                             consumerIndex < node.Consumers.Count;
+                             consumerIndex++)
+                        {
+                            if (node.Consumers[consumerIndex].IsPotentialOnly)
+                            {
+                                hasPotential =
+                                    true;
+                            }
+                            else
+                            {
+                                hasExplicit =
+                                    true;
+                            }
+                        }
+
+                        if (hasExplicit)
+                        {
+                            network.ExplicitConsumerNodeCount++;
+                        }
+
+                        if (!hasExplicit &&
+                            hasPotential)
+                        {
+                            network.PotentialConsumerNodeCount++;
+                        }
+                    }
+
+                    for (int storageIndex = 0;
+                         storageIndex < node.Storage.Count;
+                         storageIndex++)
+                    {
+                        network.StoredElectricCharge +=
+                            node.Storage[storageIndex].AmountEc;
+
+                        network.ElectricChargeCapacity +=
+                            node.Storage[storageIndex].CapacityEc;
+                    }
+                }
+
+                BuildStructuralTopology(
+                    topology,
+                    electricalNodes,
+                    network);
+            }
+
+            network.Diagnostics.Add(
+                "Electrical discovery refined from roles, resources, module inputs/outputs, and propellant requirements.");
+
+            network.Diagnostics.Add(
+                "All current electrical nodes belong to logical bus VESSEL_EC while the vessel remains connected.");
+
+            network.Diagnostics.Add(
+                "Structural topology is retained separately across electrical and non-electrical intermediary parts.");
+
+            network.Diagnostics.Add(
+                "Role-only consumers are marked potential until an ElectricCharge input is observed.");
+
+            network.Diagnostics.Add(
+                "Generation and consumption rates remain unresolved until later Build 8 milestones.");
+
+            return network;
+        }
+
+        private static void BuildStructuralTopology(
+            VesselTopology topology,
+            Dictionary<uint, PowerNode> electricalNodes,
+            ElectricalNetwork network)
+        {
             for (int index = 0;
                  index < topology.Nodes.Count;
                  index++)
             {
-                VesselTopologyNode topologyNode =
+                VesselTopologyNode node =
                     topology.Nodes[index];
 
-                if (topologyNode == null)
+                if (node == null ||
+                    !node.HasParent)
                 {
                     continue;
                 }
 
-                PowerNode node =
-                    BuildNode(
-                        topologyNode);
-
-                if (node == null)
-                {
-                    continue;
-                }
-
-                nodes[node.PartId] =
-                    node;
-
-                network.Nodes.Add(
-                    node);
-
-                if (node.Sources.Count > 0)
-                {
-                    network.SourceNodeCount++;
-                }
-
-                if (node.Storage.Count > 0)
-                {
-                    network.StorageNodeCount++;
-                }
-
-                if (node.Consumers.Count > 0)
-                {
-                    network.ConsumerNodeCount++;
-                }
-
-                for (int storageIndex = 0;
-                     storageIndex < node.Storage.Count;
-                     storageIndex++)
-                {
-                    network.StoredElectricCharge +=
-                        node.Storage[storageIndex].AmountEc;
-
-                    network.ElectricChargeCapacity +=
-                        node.Storage[storageIndex].CapacityEc;
-                }
-            }
-
-            /*
-             * Build 8.0 records physical parent/child adjacency.
-             *
-             * This does NOT yet claim stock KSP has segmented electrical
-             * buses. It simply preserves the structural topology needed for
-             * later staging and section analysis.
-             */
-            foreach (PowerNode current
-                in network.Nodes)
-            {
-                if (!current.HasParent)
-                {
-                    continue;
-                }
-
-                if (!nodes.ContainsKey(
-                        current.ParentPartId))
-                {
-                    continue;
-                }
-
-                network.Connections.Add(
-                    new PowerConnection
+                network.StructuralConnections.Add(
+                    new StructuralConnection
                     {
-                        FromPartId =
-                            current.ParentPartId,
+                        ParentPartId =
+                            node.ParentPartId,
 
-                        ToPartId =
-                            current.PartId,
+                        ChildPartId =
+                            node.PartId,
 
-                        ConnectionType =
-                            ElectricalConnectionType.StructuralParentChild
+                        ChildActivationStage =
+                            node.ActivationStage,
+
+                        ChildSeparationStage =
+                            node.SeparationStage,
+
+                        ParentIsElectricalNode =
+                            electricalNodes.ContainsKey(
+                                node.ParentPartId),
+
+                        ChildIsElectricalNode =
+                            electricalNodes.ContainsKey(
+                                node.PartId)
                     });
             }
-
-            network.Diagnostics.Add(
-                "Electrical domain model built from vessel topology.");
-
-            network.Diagnostics.Add(
-                "Build 8.0 models electrical component identity and structural adjacency only.");
-
-            network.Diagnostics.Add(
-                "Generation and consumption rates are intentionally unresolved until later milestones.");
-
-            network.Diagnostics.Add(
-                "Stock ElectricCharge is not treated as a physically segmented bus in this milestone.");
-
-            return network;
         }
 
         private static PowerNode BuildNode(
@@ -193,45 +260,118 @@ namespace KMC.Engine.Electrical
             if (topologyNode.HasRole(
                     VesselNodeRole.SolarGeneration))
             {
-                node.Sources.Add(
-                    NewSource(
-                        topologyNode.PartId,
-                        PowerSourceType.Solar,
-                        "Solar"));
+                EnsureSource(
+                    node,
+                    PowerSourceType.Solar,
+                    "Solar",
+                    string.Empty,
+                    ElectricalEvidenceType.ExistingRole);
             }
 
             if (topologyNode.HasRole(
                     VesselNodeRole.FuelCell))
             {
-                node.Sources.Add(
-                    NewSource(
-                        topologyNode.PartId,
-                        PowerSourceType.FuelCell,
-                        "Fuel Cell"));
+                EnsureSource(
+                    node,
+                    PowerSourceType.FuelCell,
+                    "Fuel Cell",
+                    string.Empty,
+                    ElectricalEvidenceType.ExistingRole);
             }
 
             if (topologyNode.HasRole(
                     VesselNodeRole.ElectricalGeneration))
             {
-                node.Sources.Add(
-                    NewSource(
-                        topologyNode.PartId,
-                        ResolveGeneratorType(
-                            topologyNode),
-                        "Electrical Generator"));
+                EnsureSource(
+                    node,
+                    ResolveGeneratorType(
+                        topologyNode),
+                    "Electrical Generator",
+                    string.Empty,
+                    ElectricalEvidenceType.ExistingRole);
+            }
+
+            if (topologyNode.Modules == null)
+            {
+                return;
+            }
+
+            for (int moduleIndex = 0;
+                 moduleIndex < topologyNode.Modules.Count;
+                 moduleIndex++)
+            {
+                VesselModuleDescriptor module =
+                    topologyNode.Modules[moduleIndex];
+
+                if (module == null ||
+                    module.OutputResources == null)
+                {
+                    continue;
+                }
+
+                if (!ContainsElectricCharge(
+                        module.OutputResources))
+                {
+                    continue;
+                }
+
+                PowerSourceType sourceType =
+                    ClassifySourceModule(
+                        topologyNode,
+                        module);
+
+                EnsureSource(
+                    node,
+                    sourceType,
+                    string.IsNullOrWhiteSpace(
+                        module.DisplayName)
+                        ? "Electrical Producer"
+                        : module.DisplayName,
+                    module.ModuleName,
+                    ElectricalEvidenceType.ModuleOutput);
             }
         }
 
-        private static PowerSource NewSource(
-            uint partId,
+        private static void EnsureSource(
+            PowerNode node,
             PowerSourceType type,
-            string name)
+            string name,
+            string moduleName,
+            ElectricalEvidenceType evidence)
         {
-            return
+            for (int index = 0;
+                 index < node.Sources.Count;
+                 index++)
+            {
+                PowerSource current =
+                    node.Sources[index];
+
+                if (current.SourceType ==
+                    type)
+                {
+                    if (evidence ==
+                        ElectricalEvidenceType.ModuleOutput)
+                    {
+                        current.Evidence =
+                            evidence;
+
+                        if (!string.IsNullOrWhiteSpace(
+                                moduleName))
+                        {
+                            current.ModuleName =
+                                moduleName;
+                        }
+                    }
+
+                    return;
+                }
+            }
+
+            node.Sources.Add(
                 new PowerSource
                 {
                     PartId =
-                        partId,
+                        node.PartId,
 
                     SourceType =
                         type,
@@ -239,12 +379,18 @@ namespace KMC.Engine.Electrical
                     SourceName =
                         name,
 
+                    ModuleName =
+                        moduleName ?? string.Empty,
+
+                    Evidence =
+                        evidence,
+
                     HasKnownGenerationRate =
                         false,
 
                     GenerationRateEcPerSecond =
                         0.0
-                };
+                });
         }
 
         private static PowerSourceType ResolveGeneratorType(
@@ -256,10 +402,48 @@ namespace KMC.Engine.Electrical
                  (topologyNode.PartTitle ?? string.Empty))
                     .ToLowerInvariant();
 
-            if (partText.Contains(
-                    "rtg") ||
-                partText.Contains(
-                    "radioisotope"))
+            if (partText.Contains("rtg") ||
+                partText.Contains("radioisotope"))
+            {
+                return
+                    PowerSourceType.Radioisotope;
+            }
+
+            return
+                PowerSourceType.Generator;
+        }
+
+        private static PowerSourceType ClassifySourceModule(
+            VesselTopologyNode topologyNode,
+            VesselModuleDescriptor module)
+        {
+            string text =
+                ((module.ModuleName ?? string.Empty) +
+                 " " +
+                 (module.ModuleTypeName ?? string.Empty) +
+                 " " +
+                 (module.DisplayName ?? string.Empty) +
+                 " " +
+                 (topologyNode.PartName ?? string.Empty) +
+                 " " +
+                 (topologyNode.PartTitle ?? string.Empty))
+                    .ToLowerInvariant();
+
+            if (text.Contains("solar"))
+            {
+                return
+                    PowerSourceType.Solar;
+            }
+
+            if (text.Contains("fuelcell") ||
+                text.Contains("fuel cell"))
+            {
+                return
+                    PowerSourceType.FuelCell;
+            }
+
+            if (text.Contains("rtg") ||
+                text.Contains("radioisotope"))
             {
                 return
                     PowerSourceType.Radioisotope;
@@ -273,6 +457,11 @@ namespace KMC.Engine.Electrical
             VesselTopologyNode topologyNode,
             PowerNode node)
         {
+            if (topologyNode.Resources == null)
+            {
+                return;
+            }
+
             for (int index = 0;
                  index < topologyNode.Resources.Count;
                  index++)
@@ -298,6 +487,9 @@ namespace KMC.Engine.Electrical
                         ResourceName =
                             resource.Name,
 
+                        Evidence =
+                            ElectricalEvidenceType.StoredResource,
+
                         AmountEc =
                             Math.Max(
                                 0.0,
@@ -315,73 +507,116 @@ namespace KMC.Engine.Electrical
             VesselTopologyNode topologyNode,
             PowerNode node)
         {
-            AddConsumerRole(
-                topologyNode,
-                node,
-                VesselNodeRole.Command,
-                PowerConsumerType.Command,
-                "Command");
+            bool explicitInput =
+                AddExplicitModuleConsumers(
+                    topologyNode,
+                    node);
 
-            AddConsumerRole(
-                topologyNode,
-                node,
-                VesselNodeRole.ReactionWheel,
-                PowerConsumerType.AttitudeControl,
-                "Attitude Control");
+            bool propellantInput =
+                HasElectricChargePropellant(
+                    topologyNode);
 
-            AddConsumerRole(
-                topologyNode,
-                node,
-                VesselNodeRole.Antenna,
-                PowerConsumerType.Communication,
-                "Communication");
-
-            AddConsumerRole(
-                topologyNode,
-                node,
-                VesselNodeRole.Science,
-                PowerConsumerType.Science,
-                "Science");
-
-            AddConsumerRole(
-                topologyNode,
-                node,
-                VesselNodeRole.RcsThruster,
-                PowerConsumerType.ReactionControl,
-                "Reaction Control");
-
-            /*
-             * An engine is recorded as a potential electrical consumer class,
-             * but no demand is assumed. This supports electric/mod engines
-             * later without pretending every stock engine consumes EC.
-             */
-            if (topologyNode.HasRole(
-                    VesselNodeRole.Engine) &&
-                ConsumesElectricCharge(
-                    topologyNode))
+            if (propellantInput)
             {
-                node.Consumers.Add(
-                    NewConsumer(
-                        topologyNode.PartId,
-                        PowerConsumerType.Propulsion,
-                        "Electric Propulsion"));
+                EnsureConsumer(
+                    node,
+                    ResolveConsumerType(
+                        topologyNode),
+                    ResolveConsumerName(
+                        topologyNode),
+                    string.Empty,
+                    ElectricalEvidenceType.PropellantRequirement,
+                    false);
             }
 
-            if (HasModuleElectricInput(
-                    topologyNode))
+            /*
+             * Role-only consumers remain useful for engineering discovery,
+             * but they are explicitly labeled potential until an EC input is
+             * visible in module/propellant metadata.
+             */
+            if (!explicitInput &&
+                !propellantInput)
             {
-                if (node.Consumers.Count == 0)
-                {
-                    node.Consumers.Add(
-                        NewConsumer(
-                            topologyNode.PartId,
-                            PowerConsumerType.Utility,
-                            "Module Electric Load"));
-                }
+                AddPotentialRoleConsumer(
+                    topologyNode,
+                    node,
+                    VesselNodeRole.Command,
+                    PowerConsumerType.Command,
+                    "Command");
+
+                AddPotentialRoleConsumer(
+                    topologyNode,
+                    node,
+                    VesselNodeRole.ReactionWheel,
+                    PowerConsumerType.AttitudeControl,
+                    "Attitude Control");
+
+                AddPotentialRoleConsumer(
+                    topologyNode,
+                    node,
+                    VesselNodeRole.Antenna,
+                    PowerConsumerType.Communication,
+                    "Communication");
+
+                AddPotentialRoleConsumer(
+                    topologyNode,
+                    node,
+                    VesselNodeRole.Science,
+                    PowerConsumerType.Science,
+                    "Science");
             }
         }
 
-        private static void AddConsumerRole(
+        private static bool AddExplicitModuleConsumers(
+            VesselTopologyNode topologyNode,
+            PowerNode node)
+        {
+            bool found =
+                false;
+
+            if (topologyNode.Modules == null)
+            {
+                return
+                    false;
+            }
+
+            for (int moduleIndex = 0;
+                 moduleIndex < topologyNode.Modules.Count;
+                 moduleIndex++)
+            {
+                VesselModuleDescriptor module =
+                    topologyNode.Modules[moduleIndex];
+
+                if (module == null ||
+                    module.InputResources == null ||
+                    !ContainsElectricCharge(
+                        module.InputResources))
+                {
+                    continue;
+                }
+
+                found =
+                    true;
+
+                EnsureConsumer(
+                    node,
+                    ResolveConsumerType(
+                        topologyNode),
+                    string.IsNullOrWhiteSpace(
+                        module.DisplayName)
+                        ? ResolveConsumerName(
+                            topologyNode)
+                        : module.DisplayName,
+                    module.ModuleName,
+                    ElectricalEvidenceType.ModuleInput,
+                    false);
+            }
+
+            return
+                found;
+        }
+
+        private static void AddPotentialRoleConsumer(
             VesselTopologyNode topologyNode,
             PowerNode node,
             VesselNodeRole role,
@@ -394,23 +629,60 @@ namespace KMC.Engine.Electrical
                 return;
             }
 
-            node.Consumers.Add(
-                NewConsumer(
-                    topologyNode.PartId,
-                    type,
-                    name));
+            EnsureConsumer(
+                node,
+                type,
+                name,
+                string.Empty,
+                ElectricalEvidenceType.ExistingRole,
+                true);
         }
 
-        private static PowerConsumer NewConsumer(
-            uint partId,
+        private static void EnsureConsumer(
+            PowerNode node,
             PowerConsumerType type,
-            string name)
+            string name,
+            string moduleName,
+            ElectricalEvidenceType evidence,
+            bool potentialOnly)
         {
-            return
+            for (int index = 0;
+                 index < node.Consumers.Count;
+                 index++)
+            {
+                PowerConsumer current =
+                    node.Consumers[index];
+
+                if (current.ConsumerType !=
+                    type)
+                {
+                    continue;
+                }
+
+                if (!potentialOnly)
+                {
+                    current.IsPotentialOnly =
+                        false;
+
+                    current.Evidence =
+                        evidence;
+
+                    if (!string.IsNullOrWhiteSpace(
+                            moduleName))
+                    {
+                        current.ModuleName =
+                            moduleName;
+                    }
+                }
+
+                return;
+            }
+
+            node.Consumers.Add(
                 new PowerConsumer
                 {
                     PartId =
-                        partId,
+                        node.PartId,
 
                     ConsumerType =
                         type,
@@ -418,17 +690,114 @@ namespace KMC.Engine.Electrical
                     ConsumerName =
                         name,
 
+                    ModuleName =
+                        moduleName ?? string.Empty,
+
+                    Evidence =
+                        evidence,
+
+                    IsPotentialOnly =
+                        potentialOnly,
+
                     HasKnownConsumptionRate =
                         false,
 
                     ConsumptionRateEcPerSecond =
                         0.0
-                };
+                });
         }
 
-        private static bool ConsumesElectricCharge(
+        private static PowerConsumerType ResolveConsumerType(
             VesselTopologyNode topologyNode)
         {
+            if (topologyNode.HasRole(
+                    VesselNodeRole.Command))
+            {
+                return
+                    PowerConsumerType.Command;
+            }
+
+            if (topologyNode.HasRole(
+                    VesselNodeRole.ReactionWheel))
+            {
+                return
+                    PowerConsumerType.AttitudeControl;
+            }
+
+            if (topologyNode.HasRole(
+                    VesselNodeRole.Antenna))
+            {
+                return
+                    PowerConsumerType.Communication;
+            }
+
+            if (topologyNode.HasRole(
+                    VesselNodeRole.Science))
+            {
+                return
+                    PowerConsumerType.Science;
+            }
+
+            if (topologyNode.HasRole(
+                    VesselNodeRole.Engine))
+            {
+                return
+                    PowerConsumerType.Propulsion;
+            }
+
+            if (topologyNode.HasRole(
+                    VesselNodeRole.RcsThruster))
+            {
+                return
+                    PowerConsumerType.ReactionControl;
+            }
+
+            return
+                PowerConsumerType.Utility;
+        }
+
+        private static string ResolveConsumerName(
+            VesselTopologyNode topologyNode)
+        {
+            PowerConsumerType type =
+                ResolveConsumerType(
+                    topologyNode);
+
+            switch (type)
+            {
+                case PowerConsumerType.Command:
+                    return "Command";
+
+                case PowerConsumerType.AttitudeControl:
+                    return "Attitude Control";
+
+                case PowerConsumerType.Communication:
+                    return "Communication";
+
+                case PowerConsumerType.Science:
+                    return "Science";
+
+                case PowerConsumerType.Propulsion:
+                    return "Electric Propulsion";
+
+                case PowerConsumerType.ReactionControl:
+                    return "Reaction Control";
+
+                default:
+                    return "Module Electric Load";
+            }
+        }
+
+        private static bool HasElectricChargePropellant(
+            VesselTopologyNode topologyNode)
+        {
+            if (topologyNode.PropellantRequirements ==
+                null)
+            {
+                return
+                    false;
+            }
+
             for (int index = 0;
                  index < topologyNode.PropellantRequirements.Count;
                  index++)
@@ -448,42 +817,33 @@ namespace KMC.Engine.Electrical
             }
 
             return
-                HasModuleElectricInput(
-                    topologyNode);
+                false;
         }
 
-        private static bool HasModuleElectricInput(
-            VesselTopologyNode topologyNode)
+        private static bool ContainsElectricCharge(
+            System.Collections.Generic.IList<VesselModuleResource> resources)
         {
-            for (int moduleIndex = 0;
-                 moduleIndex < topologyNode.Modules.Count;
-                 moduleIndex++)
+            if (resources == null)
             {
-                VesselModuleDescriptor module =
-                    topologyNode.Modules[moduleIndex];
+                return
+                    false;
+            }
 
-                if (module == null ||
-                    module.InputResources == null)
+            for (int index = 0;
+                 index < resources.Count;
+                 index++)
+            {
+                VesselModuleResource resource =
+                    resources[index];
+
+                if (resource != null &&
+                    string.Equals(
+                        resource.Name,
+                        "ElectricCharge",
+                        StringComparison.OrdinalIgnoreCase))
                 {
-                    continue;
-                }
-
-                for (int inputIndex = 0;
-                     inputIndex < module.InputResources.Count;
-                     inputIndex++)
-                {
-                    VesselModuleResource input =
-                        module.InputResources[inputIndex];
-
-                    if (input != null &&
-                        string.Equals(
-                            input.Name,
-                            "ElectricCharge",
-                            StringComparison.OrdinalIgnoreCase))
-                    {
-                        return
-                            true;
-                    }
+                    return
+                        true;
                 }
             }
 
