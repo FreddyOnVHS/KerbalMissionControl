@@ -1,10 +1,13 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using KMC.Engine;
+using KMC.Engine.Analysis;
 using KMC.MissionControl.Debugging;
 using KMC.MissionControl.Diagnostics;
+using KMC.MissionControl.Engineering;
 using KMC.MissionControl.Rendering.Propulsion;
 using KMC.Shared;
 using KMC.Shared.Topology;
@@ -14,11 +17,25 @@ namespace KMC.MissionControl
     public sealed class MissionControlReceiver :
         IDisposable
     {
+        private readonly EngineeringEngine _engineeringEngine;
+        private readonly object _engineeringSyncRoot;
+
         private UdpClient _telemetryClient;
         private UdpClient _topologyClient;
         private Thread _telemetryThread;
         private Thread _topologyThread;
         private volatile bool _running;
+        private VesselTopology _latestTopology;
+        private long _engineeringSequence;
+
+        public MissionControlReceiver()
+        {
+            _engineeringEngine =
+                new EngineeringEngine();
+
+            _engineeringSyncRoot =
+                new object();
+        }
 
         public event Action<TelemetryPacket>
             TelemetryReceived;
@@ -31,6 +48,17 @@ namespace KMC.MissionControl
             if (_running)
             {
                 return;
+            }
+
+            EngineeringSnapshotStore.Clear();
+
+            lock (_engineeringSyncRoot)
+            {
+                _latestTopology =
+                    null;
+
+                _engineeringSequence =
+                    0;
             }
 
             _telemetryClient =
@@ -103,6 +131,9 @@ namespace KMC.MissionControl
                             .PublishTelemetry(
                                 packet);
 
+                        AnalyzeEngineering(
+                            packet);
+
                         Action<TelemetryPacket> handler =
                             TelemetryReceived;
 
@@ -123,6 +154,52 @@ namespace KMC.MissionControl
                 {
                     return;
                 }
+            }
+        }
+
+        private void AnalyzeEngineering(
+            TelemetryPacket packet)
+        {
+            VesselTopology topology;
+            long sequence;
+
+            lock (_engineeringSyncRoot)
+            {
+                topology =
+                    _latestTopology;
+
+                if (topology == null)
+                {
+                    return;
+                }
+
+                _engineeringSequence++;
+
+                sequence =
+                    _engineeringSequence;
+            }
+
+            try
+            {
+                AnalysisPipelineResult result =
+                    _engineeringEngine.Analyze(
+                        sequence,
+                        DateTime.UtcNow,
+                        packet,
+                        topology);
+
+                EngineeringSnapshotStore.Publish(
+                    result);
+            }
+            catch (Exception ex)
+            {
+                /*
+                 * Engineering analysis must never take down the UDP receiver.
+                 * Milestone 7.1 is observational: failures are surfaced to the
+                 * debugger while the existing Mission Control path continues.
+                 */
+                EngineeringSnapshotStore.ReportError(
+                    ex);
             }
         }
 
@@ -152,6 +229,12 @@ namespace KMC.MissionControl
                             out topology))
                     {
                         continue;
+                    }
+
+                    lock (_engineeringSyncRoot)
+                    {
+                        _latestTopology =
+                            topology;
                     }
 
                     PropulsionDebugSnapshotStore
@@ -202,6 +285,13 @@ namespace KMC.MissionControl
 
             PropulsionGraphStore.Clear();
             PropulsionDebugSnapshotStore.Clear();
+            EngineeringSnapshotStore.Clear();
+
+            lock (_engineeringSyncRoot)
+            {
+                _latestTopology =
+                    null;
+            }
 
             CloseClient(
                 ref _telemetryClient);

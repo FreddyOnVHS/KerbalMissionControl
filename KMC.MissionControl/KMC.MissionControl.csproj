@@ -83,6 +83,7 @@
     <Compile Include="Diagnostics\AscentDebugLogger.cs" />
     <Compile Include="Diagnostics\PropulsionGraphFileLogger.cs" />
     <Compile Include="Diagnostics\PerformanceSnapshot.cs" />
+    <Compile Include="Engineering\EngineeringSnapshotStore.cs" />
     <Compile Include="Flight\AscentFlightHistory.cs" />
     <Compile Include="Flight\AscentFlightHistoryUpdate.cs" />
     <Compile Include="Flight\AscentHistorySample.cs" />
@@ -167,20 +168,18 @@
     <Compile Include="Widgets\HorizontalResourceBarWidget.cs" />
     <Compile Include="Widgets\IMissionWidget.cs" />
     <Compile Include="Widgets\OrbitPlotWidget.cs" />
-    <Compile Include="..\KMC.shared\TelemetryPacket.cs"><Link>Shared\TelemetryPacket.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselAttachmentType.cs"><Link>Shared\Topology\VesselAttachmentType.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselNodeCategory.cs"><Link>Shared\Topology\VesselNodeCategory.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselNodeRole.cs"><Link>Shared\Topology\VesselNodeRole.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselResourceState.cs"><Link>Shared\Topology\VesselResourceState.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselModuleResource.cs"><Link>Shared\Topology\VesselModuleResource.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselModuleDescriptor.cs"><Link>Shared\Topology\VesselModuleDescriptor.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselPropellantRequirement.cs"><Link>Shared\Topology\VesselPropellantRequirement.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs"><Link>Shared\Topology\VesselTopologyNode.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselTopology.cs"><Link>Shared\Topology\VesselTopology.cs</Link></Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselTopologyPacketCodec.cs"><Link>Shared\Topology\VesselTopologyPacketCodec.cs</Link></Compile>
     <Compile Include="Pages\PowerPage.cs" />
     <Compile Include="Rendering\Power\PowerPageRenderer.cs" />
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <ProjectReference Include="..\KMC.shared\KMC.shared.csproj">
+      <Project>{C6298E64-33FB-4AB2-A330-6C825CEE3B6D}</Project>
+      <Name>KMC.shared</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\KMC.Engine\KMC.Engine.csproj">
+      <Project>{7B26E4BA-A7B9-4E4E-A07D-7A706B00F55E}</Project>
+      <Name>KMC.Engine</Name>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
