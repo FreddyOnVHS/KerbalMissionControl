@@ -22,6 +22,9 @@ namespace KMC.Engine.Models
             Diagnostic =
                 new ElectricalPowerDiagnosticModel();
 
+            LoadShedding =
+                new ElectricalLoadSheddingModel();
+
             Diagnostics =
                 new List<string>();
         }
@@ -51,6 +54,12 @@ namespace KMC.Engine.Models
         }
 
         public ElectricalPowerDiagnosticModel Diagnostic
+        {
+            get;
+            internal set;
+        }
+
+        public ElectricalLoadSheddingModel LoadShedding
         {
             get;
             internal set;

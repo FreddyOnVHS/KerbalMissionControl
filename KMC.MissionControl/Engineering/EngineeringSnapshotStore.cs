@@ -108,6 +108,9 @@ namespace KMC.MissionControl.Engineering
 
                 WritePowerStatusDiagnostic(
                     result);
+
+                WriteLoadSheddingDiagnostic(
+                    result);
             }
         }
 
@@ -430,6 +433,63 @@ namespace KMC.MissionControl.Engineering
                 status.NextStageLosesAllStorage +
                 " | Summary=" +
                 status.Summary);
+        }
+
+        private static void WriteLoadSheddingDiagnostic(
+            AnalysisPipelineResult result)
+        {
+            ElectricalLoadSheddingModel shedding =
+                result.Snapshot.Power.LoadShedding;
+
+            if (shedding == null)
+            {
+                Debug.WriteLine(
+                    "KMC.Engine LOAD SHEDDING | State=Unavailable");
+
+                return;
+            }
+
+            string deficit =
+                shedding.HasCurrentDeficit
+                    ? shedding.CurrentDeficitEcPerSecond.ToString("0.###") +
+                      " EC/s"
+                    : "--";
+
+            string postMargin =
+                shedding.CanQuantifyPostShedMargin
+                    ? shedding.QuantifiedPostShedMarginEcPerSecond.ToString("0.###") +
+                      " EC/s"
+                    : "UNKNOWN";
+
+            Debug.WriteLine(
+                "KMC.Engine LOAD SHEDDING | State=" +
+                shedding.State +
+                " | Recommended=" +
+                shedding.SheddingRecommended +
+                " | Consumers=" +
+                shedding.ConsumerCount +
+                " | Protected=" +
+                shedding.ProtectedConsumerCount +
+                " | Candidates=" +
+                shedding.CandidateCount +
+                " | Quantified=" +
+                shedding.QuantifiedCandidateCount +
+                " | PotentialOnly=" +
+                shedding.PotentialOnlyCandidateCount +
+                " | Deficit=" +
+                deficit +
+                " | QuantifiedRecovery=" +
+                shedding.QuantifiedRecoverableEcPerSecond.ToString("0.###") +
+                " EC/s" +
+                " | PotentialMax=" +
+                shedding.PotentialMaximumRecoverableEcPerSecond.ToString("0.###") +
+                " EC/s" +
+                " | PostShedMargin=" +
+                postMargin +
+                " | EliminatesDeficit=" +
+                shedding.QuantifiedRecoveryEliminatesDeficit +
+                " | Summary=" +
+                shedding.Summary);
         }
 
         private static string FormatDuration(

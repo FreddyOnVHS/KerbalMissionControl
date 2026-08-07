@@ -52,6 +52,13 @@ namespace KMC.Engine.Systems
                     context.Power.Load,
                     context.Power.Attribution);
 
+            context.Power.LoadShedding =
+                ElectricalLoadSheddingAnalyzer.Analyze(
+                    context.Power.Flow,
+                    context.Power.Load,
+                    context.Power.Attribution,
+                    context.Power.Diagnostic);
+
             context.Power.Diagnostics.Clear();
 
             for (int i = 0;
@@ -108,6 +115,12 @@ namespace KMC.Engine.Systems
                 context.Power.Diagnostic.Condition +
                 " - " +
                 context.Power.Diagnostic.Summary);
+
+            context.Power.Diagnostics.Add(
+                "Load shedding: " +
+                context.Power.LoadShedding.State +
+                " - " +
+                context.Power.LoadShedding.Summary);
 
         }
     }
