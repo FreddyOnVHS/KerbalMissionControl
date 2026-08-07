@@ -31,39 +31,45 @@ namespace KMC.Engine.Systems
             context.Power.ElectricalNetwork =
                 network;
 
+            context.Power.Flow =
+                context.Telemetry.ElectricalFlow ??
+                new ElectricalFlowModel();
+
             context.Power.Diagnostics.Clear();
 
-            for (int index = 0;
-                 index < network.Diagnostics.Count;
-                 index++)
+            for (int i = 0;
+                 i < network.Diagnostics.Count;
+                 i++)
             {
                 context.Power.Diagnostics.Add(
-                    network.Diagnostics[index]);
+                    network.Diagnostics[i]);
             }
 
-            for (int index = 0;
-                 index < network.Storage.Diagnostics.Count;
-                 index++)
+            for (int i = 0;
+                 i < network.Storage.Diagnostics.Count;
+                 i++)
             {
                 context.Power.Diagnostics.Add(
-                    network.Storage.Diagnostics[index]);
+                    network.Storage.Diagnostics[i]);
             }
 
-            context.AddDiagnostic(
-                "Electrical engineering model built. " +
-                "Nodes=" +
-                network.Nodes.Count +
-                ", BusMembers=" +
-                network.BusMemberships.Count +
-                ", StructuralLinks=" +
-                network.StructuralConnections.Count +
-                ", StorageParts=" +
-                network.Storage.Parts.Count +
-                ", EC=" +
-                network.Storage.StoredEc.ToString("0.###") +
-                "/" +
-                network.Storage.CapacityEc.ToString("0.###") +
-                ".");
+            if (!context.Power.Flow.TelemetryAvailable)
+            {
+                context.Power.Diagnostics.Add(
+                    "Live systems ElectricCharge telemetry has not been received.");
+            }
+            else if (!context.Power.Flow.HasMeasuredNetStorageRate)
+            {
+                context.Power.Diagnostics.Add(
+                    "Live ElectricCharge telemetry is available; flow estimator is gathering samples.");
+            }
+            else
+            {
+                context.Power.Diagnostics.Add(
+                    "Measured stored-EC rate: " +
+                    context.Power.Flow.NetStorageRateEcPerSecond.ToString("0.###") +
+                    " EC/s.");
+            }
         }
     }
 }

@@ -14,6 +14,8 @@ namespace KMC.MissionControl.Engineering
         private static long _publishedSnapshotCount;
         private static long _lastLoggedTopologyRevision =
             long.MinValue;
+        private static DateTime _lastFlowLogUtc =
+            DateTime.MinValue;
         private static string _lastError =
             string.Empty;
 
@@ -48,8 +50,9 @@ namespace KMC.MissionControl.Engineering
                     nameof(result));
             }
 
-            bool logSnapshot =
-                false;
+            bool logSnapshot = false;
+            bool logFlow = false;
+            DateTime nowUtc = DateTime.UtcNow;
 
             long topologyRevision =
                 result.Snapshot.Vessel.TopologyRevision;
@@ -60,7 +63,6 @@ namespace KMC.MissionControl.Engineering
                     result;
 
                 _publishedSnapshotCount++;
-
                 _lastError =
                     string.Empty;
 
@@ -73,94 +75,206 @@ namespace KMC.MissionControl.Engineering
                     logSnapshot =
                         true;
                 }
+
+                if ((nowUtc -
+                     _lastFlowLogUtc)
+                        .TotalSeconds >=
+                    1.0)
+                {
+                    _lastFlowLogUtc =
+                        nowUtc;
+
+                    logFlow =
+                        true;
+                }
             }
 
             if (logSnapshot)
             {
-                Debug.WriteLine(
-                    "KMC.Engine LIVE | Vessel=" +
-                    result.Snapshot.Vessel.VesselName +
-                    " | Parts=" +
-                    result.Snapshot.Vessel.PartCount +
-                    " | Stage=" +
-                    result.Snapshot.Vessel.CurrentStage +
-                    " | TopologyRevision=" +
-                    topologyRevision +
-                    " | Systems=" +
-                    string.Join(
-                        ", ",
-                        result.ExecutedSystems));
-
-                Debug.WriteLine(
-                    "KMC.Engine CAPABILITIES | " +
-                    result.Snapshot.Capabilities.CreateSummary() +
-                    " | ClassifiedParts=" +
-                    result.Snapshot.Capabilities.ClassifiedPartCount +
-                    " | UnclassifiedParts=" +
-                    result.Snapshot.Capabilities.UnclassifiedPartCount);
-
-                Debug.WriteLine(
-                    "KMC.Engine CAPABILITY SOURCE | EngineOwned | DetailedParts=" +
-                    result.Snapshot.Capabilities.Details.Parts.Count);
-
-                ElectricalNetwork electrical =
-                    result.Snapshot.Power.ElectricalNetwork;
-
-                Debug.WriteLine(
-                    "KMC.Engine ELECTRICAL | Vessel=" +
-                    electrical.VesselName +
-                    " | Nodes=" +
-                    electrical.Nodes.Count +
-                    " | BusMembers=" +
-                    electrical.BusMemberships.Count +
-                    " | StructuralParts=" +
-                    electrical.StructuralPartCount +
-                    " | StructuralLinks=" +
-                    electrical.StructuralConnections.Count +
-                    " | Sources=" +
-                    electrical.SourceNodeCount +
-                    " | Storage=" +
-                    electrical.StorageNodeCount +
-                    " | Consumers=" +
-                    electrical.ConsumerNodeCount +
-                    " | ExplicitConsumers=" +
-                    electrical.ExplicitConsumerNodeCount +
-                    " | PotentialConsumers=" +
-                    electrical.PotentialConsumerNodeCount +
-                    " | StoredEC=" +
-                    electrical.StoredElectricCharge.ToString("0.###") +
-                    "/" +
-                    electrical.ElectricChargeCapacity.ToString("0.###"));
-
-                ElectricalStorageModel storage =
-                    electrical.Storage;
-
-                Debug.WriteLine(
-                    "KMC.Engine STORAGE | Parts=" +
-                    storage.Parts.Count +
-                    " | Sections=" +
-                    storage.StageSections.Count +
-                    " | Branches=" +
-                    storage.BranchSections.Count +
-                    " | EC=" +
-                    storage.StoredEc.ToString("0.###") +
-                    "/" +
-                    storage.CapacityEc.ToString("0.###") +
-                    " | Charge=" +
-                    storage.ChargePercent.ToString("0.0") +
-                    "% | NextStage=" +
-                    storage.NextStage +
-                    " | LoseEC=" +
-                    storage.NextStageLostStoredEc.ToString("0.###") +
-                    "/" +
-                    storage.NextStageLostCapacityEc.ToString("0.###") +
-                    " | RemainEC=" +
-                    storage.NextStageRemainingStoredEc.ToString("0.###") +
-                    "/" +
-                    storage.NextStageRemainingCapacityEc.ToString("0.###") +
-                    " | LoseAll=" +
-                    storage.LosesAllStorageOnNextStage);
+                WriteTopologyDiagnostics(
+                    result);
             }
+
+            if (logFlow)
+            {
+                WriteFlowDiagnostic(
+                    result);
+            }
+        }
+
+        private static void WriteTopologyDiagnostics(
+            AnalysisPipelineResult result)
+        {
+            Debug.WriteLine(
+                "KMC.Engine LIVE | Vessel=" +
+                result.Snapshot.Vessel.VesselName +
+                " | Parts=" +
+                result.Snapshot.Vessel.PartCount +
+                " | Stage=" +
+                result.Snapshot.Vessel.CurrentStage +
+                " | TopologyRevision=" +
+                result.Snapshot.Vessel.TopologyRevision +
+                " | Systems=" +
+                string.Join(
+                    ", ",
+                    result.ExecutedSystems));
+
+            Debug.WriteLine(
+                "KMC.Engine CAPABILITIES | " +
+                result.Snapshot.Capabilities.CreateSummary() +
+                " | ClassifiedParts=" +
+                result.Snapshot.Capabilities.ClassifiedPartCount +
+                " | UnclassifiedParts=" +
+                result.Snapshot.Capabilities.UnclassifiedPartCount);
+
+            Debug.WriteLine(
+                "KMC.Engine CAPABILITY SOURCE | EngineOwned | DetailedParts=" +
+                result.Snapshot.Capabilities.Details.Parts.Count);
+
+            ElectricalNetwork electrical =
+                result.Snapshot.Power.ElectricalNetwork;
+
+            Debug.WriteLine(
+                "KMC.Engine ELECTRICAL | Vessel=" +
+                electrical.VesselName +
+                " | Nodes=" +
+                electrical.Nodes.Count +
+                " | BusMembers=" +
+                electrical.BusMemberships.Count +
+                " | StructuralParts=" +
+                electrical.StructuralPartCount +
+                " | StructuralLinks=" +
+                electrical.StructuralConnections.Count +
+                " | Sources=" +
+                electrical.SourceNodeCount +
+                " | Storage=" +
+                electrical.StorageNodeCount +
+                " | Consumers=" +
+                electrical.ConsumerNodeCount +
+                " | ExplicitConsumers=" +
+                electrical.ExplicitConsumerNodeCount +
+                " | PotentialConsumers=" +
+                electrical.PotentialConsumerNodeCount +
+                " | StoredEC=" +
+                electrical.StoredElectricCharge.ToString("0.###") +
+                "/" +
+                electrical.ElectricChargeCapacity.ToString("0.###"));
+
+            ElectricalStorageModel storage =
+                electrical.Storage;
+
+            Debug.WriteLine(
+                "KMC.Engine STORAGE | Parts=" +
+                storage.Parts.Count +
+                " | Sections=" +
+                storage.StageSections.Count +
+                " | Branches=" +
+                storage.BranchSections.Count +
+                " | EC=" +
+                storage.StoredEc.ToString("0.###") +
+                "/" +
+                storage.CapacityEc.ToString("0.###") +
+                " | Charge=" +
+                storage.ChargePercent.ToString("0.0") +
+                "% | NextStage=" +
+                storage.NextStage +
+                " | LoseEC=" +
+                storage.NextStageLostStoredEc.ToString("0.###") +
+                "/" +
+                storage.NextStageLostCapacityEc.ToString("0.###") +
+                " | RemainEC=" +
+                storage.NextStageRemainingStoredEc.ToString("0.###") +
+                "/" +
+                storage.NextStageRemainingCapacityEc.ToString("0.###") +
+                " | LoseAll=" +
+                storage.LosesAllStorageOnNextStage);
+        }
+
+        private static void WriteFlowDiagnostic(
+            AnalysisPipelineResult result)
+        {
+            ElectricalFlowModel flow =
+                result.Snapshot.Power.Flow;
+
+            if (flow == null ||
+                !flow.TelemetryAvailable)
+            {
+                Debug.WriteLine(
+                    "KMC.Engine POWER FLOW | WaitingForSystemsTelemetry");
+
+                return;
+            }
+
+            string rate =
+                flow.HasMeasuredNetStorageRate
+                    ? flow.NetStorageRateEcPerSecond.ToString("0.###") +
+                      " EC/s"
+                    : "--";
+
+            string toEmpty =
+                flow.HasEstimatedSecondsToEmpty
+                    ? FormatDuration(
+                        flow.EstimatedSecondsToEmpty)
+                    : "--";
+
+            string toFull =
+                flow.HasEstimatedSecondsToFull
+                    ? FormatDuration(
+                        flow.EstimatedSecondsToFull)
+                    : "--";
+
+            Debug.WriteLine(
+                "KMC.Engine POWER FLOW | LiveEC=" +
+                flow.StoredEc.ToString("0.###") +
+                "/" +
+                flow.CapacityEc.ToString("0.###") +
+                " | Charge=" +
+                flow.ChargePercent.ToString("0.0") +
+                "% | State=" +
+                flow.State +
+                " | NetStorageRate=" +
+                rate +
+                " | Window=" +
+                flow.WindowSeconds.ToString("0.0") +
+                "s/" +
+                flow.SampleCount +
+                " samples" +
+                " | ToEmpty=" +
+                toEmpty +
+                " | ToFull=" +
+                toFull +
+                " | AtCapacity=" +
+                flow.IsAtCapacity);
+        }
+
+        private static string FormatDuration(
+            double seconds)
+        {
+            if (double.IsNaN(seconds) ||
+                double.IsInfinity(seconds) ||
+                seconds < 0.0)
+            {
+                return "--";
+            }
+
+            TimeSpan time =
+                TimeSpan.FromSeconds(
+                    seconds);
+
+            if (time.TotalHours >= 1.0)
+            {
+                return
+                    ((int)time.TotalHours).ToString("00") +
+                    ":" +
+                    time.Minutes.ToString("00") +
+                    ":" +
+                    time.Seconds.ToString("00");
+            }
+
+            return
+                time.Minutes.ToString("00") +
+                ":" +
+                time.Seconds.ToString("00");
         }
 
         public static bool TryGetLatest(
@@ -199,17 +313,11 @@ namespace KMC.MissionControl.Engineering
         {
             lock (SyncRoot)
             {
-                _latest =
-                    null;
-
-                _publishedSnapshotCount =
-                    0;
-
-                _lastLoggedTopologyRevision =
-                    long.MinValue;
-
-                _lastError =
-                    string.Empty;
+                _latest = null;
+                _publishedSnapshotCount = 0;
+                _lastLoggedTopologyRevision = long.MinValue;
+                _lastFlowLogUtc = DateTime.MinValue;
+                _lastError = string.Empty;
             }
         }
     }

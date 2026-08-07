@@ -10,11 +10,20 @@ namespace KMC.Engine.Models
             ElectricalNetwork =
                 new ElectricalNetwork();
 
+            Flow =
+                new ElectricalFlowModel();
+
             Diagnostics =
                 new List<string>();
         }
 
         public ElectricalNetwork ElectricalNetwork
+        {
+            get;
+            internal set;
+        }
+
+        public ElectricalFlowModel Flow
         {
             get;
             internal set;

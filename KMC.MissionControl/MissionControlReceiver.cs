@@ -1,31 +1,30 @@
-using System;
-using System.Net;
-using System.Net.Sockets;
-using System.Text;
-using System.Threading;
+﻿using System;
 using KMC.Engine;
 using KMC.Engine.Analysis;
 using KMC.MissionControl.Debugging;
 using KMC.MissionControl.Diagnostics;
 using KMC.MissionControl.Engineering;
 using KMC.MissionControl.Rendering.Propulsion;
+using KMC.MissionControl.Transport;
 using KMC.Shared;
 using KMC.Shared.Topology;
 
 namespace KMC.MissionControl
 {
+    /// <summary>
+    /// Coordinates typed telemetry with KMC.Engine.
+    ///
+    /// Socket ownership lives exclusively in TelemetryTransport.
+    /// </summary>
     public sealed class MissionControlReceiver :
         IDisposable
     {
         private readonly EngineeringEngine _engineeringEngine;
+        private readonly TelemetryTransport _transport;
+        private readonly TelemetryCache _cache;
         private readonly object _engineeringSyncRoot;
 
-        private UdpClient _telemetryClient;
-        private UdpClient _topologyClient;
-        private Thread _telemetryThread;
-        private Thread _topologyThread;
-        private volatile bool _running;
-        private VesselTopology _latestTopology;
+        private bool _running;
         private long _engineeringSequence;
 
         public MissionControlReceiver()
@@ -33,15 +32,27 @@ namespace KMC.MissionControl
             _engineeringEngine =
                 new EngineeringEngine();
 
+            _transport =
+                new TelemetryTransport();
+
+            _cache =
+                new TelemetryCache();
+
             _engineeringSyncRoot =
                 new object();
+
+            _transport.FlightTelemetryReceived +=
+                OnFlightTelemetryReceived;
+
+            _transport.TopologyReceived +=
+                OnTopologyReceived;
+
+            _transport.SystemsTelemetryReceived +=
+                OnSystemsTelemetryReceived;
         }
 
-        public event Action<TelemetryPacket>
-            TelemetryReceived;
-
-        public event Action<VesselTopology>
-            TopologyReceived;
+        public event Action<TelemetryPacket> TelemetryReceived;
+        public event Action<VesselTopology> TopologyReceived;
 
         public void Start()
         {
@@ -51,128 +62,68 @@ namespace KMC.MissionControl
             }
 
             EngineeringSnapshotStore.Clear();
+            _engineeringEngine.ClearElectricalTelemetry();
+            _cache.Clear();
 
             lock (_engineeringSyncRoot)
             {
-                _latestTopology =
-                    null;
-
                 _engineeringSequence =
                     0;
             }
 
-            _telemetryClient =
-                new UdpClient(
-                    new IPEndPoint(
-                        IPAddress.Any,
-                        TelemetryPacket.TelemetryPort));
-
-            _topologyClient =
-                new UdpClient(
-                    new IPEndPoint(
-                        IPAddress.Any,
-                        VesselTopologyPacketCodec
-                            .TopologyPort));
+            _transport.Start();
 
             _running =
                 true;
-
-            _telemetryThread =
-                CreateThread(
-                    TelemetryReceiveLoop,
-                    "KMC Telemetry Receiver");
-
-            _topologyThread =
-                CreateThread(
-                    TopologyReceiveLoop,
-                    "KMC Topology Receiver");
-
-            _telemetryThread.Start();
-            _topologyThread.Start();
         }
 
-        private static Thread CreateThread(
-            ThreadStart action,
-            string name)
+        private void OnSystemsTelemetryReceived(
+            SystemsTelemetrySample systems)
         {
-            return new Thread(action)
-            {
-                IsBackground = true,
-                Name = name
-            };
+            _cache.PublishSystems(
+                systems);
+
+            _engineeringEngine.PublishElectricalTelemetry(
+                systems.ElectricChargeAmount,
+                systems.ElectricChargeCapacity,
+                systems.ReceivedUtc);
         }
 
-        private void TelemetryReceiveLoop()
+        private void OnFlightTelemetryReceived(
+            TelemetryPacket packet)
         {
-            while (_running)
+            PropulsionDebugSnapshotStore
+                .PublishTelemetry(
+                    packet);
+
+            AnalyzeEngineering(
+                packet);
+
+            Action<TelemetryPacket> handler =
+                TelemetryReceived;
+
+            if (handler != null)
             {
-                try
-                {
-                    IPEndPoint sender =
-                        new IPEndPoint(
-                            IPAddress.Any,
-                            0);
-
-                    byte[] data =
-                        _telemetryClient.Receive(
-                            ref sender);
-
-                    string message =
-                        Encoding.UTF8.GetString(
-                            data);
-
-                    TelemetryPacket packet;
-
-                    if (TelemetryPacket.TryParse(
-                            message,
-                            out packet))
-                    {
-                        PropulsionDebugSnapshotStore
-                            .PublishTelemetry(
-                                packet);
-
-                        AnalyzeEngineering(
-                            packet);
-
-                        Action<TelemetryPacket> handler =
-                            TelemetryReceived;
-
-                        if (handler != null)
-                        {
-                            handler(packet);
-                        }
-                    }
-                }
-                catch (SocketException)
-                {
-                    if (_running)
-                    {
-                        throw;
-                    }
-                }
-                catch (ObjectDisposedException)
-                {
-                    return;
-                }
+                handler(
+                    packet);
             }
         }
 
         private void AnalyzeEngineering(
             TelemetryPacket packet)
         {
-            VesselTopology topology;
+            VesselTopology topology =
+                _cache.GetTopology();
+
+            if (topology == null)
+            {
+                return;
+            }
+
             long sequence;
 
             lock (_engineeringSyncRoot)
             {
-                topology =
-                    _latestTopology;
-
-                if (topology == null)
-                {
-                    return;
-                }
-
                 _engineeringSequence++;
 
                 sequence =
@@ -193,151 +144,88 @@ namespace KMC.MissionControl
             }
             catch (Exception ex)
             {
-                /*
-                 * Engineering analysis must never take down the UDP receiver.
-                 * Milestone 7.1 is observational: failures are surfaced to the
-                 * debugger while the existing Mission Control path continues.
-                 */
                 EngineeringSnapshotStore.ReportError(
                     ex);
             }
         }
 
-        private void TopologyReceiveLoop()
+        private void OnTopologyReceived(
+            VesselTopology topology)
         {
-            PropulsionRenderGraphBuilder builder =
-                new PropulsionRenderGraphBuilder();
+            _cache.PublishTopology(
+                topology);
 
-            while (_running)
+            PropulsionDebugSnapshotStore
+                .PublishTopology(
+                    topology);
+
+            try
             {
-                try
-                {
-                    IPEndPoint sender =
-                        new IPEndPoint(
-                            IPAddress.Any,
-                            0);
+                PropulsionRenderGraphBuilder builder =
+                    new PropulsionRenderGraphBuilder();
 
-                    byte[] data =
-                        _topologyClient.Receive(
-                            ref sender);
+                PropulsionRenderGraph graph =
+                    builder.Build(
+                        topology);
 
-                    VesselTopology topology;
+                PropulsionGraphStore.Publish(
+                    graph);
 
-                    if (!VesselTopologyPacketCodec
-                        .TryDecode(
-                            data,
-                            out topology))
-                    {
-                        continue;
-                    }
+                PropulsionGraphFileLogger.Write(
+                    graph);
+            }
+            catch (Exception ex)
+            {
+                PropulsionGraphFileLogger
+                    .WriteError(
+                        ex);
+            }
 
-                    lock (_engineeringSyncRoot)
-                    {
-                        _latestTopology =
-                            topology;
-                    }
+            Action<VesselTopology> handler =
+                TopologyReceived;
 
-                    PropulsionDebugSnapshotStore
-                        .PublishTopology(
-                            topology);
-
-                    PropulsionRenderGraph graph =
-                        builder.Build(
-                            topology);
-
-                    PropulsionGraphStore.Publish(
-                        graph);
-
-                    PropulsionGraphFileLogger.Write(
-                        graph);
-
-                    Action<VesselTopology> handler =
-                        TopologyReceived;
-
-                    if (handler != null)
-                    {
-                        handler(topology);
-                    }
-                }
-                catch (ObjectDisposedException)
-                {
-                    return;
-                }
-                catch (SocketException)
-                {
-                    if (_running)
-                    {
-                        throw;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    PropulsionGraphFileLogger
-                        .WriteError(ex);
-                }
+            if (handler != null)
+            {
+                handler(
+                    topology);
             }
         }
 
         public void Stop()
         {
+            if (!_running)
+            {
+                _transport.Stop();
+                return;
+            }
+
             _running =
                 false;
+
+            _transport.Stop();
 
             PropulsionGraphStore.Clear();
             PropulsionDebugSnapshotStore.Clear();
             EngineeringSnapshotStore.Clear();
 
-            lock (_engineeringSyncRoot)
-            {
-                _latestTopology =
-                    null;
-            }
-
-            CloseClient(
-                ref _telemetryClient);
-
-            CloseClient(
-                ref _topologyClient);
-
-            JoinThread(
-                ref _telemetryThread);
-
-            JoinThread(
-                ref _topologyThread);
-        }
-
-        private static void CloseClient(
-            ref UdpClient client)
-        {
-            if (client == null)
-            {
-                return;
-            }
-
-            client.Close();
-
-            client =
-                null;
-        }
-
-        private static void JoinThread(
-            ref Thread thread)
-        {
-            if (thread != null &&
-                thread.IsAlive &&
-                Thread.CurrentThread != thread)
-            {
-                thread.Join(
-                    1000);
-            }
-
-            thread =
-                null;
+            _engineeringEngine.ClearElectricalTelemetry();
+            _cache.Clear();
         }
 
         public void Dispose()
         {
             Stop();
+
+            _transport.FlightTelemetryReceived -=
+                OnFlightTelemetryReceived;
+
+            _transport.TopologyReceived -=
+                OnTopologyReceived;
+
+            _transport.SystemsTelemetryReceived -=
+                OnSystemsTelemetryReceived;
+
+            _transport.Dispose();
         }
     }
 }

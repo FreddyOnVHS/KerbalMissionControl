@@ -14,7 +14,7 @@ namespace KMC.Plugin
         MonoBehaviour
     {
         private const float SendIntervalSeconds = 0.1f;
-        private const int SystemsTelemetryPort = 5061;
+        private const int SystemsTelemetryPort = 5091;
         private const string ProtocolId = "KMCSYS1";
 
         private UdpClient _udpClient;
@@ -34,7 +34,9 @@ namespace KMC.Plugin
                         SystemsTelemetryPort);
 
                 Debug.Log(
-                    "[KMC] Systems-state telemetry sender started.");
+                    "[KMC] Systems-state telemetry sender started on UDP " +
+                    SystemsTelemetryPort +
+                    ".");
             }
             catch (Exception ex)
             {
@@ -189,9 +191,10 @@ namespace KMC.Plugin
                 }
             }
 
-            return Math.Max(
-                0.0,
-                maximum);
+            return
+                Math.Max(
+                    0.0,
+                    maximum);
         }
 
         private static bool IsDocked(
@@ -241,7 +244,8 @@ namespace KMC.Plugin
             UdpClient client =
                 _udpClient;
 
-            _udpClient = null;
+            _udpClient =
+                null;
 
             if (client != null)
             {

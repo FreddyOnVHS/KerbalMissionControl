@@ -15,36 +15,14 @@
     <Deterministic>true</Deterministic>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
+    <DebugSymbols>true</DebugSymbols><DebugType>full</DebugType><Optimize>false</Optimize><OutputPath>bin\Debug\</OutputPath><DefineConstants>DEBUG;TRACE</DefineConstants><ErrorReport>prompt</ErrorReport><WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
+    <DebugType>pdbonly</DebugType><Optimize>true</Optimize><OutputPath>bin\Release\</OutputPath><DefineConstants>TRACE</DefineConstants><ErrorReport>prompt</ErrorReport><WarningLevel>4</WarningLevel>
   </PropertyGroup>
-  <PropertyGroup>
-    <StartupObject />
-  </PropertyGroup>
+  <PropertyGroup><StartupObject /></PropertyGroup>
   <ItemGroup>
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.Windows.Forms" />
-    <Reference Include="System.Xml.Linq" />
-    <Reference Include="System.Data.DataSetExtensions" />
-    <Reference Include="Microsoft.CSharp" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.Net.Http" />
-    <Reference Include="System.Xml" />
+    <Reference Include="System" /><Reference Include="System.Core" /><Reference Include="System.Drawing" /><Reference Include="System.Windows.Forms" /><Reference Include="System.Xml.Linq" /><Reference Include="System.Data.DataSetExtensions" /><Reference Include="Microsoft.CSharp" /><Reference Include="System.Data" /><Reference Include="System.Net.Http" /><Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Controls\ConsolePanel.cs"><SubType>Component</SubType></Compile>
@@ -53,128 +31,29 @@
     <Compile Include="Controls\NavigationBar.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\PerformanceOverlay.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\TelemetryValue.cs"><SubType>UserControl</SubType></Compile>
-    <Compile Include="Cards\CardDirtyState.cs" />
-    <Compile Include="Cards\CardDiagnosticSnapshot.cs" />
-    <Compile Include="Cards\CardDiagnosticsRegistry.cs" />
-    <Compile Include="Cards\IMissionDisplayCard.cs" />
-    <Compile Include="Cards\MissionDisplayCard.cs" />
-    <Compile Include="Cards\MissionCardLayout.cs" />
-    <Compile Include="Cards\Propulsion\EngineClusterCard.cs" />
-    <Compile Include="Cards\Propulsion\PropulsionPerformanceCard.cs" />
-    <Compile Include="Cards\Propulsion\PropellantFlowCard.cs" />
-    <Compile Include="Cards\Propulsion\PropulsionFooterCard.cs" />
-    <Compile Include="Cards\Propulsion\PropulsionCardChangeTracker.cs" />
-    <Compile Include="Debugging\Capabilities\CapabilityDebuggerForm.cs"><SubType>Form</SubType></Compile>
-    <Compile Include="Debugging\Capabilities\CapabilityDebuggerHost.cs" />
-    <Compile Include="Debugging\PropulsionDebugSnapshotStore.cs" />
-    <Compile Include="Debugging\PropulsionDebuggerHost.cs" />
-    <Compile Include="Debugging\PropulsionDebuggerForm.cs"><SubType>Form</SubType></Compile>
-    <Compile Include="Debugging\Electrical\ElectricalTopologyModel.cs" />
-    <Compile Include="Debugging\Electrical\ElectricalTopologyBuilder.cs" />
-    <Compile Include="Debugging\Electrical\ElectricalStackPreview.cs"><SubType>Component</SubType></Compile>
-    <Compile Include="Debugging\Electrical\ElectricalTopologyDebuggerForm.cs"><SubType>Form</SubType></Compile>
-    <Compile Include="Debugging\Electrical\ElectricalTopologyDebuggerHost.cs" />
-    <Compile Include="Diagnostics\AscentDebugRecord.cs" />
-    <Compile Include="Diagnostics\AscentDebugLogger.cs" />
-    <Compile Include="Diagnostics\PropulsionGraphFileLogger.cs" />
-    <Compile Include="Diagnostics\PerformanceSnapshot.cs" />
+    <Compile Include="Cards\CardDirtyState.cs" /><Compile Include="Cards\CardDiagnosticSnapshot.cs" /><Compile Include="Cards\CardDiagnosticsRegistry.cs" /><Compile Include="Cards\IMissionDisplayCard.cs" /><Compile Include="Cards\MissionDisplayCard.cs" /><Compile Include="Cards\MissionCardLayout.cs" />
+    <Compile Include="Cards\Propulsion\EngineClusterCard.cs" /><Compile Include="Cards\Propulsion\PropulsionPerformanceCard.cs" /><Compile Include="Cards\Propulsion\PropellantFlowCard.cs" /><Compile Include="Cards\Propulsion\PropulsionFooterCard.cs" /><Compile Include="Cards\Propulsion\PropulsionCardChangeTracker.cs" />
+    <Compile Include="Debugging\Capabilities\CapabilityDebuggerForm.cs"><SubType>Form</SubType></Compile><Compile Include="Debugging\Capabilities\CapabilityDebuggerHost.cs" />
+    <Compile Include="Debugging\PropulsionDebugSnapshotStore.cs" /><Compile Include="Debugging\PropulsionDebuggerHost.cs" /><Compile Include="Debugging\PropulsionDebuggerForm.cs"><SubType>Form</SubType></Compile>
+    <Compile Include="Debugging\Electrical\ElectricalTopologyModel.cs" /><Compile Include="Debugging\Electrical\ElectricalTopologyBuilder.cs" /><Compile Include="Debugging\Electrical\ElectricalStackPreview.cs"><SubType>Component</SubType></Compile><Compile Include="Debugging\Electrical\ElectricalTopologyDebuggerForm.cs"><SubType>Form</SubType></Compile><Compile Include="Debugging\Electrical\ElectricalTopologyDebuggerHost.cs" />
+    <Compile Include="Diagnostics\AscentDebugRecord.cs" /><Compile Include="Diagnostics\AscentDebugLogger.cs" /><Compile Include="Diagnostics\PropulsionGraphFileLogger.cs" /><Compile Include="Diagnostics\PerformanceSnapshot.cs" />
     <Compile Include="Engineering\EngineeringSnapshotStore.cs" />
-    <Compile Include="Flight\AscentFlightHistory.cs" />
-    <Compile Include="Flight\AscentFlightHistoryUpdate.cs" />
-    <Compile Include="Flight\AscentHistorySample.cs" />
-    <Compile Include="Flight\AscentBurnoutPredictor.cs" />
-    <Compile Include="Flight\BurnoutPrediction.cs" />
-    <Compile Include="Flight\MissionTarget.cs" />
-    <Compile Include="Flight\AscentProfilePlanner.cs" />
-    <Compile Include="Guidance\MissionPlanner.cs" />
-    <Compile Include="Guidance\MissionPlannerResult.cs" />
-    <Compile Include="Guidance\OrbitSafetyInput.cs" />
-    <Compile Include="Guidance\OrbitSafetyDecision.cs" />
-    <Compile Include="Guidance\OrbitalGuidanceController.cs" />
-    <Compile Include="Guidance\PoweredAscentGuidanceSolution.cs" />
-    <Compile Include="Guidance\AscentTrajectoryPrediction.cs" />
-    <Compile Include="Guidance\PoweredTrajectoryPredictor.cs" />
-    <Compile Include="Guidance\AscentEnergyManager.cs" />
-    <Compile Include="Guidance\GuidanceOptimizer.cs" />
-    <Compile Include="Guidance\PoweredAscentGuidanceComputer.cs" />
-    <Compile Include="Guidance\PeriapsisRecoveryInput.cs" />
-    <Compile Include="Guidance\PeriapsisRecoverySolution.cs" />
-    <Compile Include="Guidance\PeriapsisRecoveryController.cs" />
-    <Compile Include="MainForm.cs"><SubType>Form</SubType></Compile>
-    <Compile Include="MissionControlReceiver.cs" />
-    <Compile Include="SolidFuelTelemetryReceiver.cs" />
-    <Compile Include="EngineStateTelemetryReceiver.cs" />
-    <Compile Include="Telemetry\EngineOperatingState.cs" />
-    <Compile Include="Telemetry\EngineStateTelemetry.cs" />
-    <Compile Include="Telemetry\EngineStateTelemetryStore.cs" />
-    <Compile Include="Telemetry\SolidFuelTelemetrySnapshot.cs" />
-    <Compile Include="Telemetry\SrbBankAlertTracker.cs" />
-    <Compile Include="Telemetry\SolidFuelTelemetryStore.cs" />
-    <Compile Include="Telemetry\SolidFuelTelemetryResolver.cs" />
+    <Compile Include="Flight\AscentFlightHistory.cs" /><Compile Include="Flight\AscentFlightHistoryUpdate.cs" /><Compile Include="Flight\AscentHistorySample.cs" /><Compile Include="Flight\AscentBurnoutPredictor.cs" /><Compile Include="Flight\BurnoutPrediction.cs" /><Compile Include="Flight\MissionTarget.cs" /><Compile Include="Flight\AscentProfilePlanner.cs" />
+    <Compile Include="Guidance\MissionPlanner.cs" /><Compile Include="Guidance\MissionPlannerResult.cs" /><Compile Include="Guidance\OrbitSafetyInput.cs" /><Compile Include="Guidance\OrbitSafetyDecision.cs" /><Compile Include="Guidance\OrbitalGuidanceController.cs" /><Compile Include="Guidance\PoweredAscentGuidanceSolution.cs" /><Compile Include="Guidance\AscentTrajectoryPrediction.cs" /><Compile Include="Guidance\PoweredTrajectoryPredictor.cs" /><Compile Include="Guidance\AscentEnergyManager.cs" /><Compile Include="Guidance\GuidanceOptimizer.cs" /><Compile Include="Guidance\PoweredAscentGuidanceComputer.cs" /><Compile Include="Guidance\PeriapsisRecoveryInput.cs" /><Compile Include="Guidance\PeriapsisRecoverySolution.cs" /><Compile Include="Guidance\PeriapsisRecoveryController.cs" />
+    <Compile Include="MainForm.cs"><SubType>Form</SubType></Compile><Compile Include="MissionControlReceiver.cs" /><Compile Include="SolidFuelTelemetryReceiver.cs" /><Compile Include="EngineStateTelemetryReceiver.cs" />
+    <Compile Include="Telemetry\EngineOperatingState.cs" /><Compile Include="Telemetry\EngineStateTelemetry.cs" /><Compile Include="Telemetry\EngineStateTelemetryStore.cs" /><Compile Include="Telemetry\SolidFuelTelemetrySnapshot.cs" /><Compile Include="Telemetry\SrbBankAlertTracker.cs" /><Compile Include="Telemetry\SolidFuelTelemetryStore.cs" /><Compile Include="Telemetry\SolidFuelTelemetryResolver.cs" />
+    <Compile Include="Transport\SystemsTelemetrySample.cs" /><Compile Include="Transport\TelemetryCache.cs" /><Compile Include="Transport\TelemetryTransport.cs" />
     <Compile Include="Models\MissionTelemetry.cs" />
-    <Compile Include="Pages\AscentPage.cs" />
-    <Compile Include="Pages\IMissionPage.cs" />
-    <Compile Include="Pages\IMissionPageCanvasProvider.cs" />
-    <Compile Include="Pages\MissionPageContentProfile.cs" />
-    <Compile Include="Pages\OrbitPage.cs" />
-    <Compile Include="Pages\PropulsionPage.cs" />
-    <Compile Include="Program.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Rendering\Ascent\FlightDirectorRenderModel.cs" />
-    <Compile Include="Rendering\Ascent\FlightDirectorRenderer.cs" />
-    <Compile Include="Rendering\Ascent\PredictionRenderModel.cs" />
-    <Compile Include="Rendering\Ascent\PredictionRenderer.cs" />
-    <Compile Include="Rendering\Ascent\OrbitTrendRenderModel.cs" />
-    <Compile Include="Rendering\Ascent\OrbitTrendRenderer.cs" />
-    <Compile Include="Rendering\Ascent\FooterRenderModel.cs" />
-    <Compile Include="Rendering\Ascent\FooterRenderer.cs" />
-    <Compile Include="Rendering\Ascent\AscentHeaderRenderer.cs" />
-    <Compile Include="Rendering\Ascent\AscentLayout.cs" />
-    <Compile Include="Rendering\Ascent\AscentGraphRenderModel.cs" />
-    <Compile Include="Rendering\Ascent\AscentGraphRenderer.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionGraphNode.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionGraphEdge.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionRenderGraph.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionRenderGraphBuilder.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionRenderGraphDiagnostics.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionGraphStore.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionEngineGroup.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionSystemModel.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionSystemModelBuilder.cs" />
-    <Compile Include="Rendering\Propulsion\EngineProjectionPoint.cs" />
-    <Compile Include="Rendering\Propulsion\EngineClusterProjection.cs" />
-    <Compile Include="Rendering\Propulsion\EngineClusterProjector.cs" />
-    <Compile Include="Rendering\Propulsion\EngineIdentifierRegistry.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionDisplayRenderer.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionAnalysis.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionAnalysisCache.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionAnalysisCacheSnapshot.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionPageRenderModel.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionLayoutNode.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionLayout.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionLayoutEngine.cs" />
-    <Compile Include="Rendering\Propulsion\PropulsionSchematicRenderer.cs" />
-    <Compile Include="Rendering\DisplayDrawing.cs" />
-    <Compile Include="Rendering\DisplayLayout.cs" />
-    <Compile Include="Rendering\MissionPageLayout.cs" />
-    <Compile Include="Rendering\MissionRenderContext.cs" />
-    <Compile Include="Telemetry\LatestTelemetryBuffer.cs" />
-    <Compile Include="Themes\ApolloTheme.cs" />
-    <Compile Include="Widgets\HorizontalResourceBarWidget.cs" />
-    <Compile Include="Widgets\IMissionWidget.cs" />
-    <Compile Include="Widgets\OrbitPlotWidget.cs" />
-    <Compile Include="Pages\PowerPage.cs" />
-    <Compile Include="Rendering\Power\PowerPageRenderer.cs" />
+    <Compile Include="Pages\AscentPage.cs" /><Compile Include="Pages\IMissionPage.cs" /><Compile Include="Pages\IMissionPageCanvasProvider.cs" /><Compile Include="Pages\MissionPageContentProfile.cs" /><Compile Include="Pages\OrbitPage.cs" /><Compile Include="Pages\PropulsionPage.cs" /><Compile Include="Pages\PowerPage.cs" />
+    <Compile Include="Program.cs" /><Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Rendering\Ascent\FlightDirectorRenderModel.cs" /><Compile Include="Rendering\Ascent\FlightDirectorRenderer.cs" /><Compile Include="Rendering\Ascent\PredictionRenderModel.cs" /><Compile Include="Rendering\Ascent\PredictionRenderer.cs" /><Compile Include="Rendering\Ascent\OrbitTrendRenderModel.cs" /><Compile Include="Rendering\Ascent\OrbitTrendRenderer.cs" /><Compile Include="Rendering\Ascent\FooterRenderModel.cs" /><Compile Include="Rendering\Ascent\FooterRenderer.cs" /><Compile Include="Rendering\Ascent\AscentHeaderRenderer.cs" /><Compile Include="Rendering\Ascent\AscentLayout.cs" /><Compile Include="Rendering\Ascent\AscentGraphRenderModel.cs" /><Compile Include="Rendering\Ascent\AscentGraphRenderer.cs" />
+    <Compile Include="Rendering\Propulsion\PropulsionGraphNode.cs" /><Compile Include="Rendering\Propulsion\PropulsionGraphEdge.cs" /><Compile Include="Rendering\Propulsion\PropulsionRenderGraph.cs" /><Compile Include="Rendering\Propulsion\PropulsionRenderGraphBuilder.cs" /><Compile Include="Rendering\Propulsion\PropulsionRenderGraphDiagnostics.cs" /><Compile Include="Rendering\Propulsion\PropulsionGraphStore.cs" /><Compile Include="Rendering\Propulsion\PropulsionEngineGroup.cs" /><Compile Include="Rendering\Propulsion\PropulsionSystemModel.cs" /><Compile Include="Rendering\Propulsion\PropulsionSystemModelBuilder.cs" /><Compile Include="Rendering\Propulsion\EngineProjectionPoint.cs" /><Compile Include="Rendering\Propulsion\EngineClusterProjection.cs" /><Compile Include="Rendering\Propulsion\EngineClusterProjector.cs" /><Compile Include="Rendering\Propulsion\EngineIdentifierRegistry.cs" /><Compile Include="Rendering\Propulsion\PropulsionDisplayRenderer.cs" /><Compile Include="Rendering\Propulsion\PropulsionAnalysis.cs" /><Compile Include="Rendering\Propulsion\PropulsionAnalysisCache.cs" /><Compile Include="Rendering\Propulsion\PropulsionAnalysisCacheSnapshot.cs" /><Compile Include="Rendering\Propulsion\PropulsionPageRenderModel.cs" /><Compile Include="Rendering\Propulsion\PropulsionLayoutNode.cs" /><Compile Include="Rendering\Propulsion\PropulsionLayout.cs" /><Compile Include="Rendering\Propulsion\PropulsionLayoutEngine.cs" /><Compile Include="Rendering\Propulsion\PropulsionSchematicRenderer.cs" />
+    <Compile Include="Rendering\DisplayDrawing.cs" /><Compile Include="Rendering\DisplayLayout.cs" /><Compile Include="Rendering\MissionPageLayout.cs" /><Compile Include="Rendering\MissionRenderContext.cs" /><Compile Include="Rendering\Power\PowerPageRenderer.cs" />
+    <Compile Include="Telemetry\LatestTelemetryBuffer.cs" /><Compile Include="Themes\ApolloTheme.cs" /><Compile Include="Widgets\HorizontalResourceBarWidget.cs" /><Compile Include="Widgets\IMissionWidget.cs" /><Compile Include="Widgets\OrbitPlotWidget.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\KMC.shared\KMC.shared.csproj">
-      <Project>{C6298E64-33FB-4AB2-A330-6C825CEE3B6D}</Project>
-      <Name>KMC.shared</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\KMC.Engine\KMC.Engine.csproj">
-      <Project>{7B26E4BA-A7B9-4E4E-A07D-7A706B00F55E}</Project>
-      <Name>KMC.Engine</Name>
-    </ProjectReference>
+    <ProjectReference Include="..\KMC.shared\KMC.shared.csproj"><Project>{C6298E64-33FB-4AB2-A330-6C825CEE3B6D}</Project><Name>KMC.shared</Name></ProjectReference>
+    <ProjectReference Include="..\KMC.Engine\KMC.Engine.csproj"><Project>{7B26E4BA-A7B9-4E4E-A07D-7A706B00F55E}</Project><Name>KMC.Engine</Name></ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
