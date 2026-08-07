@@ -94,7 +94,10 @@ namespace KMC.Plugin
                                     CultureInfo.InvariantCulture),
                             IsDocked(vessel)
                                 ? "1"
-                                : "0"
+                                : "0",
+                            ElectricalAttributionTelemetry
+                                .BuildEncodedPayload(
+                                    vessel)
                         });
 
                 byte[] payload =

@@ -99,6 +99,9 @@ namespace KMC.MissionControl.Engineering
             {
                 WriteFlowDiagnostic(
                     result);
+
+                WriteAttributionDiagnostic(
+                    result);
             }
         }
 
@@ -245,6 +248,51 @@ namespace KMC.MissionControl.Engineering
                 toFull +
                 " | AtCapacity=" +
                 flow.IsAtCapacity);
+        }
+
+        private static void WriteAttributionDiagnostic(
+            AnalysisPipelineResult result)
+        {
+            ElectricalAttributionModel attribution =
+                result.Snapshot.Power.Attribution;
+
+            if (attribution == null ||
+                !attribution.TelemetryAvailable)
+            {
+                Debug.WriteLine(
+                    "KMC.Engine POWER ATTRIBUTION | WaitingForAttribution");
+
+                return;
+            }
+
+            Debug.WriteLine(
+                "KMC.Engine POWER ATTRIBUTION | Producers=" +
+                attribution.ProducerCount +
+                " | Consumers=" +
+                attribution.ConsumerCount +
+                " | KnownGeneration=" +
+                attribution.KnownCurrentGenerationEcPerSecond.ToString("0.###") +
+                " EC/s (" +
+                attribution.KnownCurrentProducerCount +
+                "/" +
+                attribution.ProducerCount +
+                ")" +
+                " | KnownConsumption=" +
+                attribution.KnownCurrentConsumptionEcPerSecond.ToString("0.###") +
+                " EC/s (" +
+                attribution.KnownCurrentConsumerCount +
+                "/" +
+                attribution.ConsumerCount +
+                ")" +
+                " | KnownBalance=" +
+                attribution.KnownCurrentBalanceEcPerSecond.ToString("0.###") +
+                " EC/s" +
+                " | MaxGeneration=" +
+                attribution.DeclaredMaximumGenerationEcPerSecond.ToString("0.###") +
+                " EC/s" +
+                " | MaxConsumption=" +
+                attribution.DeclaredMaximumConsumptionEcPerSecond.ToString("0.###") +
+                " EC/s");
         }
 
         private static string FormatDuration(

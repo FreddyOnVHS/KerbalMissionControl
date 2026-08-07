@@ -78,6 +78,7 @@
     <Compile Include="TelemetrySender.cs" />
     <Compile Include="SolidFuelTelemetrySender.cs" />
     <Compile Include="EngineStateTelemetrySender.cs" />
+    <Compile Include="ElectricalAttributionTelemetry.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
 
     <Compile Include="Topology\ActivePropellantAnalyzer.cs" />

@@ -11,6 +11,8 @@ namespace KMC.Engine
     {
         private readonly AnalysisPipeline _pipeline;
         private readonly ElectricalFlowTracker _electricalFlowTracker;
+        private readonly object _electricalAttributionSyncRoot;
+        private ElectricalAttributionModel _latestElectricalAttribution;
 
         public EngineeringEngine()
             : this(
@@ -38,6 +40,12 @@ namespace KMC.Engine
 
             _electricalFlowTracker =
                 new ElectricalFlowTracker();
+
+            _electricalAttributionSyncRoot =
+                new object();
+
+            _latestElectricalAttribution =
+                new ElectricalAttributionModel();
         }
 
         public void PublishElectricalTelemetry(
@@ -54,6 +62,114 @@ namespace KMC.Engine
         public void ClearElectricalTelemetry()
         {
             _electricalFlowTracker.Clear();
+
+            lock (_electricalAttributionSyncRoot)
+            {
+                _latestElectricalAttribution =
+                    new ElectricalAttributionModel();
+            }
+        }
+
+        public void PublishElectricalAttribution(
+            ElectricalAttributionModel attribution)
+        {
+            if (attribution == null)
+            {
+                return;
+            }
+
+            attribution.Recalculate();
+
+            lock (_electricalAttributionSyncRoot)
+            {
+                _latestElectricalAttribution =
+                    CloneAttribution(
+                        attribution);
+            }
+        }
+
+        private ElectricalAttributionModel GetElectricalAttribution()
+        {
+            lock (_electricalAttributionSyncRoot)
+            {
+                return
+                    CloneAttribution(
+                        _latestElectricalAttribution);
+            }
+        }
+
+        private static ElectricalAttributionModel CloneAttribution(
+            ElectricalAttributionModel source)
+        {
+            ElectricalAttributionModel clone =
+                new ElectricalAttributionModel();
+
+            if (source == null)
+            {
+                return
+                    clone;
+            }
+
+            clone.TelemetryAvailable =
+                source.TelemetryAvailable;
+
+            for (int index = 0;
+                 index < source.Entries.Count;
+                 index++)
+            {
+                ElectricalAttributionEntry entry =
+                    source.Entries[index];
+
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                clone.Entries.Add(
+                    new ElectricalAttributionEntry
+                    {
+                        Kind =
+                            entry.Kind,
+
+                        PartId =
+                            entry.PartId,
+
+                        PartTitle =
+                            entry.PartTitle,
+
+                        Category =
+                            entry.Category,
+
+                        Evidence =
+                            entry.Evidence,
+
+                        CurrentRateKnown =
+                            entry.CurrentRateKnown,
+
+                        CurrentRateEcPerSecond =
+                            entry.CurrentRateEcPerSecond,
+
+                        MaximumRateKnown =
+                            entry.MaximumRateKnown,
+
+                        MaximumRateEcPerSecond =
+                            entry.MaximumRateEcPerSecond,
+
+                        Enabled =
+                            entry.Enabled,
+
+                        ActiveStateKnown =
+                            entry.ActiveStateKnown,
+
+                        Active =
+                            entry.Active
+                    });
+            }
+
+            clone.Recalculate();
+
+            return
+                clone;
         }
 
         public AnalysisPipelineResult Analyze(
@@ -67,7 +183,8 @@ namespace KMC.Engine
                     sequence,
                     receivedUtc,
                     telemetryPacket,
-                    _electricalFlowTracker.GetLatest());
+                    _electricalFlowTracker.GetLatest(),
+                    GetElectricalAttribution());
 
             VesselModel vessel =
                 new VesselModel(

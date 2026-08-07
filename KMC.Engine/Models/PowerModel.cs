@@ -13,6 +13,9 @@ namespace KMC.Engine.Models
             Flow =
                 new ElectricalFlowModel();
 
+            Attribution =
+                new ElectricalAttributionModel();
+
             Diagnostics =
                 new List<string>();
         }
@@ -24,6 +27,12 @@ namespace KMC.Engine.Models
         }
 
         public ElectricalFlowModel Flow
+        {
+            get;
+            internal set;
+        }
+
+        public ElectricalAttributionModel Attribution
         {
             get;
             internal set;

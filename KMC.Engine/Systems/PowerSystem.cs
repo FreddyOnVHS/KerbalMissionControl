@@ -35,6 +35,10 @@ namespace KMC.Engine.Systems
                 context.Telemetry.ElectricalFlow ??
                 new ElectricalFlowModel();
 
+            context.Power.Attribution =
+                context.Telemetry.ElectricalAttribution ??
+                new ElectricalAttributionModel();
+
             context.Power.Diagnostics.Clear();
 
             for (int i = 0;
@@ -69,6 +73,20 @@ namespace KMC.Engine.Systems
                     "Measured stored-EC rate: " +
                     context.Power.Flow.NetStorageRateEcPerSecond.ToString("0.###") +
                     " EC/s.");
+            }
+
+            if (context.Power.Attribution.TelemetryAvailable)
+            {
+                context.Power.Diagnostics.Add(
+                    "Electrical attribution: producers=" +
+                    context.Power.Attribution.ProducerCount +
+                    ", consumers=" +
+                    context.Power.Attribution.ConsumerCount +
+                    ", known current producers=" +
+                    context.Power.Attribution.KnownCurrentProducerCount +
+                    ", known current consumers=" +
+                    context.Power.Attribution.KnownCurrentConsumerCount +
+                    ".");
             }
         }
     }

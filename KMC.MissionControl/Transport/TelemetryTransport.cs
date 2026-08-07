@@ -308,8 +308,136 @@ namespace KMC.MissionControl.Transport
                         "1"
                 };
 
+            if (fields.Length >= 6 &&
+                !string.IsNullOrWhiteSpace(
+                    fields[5]))
+            {
+                ParseAttribution(
+                    fields[5],
+                    sample);
+            }
+
             return
                 true;
+        }
+
+        private static void ParseAttribution(
+            string encoded,
+            SystemsTelemetrySample sample)
+        {
+            try
+            {
+                byte[] bytes =
+                    Convert.FromBase64String(
+                        encoded);
+
+                string plain =
+                    Encoding.UTF8.GetString(
+                        bytes);
+
+                if (string.IsNullOrEmpty(
+                        plain))
+                {
+                    return;
+                }
+
+                string[] entries =
+                    plain.Split(
+                        ';');
+
+                for (int index = 0;
+                     index < entries.Length;
+                     index++)
+                {
+                    string[] fields =
+                        entries[index].Split(
+                            '~');
+
+                    if (fields.Length < 12)
+                    {
+                        continue;
+                    }
+
+                    uint partId;
+                    double currentRate;
+                    double maximumRate;
+
+                    if (!uint.TryParse(
+                            fields[1],
+                            NumberStyles.Integer,
+                            CultureInfo.InvariantCulture,
+                            out partId) ||
+                        !TryDouble(
+                            fields[5],
+                            out currentRate) ||
+                        !TryDouble(
+                            fields[7],
+                            out maximumRate))
+                    {
+                        continue;
+                    }
+
+                    sample.AttributionEntries.Add(
+                        new SystemsAttributionEntry
+                        {
+                            IsProducer =
+                                fields[0] ==
+                                "P",
+
+                            PartId =
+                                partId,
+
+                            Category =
+                                fields[2] ??
+                                string.Empty,
+
+                            Evidence =
+                                fields[3] ??
+                                string.Empty,
+
+                            CurrentKnown =
+                                fields[4] ==
+                                "1",
+
+                            CurrentRateEcPerSecond =
+                                Math.Max(
+                                    0.0,
+                                    currentRate),
+
+                            MaximumKnown =
+                                fields[6] ==
+                                "1",
+
+                            MaximumRateEcPerSecond =
+                                Math.Max(
+                                    0.0,
+                                    maximumRate),
+
+                            Enabled =
+                                fields[8] ==
+                                "1",
+
+                            ActiveKnown =
+                                fields[9] ==
+                                "1",
+
+                            Active =
+                                fields[10] ==
+                                "1",
+
+                            PartTitle =
+                                fields[11] ??
+                                string.Empty
+                        });
+                }
+            }
+            catch
+            {
+                /*
+                 * Attribution is optional telemetry. Malformed attribution
+                 * must not invalidate the core KMCSYS1 systems packet.
+                 */
+            }
         }
 
         private static bool TryDouble(

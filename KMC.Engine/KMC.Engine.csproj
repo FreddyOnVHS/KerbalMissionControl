@@ -49,6 +49,7 @@
     <Compile Include="Electrical\ElectricalStorageAnalyzer.cs" />
     <Compile Include="Electrical\ElectricalFlowModel.cs" />
     <Compile Include="Electrical\ElectricalFlowTracker.cs" />
+    <Compile Include="Electrical\ElectricalAttributionModel.cs" />
     <Compile Include="EngineeringEngine.cs" />
     <Compile Include="Models\CapabilityEnums.cs" />
     <Compile Include="Models\CapabilityDetails.cs" />

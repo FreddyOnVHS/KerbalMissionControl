@@ -9,7 +9,8 @@ namespace KMC.Engine.Models
             long sequence,
             DateTime receivedUtc,
             object packet,
-            ElectricalFlowModel electricalFlow)
+            ElectricalFlowModel electricalFlow,
+            ElectricalAttributionModel electricalAttribution)
         {
             Sequence =
                 sequence;
@@ -25,11 +26,16 @@ namespace KMC.Engine.Models
             ElectricalFlow =
                 electricalFlow ??
                 new ElectricalFlowModel();
+
+            ElectricalAttribution =
+                electricalAttribution ??
+                new ElectricalAttributionModel();
         }
 
         public long Sequence { get; private set; }
         public DateTime ReceivedUtc { get; private set; }
         public object Packet { get; private set; }
         public ElectricalFlowModel ElectricalFlow { get; private set; }
+        public ElectricalAttributionModel ElectricalAttribution { get; private set; }
     }
 }
