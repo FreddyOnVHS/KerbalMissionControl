@@ -218,16 +218,9 @@ namespace KMC.Plugin
             }
 
             ResourceRate output =
-                FindElectricChargeRate(
+                FindModuleElectricChargeRate(
                     module,
-                    new[]
-                    {
-                        "outputList",
-                        "OutputList",
-                        "outputResources",
-                        "OutputResources",
-                        "Outputs"
-                    });
+                    false);
 
             if (output.Found &&
                 IsKnownProducerType(
@@ -244,16 +237,9 @@ namespace KMC.Plugin
             }
 
             ResourceRate input =
-                FindElectricChargeRate(
+                FindModuleElectricChargeRate(
                     module,
-                    new[]
-                    {
-                        "inputList",
-                        "InputList",
-                        "inputResources",
-                        "InputResources",
-                        "Inputs"
-                    });
+                    true);
 
             if (input.Found)
             {
@@ -265,6 +251,26 @@ namespace KMC.Plugin
                     enabled,
                     activeKnown,
                     active);
+            }
+            else if (ContainsIgnoreCase(
+                         fullTypeName,
+                         "DataTransmitter"))
+            {
+                ResourceRate transmitterRate =
+                    FindDataTransmitterRate(
+                        module);
+
+                if (transmitterRate.Found)
+                {
+                    AddDeclaredConsumer(
+                        part,
+                        fullTypeName,
+                        transmitterRate.Rate,
+                        destination,
+                        enabled,
+                        activeKnown,
+                        active);
+                }
             }
         }
 
@@ -642,6 +648,125 @@ namespace KMC.Plugin
                 ContainsIgnoreCase(
                     typeName,
                     "FuelCell");
+        }
+
+        private static ResourceRate FindModuleElectricChargeRate(
+            PartModule module,
+            bool input)
+        {
+            string[] directNames =
+                input
+                    ? new[]
+                    {
+                        "inputList",
+                        "InputList",
+                        "inputResources",
+                        "InputResources",
+                        "Inputs"
+                    }
+                    : new[]
+                    {
+                        "outputList",
+                        "OutputList",
+                        "outputResources",
+                        "OutputResources",
+                        "Outputs"
+                    };
+
+            ResourceRate direct =
+                FindElectricChargeRate(
+                    module,
+                    directNames);
+
+            if (direct.Found)
+            {
+                return direct;
+            }
+
+            object handler;
+
+            if (!TryReadMember(
+                    module,
+                    new[]
+                    {
+                        "resHandler",
+                        "ResHandler",
+                        "resourceHandler",
+                        "ResourceHandler"
+                    },
+                    out handler) ||
+                handler == null)
+            {
+                return new ResourceRate();
+            }
+
+            string[] handlerNames =
+                input
+                    ? new[]
+                    {
+                        "inputResources",
+                        "InputResources",
+                        "inputList",
+                        "InputList",
+                        "Inputs"
+                    }
+                    : new[]
+                    {
+                        "outputResources",
+                        "OutputResources",
+                        "outputList",
+                        "OutputList",
+                        "Outputs"
+                    };
+
+            return
+                FindElectricChargeRate(
+                    handler,
+                    handlerNames);
+        }
+
+        private static ResourceRate FindDataTransmitterRate(
+            PartModule module)
+        {
+            double packetCost;
+            double packetInterval;
+
+            bool hasCost =
+                TryReadDouble(
+                    module,
+                    new[]
+                    {
+                        "packetResourceCost",
+                        "PacketResourceCost",
+                        "DataResourceCost",
+                        "dataResourceCost"
+                    },
+                    out packetCost);
+
+            bool hasInterval =
+                TryReadDouble(
+                    module,
+                    new[]
+                    {
+                        "packetInterval",
+                        "PacketInterval"
+                    },
+                    out packetInterval);
+
+            if (!hasCost ||
+                !hasInterval ||
+                packetCost <= 0.0 ||
+                packetInterval <= 0.0)
+            {
+                return new ResourceRate();
+            }
+
+            return
+                new ResourceRate
+                {
+                    Found = true,
+                    Rate = packetCost / packetInterval
+                };
         }
 
         private static ResourceRate FindElectricChargeRate(

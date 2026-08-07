@@ -39,6 +39,12 @@ namespace KMC.Engine.Systems
                 context.Telemetry.ElectricalAttribution ??
                 new ElectricalAttributionModel();
 
+            context.Power.Load =
+                ElectricalLoadAnalyzer.Analyze(
+                    network,
+                    context.Power.Flow,
+                    context.Power.Attribution);
+
             context.Power.Diagnostics.Clear();
 
             for (int i = 0;

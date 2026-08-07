@@ -308,7 +308,10 @@ namespace KMC.MissionControl.Transport
                         "1"
                 };
 
-            if (fields.Length >= 6 &&
+            sample.AttributionTelemetryAvailable =
+                fields.Length >= 6;
+
+            if (sample.AttributionTelemetryAvailable &&
                 !string.IsNullOrWhiteSpace(
                     fields[5]))
             {

@@ -16,6 +16,9 @@ namespace KMC.Engine.Models
             Attribution =
                 new ElectricalAttributionModel();
 
+            Load =
+                new ElectricalLoadModel();
+
             Diagnostics =
                 new List<string>();
         }
@@ -33,6 +36,12 @@ namespace KMC.Engine.Models
         }
 
         public ElectricalAttributionModel Attribution
+        {
+            get;
+            internal set;
+        }
+
+        public ElectricalLoadModel Load
         {
             get;
             internal set;

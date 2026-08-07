@@ -17,6 +17,8 @@ namespace KMC.MissionControl.Transport
         public double MaximumThermalRatio { get; set; }
         public bool IsDocked { get; set; }
 
+        public bool AttributionTelemetryAvailable { get; set; }
+
         public List<SystemsAttributionEntry> AttributionEntries
         {
             get;

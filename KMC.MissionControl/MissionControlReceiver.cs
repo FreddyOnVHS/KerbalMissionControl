@@ -93,8 +93,7 @@ namespace KMC.MissionControl
                 new ElectricalAttributionModel();
 
             attribution.TelemetryAvailable =
-                systems.AttributionEntries.Count >
-                0;
+                systems.AttributionTelemetryAvailable;
 
             for (int index = 0;
                  index < systems.AttributionEntries.Count;

@@ -102,6 +102,9 @@ namespace KMC.MissionControl.Engineering
 
                 WriteAttributionDiagnostic(
                     result);
+
+                WriteLoadDiagnostic(
+                    result);
             }
         }
 
@@ -260,13 +263,13 @@ namespace KMC.MissionControl.Engineering
                 !attribution.TelemetryAvailable)
             {
                 Debug.WriteLine(
-                    "KMC.Engine POWER ATTRIBUTION | WaitingForAttribution");
+                    "KMC.Engine POWER ATTRIBUTION | Telemetry=WAITING");
 
                 return;
             }
 
             Debug.WriteLine(
-                "KMC.Engine POWER ATTRIBUTION | Producers=" +
+                "KMC.Engine POWER ATTRIBUTION | Telemetry=LIVE | Producers=" +
                 attribution.ProducerCount +
                 " | Consumers=" +
                 attribution.ConsumerCount +
@@ -293,6 +296,56 @@ namespace KMC.MissionControl.Engineering
                 " | MaxConsumption=" +
                 attribution.DeclaredMaximumConsumptionEcPerSecond.ToString("0.###") +
                 " EC/s");
+        }
+
+        private static void WriteLoadDiagnostic(
+            AnalysisPipelineResult result)
+        {
+            ElectricalLoadModel load =
+                result.Snapshot.Power.Load;
+
+            if (load == null)
+            {
+                Debug.WriteLine(
+                    "KMC.Engine POWER LOAD | State=Unavailable");
+
+                return;
+            }
+
+            if (!load.HasInferredTotalLoad)
+            {
+                Debug.WriteLine(
+                    "KMC.Engine POWER LOAD | State=" +
+                    load.State);
+
+                return;
+            }
+
+            Debug.WriteLine(
+                "KMC.Engine POWER LOAD | State=" +
+                load.State +
+                " | Generation=" +
+                load.GenerationEcPerSecond.ToString("0.###") +
+                " EC/s" +
+                " | StorageRate=" +
+                load.StorageRateEcPerSecond.ToString("0.###") +
+                " EC/s" +
+                " | TotalDemand=" +
+                load.InferredTotalLoadEcPerSecond.ToString("0.###") +
+                " EC/s" +
+                " | Attributed=" +
+                load.AttributedCurrentLoadEcPerSecond.ToString("0.###") +
+                " EC/s" +
+                " | Unattributed=" +
+                load.UnattributedLoadEcPerSecond.ToString("0.###") +
+                " EC/s" +
+                " | Coverage=" +
+                load.AttributionCoveragePercent.ToString("0.0") +
+                "%" +
+                " | NoSourceProof=" +
+                load.GenerationDerivedFromNoSources +
+                " | AttributionConflict=" +
+                load.AttributionExceedsInferredLoad);
         }
 
         private static string FormatDuration(
