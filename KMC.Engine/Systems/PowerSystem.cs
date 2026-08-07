@@ -45,6 +45,13 @@ namespace KMC.Engine.Systems
                     context.Power.Flow,
                     context.Power.Attribution);
 
+            context.Power.Diagnostic =
+                ElectricalPowerDiagnosticAnalyzer.Analyze(
+                    network,
+                    context.Power.Flow,
+                    context.Power.Load,
+                    context.Power.Attribution);
+
             context.Power.Diagnostics.Clear();
 
             for (int i = 0;
@@ -94,6 +101,14 @@ namespace KMC.Engine.Systems
                     context.Power.Attribution.KnownCurrentConsumerCount +
                     ".");
             }
+            context.Power.Diagnostics.Add(
+                "Power status: " +
+                context.Power.Diagnostic.Severity +
+                " / " +
+                context.Power.Diagnostic.Condition +
+                " - " +
+                context.Power.Diagnostic.Summary);
+
         }
     }
 }

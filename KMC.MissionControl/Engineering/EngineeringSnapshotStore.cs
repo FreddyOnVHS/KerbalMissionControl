@@ -105,6 +105,9 @@ namespace KMC.MissionControl.Engineering
 
                 WriteLoadDiagnostic(
                     result);
+
+                WritePowerStatusDiagnostic(
+                    result);
             }
         }
 
@@ -363,6 +366,70 @@ namespace KMC.MissionControl.Engineering
                 load.GenerationDerivedFromNoSources +
                 " | AttributionConflict=" +
                 load.AttributionExceedsInferredLoad);
+        }
+
+        private static void WritePowerStatusDiagnostic(
+            AnalysisPipelineResult result)
+        {
+            ElectricalPowerDiagnosticModel status =
+                result.Snapshot.Power.Diagnostic;
+
+            if (status == null)
+            {
+                Debug.WriteLine(
+                    "KMC.Engine POWER STATUS | Severity=Unknown | Condition=Unknown");
+
+                return;
+            }
+
+            string endurance =
+                status.HasEndurance
+                    ? FormatDuration(
+                        status.EnduranceSeconds)
+                    : "--";
+
+            string margin =
+                status.HasPowerMargin
+                    ? status.PowerMarginEcPerSecond.ToString("0.###") +
+                      " EC/s"
+                    : "--";
+
+            string demand =
+                status.HasInferredDemand
+                    ? status.InferredDemandEcPerSecond.ToString("0.###") +
+                      " EC/s"
+                    : "UNKNOWN";
+
+            string coverage =
+                status.AttributionCoverageKnown
+                    ? status.AttributionCoveragePercent.ToString("0.0") +
+                      "%"
+                    : "UNKNOWN";
+
+            Debug.WriteLine(
+                "KMC.Engine POWER STATUS | Severity=" +
+                status.Severity +
+                " | Condition=" +
+                status.Condition +
+                " | Reserve=" +
+                status.ReservePercent.ToString("0.0") +
+                "%" +
+                " | Endurance=" +
+                endurance +
+                " | Margin=" +
+                margin +
+                " | Demand=" +
+                demand +
+                " | DemandObservability=" +
+                status.DemandObservability +
+                " | AttributionCoverage=" +
+                coverage +
+                " | NextStageStorageLoss=" +
+                status.NextStageLosesStorage +
+                " | NextStageLoseAll=" +
+                status.NextStageLosesAllStorage +
+                " | Summary=" +
+                status.Summary);
         }
 
         private static string FormatDuration(
