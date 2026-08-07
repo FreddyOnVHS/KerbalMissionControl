@@ -1,19 +1,11 @@
 ﻿using System.Collections.Generic;
 using KMC.Engine.Analysis;
+using KMC.Engine.Capabilities;
 using KMC.Engine.Models;
 using KMC.Shared.Topology;
 
 namespace KMC.Engine.Systems
 {
-    /// <summary>
-    /// Builds vessel-level engineering capabilities from the topology supplied
-    /// by the KSP plugin. This milestone intentionally uses only data already
-    /// present in Shared topology packets: roles, stored resources, and
-    /// propellant requirements.
-    ///
-    /// Existing Mission Control capability classification remains in place for
-    /// parallel verification and is not consumed by this system.
-    /// </summary>
     public sealed class CapabilitySystem :
         IEngineeringSystem
     {
@@ -33,74 +25,76 @@ namespace KMC.Engine.Systems
             VesselTopology topology =
                 context.Vessel.Topology;
 
-            if (topology == null ||
-                topology.Nodes == null)
+            VesselCapabilitySnapshot details =
+                VesselCapabilityBuilder.Build(topology);
+
+            context.Capabilities.Details =
+                details;
+
+            int classifiedParts = 0;
+            int unclassifiedParts = 0;
+
+            for (int partIndex = 0;
+                 partIndex < details.Parts.Count;
+                 partIndex++)
             {
-                context.AddDiagnostic(
-                    "Capability analysis skipped: vessel topology is unavailable.");
+                PartCapabilitySnapshot part =
+                    details.Parts[partIndex];
 
-                return;
-            }
-
-            int classifiedParts =
-                0;
-
-            int unclassifiedParts =
-                0;
-
-            for (int index = 0;
-                 index < topology.Nodes.Count;
-                 index++)
-            {
-                VesselTopologyNode node =
-                    topology.Nodes[index];
-
-                if (node == null)
+                if (part == null)
                 {
                     continue;
                 }
 
-                HashSet<VesselCapabilityType> partCapabilities =
-                    ClassifyPart(
-                        node);
+                HashSet<VesselCapabilityType> aggregate =
+                    new HashSet<VesselCapabilityType>();
 
-                if (partCapabilities.Count ==
-                    0)
+                for (int capabilityIndex = 0;
+                     capabilityIndex < part.Capabilities.Count;
+                     capabilityIndex++)
+                {
+                    PartCapability capability =
+                        part.Capabilities[capabilityIndex];
+
+                    if (capability == null ||
+                        capability.Type == PartCapabilityType.Unknown)
+                    {
+                        continue;
+                    }
+
+                    VesselCapabilityType aggregateType;
+
+                    if (TryMap(capability.Type, out aggregateType))
+                    {
+                        aggregate.Add(aggregateType);
+                    }
+                }
+
+                if (aggregate.Count == 0)
                 {
                     unclassifiedParts++;
-
-                    continue;
+                }
+                else
+                {
+                    classifiedParts++;
                 }
 
-                classifiedParts++;
-
-                foreach (VesselCapabilityType capability
-                    in partCapabilities)
+                foreach (VesselCapabilityType capability in aggregate)
                 {
-                    context.Capabilities.Add(
-                        capability);
+                    context.Capabilities.AddPartCapability(capability);
                 }
             }
 
-            context.Capabilities.ClassifiedPartCount =
-                classifiedParts;
+            context.Capabilities.ClassifiedPartCount = classifiedParts;
+            context.Capabilities.UnclassifiedPartCount = unclassifiedParts;
 
-            context.Capabilities.UnclassifiedPartCount =
-                unclassifiedParts;
-
-            /*
-             * Retain the original foundation marker for compatibility with
-             * any early diagnostics that may still query it by name.
-             */
-            if (context.Vessel.PartCount >
-                0)
+            if (context.Vessel.PartCount > 0)
             {
-                context.Capabilities.Add(
-                    "VesselTopology");
+                context.Capabilities.Add("VesselTopology");
             }
 
             context.AddDiagnostic(
-                "Capability analysis completed from topology roles/resources. " +
+                "Capability analysis completed by KMC.Engine detailed classifier. " +
                 "ClassifiedParts=" +
                 classifiedParts +
                 ", UnclassifiedParts=" +
@@ -108,196 +102,57 @@ namespace KMC.Engine.Systems
                 ".");
         }
 
-        private static HashSet<VesselCapabilityType>
-            ClassifyPart(
-                VesselTopologyNode node)
+        private static bool TryMap(
+            PartCapabilityType source,
+            out VesselCapabilityType target)
         {
-            HashSet<VesselCapabilityType> result =
-                new HashSet<VesselCapabilityType>();
-
-            AddRole(
-                node,
-                VesselNodeRole.Command,
-                VesselCapabilityType.Command,
-                result);
-
-            AddRole(
-                node,
-                VesselNodeRole.Crew,
-                VesselCapabilityType.CrewSupport,
-                result);
-
-            AddRole(
-                node,
-                VesselNodeRole.StoresElectricCharge,
-                VesselCapabilityType.ElectricalStorage,
-                result);
-
-            if (node.HasRole(
-                    VesselNodeRole.SolarGeneration) ||
-                node.HasRole(
-                    VesselNodeRole.ElectricalGeneration) ||
-                node.HasRole(
-                    VesselNodeRole.FuelCell))
+            switch (source)
             {
-                result.Add(
-                    VesselCapabilityType.ElectricalProducer);
-            }
-
-            if (node.HasRole(
-                    VesselNodeRole.Engine) ||
-                node.HasRole(
-                    VesselNodeRole.SolidPropulsion) ||
-                node.HasRole(
-                    VesselNodeRole.LiquidPropulsion))
-            {
-                result.Add(
-                    VesselCapabilityType.Propulsion);
-            }
-
-            AddRole(
-                node,
-                VesselNodeRole.RcsThruster,
-                VesselCapabilityType.ReactionControl,
-                result);
-
-            AddRole(
-                node,
-                VesselNodeRole.ReactionWheel,
-                VesselCapabilityType.AttitudeControl,
-                result);
-
-            AddRole(
-                node,
-                VesselNodeRole.Antenna,
-                VesselCapabilityType.Communication,
-                result);
-
-            AddRole(
-                node,
-                VesselNodeRole.Science,
-                VesselCapabilityType.Science,
-                result);
-
-            AddRole(
-                node,
-                VesselNodeRole.DockingPort,
-                VesselCapabilityType.Docking,
-                result);
-
-            if (node.HasRole(
-                    VesselNodeRole.Decoupler) ||
-                node.HasRole(
-                    VesselNodeRole.Separator))
-            {
-                result.Add(
-                    VesselCapabilityType.Separation);
-            }
-
-            if (node.HasRole(
-                    VesselNodeRole.Structural) ||
-                node.HasRole(
-                    VesselNodeRole.Fairing))
-            {
-                result.Add(
-                    VesselCapabilityType.Structural);
-            }
-
-            AddResourceCapabilities(
-                node,
-                result);
-
-            AddConsumptionCapabilities(
-                node,
-                result);
-
-            return result;
-        }
-
-        private static void AddRole(
-            VesselTopologyNode node,
-            VesselNodeRole role,
-            VesselCapabilityType capability,
-            HashSet<VesselCapabilityType> result)
-        {
-            if (node.HasRole(
-                    role))
-            {
-                result.Add(
-                    capability);
-            }
-        }
-
-        private static void AddResourceCapabilities(
-            VesselTopologyNode node,
-            HashSet<VesselCapabilityType> result)
-        {
-            if (node.Resources ==
-                null)
-            {
-                return;
-            }
-
-            for (int index = 0;
-                 index < node.Resources.Count;
-                 index++)
-            {
-                VesselResourceState resource =
-                    node.Resources[index];
-
-                if (resource == null ||
-                    string.IsNullOrEmpty(
-                        resource.Name))
-                {
-                    continue;
-                }
-
-                if (string.Equals(
-                        resource.Name,
-                        "ElectricCharge",
-                        System.StringComparison.OrdinalIgnoreCase))
-                {
-                    result.Add(
-                        VesselCapabilityType.ElectricalStorage);
-                }
-                else
-                {
-                    result.Add(
-                        VesselCapabilityType.ResourceStorage);
-                }
-            }
-        }
-
-        private static void AddConsumptionCapabilities(
-            VesselTopologyNode node,
-            HashSet<VesselCapabilityType> result)
-        {
-            if (node.PropellantRequirements ==
-                null ||
-                node.PropellantRequirements.Count ==
-                0)
-            {
-                return;
-            }
-
-            for (int index = 0;
-                 index < node.PropellantRequirements.Count;
-                 index++)
-            {
-                VesselPropellantRequirement requirement =
-                    node.PropellantRequirements[index];
-
-                if (requirement == null ||
-                    string.IsNullOrEmpty(
-                        requirement.Name))
-                {
-                    continue;
-                }
-
-                result.Add(
-                    VesselCapabilityType.ResourceConsumer);
-
-                return;
+                case PartCapabilityType.Command:
+                    target = VesselCapabilityType.Command;
+                    return true;
+                case PartCapabilityType.CrewSupport:
+                    target = VesselCapabilityType.CrewSupport;
+                    return true;
+                case PartCapabilityType.ElectricalStorage:
+                    target = VesselCapabilityType.ElectricalStorage;
+                    return true;
+                case PartCapabilityType.ElectricalProducer:
+                    target = VesselCapabilityType.ElectricalProducer;
+                    return true;
+                case PartCapabilityType.ResourceStorage:
+                    target = VesselCapabilityType.ResourceStorage;
+                    return true;
+                case PartCapabilityType.ResourceConsumer:
+                    target = VesselCapabilityType.ResourceConsumer;
+                    return true;
+                case PartCapabilityType.Propulsion:
+                    target = VesselCapabilityType.Propulsion;
+                    return true;
+                case PartCapabilityType.ReactionControl:
+                    target = VesselCapabilityType.ReactionControl;
+                    return true;
+                case PartCapabilityType.AttitudeControl:
+                    target = VesselCapabilityType.AttitudeControl;
+                    return true;
+                case PartCapabilityType.Communication:
+                    target = VesselCapabilityType.Communication;
+                    return true;
+                case PartCapabilityType.Science:
+                    target = VesselCapabilityType.Science;
+                    return true;
+                case PartCapabilityType.Docking:
+                    target = VesselCapabilityType.Docking;
+                    return true;
+                case PartCapabilityType.Separation:
+                    target = VesselCapabilityType.Separation;
+                    return true;
+                case PartCapabilityType.Structural:
+                    target = VesselCapabilityType.Structural;
+                    return true;
+                default:
+                    target = VesselCapabilityType.Unknown;
+                    return false;
             }
         }
     }
