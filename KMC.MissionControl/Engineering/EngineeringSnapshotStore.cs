@@ -8,9 +8,9 @@ namespace KMC.MissionControl.Engineering
     /// Thread-safe bridge between the background telemetry receiver and
     /// Mission Control consumers that need the latest engineering analysis.
     ///
-    /// The complete pipeline result remains exposed while Engine subsystems
-    /// are migrated and verified in parallel with existing Mission Control
-    /// analysis.
+    /// KMC.Engine is now the source of truth for capability analysis.
+    /// Mission Control consumers read the published engineering snapshot and
+    /// do not perform capability classification themselves.
     /// </summary>
     public static class EngineeringSnapshotStore
     {
@@ -19,8 +19,10 @@ namespace KMC.MissionControl.Engineering
 
         private static AnalysisPipelineResult _latest;
         private static long _publishedSnapshotCount;
-        private static long _lastLoggedTopologyRevision = long.MinValue;
-        private static string _lastError = string.Empty;
+        private static long _lastLoggedTopologyRevision =
+            long.MinValue;
+        private static string _lastError =
+            string.Empty;
 
         public static long PublishedSnapshotCount
         {
@@ -28,7 +30,8 @@ namespace KMC.MissionControl.Engineering
             {
                 lock (SyncRoot)
                 {
-                    return _publishedSnapshotCount;
+                    return
+                        _publishedSnapshotCount;
                 }
             }
         }
@@ -39,7 +42,8 @@ namespace KMC.MissionControl.Engineering
             {
                 lock (SyncRoot)
                 {
-                    return _lastError;
+                    return
+                        _lastError;
                 }
             }
         }
@@ -65,6 +69,7 @@ namespace KMC.MissionControl.Engineering
                     result;
 
                 _publishedSnapshotCount++;
+
                 _lastError =
                     string.Empty;
 
@@ -104,9 +109,8 @@ namespace KMC.MissionControl.Engineering
                     result.Snapshot.Capabilities.UnclassifiedPartCount);
 
                 Debug.WriteLine(
-                    CapabilityComparison.Compare(
-                        result.Snapshot.Vessel.Topology,
-                        result.Snapshot.Capabilities));
+                    "KMC.Engine CAPABILITY SOURCE | EngineOwned | DetailedParts=" +
+                    result.Snapshot.Capabilities.Details.Parts.Count);
             }
         }
 
@@ -118,8 +122,8 @@ namespace KMC.MissionControl.Engineering
                 result =
                     _latest;
 
-                return result !=
-                    null;
+                return
+                    result != null;
             }
         }
 

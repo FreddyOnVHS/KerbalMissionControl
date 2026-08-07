@@ -47,11 +47,6 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Capabilities\CapabilityEnums.cs" />
-    <Compile Include="Capabilities\CapabilityModels.cs" />
-    <Compile Include="Capabilities\PartCapabilityClassifier.cs" />
-    <Compile Include="Capabilities\ResourceClassifier.cs" />
-    <Compile Include="Capabilities\VesselCapabilityBuilder.cs" />
     <Compile Include="Controls\ConsolePanel.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\MissionDisplay.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\MissionSummary.cs"><SubType>Component</SubType></Compile>
@@ -83,7 +78,6 @@
     <Compile Include="Diagnostics\AscentDebugLogger.cs" />
     <Compile Include="Diagnostics\PropulsionGraphFileLogger.cs" />
     <Compile Include="Diagnostics\PerformanceSnapshot.cs" />
-    <Compile Include="Engineering\CapabilityComparison.cs" />
     <Compile Include="Engineering\EngineeringSnapshotStore.cs" />
     <Compile Include="Flight\AscentFlightHistory.cs" />
     <Compile Include="Flight\AscentFlightHistoryUpdate.cs" />

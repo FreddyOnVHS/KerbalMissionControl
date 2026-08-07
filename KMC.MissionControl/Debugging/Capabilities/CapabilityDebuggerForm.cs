@@ -5,11 +5,20 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Windows.Forms;
-using KMC.MissionControl.Capabilities;
+using KMC.Engine.Analysis;
+using KMC.Engine.Capabilities;
+using KMC.MissionControl.Engineering;
 using KMC.Shared.Topology;
 
 namespace KMC.MissionControl.Debugging.Capabilities
 {
+    /// <summary>
+    /// Capability debugger backed exclusively by KMC.Engine.
+    ///
+    /// Mission Control no longer constructs capability classifications.
+    /// It only presents the detailed snapshot produced by the engineering
+    /// pipeline.
+    /// </summary>
     public sealed class CapabilityDebuggerForm :
         Form
     {
@@ -22,7 +31,7 @@ namespace KMC.MissionControl.Debugging.Capabilities
 
         public CapabilityDebuggerForm()
         {
-            Text = "KMC Capability Compatibility Debugger";
+            Text = "KMC Capability Engine Debugger";
             StartPosition = FormStartPosition.CenterParent;
             Size = new Size(1420, 860);
             MinimumSize = new Size(980, 640);
@@ -43,11 +52,30 @@ namespace KMC.MissionControl.Debugging.Capabilities
             _resources = CreateGrid();
             _modules = CreateGrid();
 
-            tabs.TabPages.Add(CreatePage("OVERVIEW", _overview));
-            tabs.TabPages.Add(CreatePage("PARTS", _parts));
-            tabs.TabPages.Add(CreatePage("CAPABILITIES", _capabilities));
-            tabs.TabPages.Add(CreatePage("RESOURCES", _resources));
-            tabs.TabPages.Add(CreatePage("MODULES", _modules));
+            tabs.TabPages.Add(
+                CreatePage(
+                    "OVERVIEW",
+                    _overview));
+
+            tabs.TabPages.Add(
+                CreatePage(
+                    "PARTS",
+                    _parts));
+
+            tabs.TabPages.Add(
+                CreatePage(
+                    "CAPABILITIES",
+                    _capabilities));
+
+            tabs.TabPages.Add(
+                CreatePage(
+                    "RESOURCES",
+                    _resources));
+
+            tabs.TabPages.Add(
+                CreatePage(
+                    "MODULES",
+                    _modules));
 
             FlowLayoutPanel commands =
                 new FlowLayoutPanel
@@ -58,55 +86,133 @@ namespace KMC.MissionControl.Debugging.Capabilities
                     BackColor = Color.FromArgb(24, 34, 34)
                 };
 
-            Button refresh = CreateButton("REFRESH");
-            refresh.Click += delegate { RefreshSnapshot(); };
-            commands.Controls.Add(refresh);
+            Button refresh =
+                CreateButton(
+                    "REFRESH");
 
-            Button copy = CreateButton("COPY");
-            copy.Click += delegate { CopySnapshot(copy); };
-            commands.Controls.Add(copy);
+            refresh.Click +=
+                delegate
+                {
+                    RefreshSnapshot();
+                };
 
-            Button snapshot = CreateButton("SNAPSHOT");
-            snapshot.Click += delegate { SaveSnapshot(); };
-            commands.Controls.Add(snapshot);
+            commands.Controls.Add(
+                refresh);
 
-            Controls.Add(tabs);
-            Controls.Add(commands);
+            Button copy =
+                CreateButton(
+                    "COPY");
 
-            _timer = new Timer { Interval = 750 };
-            _timer.Tick += delegate { RefreshSnapshot(); };
+            copy.Click +=
+                delegate
+                {
+                    CopySnapshot(
+                        copy);
+                };
+
+            commands.Controls.Add(
+                copy);
+
+            Button snapshot =
+                CreateButton(
+                    "SNAPSHOT");
+
+            snapshot.Click +=
+                delegate
+                {
+                    SaveSnapshot();
+                };
+
+            commands.Controls.Add(
+                snapshot);
+
+            Controls.Add(
+                tabs);
+
+            Controls.Add(
+                commands);
+
+            _timer =
+                new Timer
+                {
+                    Interval = 750
+                };
+
+            _timer.Tick +=
+                delegate
+                {
+                    RefreshSnapshot();
+                };
+
             _timer.Start();
 
-            FormClosed += delegate
-            {
-                _timer.Stop();
-                _timer.Dispose();
-            };
-
-            KeyDown += delegate(
-                object sender,
-                KeyEventArgs e)
-            {
-                if (e.KeyCode == Keys.Escape)
+            FormClosed +=
+                delegate
                 {
-                    Close();
-                }
-            };
+                    _timer.Stop();
+                    _timer.Dispose();
+                };
+
+            KeyDown +=
+                delegate(
+                    object sender,
+                    KeyEventArgs e)
+                {
+                    if (e.KeyCode ==
+                        Keys.Escape)
+                    {
+                        Close();
+                    }
+                };
         }
 
         public void RefreshSnapshot()
         {
-            VesselTopology topology =
-                PropulsionDebugSnapshotStore.GetTopology();
-
             VesselCapabilitySnapshot snapshot =
-                VesselCapabilityBuilder.Build(topology);
+                GetEngineSnapshot();
 
-            PopulateOverview(snapshot);
-            PopulateParts(snapshot);
-            PopulateCapabilities(snapshot);
-            PopulateResources(snapshot);
-            PopulateModules(snapshot);
+            PopulateOverview(
+                snapshot);
+
+            PopulateParts(
+                snapshot);
+
+            PopulateCapabilities(
+                snapshot);
+
+            PopulateResources(
+                snapshot);
+
+            PopulateModules(
+                snapshot);
+        }
+
+        private static VesselCapabilitySnapshot
+            GetEngineSnapshot()
+        {
+            AnalysisPipelineResult pipeline;
+
+            if (EngineeringSnapshotStore.TryGetLatest(
+                    out pipeline) &&
+                pipeline != null &&
+                pipeline.Snapshot != null &&
+                pipeline.Snapshot.Capabilities != null &&
+                pipeline.Snapshot.Capabilities.Details != null)
+            {
+                return
+                    pipeline.Snapshot.Capabilities.Details;
+            }
+
+            VesselCapabilitySnapshot empty =
+                new VesselCapabilitySnapshot();
+
+            empty.Diagnostics.Add(
+                "KMC.Engine capability snapshot is not available yet.");
+
+            empty.Diagnostics.Add(
+                "Load a vessel and wait for the engineering pipeline to receive telemetry and topology.");
+
+            return empty;
         }
 
         private void CopySnapshot(
@@ -114,14 +220,9 @@ namespace KMC.MissionControl.Debugging.Capabilities
         {
             try
             {
-                VesselTopology topology =
-                    PropulsionDebugSnapshotStore.GetTopology();
-
-                VesselCapabilitySnapshot snapshot =
-                    VesselCapabilityBuilder.Build(topology);
-
                 Clipboard.SetText(
-                    BuildSnapshotText(snapshot));
+                    BuildSnapshotText(
+                        GetEngineSnapshot()));
 
                 ShowCopiedFeedback(
                     copyButton);
@@ -158,8 +259,7 @@ namespace KMC.MissionControl.Debugging.Capabilities
             Timer feedbackTimer =
                 new Timer
                 {
-                    Interval =
-                        1200
+                    Interval = 1200
                 };
 
             feedbackTimer.Tick +=
@@ -185,15 +285,13 @@ namespace KMC.MissionControl.Debugging.Capabilities
 
         private void SaveSnapshot()
         {
-            VesselTopology topology =
-                PropulsionDebugSnapshotStore.GetTopology();
-
             VesselCapabilitySnapshot snapshot =
-                VesselCapabilityBuilder.Build(topology);
+                GetEngineSnapshot();
 
             string safeVesselName =
                 MakeSafeFileName(
-                    string.IsNullOrWhiteSpace(snapshot.VesselName)
+                    string.IsNullOrWhiteSpace(
+                        snapshot.VesselName)
                         ? "NoVessel"
                         : snapshot.VesselName);
 
@@ -230,7 +328,8 @@ namespace KMC.MissionControl.Debugging.Capabilities
                 {
                     File.WriteAllText(
                         dialog.FileName,
-                        BuildSnapshotText(snapshot),
+                        BuildSnapshotText(
+                            snapshot),
                         new UTF8Encoding(
                             false));
 
@@ -266,7 +365,10 @@ namespace KMC.MissionControl.Debugging.Capabilities
                 new StringBuilder();
 
             text.AppendLine(
-                "KMC CAPABILITY COMPATIBILITY SNAPSHOT");
+                "KMC ENGINE CAPABILITY SNAPSHOT");
+
+            text.AppendLine(
+                "Source\tKMC.Engine");
 
             text.AppendLine(
                 "Generated UTC\t" +
@@ -287,7 +389,6 @@ namespace KMC.MissionControl.Debugging.Capabilities
                 GetPluginVersion());
 
             text.AppendLine();
-
 
             AppendSectionHeader(
                 text,
@@ -330,7 +431,8 @@ namespace KMC.MissionControl.Debugging.Capabilities
                 text,
                 "Module count",
                 snapshot.Parts.Sum(
-                    part => part.Modules.Count)
+                    part =>
+                        part.Modules.Count)
                     .ToString());
 
             AppendSnapshotValue(
@@ -344,9 +446,11 @@ namespace KMC.MissionControl.Debugging.Capabilities
                 text,
                 "UNKNOWN RESOURCES");
 
-            if (snapshot.UnknownResources.Count == 0)
+            if (snapshot.UnknownResources.Count ==
+                0)
             {
-                text.AppendLine("None");
+                text.AppendLine(
+                    "None");
             }
             else
             {
@@ -366,9 +470,11 @@ namespace KMC.MissionControl.Debugging.Capabilities
                 text,
                 "VESSEL DIAGNOSTICS");
 
-            if (snapshot.Diagnostics.Count == 0)
+            if (snapshot.Diagnostics.Count ==
+                0)
             {
-                text.AppendLine("None");
+                text.AppendLine(
+                    "None");
             }
             else
             {
@@ -532,7 +638,8 @@ namespace KMC.MissionControl.Debugging.Capabilities
                 }
             }
 
-            return text.ToString();
+            return
+                text.ToString();
         }
 
         private static string FormatModuleResources(
@@ -541,7 +648,8 @@ namespace KMC.MissionControl.Debugging.Capabilities
             if (resources == null ||
                 resources.Count == 0)
             {
-                return string.Empty;
+                return
+                    string.Empty;
             }
 
             StringBuilder text =
@@ -553,7 +661,8 @@ namespace KMC.MissionControl.Debugging.Capabilities
             {
                 if (index > 0)
                 {
-                    text.Append(" | ");
+                    text.Append(
+                        " | ");
                 }
 
                 text.Append(
@@ -563,14 +672,17 @@ namespace KMC.MissionControl.Debugging.Capabilities
                         resources[index].Ratio) >
                     0.000001)
                 {
-                    text.Append("=");
+                    text.Append(
+                        "=");
+
                     text.Append(
                         resources[index].Ratio.ToString(
                             "0.###"));
                 }
             }
 
-            return text.ToString();
+            return
+                text.ToString();
         }
 
         private static string GetKmcVersion()
@@ -587,13 +699,8 @@ namespace KMC.MissionControl.Debugging.Capabilities
 
         private static string GetPluginVersion()
         {
-            /*
-             * The plugin does not currently transmit its runtime assembly
-             * version to Mission Control. This value matches the current
-             * KMC.Plugin AssemblyVersion in source and is intentionally
-             * labeled as expected rather than runtime-verified.
-             */
-            return "1.0.0.0 (EXPECTED; NOT TELEMETRY-VERIFIED)";
+            return
+                "1.0.0.0 (EXPECTED; NOT TELEMETRY-VERIFIED)";
         }
 
         private static void AppendSectionHeader(
@@ -603,7 +710,8 @@ namespace KMC.MissionControl.Debugging.Capabilities
             text.AppendLine(
                 "============================================================");
 
-            text.AppendLine(title);
+            text.AppendLine(
+                title);
 
             text.AppendLine(
                 "============================================================");
@@ -615,13 +723,16 @@ namespace KMC.MissionControl.Debugging.Capabilities
             string value)
         {
             text.Append(
-                CleanCell(label));
+                CleanCell(
+                    label));
 
-            text.Append('\t');
+            text.Append(
+                '\t');
 
             text.AppendLine(
                 CleanCell(
-                    string.IsNullOrEmpty(value)
+                    string.IsNullOrEmpty(
+                        value)
                         ? "--"
                         : value));
         }
@@ -636,7 +747,8 @@ namespace KMC.MissionControl.Debugging.Capabilities
             {
                 if (index > 0)
                 {
-                    text.Append('\t');
+                    text.Append(
+                        '\t');
                 }
 
                 text.Append(
@@ -682,38 +794,47 @@ namespace KMC.MissionControl.Debugging.Capabilities
                     value[index];
 
                 result.Append(
-                    invalid.Contains(character)
+                    invalid.Contains(
+                        character)
                         ? '_'
                         : character);
             }
 
-            return result.ToString();
+            return
+                result.ToString();
         }
 
         private void PopulateOverview(
             VesselCapabilitySnapshot snapshot)
         {
-            StringBuilder text = new StringBuilder();
+            StringBuilder text =
+                new StringBuilder();
 
-            text.AppendLine("KMC CAPABILITY COMPATIBILITY DEBUGGER");
+            text.AppendLine(
+                "KMC CAPABILITY ENGINE DEBUGGER");
+
             text.AppendLine();
+            Append(text, "Source", "KMC.Engine");
             Append(text, "Vessel", snapshot.VesselName);
             Append(text, "Packet version", snapshot.TransportVersion.ToString());
             Append(text, "Topology revision", snapshot.TopologyRevision.ToString());
             Append(text, "Current stage", snapshot.CurrentStage.ToString());
             Append(text, "Part count", snapshot.Parts.Count.ToString());
+
             Append(
                 text,
                 "Capability count",
                 snapshot.Parts.Sum(
-                    part => part.Capabilities.Count)
+                    part =>
+                        part.Capabilities.Count)
                     .ToString());
 
             Append(
                 text,
                 "Module count",
                 snapshot.Parts.Sum(
-                    part => part.Modules.Count)
+                    part =>
+                        part.Modules.Count)
                     .ToString());
 
             Append(
@@ -722,35 +843,55 @@ namespace KMC.MissionControl.Debugging.Capabilities
                 snapshot.UnknownResources.Count.ToString());
 
             text.AppendLine();
-            text.AppendLine("UNKNOWN RESOURCES");
+            text.AppendLine(
+                "UNKNOWN RESOURCES");
 
-            if (snapshot.UnknownResources.Count == 0)
+            if (snapshot.UnknownResources.Count ==
+                0)
             {
-                text.AppendLine("- None");
+                text.AppendLine(
+                    "- None");
             }
             else
             {
-                for (int i = 0;
-                     i < snapshot.UnknownResources.Count;
-                     i++)
+                for (int index = 0;
+                     index < snapshot.UnknownResources.Count;
+                     index++)
                 {
-                    text.Append("- ");
-                    text.AppendLine(snapshot.UnknownResources[i]);
+                    text.Append(
+                        "- ");
+
+                    text.AppendLine(
+                        snapshot.UnknownResources[index]);
                 }
             }
 
             text.AppendLine();
-            text.AppendLine("PHASE 1 DIAGNOSTICS");
+            text.AppendLine(
+                "ENGINE DIAGNOSTICS");
 
-            for (int i = 0;
-                 i < snapshot.Diagnostics.Count;
-                 i++)
+            if (snapshot.Diagnostics.Count ==
+                0)
             {
-                text.Append("- ");
-                text.AppendLine(snapshot.Diagnostics[i]);
+                text.AppendLine(
+                    "- None");
+            }
+            else
+            {
+                for (int index = 0;
+                     index < snapshot.Diagnostics.Count;
+                     index++)
+                {
+                    text.Append(
+                        "- ");
+
+                    text.AppendLine(
+                        snapshot.Diagnostics[index]);
+                }
             }
 
-            _overview.Text = text.ToString();
+            _overview.Text =
+                text.ToString();
         }
 
         private void PopulateParts(
@@ -758,12 +899,21 @@ namespace KMC.MissionControl.Debugging.Capabilities
         {
             ResetGrid(
                 _parts,
-                "PART ID", "TITLE", "NAME", "SEP", "ACT",
-                "CAPABILITIES", "RESOURCES", "DIAGNOSTICS");
+                "PART ID",
+                "TITLE",
+                "NAME",
+                "SEP",
+                "ACT",
+                "CAPABILITIES",
+                "RESOURCES",
+                "DIAGNOSTICS");
 
-            for (int i = 0; i < snapshot.Parts.Count; i++)
+            for (int index = 0;
+                 index < snapshot.Parts.Count;
+                 index++)
             {
-                PartCapabilitySnapshot part = snapshot.Parts[i];
+                PartCapabilitySnapshot part =
+                    snapshot.Parts[index];
 
                 _parts.Rows.Add(
                     part.PartId,
@@ -773,7 +923,9 @@ namespace KMC.MissionControl.Debugging.Capabilities
                     part.ActivationStage,
                     part.Capabilities.Count,
                     part.Resources.Count,
-                    string.Join(" | ", part.Diagnostics.ToArray()));
+                    string.Join(
+                        " | ",
+                        part.Diagnostics.ToArray()));
             }
         }
 
@@ -782,16 +934,27 @@ namespace KMC.MissionControl.Debugging.Capabilities
         {
             ResetGrid(
                 _capabilities,
-                "PART ID", "PART", "TYPE", "SUBTYPE",
-                "SOURCE", "CONFIDENCE", "DESCRIPTION");
+                "PART ID",
+                "PART",
+                "TYPE",
+                "SUBTYPE",
+                "SOURCE",
+                "CONFIDENCE",
+                "DESCRIPTION");
 
-            for (int p = 0; p < snapshot.Parts.Count; p++)
+            for (int partIndex = 0;
+                 partIndex < snapshot.Parts.Count;
+                 partIndex++)
             {
-                PartCapabilitySnapshot part = snapshot.Parts[p];
+                PartCapabilitySnapshot part =
+                    snapshot.Parts[partIndex];
 
-                for (int i = 0; i < part.Capabilities.Count; i++)
+                for (int index = 0;
+                     index < part.Capabilities.Count;
+                     index++)
                 {
-                    PartCapability capability = part.Capabilities[i];
+                    PartCapability capability =
+                        part.Capabilities[index];
 
                     _capabilities.Rows.Add(
                         part.PartId,
@@ -810,16 +973,31 @@ namespace KMC.MissionControl.Debugging.Capabilities
         {
             ResetGrid(
                 _resources,
-                "PART ID", "PART", "RESOURCE", "DISPLAY", "CATEGORY",
-                "KNOWN", "STORED", "CONSUMED", "AMOUNT", "CAPACITY", "RATIO");
+                "PART ID",
+                "PART",
+                "RESOURCE",
+                "DISPLAY",
+                "CATEGORY",
+                "KNOWN",
+                "STORED",
+                "CONSUMED",
+                "AMOUNT",
+                "CAPACITY",
+                "RATIO");
 
-            for (int p = 0; p < snapshot.Parts.Count; p++)
+            for (int partIndex = 0;
+                 partIndex < snapshot.Parts.Count;
+                 partIndex++)
             {
-                PartCapabilitySnapshot part = snapshot.Parts[p];
+                PartCapabilitySnapshot part =
+                    snapshot.Parts[partIndex];
 
-                for (int i = 0; i < part.Resources.Count; i++)
+                for (int index = 0;
+                     index < part.Resources.Count;
+                     index++)
                 {
-                    ResourceDescriptor resource = part.Resources[i];
+                    ResourceDescriptor resource =
+                        part.Resources[index];
 
                     _resources.Rows.Add(
                         part.PartId,
@@ -830,9 +1008,12 @@ namespace KMC.MissionControl.Debugging.Capabilities
                         resource.IsKnown,
                         resource.IsStored,
                         resource.IsConsumed,
-                        resource.Amount.ToString("0.###"),
-                        resource.Capacity.ToString("0.###"),
-                        resource.RequiredRatio.ToString("0.###"));
+                        resource.Amount.ToString(
+                            "0.###"),
+                        resource.Capacity.ToString(
+                            "0.###"),
+                        resource.RequiredRatio.ToString(
+                            "0.###"));
                 }
             }
         }
@@ -891,25 +1072,30 @@ namespace KMC.MissionControl.Debugging.Capabilities
             grid.Columns.Clear();
             grid.Rows.Clear();
 
-            for (int i = 0; i < columns.Length; i++)
+            for (int index = 0;
+                 index < columns.Length;
+                 index++)
             {
-                grid.Columns.Add(columns[i], columns[i]);
+                grid.Columns.Add(
+                    columns[index],
+                    columns[index]);
             }
         }
 
         private static TextBox CreateTextView()
         {
-            return new TextBox
-            {
-                Dock = DockStyle.Fill,
-                Multiline = true,
-                ReadOnly = true,
-                ScrollBars = ScrollBars.Both,
-                WordWrap = false,
-                BackColor = Color.FromArgb(2, 12, 16),
-                ForeColor = Color.FromArgb(170, 255, 190),
-                Font = new Font("Consolas", 10.0f)
-            };
+            return
+                new TextBox
+                {
+                    Dock = DockStyle.Fill,
+                    Multiline = true,
+                    ReadOnly = true,
+                    ScrollBars = ScrollBars.Both,
+                    WordWrap = false,
+                    BackColor = Color.FromArgb(2, 12, 16),
+                    ForeColor = Color.FromArgb(170, 255, 190),
+                    Font = new Font("Consolas", 10.0f)
+                };
         }
 
         private static DataGridView CreateGrid()
@@ -930,21 +1116,29 @@ namespace KMC.MissionControl.Debugging.Capabilities
                     Font = new Font("Consolas", 9.0f)
                 };
 
-            grid.EnableHeadersVisualStyles = false;
+            grid.EnableHeadersVisualStyles =
+                false;
+
             grid.ColumnHeadersDefaultCellStyle.BackColor =
                 Color.FromArgb(22, 40, 42);
+
             grid.ColumnHeadersDefaultCellStyle.ForeColor =
                 Color.FromArgb(190, 245, 225);
+
             grid.DefaultCellStyle.BackColor =
                 Color.FromArgb(2, 12, 16);
+
             grid.DefaultCellStyle.ForeColor =
                 Color.FromArgb(170, 255, 190);
+
             grid.DefaultCellStyle.SelectionBackColor =
                 Color.FromArgb(35, 70, 72);
+
             grid.DefaultCellStyle.SelectionForeColor =
                 Color.White;
 
-            return grid;
+            return
+                grid;
         }
 
         private static TabPage CreatePage(
@@ -952,29 +1146,35 @@ namespace KMC.MissionControl.Debugging.Capabilities
             Control control)
         {
             TabPage page =
-                new TabPage(title)
+                new TabPage(
+                    title)
                 {
                     BackColor = Color.FromArgb(4, 14, 18)
                 };
 
-            page.Controls.Add(control);
-            return page;
+            page.Controls.Add(
+                control);
+
+            return
+                page;
         }
 
-        private static Button CreateButton(string text)
+        private static Button CreateButton(
+            string text)
         {
-            return new Button
-            {
-                Text = text,
-                AutoSize = true,
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(18, 42, 40),
-                ForeColor = Color.FromArgb(165, 255, 205),
-                Font = new Font(
-                    "Consolas",
-                    9.0f,
-                    FontStyle.Bold)
-            };
+            return
+                new Button
+                {
+                    Text = text,
+                    AutoSize = true,
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.FromArgb(18, 42, 40),
+                    ForeColor = Color.FromArgb(165, 255, 205),
+                    Font = new Font(
+                        "Consolas",
+                        9.0f,
+                        FontStyle.Bold)
+                };
         }
 
         private static void Append(
@@ -982,10 +1182,16 @@ namespace KMC.MissionControl.Debugging.Capabilities
             string label,
             string value)
         {
-            text.Append(label.PadRight(26));
-            text.Append(": ");
+            text.Append(
+                label.PadRight(
+                    26));
+
+            text.Append(
+                ": ");
+
             text.AppendLine(
-                string.IsNullOrEmpty(value)
+                string.IsNullOrEmpty(
+                    value)
                     ? "--"
                     : value);
         }
