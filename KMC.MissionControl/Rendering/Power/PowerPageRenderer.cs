@@ -12,9 +12,9 @@ namespace KMC.MissionControl.Rendering.Power
     /// <summary>
     /// Apollo/MOCR-inspired electrical schematic display.
     ///
-    /// This renderer deliberately shows an engineering block schematic rather
-    /// than claiming to know physical spacecraft wire routing. The Engine is
-    /// the source of truth for every displayed electrical value.
+    /// Build 8.10.1 uses measured text rows rather than fixed undersized
+    /// label/value rectangles. The layout is intentionally conservative:
+    /// readability takes priority over packing maximum information density.
     /// </summary>
     public static class PowerPageRenderer
     {
@@ -47,6 +47,14 @@ namespace KMC.MissionControl.Rendering.Power
                 112,
                 202,
                 154);
+
+        private sealed class TextMetrics
+        {
+            public int SmallHeight;
+            public int LargeHeight;
+            public int RowHeight;
+            public int CompactRowHeight;
+        }
 
         public static void Draw(
             MissionRenderContext context,
@@ -92,6 +100,11 @@ namespace KMC.MissionControl.Rendering.Power
                 return;
             }
 
+            TextMetrics metrics =
+                MeasureText(
+                    graphics,
+                    context);
+
             PowerModel power =
                 engineering.Snapshot.Power;
 
@@ -121,113 +134,152 @@ namespace KMC.MissionControl.Rendering.Power
             ElectricalProcedureModel procedure =
                 power.Procedure;
 
+            /*
+             * 8.10.1 layout:
+             *
+             * TOP    : Sources | Main Bus | Loads
+             * MIDDLE : Procedure           | Storage
+             * BOTTOM : Recovery            | Stage Risk
+             *
+             * The original 8.10 stage-risk panel had excess unused height
+             * while other panels were cramped. This distribution gives the
+             * information-heavy panels enough vertical room.
+             */
+            int gap =
+                14;
+
             int topHeight =
-                258;
+                Math.Max(
+                    286,
+                    area.Height * 37 / 100);
 
             int middleHeight =
-                254;
+                Math.Max(
+                    218,
+                    area.Height * 29 / 100);
 
-            int gap =
-                12;
+            int bottomHeight =
+                area.Height -
+                topHeight -
+                middleHeight -
+                gap * 2;
+
+            int sourceWidth =
+                area.Width * 28 / 100;
+
+            int loadWidth =
+                area.Width * 30 / 100;
 
             Rectangle sources =
                 new Rectangle(
                     area.Left,
                     area.Top,
-                    340,
+                    sourceWidth,
+                    topHeight);
+
+            Rectangle loads =
+                new Rectangle(
+                    area.Right -
+                    loadWidth,
+                    area.Top,
+                    loadWidth,
                     topHeight);
 
             Rectangle bus =
                 new Rectangle(
                     sources.Right + gap,
                     area.Top,
-                    area.Width -
-                    340 -
-                    420 -
+                    loads.Left -
+                    sources.Right -
                     gap * 2,
                     topHeight);
 
-            Rectangle loads =
-                new Rectangle(
-                    bus.Right + gap,
-                    area.Top,
-                    420,
-                    topHeight);
+            int middleLeftWidth =
+                area.Width * 54 / 100;
 
             Rectangle procedureBox =
                 new Rectangle(
                     area.Left,
                     sources.Bottom + gap,
-                    470,
+                    middleLeftWidth,
                     middleHeight);
 
             Rectangle storageBox =
                 new Rectangle(
                     procedureBox.Right + gap,
                     sources.Bottom + gap,
-                    area.Width -
-                    470 -
-                    470 -
-                    gap * 2,
+                    area.Right -
+                    procedureBox.Right -
+                    gap,
                     middleHeight);
+
+            int bottomLeftWidth =
+                area.Width * 52 / 100;
 
             Rectangle recoveryBox =
                 new Rectangle(
-                    storageBox.Right + gap,
-                    sources.Bottom + gap,
-                    470,
-                    middleHeight);
+                    area.Left,
+                    procedureBox.Bottom + gap,
+                    bottomLeftWidth,
+                    bottomHeight);
 
             Rectangle stageBox =
                 new Rectangle(
-                    area.Left,
+                    recoveryBox.Right + gap,
                     procedureBox.Bottom + gap,
-                    area.Width,
-                    area.Bottom -
-                    procedureBox.Bottom -
-                    gap);
+                    area.Right -
+                    recoveryBox.Right -
+                    gap,
+                    bottomHeight);
 
             DrawPanel(
                 graphics,
                 sources,
                 "POWER SOURCES",
-                context);
+                context,
+                metrics);
 
             DrawPanel(
                 graphics,
                 bus,
                 "MAIN ELECTRICAL BUS",
-                context);
+                context,
+                metrics);
 
             DrawPanel(
                 graphics,
                 loads,
                 "LOAD / SHEDDING",
-                context);
+                context,
+                metrics);
 
             DrawPanel(
                 graphics,
                 procedureBox,
                 "ENGINEERING PROCEDURE",
-                context);
+                context,
+                metrics);
 
             DrawPanel(
                 graphics,
                 storageBox,
                 "EC STORAGE",
-                context);
+                context,
+                metrics);
 
             DrawPanel(
                 graphics,
                 recoveryBox,
                 "RECOVERY VERIFICATION",
-                context);
+                context,
+                metrics);
 
             DrawPanel(
                 graphics,
                 stageBox,
                 "NEXT STAGE ELECTRICAL RISK",
-                context);
+                context,
+                metrics);
 
             DrawSchematicConnectors(
                 graphics,
@@ -244,7 +296,8 @@ namespace KMC.MissionControl.Rendering.Power
                 network,
                 load,
                 attribution,
-                context);
+                context,
+                metrics);
 
             DrawBus(
                 graphics,
@@ -252,7 +305,8 @@ namespace KMC.MissionControl.Rendering.Power
                 status,
                 flow,
                 load,
-                context);
+                context,
+                metrics);
 
             DrawLoads(
                 graphics,
@@ -260,32 +314,90 @@ namespace KMC.MissionControl.Rendering.Power
                 load,
                 attribution,
                 shedding,
-                context);
+                context,
+                metrics);
 
             DrawProcedure(
                 graphics,
                 procedureBox,
                 procedure,
-                context);
+                context,
+                metrics);
 
             DrawStorage(
                 graphics,
                 storageBox,
                 storage,
-                context);
+                context,
+                metrics);
 
             DrawRecovery(
                 graphics,
                 recoveryBox,
                 procedure,
-                context);
+                context,
+                metrics);
 
             DrawStageRisk(
                 graphics,
                 stageBox,
                 status,
                 storage,
-                context);
+                context,
+                metrics);
+        }
+
+        private static TextMetrics MeasureText(
+            Graphics graphics,
+            MissionRenderContext context)
+        {
+            Size small =
+                TextRenderer.MeasureText(
+                    graphics,
+                    "Ag",
+                    context.SmallFont,
+                    new Size(
+                        int.MaxValue,
+                        int.MaxValue),
+                    TextFormatFlags.NoPadding);
+
+            Size large =
+                TextRenderer.MeasureText(
+                    graphics,
+                    "Ag",
+                    context.LargeFont,
+                    new Size(
+                        int.MaxValue,
+                        int.MaxValue),
+                    TextFormatFlags.NoPadding);
+
+            TextMetrics metrics =
+                new TextMetrics();
+
+            metrics.SmallHeight =
+                Math.Max(
+                    1,
+                    small.Height);
+
+            metrics.LargeHeight =
+                Math.Max(
+                    1,
+                    large.Height);
+
+            /*
+             * No field may be shorter than the actual font it contains.
+             * Additional spacing keeps scanline/bicubic presentation from
+             * visually merging adjacent rows.
+             */
+            metrics.RowHeight =
+                metrics.SmallHeight +
+                12;
+
+            metrics.CompactRowHeight =
+                metrics.SmallHeight +
+                8;
+
+            return metrics;
         }
 
         private static void DrawSources(
@@ -294,11 +406,13 @@ namespace KMC.MissionControl.Rendering.Power
             ElectricalNetwork network,
             ElectricalLoadModel load,
             ElectricalAttributionModel attribution,
-            MissionRenderContext context)
+            MissionRenderContext context,
+            TextMetrics metrics)
         {
             Rectangle body =
                 Body(
-                    panel);
+                    panel,
+                    metrics);
 
             int producers =
                 attribution != null
@@ -333,49 +447,57 @@ namespace KMC.MissionControl.Rendering.Power
                       " CURRENT"
                     : "WAITING";
 
-            DrawMetric(
+            int y =
+                body.Top;
+
+            y = DrawRow(
                 graphics,
                 body,
-                0,
+                y,
                 "SOURCE NODES",
                 sourceNodes.ToString(),
                 context,
+                metrics,
                 context.PhosphorColor);
 
-            DrawMetric(
+            y = DrawRow(
                 graphics,
                 body,
-                1,
+                y,
                 "PRODUCERS",
                 producers.ToString(),
                 context,
+                metrics,
                 context.PhosphorColor);
 
-            DrawMetric(
+            y = DrawRow(
                 graphics,
                 body,
-                2,
-                "KNOWN GENERATION",
+                y,
+                "GENERATION",
                 generation,
                 context,
+                metrics,
                 Healthy);
 
-            DrawMetric(
+            y = DrawRow(
                 graphics,
                 body,
-                3,
-                "DECLARED MAX",
+                y,
+                "MAX AVAILABLE",
                 maxGeneration,
                 context,
+                metrics,
                 context.PhosphorColor);
 
-            DrawMetric(
+            DrawRow(
                 graphics,
                 body,
-                4,
+                y,
                 "EVIDENCE",
                 evidence,
                 context,
+                metrics,
                 context.DimPhosphorColor);
         }
 
@@ -385,22 +507,68 @@ namespace KMC.MissionControl.Rendering.Power
             ElectricalPowerDiagnosticModel status,
             ElectricalFlowModel flow,
             ElectricalLoadModel load,
-            MissionRenderContext context)
+            MissionRenderContext context,
+            TextMetrics metrics)
         {
             Rectangle body =
                 Body(
-                    panel);
+                    panel,
+                    metrics);
 
             Color stateColor =
                 SeverityColor(
                     status,
                     context);
 
+            string severity =
+                status != null
+                    ? status.Severity.ToString()
+                    : "UNKNOWN";
+
+            string condition =
+                status != null
+                    ? SplitWords(
+                        status.Condition.ToString())
+                    : "UNKNOWN";
+
+            int statusHeight =
+                metrics.LargeHeight +
+                metrics.SmallHeight +
+                12;
+
+            DrawCenteredValue(
+                graphics,
+                new Rectangle(
+                    body.Left,
+                    body.Top,
+                    body.Width,
+                    metrics.LargeHeight + 4),
+                severity,
+                context.LargeFont,
+                stateColor);
+
+            DrawCenteredValue(
+                graphics,
+                new Rectangle(
+                    body.Left,
+                    body.Top +
+                    metrics.LargeHeight +
+                    2,
+                    body.Width,
+                    metrics.SmallHeight + 4),
+                condition,
+                context.SmallFont,
+                stateColor);
+
+            int y =
+                body.Top +
+                statusHeight;
+
             string stored =
                 status != null &&
                 status.TelemetryAvailable
                     ? status.StoredEc.ToString("0.0") +
-                      " / " +
+                      "/" +
                       status.CapacityEc.ToString("0.0") +
                       " EC"
                     : "--";
@@ -426,59 +594,6 @@ namespace KMC.MissionControl.Rendering.Power
                         status.EnduranceSeconds)
                     : "--";
 
-            string severity =
-                status != null
-                    ? status.Severity.ToString()
-                    : "UNKNOWN";
-
-            string condition =
-                status != null
-                    ? SplitWords(
-                        status.Condition.ToString())
-                    : "UNKNOWN";
-
-            DrawCenteredValue(
-                graphics,
-                new Rectangle(
-                    body.Left,
-                    body.Top,
-                    body.Width,
-                    36),
-                severity,
-                context.LargeFont,
-                stateColor);
-
-            DrawCenteredValue(
-                graphics,
-                new Rectangle(
-                    body.Left,
-                    body.Top + 34,
-                    body.Width,
-                    26),
-                condition,
-                context.SmallFont,
-                stateColor);
-
-            DrawTwoColumnMetric(
-                graphics,
-                body,
-                74,
-                "EC",
-                stored,
-                "RESERVE",
-                reserve,
-                context);
-
-            DrawTwoColumnMetric(
-                graphics,
-                body,
-                112,
-                "NET FLOW",
-                flowRate,
-                "ENDURANCE",
-                endurance,
-                context);
-
             string demand =
                 load != null &&
                 load.HasInferredTotalLoad
@@ -493,15 +608,38 @@ namespace KMC.MissionControl.Rendering.Power
                         status.PowerMarginEcPerSecond)
                     : "--";
 
-            DrawTwoColumnMetric(
+            y = DrawPairRow(
                 graphics,
                 body,
-                150,
+                y,
+                "EC",
+                stored,
+                "RESERVE",
+                reserve,
+                context,
+                metrics);
+
+            y = DrawPairRow(
+                graphics,
+                body,
+                y,
+                "NET FLOW",
+                flowRate,
+                "ENDURANCE",
+                endurance,
+                context,
+                metrics);
+
+            DrawPairRow(
+                graphics,
+                body,
+                y,
                 "DEMAND",
                 demand,
                 "MARGIN",
                 margin,
-                context);
+                context,
+                metrics);
         }
 
         private static void DrawLoads(
@@ -510,11 +648,13 @@ namespace KMC.MissionControl.Rendering.Power
             ElectricalLoadModel load,
             ElectricalAttributionModel attribution,
             ElectricalLoadSheddingModel shedding,
-            MissionRenderContext context)
+            MissionRenderContext context,
+            TextMetrics metrics)
         {
             Rectangle body =
                 Body(
-                    panel);
+                    panel,
+                    metrics);
 
             int consumers =
                 attribution != null
@@ -533,20 +673,24 @@ namespace KMC.MissionControl.Rendering.Power
                       "%"
                     : "UNKNOWN";
 
-            DrawTwoColumnMetric(
+            int y =
+                body.Top;
+
+            y = DrawPairRow(
                 graphics,
                 body,
-                0,
+                y,
                 "CONSUMERS",
                 consumers.ToString(),
                 "CURRENT KNOWN",
                 known.ToString(),
-                context);
+                context,
+                metrics);
 
-            DrawTwoColumnMetric(
+            y = DrawPairRow(
                 graphics,
                 body,
-                40,
+                y,
                 "ATTRIBUTED",
                 load != null
                     ? FormatRate(
@@ -554,12 +698,13 @@ namespace KMC.MissionControl.Rendering.Power
                     : "--",
                 "COVERAGE",
                 coverage,
-                context);
+                context,
+                metrics);
 
-            DrawTwoColumnMetric(
+            y = DrawPairRow(
                 graphics,
                 body,
-                80,
+                y,
                 "PROTECTED",
                 shedding != null
                     ? shedding.ProtectedConsumerCount.ToString()
@@ -568,12 +713,13 @@ namespace KMC.MissionControl.Rendering.Power
                 shedding != null
                     ? shedding.CandidateCount.ToString()
                     : "--",
-                context);
+                context,
+                metrics);
 
-            DrawTwoColumnMetric(
+            y = DrawPairRow(
                 graphics,
                 body,
-                120,
+                y,
                 "QUANTIFIED",
                 shedding != null
                     ? FormatRate(
@@ -584,39 +730,43 @@ namespace KMC.MissionControl.Rendering.Power
                     ? FormatRate(
                         shedding.PotentialMaximumRecoverableEcPerSecond)
                     : "--",
-                context);
+                context,
+                metrics);
 
             string recommendation =
                 shedding != null
-                    ? shedding.State.ToString()
+                    ? SplitWords(
+                        shedding.State.ToString())
                     : "UNAVAILABLE";
 
-            Color color =
+            Color recommendationColor =
                 shedding != null &&
                 shedding.SheddingRecommended
                     ? Warning
                     : context.PhosphorColor;
 
-            DrawMetric(
+            DrawRow(
                 graphics,
                 body,
-                4,
+                y,
                 "SHEDDING",
-                SplitWords(
-                    recommendation),
+                recommendation,
                 context,
-                color);
+                metrics,
+                recommendationColor);
         }
 
         private static void DrawProcedure(
             Graphics graphics,
             Rectangle panel,
             ElectricalProcedureModel procedure,
-            MissionRenderContext context)
+            MissionRenderContext context,
+            TextMetrics metrics)
         {
             Rectangle body =
                 Body(
-                    panel);
+                    panel,
+                    metrics);
 
             if (procedure == null)
             {
@@ -635,58 +785,74 @@ namespace KMC.MissionControl.Rendering.Power
                     ? Warning
                     : context.PhosphorColor;
 
-            DrawMetric(
+            int y =
+                body.Top;
+
+            y = DrawPairRow(
                 graphics,
                 body,
-                0,
+                y,
                 "STATE",
                 SplitWords(
                     procedure.State.ToString()),
-                context,
-                stateColor);
-
-            DrawMetric(
-                graphics,
-                body,
-                1,
-                "ACTION REQUIRED",
+                "ACTION",
                 procedure.ActionRequired
-                    ? "YES"
-                    : "NO",
+                    ? "REQUIRED"
+                    : "NONE",
                 context,
+                metrics,
                 stateColor);
 
-            DrawMetric(
+            y = DrawRow(
                 graphics,
                 body,
-                2,
+                y,
                 "CONFIDENCE",
                 procedure.RecoveryConfidence.ToString(),
                 context,
+                metrics,
                 context.PhosphorColor);
 
-            DrawWrappedText(
+            y += 4;
+
+            int available =
+                body.Bottom -
+                y;
+
+            int actionHeight =
+                Math.Max(
+                    metrics.SmallHeight * 2 + 8,
+                    available * 46 / 100);
+
+            DrawTextSection(
                 graphics,
                 new Rectangle(
                     body.Left,
-                    body.Top + 116,
+                    y,
                     body.Width,
-                    54),
+                    actionHeight),
+                "PRIMARY ACTION",
                 procedure.PrimaryAction,
-                context.SmallFont,
+                context,
+                metrics,
                 stateColor);
 
-            DrawWrappedText(
+            DrawTextSection(
                 graphics,
                 new Rectangle(
                     body.Left,
-                    body.Top + 174,
+                    y + actionHeight + 6,
                     body.Width,
-                    body.Bottom -
-                    body.Top -
-                    174),
+                    Math.Max(
+                        0,
+                        body.Bottom -
+                        y -
+                        actionHeight -
+                        6)),
+                "OBJECTIVE",
                 procedure.Objective,
-                context.SmallFont,
+                context,
+                metrics,
                 context.DimPhosphorColor);
         }
 
@@ -694,11 +860,13 @@ namespace KMC.MissionControl.Rendering.Power
             Graphics graphics,
             Rectangle panel,
             ElectricalStorageModel storage,
-            MissionRenderContext context)
+            MissionRenderContext context,
+            TextMetrics metrics)
         {
             Rectangle body =
                 Body(
-                    panel);
+                    panel,
+                    metrics);
 
             if (storage == null)
             {
@@ -712,58 +880,65 @@ namespace KMC.MissionControl.Rendering.Power
                 return;
             }
 
-            string amount =
-                storage.StoredEc.ToString("0.0") +
-                " / " +
-                storage.CapacityEc.ToString("0.0") +
-                " EC";
+            int y =
+                body.Top;
 
-            DrawMetric(
+            y = DrawRow(
                 graphics,
                 body,
-                0,
+                y,
                 "TOTAL EC",
-                amount,
+                storage.StoredEc.ToString("0.0") +
+                "/" +
+                storage.CapacityEc.ToString("0.0") +
+                " EC",
                 context,
+                metrics,
                 context.PhosphorColor);
 
-            DrawMetric(
+            y = DrawRow(
                 graphics,
                 body,
-                1,
+                y,
                 "CHARGE",
                 storage.ChargePercent.ToString("0.0") +
                 "%",
                 context,
+                metrics,
                 ReserveColor(
                     storage.ChargePercent,
                     context));
 
-            DrawTwoColumnMetric(
+            y = DrawPairRow(
                 graphics,
                 body,
-                82,
+                y,
                 "STORAGE PARTS",
                 storage.Parts.Count.ToString(),
                 "SECTIONS",
                 storage.StageSections.Count.ToString(),
-                context);
+                context,
+                metrics);
 
-            DrawTwoColumnMetric(
+            y = DrawPairRow(
                 graphics,
                 body,
-                122,
+                y,
                 "BRANCHES",
                 storage.BranchSections.Count.ToString(),
                 "NEXT STAGE",
                 FormatStage(
                     storage.NextStage),
-                context);
+                context,
+                metrics);
 
             Rectangle bar =
                 new Rectangle(
                     body.Left,
-                    body.Bottom - 28,
+                    Math.Min(
+                        body.Bottom -
+                        18,
+                        y + 8),
                     body.Width,
                     16);
 
@@ -778,11 +953,13 @@ namespace KMC.MissionControl.Rendering.Power
             Graphics graphics,
             Rectangle panel,
             ElectricalProcedureModel procedure,
-            MissionRenderContext context)
+            MissionRenderContext context,
+            TextMetrics metrics)
         {
             Rectangle body =
                 Body(
-                    panel);
+                    panel,
+                    metrics);
 
             if (procedure == null)
             {
@@ -822,47 +999,60 @@ namespace KMC.MissionControl.Rendering.Power
                         ? context.PhosphorColor
                         : context.DimPhosphorColor;
 
-            DrawMetric(
+            int y =
+                body.Top;
+
+            y = DrawRow(
                 graphics,
                 body,
-                0,
-                "RECOVERY STATE",
+                y,
+                "STATE",
                 SplitWords(
                     procedure.RecoveryState.ToString()),
                 context,
+                metrics,
                 recoveryColor);
 
-            DrawTwoColumnMetric(
+            y = DrawPairRow(
                 graphics,
                 body,
-                44,
+                y,
                 "BASELINE",
                 baseline,
                 "CURRENT",
                 current,
-                context);
+                context,
+                metrics);
 
-            DrawTwoColumnMetric(
+            y = DrawPairRow(
                 graphics,
                 body,
-                84,
+                y,
                 "IMPROVEMENT",
                 improvement,
                 "DEFICIT CLEAR",
                 procedure.DeficitCleared
                     ? "YES"
                     : "NO",
-                context);
+                context,
+                metrics);
 
-            DrawWrappedText(
+            y += 4;
+
+            DrawTextSection(
                 graphics,
                 new Rectangle(
                     body.Left,
-                    body.Top + 142,
+                    y,
                     body.Width,
-                    body.Height - 142),
+                    Math.Max(
+                        0,
+                        body.Bottom -
+                        y)),
+                "VERIFICATION",
                 procedure.Verification,
-                context.SmallFont,
+                context,
+                metrics,
                 context.DimPhosphorColor);
         }
 
@@ -871,11 +1061,13 @@ namespace KMC.MissionControl.Rendering.Power
             Rectangle panel,
             ElectricalPowerDiagnosticModel status,
             ElectricalStorageModel storage,
-            MissionRenderContext context)
+            MissionRenderContext context,
+            TextMetrics metrics)
         {
             Rectangle body =
                 Body(
-                    panel);
+                    panel,
+                    metrics);
 
             bool losesStorage =
                 status != null &&
@@ -894,21 +1086,28 @@ namespace KMC.MissionControl.Rendering.Power
 
             string headline =
                 losesAll
-                    ? "CRITICAL — NEXT STAGE REMOVES ALL KNOWN EC STORAGE"
+                    ? "CRITICAL - ALL EC STORAGE LOST"
                     : losesStorage
-                        ? "CAUTION — NEXT STAGE REMOVES EC STORAGE"
-                        : "NO NEXT-STAGE STORAGE HAZARD";
+                        ? "CAUTION - EC STORAGE LOSS"
+                        : "NO STORAGE HAZARD";
+
+            int y =
+                body.Top;
 
             DrawCenteredValue(
                 graphics,
                 new Rectangle(
                     body.Left,
-                    body.Top,
+                    y,
                     body.Width,
-                    34),
+                    metrics.LargeHeight + 8),
                 headline,
                 context.LargeFont,
                 riskColor);
+
+            y +=
+                metrics.LargeHeight +
+                12;
 
             double lostStored =
                 status != null
@@ -938,27 +1137,22 @@ namespace KMC.MissionControl.Rendering.Power
                         ? storage.NextStageRemainingCapacityEc
                         : 0.0;
 
-            string lost =
-                lostStored.ToString("0.0") +
-                " / " +
-                lostCapacity.ToString("0.0") +
-                " EC";
-
-            string remaining =
-                remainStored.ToString("0.0") +
-                " / " +
-                remainCapacity.ToString("0.0") +
-                " EC";
-
-            DrawTwoColumnMetric(
+            y = DrawPairRow(
                 graphics,
                 body,
-                44,
-                "LOST ON STAGE",
-                lost,
+                y,
+                "LOST",
+                lostStored.ToString("0.0") +
+                "/" +
+                lostCapacity.ToString("0.0") +
+                " EC",
                 "REMAINING",
-                remaining,
-                context);
+                remainStored.ToString("0.0") +
+                "/" +
+                remainCapacity.ToString("0.0") +
+                " EC",
+                context,
+                metrics);
 
             string reserveAfter =
                 status != null &&
@@ -973,126 +1167,302 @@ namespace KMC.MissionControl.Rendering.Power
                           "%"
                         : "--";
 
-            DrawTwoColumnMetric(
+            DrawPairRow(
                 graphics,
                 body,
-                84,
+                y,
                 "LOSE ALL",
                 losesAll
                     ? "YES"
                     : "NO",
                 "RESERVE AFTER",
                 reserveAfter,
-                context);
+                context,
+                metrics);
         }
 
-        private static void DrawSchematicConnectors(
+        private static int DrawRow(
             Graphics graphics,
-            Rectangle sources,
-            Rectangle bus,
-            Rectangle loads,
-            Rectangle storage,
+            Rectangle body,
+            int y,
+            string label,
+            string value,
             MissionRenderContext context,
-            ElectricalPowerDiagnosticModel status)
+            TextMetrics metrics,
+            Color valueColor)
         {
-            Color color =
-                SeverityColor(
-                    status,
-                    context);
+            int rowHeight =
+                metrics.RowHeight;
 
-            using (Pen line =
-                new Pen(
-                    Color.FromArgb(
-                        150,
-                        color),
-                    3.0f))
+            if (y + rowHeight >
+                body.Bottom)
             {
-                line.StartCap =
-                    LineCap.Flat;
-
-                line.EndCap =
-                    LineCap.Flat;
-
-                int y =
-                    sources.Top +
-                    sources.Height /
-                    2;
-
-                graphics.DrawLine(
-                    line,
-                    sources.Right,
-                    y,
-                    bus.Left,
-                    y);
-
-                graphics.DrawLine(
-                    line,
-                    bus.Right,
-                    y,
-                    loads.Left,
-                    y);
-
-                int busX =
-                    bus.Left +
-                    bus.Width /
-                    2;
-
-                int storageX =
-                    storage.Left +
-                    storage.Width /
-                    2;
-
-                int elbowY =
-                    bus.Bottom +
-                    6;
-
-                graphics.DrawLine(
-                    line,
-                    busX,
-                    bus.Bottom,
-                    busX,
-                    elbowY);
-
-                graphics.DrawLine(
-                    line,
-                    busX,
-                    elbowY,
-                    storageX,
-                    elbowY);
-
-                graphics.DrawLine(
-                    line,
-                    storageX,
-                    elbowY,
-                    storageX,
-                    storage.Top);
+                return y;
             }
 
-            DrawJunction(
-                graphics,
-                new Point(
-                    bus.Left,
-                    sources.Top +
-                    sources.Height /
-                    2),
-                color);
+            int labelWidth =
+                Math.Max(
+                    115,
+                    body.Width * 44 / 100);
 
-            DrawJunction(
+            Rectangle labelBounds =
+                new Rectangle(
+                    body.Left,
+                    y,
+                    labelWidth - 8,
+                    rowHeight);
+
+            Rectangle valueBounds =
+                new Rectangle(
+                    body.Left + labelWidth,
+                    y,
+                    Math.Max(
+                        0,
+                        body.Width -
+                        labelWidth),
+                    rowHeight);
+
+            DrawText(
                 graphics,
-                new Point(
-                    bus.Right,
-                    sources.Top +
-                    sources.Height /
-                    2),
-                color);
+                labelBounds,
+                label,
+                context.SmallFont,
+                context.DimPhosphorColor,
+                TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+
+            DrawText(
+                graphics,
+                valueBounds,
+                value,
+                context.SmallFont,
+                valueColor,
+                TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+
+            return
+                y +
+                rowHeight;
+        }
+
+        private static int DrawPairRow(
+            Graphics graphics,
+            Rectangle body,
+            int y,
+            string leftLabel,
+            string leftValue,
+            string rightLabel,
+            string rightValue,
+            MissionRenderContext context,
+            TextMetrics metrics)
+        {
+            return
+                DrawPairRow(
+                    graphics,
+                    body,
+                    y,
+                    leftLabel,
+                    leftValue,
+                    rightLabel,
+                    rightValue,
+                    context,
+                    metrics,
+                    context.PhosphorColor);
+        }
+
+        private static int DrawPairRow(
+            Graphics graphics,
+            Rectangle body,
+            int y,
+            string leftLabel,
+            string leftValue,
+            string rightLabel,
+            string rightValue,
+            MissionRenderContext context,
+            TextMetrics metrics,
+            Color valueColor)
+        {
+            int rowHeight =
+                metrics.RowHeight;
+
+            if (y + rowHeight >
+                body.Bottom)
+            {
+                return y;
+            }
+
+            int gap =
+                18;
+
+            int half =
+                (body.Width -
+                 gap) /
+                2;
+
+            Rectangle left =
+                new Rectangle(
+                    body.Left,
+                    y,
+                    half,
+                    rowHeight);
+
+            Rectangle right =
+                new Rectangle(
+                    left.Right + gap,
+                    y,
+                    half,
+                    rowHeight);
+
+            DrawInlineField(
+                graphics,
+                left,
+                leftLabel,
+                leftValue,
+                context,
+                metrics,
+                valueColor);
+
+            DrawInlineField(
+                graphics,
+                right,
+                rightLabel,
+                rightValue,
+                context,
+                metrics,
+                valueColor);
+
+            return
+                y +
+                rowHeight;
+        }
+
+        private static void DrawInlineField(
+            Graphics graphics,
+            Rectangle bounds,
+            string label,
+            string value,
+            MissionRenderContext context,
+            TextMetrics metrics,
+            Color valueColor)
+        {
+            int labelWidth =
+                Math.Max(
+                    82,
+                    bounds.Width * 48 / 100);
+
+            Rectangle labelBounds =
+                new Rectangle(
+                    bounds.Left,
+                    bounds.Top,
+                    labelWidth - 6,
+                    bounds.Height);
+
+            Rectangle valueBounds =
+                new Rectangle(
+                    bounds.Left + labelWidth,
+                    bounds.Top,
+                    Math.Max(
+                        0,
+                        bounds.Width -
+                        labelWidth),
+                    bounds.Height);
+
+            DrawText(
+                graphics,
+                labelBounds,
+                label,
+                context.SmallFont,
+                context.DimPhosphorColor,
+                TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+
+            DrawText(
+                graphics,
+                valueBounds,
+                value,
+                context.SmallFont,
+                valueColor,
+                TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+        }
+
+        private static void DrawTextSection(
+            Graphics graphics,
+            Rectangle bounds,
+            string label,
+            string text,
+            MissionRenderContext context,
+            TextMetrics metrics,
+            Color textColor)
+        {
+            if (bounds.Width <= 0 ||
+                bounds.Height <=
+                    metrics.SmallHeight)
+            {
+                return;
+            }
+
+            Rectangle labelBounds =
+                new Rectangle(
+                    bounds.Left,
+                    bounds.Top,
+                    bounds.Width,
+                    metrics.SmallHeight + 2);
+
+            DrawText(
+                graphics,
+                labelBounds,
+                label,
+                context.SmallFont,
+                context.DimPhosphorColor,
+                TextFormatFlags.Left |
+                TextFormatFlags.Top |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+
+            Rectangle textBounds =
+                new Rectangle(
+                    bounds.Left,
+                    labelBounds.Bottom + 3,
+                    bounds.Width,
+                    Math.Max(
+                        0,
+                        bounds.Bottom -
+                        labelBounds.Bottom -
+                        3));
+
+            DrawText(
+                graphics,
+                textBounds,
+                text,
+                context.SmallFont,
+                textColor,
+                TextFormatFlags.Left |
+                TextFormatFlags.Top |
+                TextFormatFlags.WordBreak |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
         }
 
         private static void DrawPanel(
             Graphics graphics,
             Rectangle bounds,
             string title,
-            MissionRenderContext context)
+            MissionRenderContext context,
+            TextMetrics metrics)
         {
+            int titleHeight =
+                metrics.SmallHeight +
+                12;
+
             using (SolidBrush fill =
                 new SolidBrush(
                     Color.FromArgb(
@@ -1104,9 +1474,6 @@ namespace KMC.MissionControl.Rendering.Power
                         150,
                         context.DimPhosphorColor),
                     1.4f))
-            using (SolidBrush titleBrush =
-                new SolidBrush(
-                    context.DimPhosphorColor))
             {
                 graphics.FillRectangle(
                     fill,
@@ -1116,183 +1483,73 @@ namespace KMC.MissionControl.Rendering.Power
                     border,
                     bounds);
 
-                graphics.DrawString(
+                DrawText(
+                    graphics,
+                    new Rectangle(
+                        bounds.Left + 12,
+                        bounds.Top + 5,
+                        bounds.Width - 24,
+                        metrics.SmallHeight + 4),
                     title,
                     context.SmallFont,
-                    titleBrush,
-                    bounds.Left + 12,
-                    bounds.Top + 8);
+                    context.DimPhosphorColor,
+                    TextFormatFlags.Left |
+                    TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.NoPadding |
+                    TextFormatFlags.EndEllipsis);
 
                 graphics.DrawLine(
                     border,
                     bounds.Left + 10,
-                    bounds.Top + 32,
+                    bounds.Top + titleHeight,
                     bounds.Right - 10,
-                    bounds.Top + 32);
+                    bounds.Top + titleHeight);
             }
         }
 
         private static Rectangle Body(
-            Rectangle panel)
+            Rectangle panel,
+            TextMetrics metrics)
         {
+            int topInset =
+                metrics.SmallHeight +
+                22;
+
             return new Rectangle(
                 panel.Left + 14,
-                panel.Top + 40,
+                panel.Top + topInset,
                 Math.Max(
                     0,
                     panel.Width - 28),
                 Math.Max(
                     0,
-                    panel.Height - 52));
+                    panel.Height -
+                    topInset -
+                    12));
         }
 
-        private static void DrawMetric(
-            Graphics graphics,
-            Rectangle body,
-            int row,
-            string label,
-            string value,
-            MissionRenderContext context,
-            Color valueColor)
-        {
-            int y =
-                body.Top +
-                row * 36;
-
-            DrawLabel(
-                graphics,
-                new Rectangle(
-                    body.Left,
-                    y,
-                    body.Width,
-                    15),
-                label,
-                context);
-
-            DrawValue(
-                graphics,
-                new Rectangle(
-                    body.Left,
-                    y + 14,
-                    body.Width,
-                    24),
-                value,
-                context,
-                valueColor);
-        }
-
-        private static void DrawTwoColumnMetric(
-            Graphics graphics,
-            Rectangle body,
-            int yOffset,
-            string leftLabel,
-            string leftValue,
-            string rightLabel,
-            string rightValue,
-            MissionRenderContext context)
-        {
-            int gap =
-                14;
-
-            int width =
-                (body.Width -
-                 gap) /
-                2;
-
-            Rectangle left =
-                new Rectangle(
-                    body.Left,
-                    body.Top + yOffset,
-                    width,
-                    38);
-
-            Rectangle right =
-                new Rectangle(
-                    left.Right + gap,
-                    body.Top + yOffset,
-                    width,
-                    38);
-
-            DrawLabel(
-                graphics,
-                new Rectangle(
-                    left.Left,
-                    left.Top,
-                    left.Width,
-                    14),
-                leftLabel,
-                context);
-
-            DrawValue(
-                graphics,
-                new Rectangle(
-                    left.Left,
-                    left.Top + 14,
-                    left.Width,
-                    24),
-                leftValue,
-                context,
-                context.PhosphorColor);
-
-            DrawLabel(
-                graphics,
-                new Rectangle(
-                    right.Left,
-                    right.Top,
-                    right.Width,
-                    14),
-                rightLabel,
-                context);
-
-            DrawValue(
-                graphics,
-                new Rectangle(
-                    right.Left,
-                    right.Top + 14,
-                    right.Width,
-                    24),
-                rightValue,
-                context,
-                context.PhosphorColor);
-        }
-
-        private static void DrawLabel(
+        private static void DrawText(
             Graphics graphics,
             Rectangle bounds,
             string text,
-            MissionRenderContext context)
+            Font font,
+            Color color,
+            TextFormatFlags flags)
         {
+            if (bounds.Width <= 0 ||
+                bounds.Height <= 0)
+            {
+                return;
+            }
+
             TextRenderer.DrawText(
                 graphics,
                 Safe(
                     text),
-                context.SmallFont,
-                bounds,
-                context.DimPhosphorColor,
-                TextFormatFlags.Left |
-                TextFormatFlags.Top |
-                TextFormatFlags.NoPadding |
-                TextFormatFlags.EndEllipsis);
-        }
-
-        private static void DrawValue(
-            Graphics graphics,
-            Rectangle bounds,
-            string text,
-            MissionRenderContext context,
-            Color color)
-        {
-            TextRenderer.DrawText(
-                graphics,
-                Safe(
-                    text),
-                context.SmallFont,
+                font,
                 bounds,
                 color,
-                TextFormatFlags.Left |
-                TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding |
-                TextFormatFlags.EndEllipsis);
+                flags);
         }
 
         private static void DrawCenteredValue(
@@ -1302,36 +1559,14 @@ namespace KMC.MissionControl.Rendering.Power
             Font font,
             Color color)
         {
-            TextRenderer.DrawText(
+            DrawText(
                 graphics,
-                Safe(
-                    text),
-                font,
                 bounds,
+                text,
+                font,
                 color,
                 TextFormatFlags.HorizontalCenter |
                 TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding |
-                TextFormatFlags.EndEllipsis);
-        }
-
-        private static void DrawWrappedText(
-            Graphics graphics,
-            Rectangle bounds,
-            string text,
-            Font font,
-            Color color)
-        {
-            TextRenderer.DrawText(
-                graphics,
-                Safe(
-                    text),
-                font,
-                bounds,
-                color,
-                TextFormatFlags.Left |
-                TextFormatFlags.Top |
-                TextFormatFlags.WordBreak |
                 TextFormatFlags.NoPadding |
                 TextFormatFlags.EndEllipsis);
         }
@@ -1368,7 +1603,9 @@ namespace KMC.MissionControl.Rendering.Power
                         bounds.Left + 2,
                         bounds.Top + 2,
                         (int)Math.Round(
-                            (bounds.Width - 3) *
+                            Math.Max(
+                                0,
+                                bounds.Width - 3) *
                             clamped /
                             100.0),
                         Math.Max(
@@ -1385,21 +1622,80 @@ namespace KMC.MissionControl.Rendering.Power
             }
         }
 
-        private static void DrawJunction(
+        private static void DrawSchematicConnectors(
             Graphics graphics,
-            Point point,
-            Color color)
+            Rectangle sources,
+            Rectangle bus,
+            Rectangle loads,
+            Rectangle storage,
+            MissionRenderContext context,
+            ElectricalPowerDiagnosticModel status)
         {
-            using (SolidBrush brush =
-                new SolidBrush(
-                    color))
+            Color color =
+                SeverityColor(
+                    status,
+                    context);
+
+            using (Pen line =
+                new Pen(
+                    Color.FromArgb(
+                        150,
+                        color),
+                    3.0f))
             {
-                graphics.FillEllipse(
-                    brush,
-                    point.X - 4,
-                    point.Y - 4,
-                    8,
-                    8);
+                int y =
+                    sources.Top +
+                    sources.Height /
+                    2;
+
+                graphics.DrawLine(
+                    line,
+                    sources.Right,
+                    y,
+                    bus.Left,
+                    y);
+
+                graphics.DrawLine(
+                    line,
+                    bus.Right,
+                    y,
+                    loads.Left,
+                    y);
+
+                int busX =
+                    bus.Left +
+                    bus.Width /
+                    2;
+
+                int storageX =
+                    storage.Left +
+                    storage.Width /
+                    2;
+
+                int elbowY =
+                    bus.Bottom +
+                    7;
+
+                graphics.DrawLine(
+                    line,
+                    busX,
+                    bus.Bottom,
+                    busX,
+                    elbowY);
+
+                graphics.DrawLine(
+                    line,
+                    busX,
+                    elbowY,
+                    storageX,
+                    elbowY);
+
+                graphics.DrawLine(
+                    line,
+                    storageX,
+                    elbowY,
+                    storageX,
+                    storage.Top);
             }
         }
 
@@ -1408,16 +1704,23 @@ namespace KMC.MissionControl.Rendering.Power
             Rectangle bounds,
             MissionRenderContext context)
         {
+            TextMetrics metrics =
+                MeasureText(
+                    graphics,
+                    context);
+
             DrawPanel(
                 graphics,
                 bounds,
                 "ELECTRICAL SYSTEMS",
-                context);
+                context,
+                metrics);
 
             DrawCenteredValue(
                 graphics,
                 Body(
-                    bounds),
+                    bounds,
+                    metrics),
                 "WAITING FOR ENGINEERING TELEMETRY",
                 context.LargeFont,
                 context.DimPhosphorColor);
