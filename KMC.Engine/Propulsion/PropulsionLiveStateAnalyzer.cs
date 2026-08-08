@@ -37,6 +37,9 @@ namespace KMC.Engine.Propulsion
                 model.FlightSummaryAvailable =
                     true;
 
+                model.LiveCurrentStage =
+                    flight.CurrentStage;
+
                 model.ThrottleCommand =
                     flight.Throttle;
 
@@ -154,7 +157,10 @@ namespace KMC.Engine.Propulsion
                             PropulsionEngineOperatingState.Unknown,
 
                         IsSolidBooster =
-                            engine.IsSolidBooster
+                            engine.IsSolidBooster,
+
+                        ActivationStage =
+                            engine.ActivationStage
                     };
 
                 PropulsionEngineTelemetryEntry entry;
@@ -196,9 +202,27 @@ namespace KMC.Engine.Propulsion
                         model,
                         live);
 
+                    live.StageEligible =
+                        IsStageEligible(
+                            engine.ActivationStage,
+                            model.FlightSummaryAvailable,
+                            model.LiveCurrentStage);
+
+                    live.IsFutureStage =
+                        live.OperatingState ==
+                            PropulsionEngineOperatingState.Armed &&
+                        model.FlightSummaryAvailable &&
+                        !live.StageEligible;
+
                     live.ReadyForThrust =
-                        IsReadyState(
-                            live.OperatingState);
+                        IsReadyForThrust(
+                            live.OperatingState,
+                            live.StageEligible);
+
+                    if (live.IsFutureStage)
+                    {
+                        model.FutureStageEngineCount++;
+                    }
 
                     model.CurrentThrust +=
                         live.CurrentThrust;
@@ -243,7 +267,8 @@ namespace KMC.Engine.Propulsion
                 model.CoverageComplete;
 
             model.AvailableThrustKnown =
-                model.CoverageComplete;
+                model.CoverageComplete &&
+                model.FlightSummaryAvailable;
 
             model.PotentialMaximumThrustKnown =
                 model.CoverageComplete;
@@ -304,16 +329,54 @@ namespace KMC.Engine.Propulsion
             }
         }
 
-        private static bool IsReadyState(
-            PropulsionEngineOperatingState state)
+        private static bool IsStageEligible(
+            int activationStage,
+            bool flightSummaryAvailable,
+            int liveCurrentStage)
         {
+            if (!flightSummaryAvailable)
+            {
+                return false;
+            }
+
+            if (activationStage < 0)
+            {
+                return false;
+            }
+
+            /*
+             * KSP stage numbers count downward.
+             *
+             * Example:
+             * current=7, activation=6 -> future stage
+             * current=6, activation=6 -> reached
+             * current=5, activation=6 -> already reached
+             */
             return
+                activationStage >=
+                liveCurrentStage;
+        }
+
+        private static bool IsReadyForThrust(
+            PropulsionEngineOperatingState state,
+            bool stageEligible)
+        {
+            if (state ==
+                    PropulsionEngineOperatingState.Producing ||
                 state ==
-                    PropulsionEngineOperatingState.Armed ||
-                state ==
-                    PropulsionEngineOperatingState.Ignited ||
-                state ==
-                    PropulsionEngineOperatingState.Producing;
+                    PropulsionEngineOperatingState.Ignited)
+            {
+                return true;
+            }
+
+            if (state ==
+                    PropulsionEngineOperatingState.Armed)
+            {
+                return
+                    stageEligible;
+            }
+
+            return false;
         }
     }
 }

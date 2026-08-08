@@ -99,6 +99,14 @@ namespace KMC.Engine.Systems
                 live.MatchedEngineCount +
                 "/" +
                 live.TopologyEngineCount +
+                ", stage=" +
+                (live.FlightSummaryAvailable
+                    ? live.LiveCurrentStage.ToString()
+                    : "UNKNOWN") +
+                ", ready=" +
+                live.ReadyEngineCount +
+                ", future=" +
+                live.FutureStageEngineCount +
                 ", producing=" +
                 live.ProducingEngineCount +
                 ", flameout=" +
@@ -173,6 +181,10 @@ namespace KMC.Engine.Systems
                 live.TelemetryFresh +
                 " | Age=" +
                 age +
+                " | LiveStage=" +
+                (live.FlightSummaryAvailable
+                    ? live.LiveCurrentStage.ToString()
+                    : "--") +
                 " | TopologyEngines=" +
                 live.TopologyEngineCount +
                 " | Matched=" +
@@ -195,6 +207,8 @@ namespace KMC.Engine.Systems
                 live.FlameoutEngineCount +
                 " | Unknown=" +
                 live.UnknownEngineCount +
+                " | FutureStage=" +
+                live.FutureStageEngineCount +
                 " | Ready=" +
                 live.ReadyEngineCount +
                 " | CurrentThrust=" +
@@ -243,6 +257,20 @@ namespace KMC.Engine.Systems
                     (live.TelemetryFresh
                         ? engine.OperatingState.ToString()
                         : "STALE/UNKNOWN") +
+                    " | ActivateStage=" +
+                    engine.ActivationStage +
+                    " | StageEligible=" +
+                    (live.FlightSummaryAvailable &&
+                     live.TelemetryFresh &&
+                     engine.TelemetryMatched
+                        ? engine.StageEligible.ToString()
+                        : "UNKNOWN") +
+                    " | FutureStage=" +
+                    (live.FlightSummaryAvailable &&
+                     live.TelemetryFresh &&
+                     engine.TelemetryMatched
+                        ? engine.IsFutureStage.ToString()
+                        : "UNKNOWN") +
                     " | CurrentThrust=" +
                     (live.TelemetryFresh &&
                      engine.TelemetryMatched

@@ -13,9 +13,6 @@ namespace KMC.Engine.Propulsion
         Flameout
     }
 
-    /// <summary>
-    /// One raw per-engine telemetry observation keyed by KSP PartId.
-    /// </summary>
     public sealed class PropulsionEngineTelemetryEntry
     {
         public uint PartId { get; set; }
@@ -30,17 +27,9 @@ namespace KMC.Engine.Propulsion
 
         public double CurrentThrust { get; set; }
 
-        /// <summary>
-        /// Maximum thrust reported by the KSP engine module after its
-        /// thrust-percentage limiter. This is configured/potential thrust,
-        /// not proof that the engine can currently deliver it.
-        /// </summary>
         public double MaximumThrust { get; set; }
     }
 
-    /// <summary>
-    /// Latest KMC-ENGINE1 packet supplied to KMC.Engine.
-    /// </summary>
     public sealed class PropulsionTelemetryModel
     {
         public PropulsionTelemetryModel()
@@ -62,9 +51,6 @@ namespace KMC.Engine.Propulsion
         }
     }
 
-    /// <summary>
-    /// Live state for one topology-owned engine after PartId matching.
-    /// </summary>
     public sealed class PropulsionEngineLiveStateModel
     {
         public uint PartId { get; internal set; }
@@ -85,9 +71,21 @@ namespace KMC.Engine.Propulsion
 
         public double MaximumThrust { get; internal set; }
 
+        public int ActivationStage { get; internal set; }
+
         /// <summary>
-        /// True only for Armed, Ignited, or Producing. Shutdown, Flameout,
-        /// Unknown, stale, and unmatched states are never assumed ready.
+        /// True when live flight-stage data proves that an Armed engine's
+        /// activation stage has already been reached. Ignited/Producing are
+        /// direct evidence and do not depend on this flag for readiness.
+        /// </summary>
+        public bool StageEligible { get; internal set; }
+
+        public bool IsFutureStage { get; internal set; }
+
+        /// <summary>
+        /// Direct Ignited/Producing evidence is immediately ready.
+        /// Armed requires the activation stage to have been reached.
+        /// Shutdown, Flameout, Unknown, stale, and unmatched are not ready.
         /// </summary>
         public bool ReadyForThrust { get; internal set; }
 
@@ -102,10 +100,6 @@ namespace KMC.Engine.Propulsion
         }
     }
 
-    /// <summary>
-    /// Operator-independent live propulsion analysis. It joins the latest
-    /// KMC-ENGINE1 observations to the Engine-owned topology by PartId.
-    /// </summary>
     public sealed class PropulsionLiveStateModel
     {
         public PropulsionLiveStateModel()
@@ -144,34 +138,25 @@ namespace KMC.Engine.Propulsion
 
         public int UnknownEngineCount { get; internal set; }
 
-        /// <summary>
-        /// Matched engines whose fresh live state is Armed, Ignited,
-        /// or Producing.
-        /// </summary>
         public int ReadyEngineCount { get; internal set; }
+
+        public int FutureStageEngineCount { get; internal set; }
 
         public bool CurrentThrustKnown { get; internal set; }
 
         public double CurrentThrust { get; internal set; }
 
-        /// <summary>
-        /// Sum of MaximumThrust for fresh matched engines whose current state
-        /// is Armed, Ignited, or Producing.
-        /// </summary>
         public bool AvailableThrustKnown { get; internal set; }
 
         public double AvailableThrust { get; internal set; }
 
-        /// <summary>
-        /// Sum of reported MaximumThrust for all fresh matched engines.
-        /// This remains potential/configured maximum and is not called
-        /// available thrust.
-        /// </summary>
         public bool PotentialMaximumThrustKnown { get; internal set; }
 
         public double PotentialMaximumThrust { get; internal set; }
 
         public bool FlightSummaryAvailable { get; internal set; }
+
+        public int LiveCurrentStage { get; internal set; }
 
         public double ThrottleCommand { get; internal set; }
 
