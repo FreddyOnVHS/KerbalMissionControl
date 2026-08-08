@@ -8,6 +8,7 @@ namespace KMC.Engine.Electrical
         WaitingForFlow,
         GenerationIncomplete,
         StorageDepleted,
+        StorageSaturated,
         Available
     }
 
@@ -94,6 +95,23 @@ namespace KMC.Engine.Electrical
 
     internal static class ElectricalLoadAnalyzer
     {
+        /*
+         * Empirical upper-bound guard from the Build 8.10.2 generator test.
+         *
+         * KSP can stop accepting generator output before the aggregate EC value
+         * reports exact CapacityEc. The observed test entered a flat/limited
+         * storage response at approximately 99.4 percent reserve while the
+         * producer continued reporting about 7.24 EC/s.
+         *
+         * Above this reserve threshold, complete positive generation combined
+         * with a non-discharging storage buffer cannot prove vessel demand from
+         * Generation - dEC/dt. Surplus generation may simply be rejected by
+         * the storage boundary.
+         */
+        private const double SaturationReservePercent = 99.0;
+        private const double PositiveGenerationThresholdEcPerSecond = 0.005;
+        private const double DischargeProofThresholdEcPerSecond = -0.005;
+
         public static ElectricalLoadModel Analyze(
             ElectricalNetwork network,
             ElectricalFlowModel flow,
@@ -146,6 +164,12 @@ namespace KMC.Engine.Electrical
             model.StorageRateEcPerSecond =
                 flow.NetStorageRateEcPerSecond;
 
+            /*
+             * Establish generation evidence before deciding whether the upper
+             * storage boundary makes demand inference unobservable. Generation
+             * remains useful and should still be exposed even when total demand
+             * cannot be inferred.
+             */
             if (network.SourceNodeCount == 0)
             {
                 model.GenerationRateComplete =
@@ -180,6 +204,44 @@ namespace KMC.Engine.Electrical
                 return model;
             }
 
+            model.AttributedCurrentLoadEcPerSecond =
+                attribution != null
+                    ? Math.Max(
+                        0.0,
+                        attribution.KnownCurrentConsumptionEcPerSecond)
+                    : 0.0;
+
+            /*
+             * Upper-bound observability rule.
+             *
+             * If storage is at/near practical capacity, known generation is
+             * positive, and the EC reservoir is not measurably discharging,
+             * dEC/dt cannot distinguish true vessel demand from rejected
+             * generation. Keep generation and directly attributed load, but do
+             * not claim an inferred total demand or attribution coverage.
+             *
+             * A measurable discharge is sufficient evidence that the upper
+             * boundary is no longer limiting the observed EC balance, so normal
+             * inference resumes even at high reserve.
+             */
+            bool upperBoundaryLimited =
+                flow.CapacityEc > 0.000001 &&
+                flow.ChargePercent >=
+                    SaturationReservePercent &&
+                model.GenerationRateComplete &&
+                model.GenerationEcPerSecond >
+                    PositiveGenerationThresholdEcPerSecond &&
+                model.StorageRateEcPerSecond >=
+                    DischargeProofThresholdEcPerSecond;
+
+            if (upperBoundaryLimited)
+            {
+                model.State =
+                    ElectricalLoadInferenceState.StorageSaturated;
+
+                return model;
+            }
+
             model.InferredTotalLoadEcPerSecond =
                 Math.Max(
                     0.0,
@@ -188,13 +250,6 @@ namespace KMC.Engine.Electrical
 
             model.HasInferredTotalLoad =
                 true;
-
-            model.AttributedCurrentLoadEcPerSecond =
-                attribution != null
-                    ? Math.Max(
-                        0.0,
-                        attribution.KnownCurrentConsumptionEcPerSecond)
-                    : 0.0;
 
             double unattributed =
                 model.InferredTotalLoadEcPerSecond -

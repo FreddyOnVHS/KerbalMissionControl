@@ -20,6 +20,7 @@ namespace KMC.Engine.Electrical
         Nominal,
         Charging,
         Discharging,
+        StorageSaturated,
         LowReserve,
         CriticalReserve,
         ImminentDepletion,
@@ -31,7 +32,8 @@ namespace KMC.Engine.Electrical
     {
         Unknown = 0,
         Observable,
-        UnobservableAtDepletion
+        UnobservableAtDepletion,
+        UnobservableAtCapacity
     }
 
     /// <summary>
@@ -91,7 +93,10 @@ namespace KMC.Engine.Electrical
 
         /// <summary>
         /// Net storage margin while storage flow is observable.
-        /// Positive = charging surplus. Negative = battery-supported deficit.
+        /// Positive = charging storage. Negative = storage-supported deficit.
+        ///
+        /// At the upper storage boundary this remains the measured stored-EC
+        /// rate; it must not be interpreted as total generation surplus.
         /// </summary>
         public double PowerMarginEcPerSecond { get; internal set; }
 
@@ -241,6 +246,13 @@ namespace KMC.Engine.Electrical
                     model.DemandObservability =
                         ElectricalDemandObservability
                             .UnobservableAtDepletion;
+                }
+                else if (load.State ==
+                    ElectricalLoadInferenceState.StorageSaturated)
+                {
+                    model.DemandObservability =
+                        ElectricalDemandObservability
+                            .UnobservableAtCapacity;
                 }
                 else if (load.HasInferredTotalLoad)
                 {
@@ -404,6 +416,29 @@ namespace KMC.Engine.Electrical
 
                 model.Summary =
                     "Next stage removes part of the electrical storage system.";
+
+                return model;
+            }
+
+            /*
+             * A near-full reservoir with positive complete generation can hide
+             * surplus power because KSP may reject generator output that EC
+             * storage cannot accept. This is not an electrical failure and
+             * should not become DataIncomplete/Advisory. Generation remains
+             * known; only total vessel demand is unobservable at this boundary.
+             */
+            if (load != null &&
+                load.State ==
+                    ElectricalLoadInferenceState.StorageSaturated)
+            {
+                model.Severity =
+                    ElectricalPowerSeverity.Normal;
+
+                model.Condition =
+                    ElectricalPowerCondition.StorageSaturated;
+
+                model.Summary =
+                    "Electrical storage is near capacity; total vessel demand is unobservable at the upper storage boundary.";
 
                 return model;
             }
