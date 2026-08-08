@@ -59,6 +59,8 @@
     <Compile Include="Propulsion\PropulsionTopologyAnalyzer.cs" />
     <Compile Include="Propulsion\PropulsionTelemetryModel.cs" />
     <Compile Include="Propulsion\PropulsionLiveStateAnalyzer.cs" />
+    <Compile Include="Propulsion\PropulsionFeedModel.cs" />
+    <Compile Include="Propulsion\PropulsionFeedAnalyzer.cs" />
     <Compile Include="EngineeringEngine.cs" />
     <Compile Include="Models\CapabilityEnums.cs" />
     <Compile Include="Models\CapabilityDetails.cs" />

@@ -73,6 +73,14 @@ namespace KMC.Engine.Systems
                     ? live.AvailableThrust
                     : 0.0;
 
+            PropulsionFeedModel feed =
+                PropulsionFeedAnalyzer.Analyze(
+                    topology,
+                    live);
+
+            context.Propulsion.Feed =
+                feed;
+
             context.AddDiagnostic(
                 "Propulsion topology: engines=" +
                 topology.EngineCount +
@@ -117,17 +125,34 @@ namespace KMC.Engine.Systems
                     : "UNKNOWN") +
                 ".");
 
+            context.AddDiagnostic(
+                "Propulsion feed: ready=" +
+                feed.ReadyEngineCount +
+                ", ready-feed-available=" +
+                feed.ReadyEngineFeedAvailableCount +
+                ", ready-feed-limited=" +
+                feed.ReadyEngineFeedLimitedCount +
+                ", next-stage-retained=" +
+                feed.NextStageRetainedEngineCount +
+                ", next-stage-feed-available=" +
+                feed.NextStageRetainedFeedAvailableCount +
+                ", next-stage-feed-limited=" +
+                feed.NextStageRetainedFeedLimitedCount +
+                ".");
+
             WriteTopologyDiagnosticIfChanged(
                 topology);
 
             WriteLiveDiagnosticIfDue(
                 context.Telemetry.ReceivedUtc,
-                live);
+                live,
+                feed);
         }
 
         private void WriteLiveDiagnosticIfDue(
             DateTime receivedUtc,
-            PropulsionLiveStateModel live)
+            PropulsionLiveStateModel live,
+            PropulsionFeedModel feed)
         {
             DateTime utc =
                 receivedUtc.Kind == DateTimeKind.Utc
@@ -291,6 +316,116 @@ namespace KMC.Engine.Systems
                         : "UNKNOWN") +
                     " | SRB=" +
                     engine.IsSolidBooster);
+            }
+
+            WriteFeedDiagnostics(
+                feed);
+        }
+
+        private static void WriteFeedDiagnostics(
+            PropulsionFeedModel feed)
+        {
+            if (feed == null ||
+                !feed.Available)
+            {
+                Debug.WriteLine(
+                    "KMC.Engine PROP FEED | UNAVAILABLE");
+
+                return;
+            }
+
+            Debug.WriteLine(
+                "KMC.Engine PROP FEED | LiveStage=" +
+                feed.LiveCurrentStage +
+                " | NextStage=" +
+                feed.TopologyNextStage +
+                " | Engines=" +
+                feed.EngineCount +
+                " | CurrentFeedAvailable=" +
+                feed.CurrentFeedAvailableEngineCount +
+                " | CurrentFeedLimited=" +
+                feed.CurrentFeedLimitedEngineCount +
+                " | Ready=" +
+                feed.ReadyEngineCount +
+                " | ReadyFeedAvailable=" +
+                feed.ReadyEngineFeedAvailableCount +
+                " | ReadyFeedLimited=" +
+                feed.ReadyEngineFeedLimitedCount +
+                " | NextRetained=" +
+                feed.NextStageRetainedEngineCount +
+                " | NextLost=" +
+                feed.NextStageLostEngineCount +
+                " | NextFeedAvailable=" +
+                feed.NextStageRetainedFeedAvailableCount +
+                " | NextFeedLimited=" +
+                feed.NextStageRetainedFeedLimitedCount +
+                " | Requirements=" +
+                feed.RequirementCount +
+                " | CurrentRequirementsAvailable=" +
+                feed.CurrentAvailableRequirementCount +
+                " | NextRequirementsAvailable=" +
+                feed.NextStageAvailableRequirementCount);
+
+            for (int engineIndex = 0;
+                 engineIndex < feed.Engines.Count;
+                 engineIndex++)
+            {
+                PropulsionEngineFeedModel engine =
+                    feed.Engines[engineIndex];
+
+                Debug.WriteLine(
+                    "KMC.Engine PROP FEED ENGINE | Part=" +
+                    engine.PartId +
+                    " | Title=" +
+                    engine.PartTitle +
+                    " | Ready=" +
+                    engine.ReadyForThrust +
+                    " | LiveState=" +
+                    (engine.LiveStateKnown
+                        ? engine.OperatingState.ToString()
+                        : "UNKNOWN") +
+                    " | CurrentFeed=" +
+                    engine.CurrentFeedStatus +
+                    " | SurvivesNext=" +
+                    engine.SurvivesNextStage +
+                    " | NextFeed=" +
+                    engine.NextStageFeedStatus +
+                    " | Requirements=" +
+                    engine.Requirements.Count);
+
+                for (int requirementIndex = 0;
+                     requirementIndex < engine.Requirements.Count;
+                     requirementIndex++)
+                {
+                    PropulsionRequirementFeedModel requirement =
+                        engine.Requirements[requirementIndex];
+
+                    Debug.WriteLine(
+                        "KMC.Engine PROP FEED RESOURCE | Engine=" +
+                        engine.PartId +
+                        " | Resource=" +
+                        requirement.ResourceName +
+                        " | Current=" +
+                        requirement.CurrentStatus +
+                        " | Sources=" +
+                        requirement.CurrentReachableSourceCount +
+                        " | Usable=" +
+                        requirement.CurrentUsableSourceCount +
+                        " | Amount=" +
+                        requirement.CurrentAmount.ToString("0.###") +
+                        "/" +
+                        requirement.CurrentCapacity.ToString("0.###") +
+                        " | Next=" +
+                        requirement.NextStageStatus +
+                        " | NextSources=" +
+                        requirement.NextStageReachableSourceCount +
+                        " | NextUsable=" +
+                        requirement.NextStageUsableSourceCount +
+                        " | NextAmount=" +
+                        requirement.NextStageAmount.ToString("0.###") +
+                        "/" +
+                        requirement.NextStageCapacity.ToString("0.###"));
+                }
             }
         }
 

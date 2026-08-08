@@ -11,6 +11,9 @@ namespace KMC.Engine.Models
 
             Live =
                 new PropulsionLiveStateModel();
+
+            Feed =
+                new PropulsionFeedModel();
         }
 
         public bool IsAvailable { get; internal set; }
@@ -29,19 +32,16 @@ namespace KMC.Engine.Models
             internal set;
         }
 
+        public PropulsionFeedModel Feed
+        {
+            get;
+            internal set;
+        }
+
         public int EngineCount { get; internal set; }
 
-        /// <summary>
-        /// Fresh matched engines currently in Armed, Ignited, or Producing
-        /// state. Shutdown, Flameout, Unknown, stale, and unmatched engines
-        /// are not assumed operable.
-        /// </summary>
         public int OperableEngineCount { get; internal set; }
 
-        /// <summary>
-        /// Conservative immediately-ready maximum thrust. It is known only
-        /// when fresh per-engine telemetry fully covers the topology.
-        /// </summary>
         public double AvailableThrust { get; internal set; }
 
         public bool AvailableThrustKnown { get; internal set; }
