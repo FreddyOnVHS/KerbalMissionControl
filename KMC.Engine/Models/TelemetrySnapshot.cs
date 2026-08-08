@@ -1,5 +1,6 @@
 ﻿using System;
 using KMC.Engine.Electrical;
+using KMC.Engine.Propulsion;
 
 namespace KMC.Engine.Models
 {
@@ -10,7 +11,8 @@ namespace KMC.Engine.Models
             DateTime receivedUtc,
             object packet,
             ElectricalFlowModel electricalFlow,
-            ElectricalAttributionModel electricalAttribution)
+            ElectricalAttributionModel electricalAttribution,
+            PropulsionTelemetryModel propulsionTelemetry)
         {
             Sequence =
                 sequence;
@@ -30,12 +32,34 @@ namespace KMC.Engine.Models
             ElectricalAttribution =
                 electricalAttribution ??
                 new ElectricalAttributionModel();
+
+            PropulsionTelemetry =
+                propulsionTelemetry ??
+                new PropulsionTelemetryModel();
         }
 
         public long Sequence { get; private set; }
+
         public DateTime ReceivedUtc { get; private set; }
+
         public object Packet { get; private set; }
-        public ElectricalFlowModel ElectricalFlow { get; private set; }
-        public ElectricalAttributionModel ElectricalAttribution { get; private set; }
+
+        public ElectricalFlowModel ElectricalFlow
+        {
+            get;
+            private set;
+        }
+
+        public ElectricalAttributionModel ElectricalAttribution
+        {
+            get;
+            private set;
+        }
+
+        public PropulsionTelemetryModel PropulsionTelemetry
+        {
+            get;
+            private set;
+        }
     }
 }

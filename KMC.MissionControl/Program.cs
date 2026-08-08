@@ -30,14 +30,24 @@ namespace KMC.MissionControl
             using (
                 SolidFuelTelemetryReceiver solidFuel =
                     new SolidFuelTelemetryReceiver())
-            using (
-                EngineStateTelemetryReceiver engineStates =
-                    new EngineStateTelemetryReceiver())
             {
                 solidFuel.Start();
-                engineStates.Start();
 
-                System.Windows.Forms.Application.Run(mainForm);
+                /*
+                 * Build 8.13.1:
+                 *
+                 * Do NOT start EngineStateTelemetryReceiver here.
+                 *
+                 * UDP 5058 / KMC-ENGINE1 is now owned exclusively by
+                 * TelemetryTransport through MissionControlReceiver.
+                 *
+                 * Starting the legacy receiver here would bind 5058 first
+                 * and cause TelemetryTransport to fail with:
+                 *
+                 * SocketError=AddressAlreadyInUse (10048)
+                 */
+                System.Windows.Forms.Application.Run(
+                    mainForm);
             }
         }
     }

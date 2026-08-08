@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using KMC.MissionControl.Telemetry;
 using KMC.Shared;
 using KMC.Shared.Topology;
 
@@ -21,6 +22,9 @@ namespace KMC.MissionControl.Transport
     public sealed class TelemetryTransport :
         IDisposable
     {
+        private const int EngineStateTelemetryPort = 5058;
+        private const string EngineStateProtocolId = "KMC-ENGINE1";
+
         private const int SystemsTelemetryPort = 5091;
         private const string SystemsProtocolId = "KMCSYS1";
 
@@ -33,6 +37,11 @@ namespace KMC.MissionControl.Transport
         public event Action<VesselTopology> TopologyReceived;
         public event Action<SystemsTelemetrySample> SystemsTelemetryReceived;
 
+        public event Action<
+            DateTime,
+            Dictionary<uint, EngineStateTelemetry>>
+                EngineStateTelemetryReceived;
+
         public void Start()
         {
             if (_running)
@@ -43,6 +52,7 @@ namespace KMC.MissionControl.Transport
             int[] requestedPorts =
             {
                 TelemetryPacket.TelemetryPort,
+                EngineStateTelemetryPort,
                 VesselTopologyPacketCodec.TopologyPort,
                 SystemsTelemetryPort
             };
@@ -219,6 +229,30 @@ namespace KMC.MissionControl.Transport
                 return;
             }
 
+            DateTime engineSourceUtc;
+            Dictionary<uint, EngineStateTelemetry> engineStates;
+
+            if (TryParseEngineStates(
+                    text,
+                    out engineSourceUtc,
+                    out engineStates))
+            {
+                Action<
+                    DateTime,
+                    Dictionary<uint, EngineStateTelemetry>>
+                        engineHandler =
+                            EngineStateTelemetryReceived;
+
+                if (engineHandler != null)
+                {
+                    engineHandler(
+                        engineSourceUtc,
+                        engineStates);
+                }
+
+                return;
+            }
+
             TelemetryPacket packet;
 
             if (TelemetryPacket.TryParse(
@@ -234,6 +268,161 @@ namespace KMC.MissionControl.Transport
                         packet);
                 }
             }
+        }
+
+        private static bool TryParseEngineStates(
+            string message,
+            out DateTime sourceTimestampUtc,
+            out Dictionary<uint, EngineStateTelemetry> states)
+        {
+            sourceTimestampUtc =
+                DateTime.MinValue;
+
+            states =
+                new Dictionary<uint, EngineStateTelemetry>();
+
+            if (string.IsNullOrWhiteSpace(
+                    message))
+            {
+                return false;
+            }
+
+            string[] records =
+                message.Split('|');
+
+            if (records.Length < 2 ||
+                !string.Equals(
+                    records[0],
+                    EngineStateProtocolId,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            long ticks;
+
+            if (!long.TryParse(
+                    records[1],
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out ticks))
+            {
+                return false;
+            }
+
+            try
+            {
+                sourceTimestampUtc =
+                    new DateTime(
+                        ticks,
+                        DateTimeKind.Utc);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return false;
+            }
+
+            for (int index = 2;
+                 index < records.Length;
+                 index++)
+            {
+                string[] fields =
+                    records[index].Split(',');
+
+                if (fields.Length != 8)
+                {
+                    continue;
+                }
+
+                uint partId;
+                int ignited;
+                int producing;
+                int flameout;
+                int shutdown;
+                int solid;
+                double currentThrust;
+                double maximumThrust;
+
+                if (!uint.TryParse(
+                        fields[0],
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out partId) ||
+                    !int.TryParse(
+                        fields[1],
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out ignited) ||
+                    !int.TryParse(
+                        fields[2],
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out producing) ||
+                    !int.TryParse(
+                        fields[3],
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out flameout) ||
+                    !int.TryParse(
+                        fields[4],
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out shutdown) ||
+                    !double.TryParse(
+                        fields[5],
+                        NumberStyles.Float,
+                        CultureInfo.InvariantCulture,
+                        out currentThrust) ||
+                    !double.TryParse(
+                        fields[6],
+                        NumberStyles.Float,
+                        CultureInfo.InvariantCulture,
+                        out maximumThrust) ||
+                    !int.TryParse(
+                        fields[7],
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out solid))
+                {
+                    continue;
+                }
+
+                EngineOperatingState state =
+                    flameout != 0
+                        ? EngineOperatingState.Flameout
+                        : producing != 0
+                            ? EngineOperatingState.Producing
+                            : ignited != 0
+                                ? EngineOperatingState.Ignited
+                                : shutdown != 0
+                                    ? EngineOperatingState.Shutdown
+                                    : EngineOperatingState.Armed;
+
+                states[partId] =
+                    new EngineStateTelemetry
+                    {
+                        PartId =
+                            partId,
+
+                        OperatingState =
+                            state,
+
+                        IsSolidBooster =
+                            solid != 0,
+
+                        CurrentThrust =
+                            Math.Max(
+                                0.0,
+                                currentThrust),
+
+                        MaximumThrust =
+                            Math.Max(
+                                0.0,
+                                maximumThrust)
+                    };
+            }
+
+            return true;
         }
 
         private static bool TryParseSystems(

@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
 using KMC.Engine.Analysis;
 using KMC.Engine.Propulsion;
 
@@ -12,6 +13,9 @@ namespace KMC.Engine.Systems
 
         private string _lastLoggedVesselId =
             string.Empty;
+
+        private DateTime _lastLiveDiagnosticUtc =
+            DateTime.MinValue;
 
         public string Name
         {
@@ -42,18 +46,32 @@ namespace KMC.Engine.Systems
             context.Propulsion.EngineCount =
                 topology.EngineCount;
 
-            /*
-             * Build 8.12 is topology-only. Do not equate "exists" with
-             * "operable" and do not invent available thrust from part data.
-             */
+            PropulsionLiveStateModel live =
+                PropulsionLiveStateAnalyzer.Analyze(
+                    topology,
+                    context.Telemetry.PropulsionTelemetry,
+                    context.Telemetry.ReceivedUtc,
+                    context.Telemetry.Packet);
+
+            context.Propulsion.Live =
+                live;
+
             context.Propulsion.LiveEngineStateAvailable =
-                false;
+                live.TelemetryFresh &&
+                live.MatchedEngineCount > 0;
 
             context.Propulsion.OperableEngineCount =
-                0;
+                context.Propulsion.LiveEngineStateAvailable
+                    ? live.ReadyEngineCount
+                    : 0;
+
+            context.Propulsion.AvailableThrustKnown =
+                live.AvailableThrustKnown;
 
             context.Propulsion.AvailableThrust =
-                0.0;
+                live.AvailableThrustKnown
+                    ? live.AvailableThrust
+                    : 0.0;
 
             context.AddDiagnostic(
                 "Propulsion topology: engines=" +
@@ -70,8 +88,182 @@ namespace KMC.Engine.Systems
                 topology.EnginesLostOnNextStage +
                 ".");
 
+            context.AddDiagnostic(
+                "Propulsion live state: telemetry=" +
+                (live.TelemetryAvailable
+                    ? "available"
+                    : "unavailable") +
+                ", fresh=" +
+                live.TelemetryFresh +
+                ", matched=" +
+                live.MatchedEngineCount +
+                "/" +
+                live.TopologyEngineCount +
+                ", producing=" +
+                live.ProducingEngineCount +
+                ", flameout=" +
+                live.FlameoutEngineCount +
+                ", thrust=" +
+                (live.CurrentThrustKnown
+                    ? live.CurrentThrust.ToString("0.###")
+                    : "UNKNOWN") +
+                ".");
+
             WriteTopologyDiagnosticIfChanged(
                 topology);
+
+            WriteLiveDiagnosticIfDue(
+                context.Telemetry.ReceivedUtc,
+                live);
+        }
+
+        private void WriteLiveDiagnosticIfDue(
+            DateTime receivedUtc,
+            PropulsionLiveStateModel live)
+        {
+            DateTime utc =
+                receivedUtc.Kind == DateTimeKind.Utc
+                    ? receivedUtc
+                    : receivedUtc.ToUniversalTime();
+
+            if (_lastLiveDiagnosticUtc !=
+                    DateTime.MinValue &&
+                (utc -
+                 _lastLiveDiagnosticUtc)
+                    .TotalSeconds <
+                1.0)
+            {
+                return;
+            }
+
+            _lastLiveDiagnosticUtc =
+                utc;
+
+            string age =
+                live.TelemetryAvailable
+                    ? live.TelemetryAgeSeconds
+                        .ToString("0.000") +
+                      "s"
+                    : "--";
+
+            string currentThrust =
+                live.CurrentThrustKnown
+                    ? live.CurrentThrust
+                        .ToString("0.###")
+                    : "UNKNOWN";
+
+            string readyMax =
+                live.AvailableThrustKnown
+                    ? live.AvailableThrust
+                        .ToString("0.###")
+                    : "UNKNOWN";
+
+            string potentialMax =
+                live.PotentialMaximumThrustKnown
+                    ? live.PotentialMaximumThrust
+                        .ToString("0.###")
+                    : "UNKNOWN";
+
+            Debug.WriteLine(
+                "KMC.Engine PROPULSION LIVE | Telemetry=" +
+                (live.TelemetryAvailable
+                    ? "LIVE"
+                    : "NONE") +
+                " | Fresh=" +
+                live.TelemetryFresh +
+                " | Age=" +
+                age +
+                " | TopologyEngines=" +
+                live.TopologyEngineCount +
+                " | Matched=" +
+                live.MatchedEngineCount +
+                " | MissingTopology=" +
+                live.UnmatchedTopologyEngineCount +
+                " | ExtraTelemetry=" +
+                live.UnmatchedTelemetryEngineCount +
+                " | CoverageComplete=" +
+                live.CoverageComplete +
+                " | Armed=" +
+                live.ArmedEngineCount +
+                " | Ignited=" +
+                live.IgnitedEngineCount +
+                " | Producing=" +
+                live.ProducingEngineCount +
+                " | Shutdown=" +
+                live.ShutdownEngineCount +
+                " | Flameout=" +
+                live.FlameoutEngineCount +
+                " | Unknown=" +
+                live.UnknownEngineCount +
+                " | Ready=" +
+                live.ReadyEngineCount +
+                " | CurrentThrust=" +
+                currentThrust +
+                " | ReadyMaxThrust=" +
+                readyMax +
+                " | PotentialMaxThrust=" +
+                potentialMax +
+                " | FlightEngines=" +
+                (live.FlightSummaryAvailable
+                    ? live.FlightEngineCount.ToString()
+                    : "--") +
+                " | FlightCurrentThrust=" +
+                (live.FlightSummaryAvailable
+                    ? live.FlightCurrentThrust
+                        .ToString("0.###")
+                    : "--") +
+                " | ThrustDiff=" +
+                (live.CurrentThrustKnown &&
+                 live.FlightSummaryAvailable
+                    ? live.CurrentThrustDifference
+                        .ToString("+0.###;-0.###;0")
+                    : "--") +
+                " | ThrustAgree=" +
+                (live.CurrentThrustKnown &&
+                 live.FlightSummaryAvailable
+                    ? live.CurrentThrustAgreesWithFlightSummary
+                        .ToString()
+                    : "--"));
+
+            for (int index = 0;
+                 index < live.Engines.Count;
+                 index++)
+            {
+                PropulsionEngineLiveStateModel engine =
+                    live.Engines[index];
+
+                Debug.WriteLine(
+                    "KMC.Engine PROP LIVE ENGINE | Part=" +
+                    engine.PartId +
+                    " | Title=" +
+                    engine.PartTitle +
+                    " | Matched=" +
+                    engine.TelemetryMatched +
+                    " | State=" +
+                    (live.TelemetryFresh
+                        ? engine.OperatingState.ToString()
+                        : "STALE/UNKNOWN") +
+                    " | CurrentThrust=" +
+                    (live.TelemetryFresh &&
+                     engine.TelemetryMatched
+                        ? engine.CurrentThrust
+                            .ToString("0.###")
+                        : "UNKNOWN") +
+                    " | MaxThrust=" +
+                    (live.TelemetryFresh &&
+                     engine.TelemetryMatched
+                        ? engine.MaximumThrust
+                            .ToString("0.###")
+                        : "UNKNOWN") +
+                    " | Ready=" +
+                    (live.TelemetryFresh &&
+                     engine.TelemetryMatched
+                        ? engine.ReadyForThrust
+                            .ToString()
+                        : "UNKNOWN") +
+                    " | SRB=" +
+                    engine.IsSolidBooster);
+            }
         }
 
         private void WriteTopologyDiagnosticIfChanged(
@@ -88,7 +280,7 @@ namespace KMC.Engine.Systems
                 string.Equals(
                     topology.VesselId,
                     _lastLoggedVesselId,
-                    System.StringComparison.Ordinal))
+                    StringComparison.Ordinal))
             {
                 return;
             }

@@ -1,11 +1,14 @@
 ﻿using System;
+using System.Collections.Generic;
 using KMC.Engine;
 using KMC.Engine.Analysis;
 using KMC.Engine.Electrical;
+using KMC.Engine.Propulsion;
 using KMC.MissionControl.Debugging;
 using KMC.MissionControl.Diagnostics;
 using KMC.MissionControl.Engineering;
 using KMC.MissionControl.Rendering.Propulsion;
+using KMC.MissionControl.Telemetry;
 using KMC.MissionControl.Transport;
 using KMC.Shared;
 using KMC.Shared.Topology;
@@ -50,6 +53,9 @@ namespace KMC.MissionControl
 
             _transport.SystemsTelemetryReceived +=
                 OnSystemsTelemetryReceived;
+
+            _transport.EngineStateTelemetryReceived +=
+                OnEngineStateTelemetryReceived;
         }
 
         public event Action<TelemetryPacket> TelemetryReceived;
@@ -63,7 +69,12 @@ namespace KMC.MissionControl
             }
 
             EngineeringSnapshotStore.Clear();
+
             _engineeringEngine.ClearElectricalTelemetry();
+            _engineeringEngine.ClearPropulsionTelemetry();
+
+            EngineStateTelemetryStore.Clear();
+
             _cache.Clear();
 
             lock (_engineeringSyncRoot)
@@ -76,6 +87,92 @@ namespace KMC.MissionControl
 
             _running =
                 true;
+        }
+
+        private void OnEngineStateTelemetryReceived(
+            DateTime sourceTimestampUtc,
+            Dictionary<uint, EngineStateTelemetry> states)
+        {
+            EngineStateTelemetryStore.Publish(
+                states);
+
+            PropulsionTelemetryModel telemetry =
+                new PropulsionTelemetryModel
+                {
+                    TelemetryAvailable =
+                        true,
+
+                    SourceTimestampUtc =
+                        sourceTimestampUtc,
+
+                    ReceivedUtc =
+                        DateTime.UtcNow
+                };
+
+            if (states != null)
+            {
+                foreach (
+                    KeyValuePair<uint, EngineStateTelemetry> pair
+                    in states)
+                {
+                    EngineStateTelemetry source =
+                        pair.Value;
+
+                    if (source == null)
+                    {
+                        continue;
+                    }
+
+                    telemetry.Entries.Add(
+                        new PropulsionEngineTelemetryEntry
+                        {
+                            PartId =
+                                source.PartId,
+
+                            OperatingState =
+                                ConvertOperatingState(
+                                    source.OperatingState),
+
+                            IsSolidBooster =
+                                source.IsSolidBooster,
+
+                            CurrentThrust =
+                                source.CurrentThrust,
+
+                            MaximumThrust =
+                                source.MaximumThrust
+                        });
+                }
+            }
+
+            _engineeringEngine.PublishPropulsionTelemetry(
+                telemetry);
+        }
+
+        private static PropulsionEngineOperatingState
+            ConvertOperatingState(
+                EngineOperatingState state)
+        {
+            switch (state)
+            {
+                case EngineOperatingState.Armed:
+                    return PropulsionEngineOperatingState.Armed;
+
+                case EngineOperatingState.Ignited:
+                    return PropulsionEngineOperatingState.Ignited;
+
+                case EngineOperatingState.Producing:
+                    return PropulsionEngineOperatingState.Producing;
+
+                case EngineOperatingState.Shutdown:
+                    return PropulsionEngineOperatingState.Shutdown;
+
+                case EngineOperatingState.Flameout:
+                    return PropulsionEngineOperatingState.Flameout;
+
+                default:
+                    return PropulsionEngineOperatingState.Unknown;
+            }
         }
 
         private void OnSystemsTelemetryReceived(
@@ -162,12 +259,10 @@ namespace KMC.MissionControl
                     true,
                     out parsed))
             {
-                return
-                    parsed;
+                return parsed;
             }
 
-            return
-                ElectricalRateEvidence.Unknown;
+            return ElectricalRateEvidence.Unknown;
         }
 
         private void OnFlightTelemetryReceived(
@@ -288,8 +383,11 @@ namespace KMC.MissionControl
             PropulsionGraphStore.Clear();
             PropulsionDebugSnapshotStore.Clear();
             EngineeringSnapshotStore.Clear();
+            EngineStateTelemetryStore.Clear();
 
             _engineeringEngine.ClearElectricalTelemetry();
+            _engineeringEngine.ClearPropulsionTelemetry();
+
             _cache.Clear();
         }
 
@@ -305,6 +403,9 @@ namespace KMC.MissionControl
 
             _transport.SystemsTelemetryReceived -=
                 OnSystemsTelemetryReceived;
+
+            _transport.EngineStateTelemetryReceived -=
+                OnEngineStateTelemetryReceived;
 
             _transport.Dispose();
         }

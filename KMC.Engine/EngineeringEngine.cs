@@ -2,6 +2,7 @@
 using KMC.Engine.Analysis;
 using KMC.Engine.Electrical;
 using KMC.Engine.Models;
+using KMC.Engine.Propulsion;
 using KMC.Engine.Systems;
 using KMC.Shared.Topology;
 
@@ -10,9 +11,21 @@ namespace KMC.Engine
     public sealed class EngineeringEngine
     {
         private readonly AnalysisPipeline _pipeline;
-        private readonly ElectricalFlowTracker _electricalFlowTracker;
-        private readonly object _electricalAttributionSyncRoot;
-        private ElectricalAttributionModel _latestElectricalAttribution;
+
+        private readonly ElectricalFlowTracker
+            _electricalFlowTracker;
+
+        private readonly object
+            _electricalAttributionSyncRoot;
+
+        private ElectricalAttributionModel
+            _latestElectricalAttribution;
+
+        private readonly object
+            _propulsionTelemetrySyncRoot;
+
+        private PropulsionTelemetryModel
+            _latestPropulsionTelemetry;
 
         public EngineeringEngine()
             : this(
@@ -46,6 +59,12 @@ namespace KMC.Engine
 
             _latestElectricalAttribution =
                 new ElectricalAttributionModel();
+
+            _propulsionTelemetrySyncRoot =
+                new object();
+
+            _latestPropulsionTelemetry =
+                new PropulsionTelemetryModel();
         }
 
         public void PublishElectricalTelemetry(
@@ -88,13 +107,50 @@ namespace KMC.Engine
             }
         }
 
-        private ElectricalAttributionModel GetElectricalAttribution()
+        public void PublishPropulsionTelemetry(
+            PropulsionTelemetryModel telemetry)
+        {
+            if (telemetry == null)
+            {
+                return;
+            }
+
+            lock (_propulsionTelemetrySyncRoot)
+            {
+                _latestPropulsionTelemetry =
+                    ClonePropulsionTelemetry(
+                        telemetry);
+            }
+        }
+
+        public void ClearPropulsionTelemetry()
+        {
+            lock (_propulsionTelemetrySyncRoot)
+            {
+                _latestPropulsionTelemetry =
+                    new PropulsionTelemetryModel();
+            }
+        }
+
+        private ElectricalAttributionModel
+            GetElectricalAttribution()
         {
             lock (_electricalAttributionSyncRoot)
             {
                 return
                     CloneAttribution(
                         _latestElectricalAttribution);
+            }
+        }
+
+        private PropulsionTelemetryModel
+            GetPropulsionTelemetry()
+        {
+            lock (_propulsionTelemetrySyncRoot)
+            {
+                return
+                    ClonePropulsionTelemetry(
+                        _latestPropulsionTelemetry);
             }
         }
 
@@ -106,8 +162,7 @@ namespace KMC.Engine
 
             if (source == null)
             {
-                return
-                    clone;
+                return clone;
             }
 
             clone.TelemetryAvailable =
@@ -168,8 +223,63 @@ namespace KMC.Engine
 
             clone.Recalculate();
 
-            return
-                clone;
+            return clone;
+        }
+
+        private static PropulsionTelemetryModel
+            ClonePropulsionTelemetry(
+                PropulsionTelemetryModel source)
+        {
+            PropulsionTelemetryModel clone =
+                new PropulsionTelemetryModel();
+
+            if (source == null)
+            {
+                return clone;
+            }
+
+            clone.TelemetryAvailable =
+                source.TelemetryAvailable;
+
+            clone.SourceTimestampUtc =
+                source.SourceTimestampUtc;
+
+            clone.ReceivedUtc =
+                source.ReceivedUtc;
+
+            for (int index = 0;
+                 index < source.Entries.Count;
+                 index++)
+            {
+                PropulsionEngineTelemetryEntry entry =
+                    source.Entries[index];
+
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                clone.Entries.Add(
+                    new PropulsionEngineTelemetryEntry
+                    {
+                        PartId =
+                            entry.PartId,
+
+                        OperatingState =
+                            entry.OperatingState,
+
+                        IsSolidBooster =
+                            entry.IsSolidBooster,
+
+                        CurrentThrust =
+                            entry.CurrentThrust,
+
+                        MaximumThrust =
+                            entry.MaximumThrust
+                    });
+            }
+
+            return clone;
         }
 
         public AnalysisPipelineResult Analyze(
@@ -184,7 +294,8 @@ namespace KMC.Engine
                     receivedUtc,
                     telemetryPacket,
                     _electricalFlowTracker.GetLatest(),
-                    GetElectricalAttribution());
+                    GetElectricalAttribution(),
+                    GetPropulsionTelemetry());
 
             VesselModel vessel =
                 new VesselModel(
