@@ -209,7 +209,12 @@ namespace KMC.MissionControl.Cards.Propulsion
                     cell,
                     labels[index],
                     values[index],
-                    index > 0);
+                    index > 0,
+                    index == labels.Length - 1 &&
+                    model.Engineering != null &&
+                    model.Engineering.Status != null
+                        ? model.Engineering.Status.Severity
+                        : PropulsionSeverity.Normal);
             }
         }
 
@@ -260,14 +265,17 @@ namespace KMC.MissionControl.Cards.Propulsion
             Rectangle bounds,
             string label,
             string value,
-            bool drawDivider)
+            bool drawDivider,
+            PropulsionSeverity severity)
         {
+            Color valueColor = FooterValueColor(context, severity);
+
             using (SolidBrush labelBrush =
                 new SolidBrush(
                     context.DimPhosphorColor))
             using (SolidBrush valueBrush =
                 new SolidBrush(
-                    context.PhosphorColor))
+                    valueColor))
             using (Pen divider =
                 new Pen(
                     Color.FromArgb(
@@ -314,6 +322,23 @@ namespace KMC.MissionControl.Cards.Propulsion
                         bounds.Width,
                         bounds.Height / 2 - 3),
                     centered);
+            }
+        }
+
+        private static Color FooterValueColor(
+            MissionRenderContext context,
+            PropulsionSeverity severity)
+        {
+            switch (severity)
+            {
+                case PropulsionSeverity.Critical:
+                    return Color.FromArgb(255, 255, 82, 72);
+                case PropulsionSeverity.Warning:
+                    return Color.FromArgb(255, 255, 196, 72);
+                case PropulsionSeverity.Advisory:
+                    return Color.FromArgb(255, 220, 185, 92);
+                default:
+                    return context.PhosphorColor;
             }
         }
 

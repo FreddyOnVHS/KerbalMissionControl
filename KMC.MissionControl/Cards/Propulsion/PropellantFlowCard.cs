@@ -113,7 +113,7 @@ namespace KMC.MissionControl.Cards.Propulsion
                 "NEXT RETAIN",
                 "NEXT LOST",
                 "NEXT FEED",
-                "OBSERVABILITY"
+                "FEED DATA"
             };
 
             string[] values =
@@ -136,10 +136,10 @@ namespace KMC.MissionControl.Cards.Propulsion
                 "/" +
                 feed.NextStageRetainedEngineCount,
 
-                status != null
-                    ? status.FeedObservability
-                        .ToString()
-                        .ToUpperInvariant()
+                status != null &&
+                status.FeedObservability ==
+                    PropulsionFeedObservability.TopologySnapshot
+                    ? "TOPOLOGY / SNAPSHOT"
                     : "SNAPSHOT"
             };
 

@@ -12,7 +12,7 @@ namespace KMC.MissionControl.Cards.Propulsion
         public PropulsionPerformanceCard()
             : base(
                 "prop.performance",
-                "PROPULSION ENGINEERING STATUS")
+                "PROPULSION STATUS / THRUST")
         {
         }
 
