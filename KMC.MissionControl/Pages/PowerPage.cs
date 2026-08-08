@@ -11,8 +11,9 @@ namespace KMC.MissionControl.Pages
     /// <summary>
     /// Electrical engineering display.
     ///
-    /// Build 8.10 replaces the former topology/inspector page with a
-    /// read-only schematic presentation of the Engine-owned electrical model.
+    /// Build 8.10.2 uses the MissionDisplay responsive virtual-canvas path
+    /// instead of forcing a fixed 1600 x 900 logical canvas. This lets POWER
+    /// consume the available CRT viewport at large/full-screen window sizes.
     /// </summary>
     public sealed class PowerPage :
         IMissionPage,
@@ -27,9 +28,12 @@ namespace KMC.MissionControl.Pages
         {
             get
             {
-                return new Size(
-                    1600,
-                    900);
+                /*
+                 * Size.Empty intentionally selects MissionDisplay's existing
+                 * responsive canvas behavior. No shared renderer change is
+                 * required, so other mission pages keep their current scaling.
+                 */
+                return Size.Empty;
             }
         }
 
@@ -38,7 +42,7 @@ namespace KMC.MissionControl.Pages
             get
             {
                 return
-                    MissionPageContentProfile.Standard;
+                    MissionPageContentProfile.DenseEngineering;
             }
         }
 
