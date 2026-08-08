@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Drawing;
+using KMC.Engine.Analysis;
+using KMC.Engine.Models;
 using KMC.MissionControl.Cards;
 using KMC.MissionControl.Cards.Propulsion;
+using KMC.MissionControl.Engineering;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering;
 using KMC.MissionControl.Rendering.Propulsion;
@@ -100,14 +103,6 @@ namespace KMC.MissionControl.Pages
             PropulsionRenderGraph graph =
                 PropulsionGraphStore.GetCurrent();
 
-            /*
-             * The graph's CurrentStage comes from topology and can remain
-             * stale when a staging event ignites engines without immediately
-             * changing the vessel structure.
-             *
-             * The card page must use the same live-stage cache overload as
-             * the debugger and full-page propulsion renderer.
-             */
             int liveCurrentStage =
                 telemetry.CurrentStage;
 
@@ -118,6 +113,10 @@ namespace KMC.MissionControl.Pages
                             graph,
                             liveCurrentStage)
                     : null;
+
+            PropulsionModel engineering =
+                GetCompatibleEngineeringModel(
+                    graph);
 
             bool topologyChanged =
                 graph == null
@@ -166,6 +165,21 @@ namespace KMC.MissionControl.Pages
                     CardDirtyState.Telemetry);
             }
 
+            /*
+             * Engineering state can change on the same live telemetry cadence
+             * as the page. Mark the Engine-owned cards telemetry-dirty so
+             * flameout/status/feed transitions are never hidden behind the
+             * older card change tracker.
+             */
+            _performanceCard.MarkDirty(
+                CardDirtyState.Telemetry);
+
+            _propellantFlowCard.MarkDirty(
+                CardDirtyState.Telemetry);
+
+            _footerCard.MarkDirty(
+                CardDirtyState.Telemetry);
+
             _lastTopologyRevision =
                 graph != null
                     ? graph.TopologyRevision
@@ -186,7 +200,10 @@ namespace KMC.MissionControl.Pages
                         analysis,
 
                     Telemetry =
-                        telemetry
+                        telemetry,
+
+                    Engineering =
+                        engineering
                 };
 
             _engineClusterCard.Bounds =
@@ -216,6 +233,43 @@ namespace KMC.MissionControl.Pages
             _footerCard.Draw(
                 context,
                 model);
+        }
+
+        private static PropulsionModel
+            GetCompatibleEngineeringModel(
+                PropulsionRenderGraph graph)
+        {
+            AnalysisPipelineResult result;
+
+            if (!EngineeringSnapshotStore.TryGetLatest(
+                    out result) ||
+                result == null ||
+                result.Snapshot == null ||
+                result.Snapshot.Propulsion == null)
+            {
+                return null;
+            }
+
+            PropulsionModel propulsion =
+                result.Snapshot.Propulsion;
+
+            if (graph == null ||
+                propulsion.Topology == null)
+            {
+                return propulsion;
+            }
+
+            /*
+             * Never combine a render graph from one topology revision with an
+             * engineering interpretation from another.
+             */
+            if (propulsion.Topology.TopologyRevision !=
+                graph.TopologyRevision)
+            {
+                return null;
+            }
+
+            return propulsion;
         }
 
         private void MarkAllCardsDirty(

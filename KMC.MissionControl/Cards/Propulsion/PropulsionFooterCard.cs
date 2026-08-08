@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using KMC.Engine.Propulsion;
 using KMC.MissionControl.Rendering;
 using KMC.MissionControl.Rendering.Propulsion;
 
@@ -60,60 +61,125 @@ namespace KMC.MissionControl.Cards.Propulsion
                     contentBounds);
             }
 
-            string[] labels =
+            string[] labels;
+            string[] values;
+
+            if (model.Engineering != null &&
+                model.Engineering.Status != null)
             {
-                "STAGE",
-                "THROTTLE",
-                "THRUST",
-                "TWR",
-                "ISP",
-                "ENGINES",
-                "ACTIVE LF",
-                "ACTIVE OX",
-                "GRAPH REV"
-            };
+                PropulsionStatusModel status =
+                    model.Engineering.Status;
 
-            string[] values =
+                labels =
+                    new string[]
+                    {
+                        "STAGE",
+                        "THROTTLE",
+                        "THRUST",
+                        "AVAILABLE",
+                        "READY",
+                        "PRODUCING",
+                        "NEXT STAGE",
+                        "NEXT LOSS",
+                        "STATUS"
+                    };
+
+                values =
+                    new string[]
+                    {
+                        status.LiveCurrentStage
+                            .ToString("00"),
+
+                        Percent(
+                            model.Telemetry.Throttle),
+
+                        status.CurrentThrustKnown
+                            ? status.CurrentThrust
+                                .ToString("0.0") +
+                              " kN"
+                            : "---",
+
+                        status.AvailableThrustKnown
+                            ? status.AvailableThrust
+                                .ToString("0.0") +
+                              " kN"
+                            : "---",
+
+                        status.ReadyEngineCount
+                            .ToString("00"),
+
+                        status.ProducingEngineCount
+                            .ToString("00"),
+
+                        status.NextStage
+                            .ToString("00"),
+
+                        status.NextStageEngineLossCount
+                            .ToString("00"),
+
+                        ShortCondition(
+                            status)
+                    };
+            }
+            else
             {
-                model.Telemetry.CurrentStage
-                    .ToString("00"),
+                labels =
+                    new string[]
+                    {
+                        "STAGE",
+                        "THROTTLE",
+                        "THRUST",
+                        "TWR",
+                        "ISP",
+                        "ENGINES",
+                        "ACTIVE LF",
+                        "ACTIVE OX",
+                        "GRAPH REV"
+                    };
 
-                Percent(
-                    model.Telemetry.Throttle),
+                values =
+                    new string[]
+                    {
+                        model.Telemetry.CurrentStage
+                            .ToString("00"),
 
-                Number(
-                    model.Telemetry.CurrentThrust,
-                    "0.0",
-                    " kN"),
+                        Percent(
+                            model.Telemetry.Throttle),
 
-                Number(
-                    model.Telemetry.ThrustToWeightRatio,
-                    "0.00",
-                    ""),
+                        Number(
+                            model.Telemetry.CurrentThrust,
+                            "0.0",
+                            " kN"),
 
-                Number(
-                    model.Telemetry.AverageSpecificImpulse,
-                    "0",
-                    " s"),
+                        Number(
+                            model.Telemetry.ThrustToWeightRatio,
+                            "0.00",
+                            ""),
 
-                model.Telemetry.EngineCount
-                    .ToString("00"),
+                        Number(
+                            model.Telemetry.AverageSpecificImpulse,
+                            "0",
+                            " s"),
 
-                Percent(
-                    Fraction(
-                        model.Telemetry.StageLiquidFuelAmount,
-                        model.Telemetry.StageLiquidFuelCapacity)),
+                        model.Telemetry.EngineCount
+                            .ToString("00"),
 
-                Percent(
-                    Fraction(
-                        model.Telemetry.StageOxidizerAmount,
-                        model.Telemetry.StageOxidizerCapacity)),
+                        Percent(
+                            Fraction(
+                                model.Telemetry.StageLiquidFuelAmount,
+                                model.Telemetry.StageLiquidFuelCapacity)),
 
-                model.Graph != null
-                    ? model.Graph.TopologyRevision
-                        .ToString()
-                    : "--"
-            };
+                        Percent(
+                            Fraction(
+                                model.Telemetry.StageOxidizerAmount,
+                                model.Telemetry.StageOxidizerCapacity)),
+
+                        model.Graph != null
+                            ? model.Graph.TopologyRevision
+                                .ToString()
+                            : "--"
+                    };
+            }
 
             int cellWidth =
                 Math.Max(
@@ -144,6 +210,48 @@ namespace KMC.MissionControl.Cards.Propulsion
                     labels[index],
                     values[index],
                     index > 0);
+            }
+        }
+
+        private static string ShortCondition(
+            PropulsionStatusModel status)
+        {
+            if (status == null)
+            {
+                return "---";
+            }
+
+            switch (status.Condition)
+            {
+                case PropulsionCondition.EngineFlameout:
+                    return "FLAMEOUT";
+
+                case PropulsionCondition.PropulsionLost:
+                    return "PROP LOST";
+
+                case PropulsionCondition.NextStageFeedRisk:
+                    return "STAGE RISK";
+
+                case PropulsionCondition.NextStagePropulsionTerminated:
+                    return "PROP END";
+
+                case PropulsionCondition.NextStageEngineSeparation:
+                    return "STAGE SEP";
+
+                case PropulsionCondition.Standby:
+                    return "STANDBY";
+
+                case PropulsionCondition.Nominal:
+                    return "NOMINAL";
+
+                case PropulsionCondition.DataIncomplete:
+                    return "DATA";
+
+                default:
+                    return
+                        status.Severity
+                            .ToString()
+                            .ToUpperInvariant();
             }
         }
 
