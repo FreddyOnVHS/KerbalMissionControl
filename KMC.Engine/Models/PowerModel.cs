@@ -28,6 +28,9 @@ namespace KMC.Engine.Models
             Procedure =
                 new ElectricalProcedureModel();
 
+            Events =
+                new ElectricalEventHistoryModel();
+
             Diagnostics =
                 new List<string>();
         }
@@ -69,6 +72,12 @@ namespace KMC.Engine.Models
         }
 
         public ElectricalProcedureModel Procedure
+        {
+            get;
+            internal set;
+        }
+
+        public ElectricalEventHistoryModel Events
         {
             get;
             internal set;

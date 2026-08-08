@@ -7,12 +7,17 @@ namespace KMC.Engine.Systems
         IEngineeringSystem
     {
         private readonly ElectricalProcedureTracker _procedureTracker;
+        private readonly ElectricalEventTracker _eventTracker;
 
         public PowerSystem()
         {
             _procedureTracker =
                 new ElectricalProcedureTracker();
+
+            _eventTracker =
+                new ElectricalEventTracker();
         }
+
         public string Name
         {
             get { return "Power"; }
@@ -74,6 +79,14 @@ namespace KMC.Engine.Systems
                     context.Power.Diagnostic,
                     context.Power.LoadShedding);
 
+            context.Power.Events =
+                _eventTracker.Analyze(
+                    context.Telemetry.ReceivedUtc,
+                    network.VesselName,
+                    context.Power.Diagnostic,
+                    context.Power.Load,
+                    context.Power.Procedure);
+
             context.Power.Diagnostics.Clear();
 
             for (int i = 0;
@@ -123,6 +136,7 @@ namespace KMC.Engine.Systems
                     context.Power.Attribution.KnownCurrentConsumerCount +
                     ".");
             }
+
             context.Power.Diagnostics.Add(
                 "Power status: " +
                 context.Power.Diagnostic.Severity +
@@ -145,6 +159,10 @@ namespace KMC.Engine.Systems
                 " - " +
                 context.Power.Procedure.PrimaryAction);
 
+            context.Power.Diagnostics.Add(
+                "Electrical event history: " +
+                context.Power.Events.Count +
+                " retained transition event(s).");
         }
     }
 }

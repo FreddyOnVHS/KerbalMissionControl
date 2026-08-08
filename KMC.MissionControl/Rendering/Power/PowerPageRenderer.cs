@@ -146,6 +146,9 @@ namespace KMC.MissionControl.Rendering.Power
             ElectricalProcedureModel procedure =
                 power.Procedure;
 
+            ElectricalEventHistoryModel events =
+                power.Events;
+
             int gap =
                 Math.Max(
                     12,
@@ -269,7 +272,7 @@ namespace KMC.MissionControl.Rendering.Power
             DrawPanel(
                 graphics,
                 recoveryBox,
-                "RECOVERY VERIFICATION",
+                "RECOVERY / EVENT HISTORY",
                 context,
                 metrics);
 
@@ -334,6 +337,7 @@ namespace KMC.MissionControl.Rendering.Power
                 graphics,
                 recoveryBox,
                 procedure,
+                events,
                 context,
                 metrics);
 
@@ -1306,6 +1310,7 @@ namespace KMC.MissionControl.Rendering.Power
             Graphics graphics,
             Rectangle panel,
             ElectricalProcedureModel procedure,
+            ElectricalEventHistoryModel events,
             MissionRenderContext context,
             TextMetrics metrics)
         {
@@ -1314,13 +1319,88 @@ namespace KMC.MissionControl.Rendering.Power
                     panel,
                     metrics);
 
+            int gap =
+                18;
+
+            int recoveryWidth =
+                Math.Max(
+                    260,
+                    body.Width * 42 / 100);
+
+            Rectangle recovery =
+                new Rectangle(
+                    body.Left,
+                    body.Top,
+                    Math.Min(
+                        recoveryWidth,
+                        Math.Max(
+                            0,
+                            body.Width - gap)),
+                    body.Height);
+
+            Rectangle history =
+                new Rectangle(
+                    recovery.Right + gap,
+                    body.Top,
+                    Math.Max(
+                        0,
+                        body.Right -
+                        recovery.Right -
+                        gap),
+                    body.Height);
+
+            using (Pen divider =
+                new Pen(
+                    Color.FromArgb(
+                        110,
+                        context.DimPhosphorColor),
+                    1.0f))
+            {
+                if (history.Width > 0)
+                {
+                    int x =
+                        recovery.Right +
+                        gap /
+                        2;
+
+                    graphics.DrawLine(
+                        divider,
+                        x,
+                        body.Top,
+                        x,
+                        body.Bottom);
+                }
+            }
+
+            DrawRecoverySummary(
+                graphics,
+                recovery,
+                procedure,
+                context,
+                metrics);
+
+            DrawEventHistory(
+                graphics,
+                history,
+                events,
+                context,
+                metrics);
+        }
+
+        private static void DrawRecoverySummary(
+            Graphics graphics,
+            Rectangle body,
+            ElectricalProcedureModel procedure,
+            MissionRenderContext context,
+            TextMetrics metrics)
+        {
             if (procedure == null)
             {
                 DrawCenteredValue(
                     graphics,
                     body,
                     "RECOVERY DATA UNAVAILABLE",
-                    context.LargeFont,
+                    context.SmallFont,
                     context.DimPhosphorColor);
 
                 return;
@@ -1355,31 +1435,36 @@ namespace KMC.MissionControl.Rendering.Power
             int y =
                 body.Top;
 
-            y = DrawPairRow(
+            y = DrawRow(
                 graphics,
                 body,
                 y,
-                "STATE",
+                "RECOVERY",
                 SplitWords(
                     procedure.RecoveryState.ToString()),
-                "DEFICIT CLEAR",
-                procedure.DeficitCleared
-                    ? "YES"
-                    : "NO",
                 context,
                 metrics,
                 recoveryColor);
 
-            y = DrawPairRow(
+            y = DrawRow(
                 graphics,
                 body,
                 y,
                 "BASELINE",
                 baseline,
+                context,
+                metrics,
+                context.PhosphorColor);
+
+            y = DrawRow(
+                graphics,
+                body,
+                y,
                 "CURRENT",
                 current,
                 context,
-                metrics);
+                metrics,
+                context.PhosphorColor);
 
             y = DrawRow(
                 graphics,
@@ -1391,22 +1476,161 @@ namespace KMC.MissionControl.Rendering.Power
                 metrics,
                 recoveryColor);
 
-            DrawTextSection(
+            DrawRow(
                 graphics,
-                new Rectangle(
-                    body.Left,
-                    y + 4,
-                    body.Width,
-                    Math.Max(
-                        0,
-                        body.Bottom -
-                        y -
-                        4)),
-                "VERIFICATION",
-                procedure.Verification,
+                body,
+                y,
+                "DEFICIT CLEAR",
+                procedure.DeficitCleared
+                    ? "YES"
+                    : "NO",
                 context,
                 metrics,
-                context.DimPhosphorColor);
+                recoveryColor);
+        }
+
+        private static void DrawEventHistory(
+            Graphics graphics,
+            Rectangle body,
+            ElectricalEventHistoryModel events,
+            MissionRenderContext context,
+            TextMetrics metrics)
+        {
+            if (body.Width <= 0 ||
+                body.Height <= 0)
+            {
+                return;
+            }
+
+            int y =
+                body.Top;
+
+            Rectangle header =
+                new Rectangle(
+                    body.Left,
+                    y,
+                    body.Width,
+                    metrics.RowHeight);
+
+            DrawText(
+                graphics,
+                header,
+                "RECENT TRANSITIONS",
+                context.SmallFont,
+                context.DimPhosphorColor,
+                TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+
+            y +=
+                metrics.RowHeight;
+
+            if (events == null ||
+                events.Events == null ||
+                events.Events.Count == 0)
+            {
+                DrawText(
+                    graphics,
+                    new Rectangle(
+                        body.Left,
+                        y,
+                        body.Width,
+                        metrics.RowHeight),
+                    "NO ELECTRICAL TRANSITIONS RECORDED",
+                    context.SmallFont,
+                    context.DimPhosphorColor,
+                    TextFormatFlags.Left |
+                    TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.NoPadding |
+                    TextFormatFlags.EndEllipsis);
+
+                return;
+            }
+
+            int rowsAvailable =
+                Math.Max(
+                    1,
+                    (body.Bottom - y) /
+                    metrics.RowHeight);
+
+            int rowCount =
+                Math.Min(
+                    6,
+                    rowsAvailable);
+
+            int firstIndex =
+                Math.Max(
+                    0,
+                    events.Events.Count -
+                    rowCount);
+
+            for (int index = firstIndex;
+                 index < events.Events.Count &&
+                 y + metrics.RowHeight <= body.Bottom;
+                 index++)
+            {
+                ElectricalEventRecord entry =
+                    events.Events[index];
+
+                Color eventColor =
+                    EventColor(
+                        entry.Severity,
+                        context);
+
+                string timestamp =
+                    entry.TimestampUtc
+                        .ToLocalTime()
+                        .ToString("HH:mm:ss");
+
+                int timeWidth =
+                    Math.Max(
+                        72,
+                        body.Width * 18 / 100);
+
+                Rectangle timeBounds =
+                    new Rectangle(
+                        body.Left,
+                        y,
+                        timeWidth,
+                        metrics.RowHeight);
+
+                Rectangle codeBounds =
+                    new Rectangle(
+                        timeBounds.Right + 8,
+                        y,
+                        Math.Max(
+                            0,
+                            body.Right -
+                            timeBounds.Right -
+                            8),
+                        metrics.RowHeight);
+
+                DrawText(
+                    graphics,
+                    timeBounds,
+                    timestamp,
+                    context.SmallFont,
+                    context.DimPhosphorColor,
+                    TextFormatFlags.Left |
+                    TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.NoPadding |
+                    TextFormatFlags.EndEllipsis);
+
+                DrawText(
+                    graphics,
+                    codeBounds,
+                    entry.Code,
+                    context.SmallFont,
+                    eventColor,
+                    TextFormatFlags.Left |
+                    TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.NoPadding |
+                    TextFormatFlags.EndEllipsis);
+
+                y +=
+                    metrics.RowHeight;
+            }
         }
 
         private static void DrawStageRisk(
@@ -2065,6 +2289,26 @@ namespace KMC.MissionControl.Rendering.Power
                 "WAITING FOR ENGINEERING TELEMETRY",
                 context.LargeFont,
                 context.DimPhosphorColor);
+        }
+
+        private static Color EventColor(
+            ElectricalEventSeverity severity,
+            MissionRenderContext context)
+        {
+            switch (severity)
+            {
+                case ElectricalEventSeverity.Advisory:
+                    return Amber;
+
+                case ElectricalEventSeverity.Warning:
+                    return Warning;
+
+                case ElectricalEventSeverity.Critical:
+                    return Critical;
+
+                default:
+                    return context.PhosphorColor;
+            }
         }
 
         private static Color SeverityColor(
