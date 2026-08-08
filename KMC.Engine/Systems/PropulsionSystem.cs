@@ -81,6 +81,15 @@ namespace KMC.Engine.Systems
             context.Propulsion.Feed =
                 feed;
 
+            PropulsionStatusModel status =
+                PropulsionStatusAnalyzer.Analyze(
+                    topology,
+                    live,
+                    feed);
+
+            context.Propulsion.Status =
+                status;
+
             context.AddDiagnostic(
                 "Propulsion topology: engines=" +
                 topology.EngineCount +
@@ -143,16 +152,31 @@ namespace KMC.Engine.Systems
             WriteTopologyDiagnosticIfChanged(
                 topology);
 
+            context.AddDiagnostic(
+                "Propulsion status: severity=" +
+                status.Severity +
+                ", condition=" +
+                status.Condition +
+                ", live-engine-coverage=" +
+                status.LiveEngineCoverageComplete +
+                ", feed-observability=" +
+                status.FeedObservability +
+                ", next-stage-feed-risk=" +
+                status.NextStageHasFeedRisk +
+                ".");
+
             WriteLiveDiagnosticIfDue(
                 context.Telemetry.ReceivedUtc,
                 live,
-                feed);
+                feed,
+                status);
         }
 
         private void WriteLiveDiagnosticIfDue(
             DateTime receivedUtc,
             PropulsionLiveStateModel live,
-            PropulsionFeedModel feed)
+            PropulsionFeedModel feed,
+            PropulsionStatusModel status)
         {
             DateTime utc =
                 receivedUtc.Kind == DateTimeKind.Utc
@@ -320,6 +344,76 @@ namespace KMC.Engine.Systems
 
             WriteFeedDiagnostics(
                 feed);
+
+            WriteStatusDiagnostic(
+                status);
+        }
+
+        private static void WriteStatusDiagnostic(
+            PropulsionStatusModel status)
+        {
+            if (status == null)
+            {
+                Debug.WriteLine(
+                    "KMC.Engine PROP STATUS | UNAVAILABLE");
+                return;
+            }
+
+            Debug.WriteLine(
+                "KMC.Engine PROP STATUS | Severity=" +
+                status.Severity +
+                " | Condition=" +
+                status.Condition +
+                " | ActionRequired=" +
+                status.ActionRequired +
+                " | Engines=" +
+                status.InstalledEngineCount +
+                " | Ready=" +
+                status.ReadyEngineCount +
+                " | Producing=" +
+                status.ProducingEngineCount +
+                " | Flameout=" +
+                status.FlameoutEngineCount +
+                " | FeedLimited=" +
+                status.FeedLimitedEngineCount +
+                " | ReadyFeedLimited=" +
+                status.ReadyFeedLimitedEngineCount +
+                " | ProducingFeedConflict=" +
+                status.ProducingFeedConflictCount +
+                " | CurrentThrust=" +
+                (status.CurrentThrustKnown
+                    ? status.CurrentThrust.ToString("0.###")
+                    : "UNKNOWN") +
+                " | AvailableThrust=" +
+                (status.AvailableThrustKnown
+                    ? status.AvailableThrust.ToString("0.###")
+                    : "UNKNOWN") +
+                " | FeedObservability=" +
+                status.FeedObservability +
+                " | LivePropellantQuantity=" +
+                status.LivePropellantQuantityAvailable +
+                " | LiveStage=" +
+                status.LiveCurrentStage +
+                " | NextStage=" +
+                status.NextStage +
+                " | NextEngineLoss=" +
+                status.NextStageEngineLossCount +
+                " | NextActiveEngineLoss=" +
+                status.NextStageActiveEngineLossCount +
+                " | NextRetained=" +
+                status.NextStageRetainedEngineCount +
+                " | NextRetainedFeedAvailable=" +
+                status.NextStageRetainedFeedAvailableCount +
+                " | NextRetainedFeedLimited=" +
+                status.NextStageRetainedFeedLimitedCount +
+                " | NextEndsPropulsion=" +
+                status.NextStageEndsPropulsion +
+                " | NextFeedRisk=" +
+                status.NextStageHasFeedRisk +
+                " | Summary=" +
+                status.Summary +
+                " | StageSummary=" +
+                status.StageSummary);
         }
 
         private static void WriteFeedDiagnostics(

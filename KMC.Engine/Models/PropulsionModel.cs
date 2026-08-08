@@ -14,6 +14,9 @@ namespace KMC.Engine.Models
 
             Feed =
                 new PropulsionFeedModel();
+
+            Status =
+                new PropulsionStatusModel();
         }
 
         public bool IsAvailable { get; internal set; }
@@ -33,6 +36,12 @@ namespace KMC.Engine.Models
         }
 
         public PropulsionFeedModel Feed
+        {
+            get;
+            internal set;
+        }
+
+        public PropulsionStatusModel Status
         {
             get;
             internal set;
