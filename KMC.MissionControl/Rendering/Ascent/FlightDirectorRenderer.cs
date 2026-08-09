@@ -1,15 +1,8 @@
-using System;
+﻿using System;
 using System.Drawing;
-using KMC.MissionControl.Guidance;
 
 namespace KMC.MissionControl.Rendering.Ascent
 {
-    /// <summary>
-    /// Stateless renderer for the right-side Flight Director panel.
-    ///
-    /// All guidance decisions are supplied through FlightDirectorRenderModel.
-    /// This class only formats and draws the prepared values.
-    /// </summary>
     public sealed class FlightDirectorRenderer
     {
         public void Draw(
@@ -27,17 +20,6 @@ namespace KMC.MissionControl.Rendering.Ascent
             {
                 return;
             }
-
-            MissionPlannerResult plan =
-                model.Plan ??
-                new MissionPlannerResult
-                {
-                    Command = "---",
-                    ThrottleCommand = "---",
-                    Status = "---",
-                    NextEvent = "---",
-                    FlightPhase = string.Empty
-                };
 
             Graphics graphics =
                 context.Graphics;
@@ -71,23 +53,35 @@ namespace KMC.MissionControl.Rendering.Ascent
             using (Brush valueBrush =
                 new SolidBrush(
                     context.PhosphorColor))
+            using (Brush alertBrush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        255,
+                        255,
+                        176,
+                        64)))
             {
-                DrawMecoFlash(
+                DrawFlash(
                     graphics,
                     bounds,
-                    context,
-                    model,
-                    plan);
+                    model);
 
                 graphics.DrawRectangle(
                     borderPen,
                     bounds);
 
-                int padding = 10;
-                int titleHeight = 28;
+                const int padding = 10;
+                const int titleHeight = 30;
+
+                string title =
+                    model.Available
+                        ? "FLIGHT DIRECTOR / " +
+                          SafeText(
+                              model.FlightPhase)
+                        : "FLIGHT DIRECTOR / ENGINE WAIT";
 
                 graphics.DrawString(
-                    "FLIGHT DIRECTOR",
+                    title,
                     panelFont,
                     titleBrush,
                     bounds.Left + padding,
@@ -104,7 +98,8 @@ namespace KMC.MissionControl.Rendering.Ascent
 
                 int dividerX =
                     content.Left +
-                    content.Width * 50 /
+                    content.Width *
+                    46 /
                     100;
 
                 graphics.DrawLine(
@@ -138,34 +133,35 @@ namespace KMC.MissionControl.Rendering.Ascent
                     labelBrush,
                     valueBrush,
                     metricsBounds,
-                    model,
-                    plan);
+                    model);
 
                 DrawCommands(
                     graphics,
                     panelFont,
                     labelBrush,
                     valueBrush,
+                    alertBrush,
                     commandBounds,
-                    plan);
+                    model);
             }
         }
 
-        private static void DrawMecoFlash(
+        private static void DrawFlash(
             Graphics graphics,
             Rectangle bounds,
-            MissionRenderContext context,
-            FlightDirectorRenderModel model,
-            MissionPlannerResult plan)
+            FlightDirectorRenderModel model)
         {
-            if (!plan.FlashAlert)
+            if (!model.FlashAlert)
             {
                 return;
             }
 
             bool visible =
-                ((int)(model.MissionTimeSeconds * 8.0) %
-                 2) == 0;
+                ((int)(
+                    model.MissionTimeSeconds *
+                    8.0) %
+                 2) ==
+                0;
 
             if (!visible)
             {
@@ -175,8 +171,10 @@ namespace KMC.MissionControl.Rendering.Ascent
             using (Brush flashBrush =
                 new SolidBrush(
                     Color.FromArgb(
-                        78,
-                        context.PhosphorColor)))
+                        48,
+                        255,
+                        176,
+                        64)))
             {
                 graphics.FillRectangle(
                     flashBrush,
@@ -190,70 +188,73 @@ namespace KMC.MissionControl.Rendering.Ascent
             Brush labelBrush,
             Brush valueBrush,
             Rectangle bounds,
-            FlightDirectorRenderModel model,
-            MissionPlannerResult plan)
+            FlightDirectorRenderModel model)
         {
             string[] labels =
             {
                 "TGT AP",
                 "RANGE",
                 "TGT ALT",
-                "ALT",
                 "ALT ERR",
-                "TGT PITCH",
-                "PITCH",
-                "DYN Q"
+                "AP ERR",
+                "NOM PITCH",
+                "CMD PITCH",
+                "RECOVERY"
             };
 
             string[] values =
             {
-                FormatDistance(
-                    model.TargetApoapsisMeters),
+                model.Available
+                    ? FormatDistance(
+                        model.TargetApoapsisMeters)
+                    : "---",
 
-                FormatDistance(
-                    model.DownrangeMeters),
+                model.Available
+                    ? FormatDistance(
+                        model.DownrangeMeters)
+                    : "---",
 
-                FormatDistance(
-                    model.TargetAltitudeMeters),
+                model.Available
+                    ? FormatDistance(
+                        model.TargetAltitudeMeters)
+                    : "---",
 
-                FormatDistance(
-                    model.ActualAltitudeMeters),
+                model.Available
+                    ? FormatSignedDistance(
+                        model.AltitudeErrorMeters)
+                    : "---",
 
-                FormatSignedDistance(
-                    model.ActualAltitudeMeters -
-                    model.TargetAltitudeMeters),
+                model.Available
+                    ? FormatSignedDistance(
+                        model.ApoapsisErrorMeters)
+                    : "---",
 
-                FormatAngle(
-                    plan.RecommendedPitchDegrees),
+                model.Available
+                    ? FormatAngle(
+                        model.NominalPitchDegrees)
+                    : "---",
 
-                FormatAngle(
-                    model.ActualPitchDegrees),
+                model.Available
+                    ? FormatAngle(
+                        model.RecommendedPitchDegrees)
+                    : "---",
 
-                FormatPressure(
-                    model.DynamicPressureKpa)
+                model.Available
+                    ? model.RecoveryAuthorityPercent
+                        .ToString("0") +
+                      "%"
+                    : "---"
             };
 
-            int rowHeight =
-                Math.Max(
-                    18,
-                    bounds.Height /
-                    labels.Length);
-
-            for (int index = 0;
-                 index < labels.Length;
-                 index++)
-            {
-                DrawSafeDataRow(
-                    graphics,
-                    font,
-                    labelBrush,
-                    valueBrush,
-                    bounds,
-                    index,
-                    rowHeight,
-                    labels[index],
-                    values[index]);
-            }
+            DrawRows(
+                graphics,
+                font,
+                labelBrush,
+                valueBrush,
+                bounds,
+                labels,
+                values,
+                true);
         }
 
         private static void DrawCommands(
@@ -261,41 +262,78 @@ namespace KMC.MissionControl.Rendering.Ascent
             Font font,
             Brush labelBrush,
             Brush valueBrush,
+            Brush alertBrush,
             Rectangle bounds,
-            MissionPlannerResult plan)
+            FlightDirectorRenderModel model)
         {
+            string blend =
+                model.PredictiveGuidanceBlended
+                    ? (model.PredictiveBlendFraction *
+                       100.0)
+                        .ToString("0") +
+                      "%"
+                    : "---";
+
             string[] labels =
             {
-                "GUIDANCE",
                 "STEERING",
                 "THROTTLE",
-                "STATUS"
+                "STATUS",
+                "NEXT",
+                "PRED BLEND",
+                "TARGET",
+                "CUTOFF",
+                "HANDOFF"
             };
-
-            string guidanceValue =
-                IsPostMecoPhase(
-                    plan.FlightPhase) ||
-                string.Equals(
-                    plan.FlightPhase,
-                    "MECO COUNTDOWN",
-                    StringComparison.Ordinal)
-                    ? SafeText(
-                        plan.NextEvent)
-                    : FormatAngle(
-                        plan.RecommendedPitchDegrees);
 
             string[] values =
             {
-                guidanceValue,
-                SafeText(plan.Command),
-                SafeText(plan.ThrottleCommand),
-                GetCompactGuidanceStatus(
-                    plan.Status)
+                model.Available
+                    ? SafeText(
+                        model.Command)
+                    : "WAITING FOR ENGINE ASCENT",
+
+                model.Available
+                    ? SafeText(
+                        model.ThrottleCommand)
+                    : "---",
+
+                model.Available
+                    ? SafeText(
+                        model.Status)
+                    : "---",
+
+                model.Available
+                    ? SafeText(
+                        model.NextEvent)
+                    : "---",
+
+                blend,
+
+                model.Available
+                    ? model.IsTargetAchievable
+                        ? "ACHIEVABLE"
+                        : "NOT RECOVERABLE"
+                    : "---",
+
+                model.Available
+                    ? model.CutoffRequired
+                        ? "REQUIRED"
+                        : model.CoastLockoutActive
+                            ? "LOCKED OUT"
+                            : "NO"
+                    : "---",
+
+                model.Available
+                    ? model.OrbitHandoffRequired
+                        ? "ORBIT"
+                        : "---"
+                    : "---"
             };
 
             int rowHeight =
                 Math.Max(
-                    24,
+                    15,
                     bounds.Height /
                     labels.Length);
 
@@ -303,7 +341,52 @@ namespace KMC.MissionControl.Rendering.Ascent
                  index < labels.Length;
                  index++)
             {
-                DrawCommandRow(
+                bool alert =
+                    model.Available &&
+                    ((labels[index] ==
+                      "CUTOFF" &&
+                      model.CutoffRequired) ||
+                     (labels[index] ==
+                      "TARGET" &&
+                      !model.IsTargetAchievable));
+
+                DrawRow(
+                    graphics,
+                    font,
+                    labelBrush,
+                    alert
+                        ? alertBrush
+                        : valueBrush,
+                    bounds,
+                    index,
+                    rowHeight,
+                    labels[index],
+                    values[index],
+                    false);
+            }
+        }
+
+        private static void DrawRows(
+            Graphics graphics,
+            Font font,
+            Brush labelBrush,
+            Brush valueBrush,
+            Rectangle bounds,
+            string[] labels,
+            string[] values,
+            bool rightAlignValue)
+        {
+            int rowHeight =
+                Math.Max(
+                    15,
+                    bounds.Height /
+                    labels.Length);
+
+            for (int index = 0;
+                 index < labels.Length;
+                 index++)
+            {
+                DrawRow(
                     graphics,
                     font,
                     labelBrush,
@@ -312,11 +395,12 @@ namespace KMC.MissionControl.Rendering.Ascent
                     index,
                     rowHeight,
                     labels[index],
-                    values[index]);
+                    values[index],
+                    rightAlignValue);
             }
         }
 
-        private static void DrawSafeDataRow(
+        private static void DrawRow(
             Graphics graphics,
             Font font,
             Brush labelBrush,
@@ -325,7 +409,8 @@ namespace KMC.MissionControl.Rendering.Ascent
             int index,
             int rowHeight,
             string label,
-            string value)
+            string value,
+            bool rightAlignValue)
         {
             int top =
                 bounds.Top +
@@ -333,7 +418,8 @@ namespace KMC.MissionControl.Rendering.Ascent
                 rowHeight;
 
             int labelWidth =
-                bounds.Width * 54 /
+                bounds.Width *
+                36 /
                 100;
 
             Rectangle labelBounds =
@@ -345,17 +431,21 @@ namespace KMC.MissionControl.Rendering.Ascent
 
             Rectangle valueBounds =
                 new Rectangle(
-                    bounds.Left + labelWidth,
+                    bounds.Left +
+                    labelWidth,
                     top,
-                    bounds.Width - labelWidth,
+                    bounds.Width -
+                    labelWidth,
                     rowHeight);
 
             using (StringFormat labelFormat =
-                CreateSingleLineFormat(
+                CreateFormat(
                     StringAlignment.Near))
             using (StringFormat valueFormat =
-                CreateSingleLineFormat(
-                    StringAlignment.Far))
+                CreateFormat(
+                    rightAlignValue
+                        ? StringAlignment.Far
+                        : StringAlignment.Near))
             {
                 graphics.DrawString(
                     label,
@@ -373,214 +463,34 @@ namespace KMC.MissionControl.Rendering.Ascent
             }
         }
 
-        private static void DrawCommandRow(
-            Graphics graphics,
-            Font font,
-            Brush labelBrush,
-            Brush valueBrush,
-            Rectangle bounds,
-            int index,
-            int rowHeight,
-            string label,
-            string value)
-        {
-            int top =
-                bounds.Top +
-                index *
-                rowHeight;
-
-            Rectangle labelBounds =
-                new Rectangle(
-                    bounds.Left,
-                    top,
-                    bounds.Width,
-                    Math.Max(
-                        13,
-                        rowHeight / 2));
-
-            Rectangle valueBounds =
-                new Rectangle(
-                    bounds.Left,
-                    labelBounds.Bottom,
-                    bounds.Width,
-                    Math.Max(
-                        13,
-                        rowHeight -
-                        labelBounds.Height));
-
-            using (StringFormat labelFormat =
-                CreateSingleLineFormat(
-                    StringAlignment.Near))
-            using (StringFormat valueFormat =
-                CreateSingleLineFormat(
-                    StringAlignment.Near))
-            {
-                graphics.DrawString(
-                    label,
-                    font,
-                    labelBrush,
-                    labelBounds,
-                    labelFormat);
-
-                graphics.DrawString(
-                    value,
-                    font,
-                    valueBrush,
-                    valueBounds,
-                    valueFormat);
-            }
-        }
-
-        private static StringFormat CreateSingleLineFormat(
+        private static StringFormat CreateFormat(
             StringAlignment alignment)
         {
             return new StringFormat
             {
-                Alignment = alignment,
-                LineAlignment = StringAlignment.Center,
-                Trimming = StringTrimming.EllipsisCharacter,
-                FormatFlags = StringFormatFlags.NoWrap
+                Alignment =
+                    alignment,
+                LineAlignment =
+                    StringAlignment.Center,
+                Trimming =
+                    StringTrimming.EllipsisCharacter,
+                FormatFlags =
+                    StringFormatFlags.NoWrap
             };
-        }
-
-        private static bool IsPostMecoPhase(
-            string phase)
-        {
-            return
-                string.Equals(
-                    phase,
-                    "MECO",
-                    StringComparison.Ordinal) ||
-                string.Equals(
-                    phase,
-                    "COAST TO APOAPSIS",
-                    StringComparison.Ordinal) ||
-                string.Equals(
-                    phase,
-                    "CIRCULARIZATION READY",
-                    StringComparison.Ordinal) ||
-                string.Equals(
-                    phase,
-                    "CIRCULARIZATION BURN",
-                    StringComparison.Ordinal) ||
-                string.Equals(
-                    phase,
-                    "ORBIT ACHIEVED",
-                    StringComparison.Ordinal);
-        }
-
-        private static string GetCompactGuidanceStatus(
-            string guidance)
-        {
-            if (string.IsNullOrWhiteSpace(
-                    guidance))
-            {
-                return "---";
-            }
-
-            switch (guidance)
-            {
-                case "HOLD: INSUFFICIENT LAUNCH TWR":
-                    return "LOW LAUNCH TWR";
-
-                case "HIGH DYNAMIC PRESSURE - LIMIT PITCH RATE":
-                    return "HIGH DYN Q";
-
-                case "PROFILE HIGH - PITCH DOWN GRADUALLY":
-                    return "PROFILE HIGH";
-
-                case "PROFILE LOW - HOLD VERTICAL COMPONENT":
-                    return "PROFILE LOW";
-
-                case "PITCH HIGH - INCREASE GRAVITY TURN":
-                    return "PITCH HIGH";
-
-                case "PITCH LOW - REDUCE TURN RATE":
-                    return "PITCH LOW";
-
-                case "TARGET APOAPSIS ACHIEVED - PREPARE MECO":
-                    return "PREPARE MECO";
-
-                case "ASCENT PROFILE NOMINAL":
-                    return "NOMINAL";
-
-                case "AWAITING ASCENT":
-                    return "AWAIT ASCENT";
-
-                case "PREPARE FOR MECO 5":
-                case "PREPARE FOR MECO 4":
-                case "PREPARE FOR MECO 3":
-                case "PREPARE FOR MECO 2":
-                case "PREPARE FOR MECO 1":
-                    return guidance;
-
-                case "CUTOFF REQUIRED":
-                    return "MECO";
-
-                case "COAST - NO REIGNITION":
-                    return "COAST LOCKED";
-
-                case "TARGET APPROACH":
-                    return "TARGET APPROACH";
-
-                case "AWAIT LIFTOFF":
-                    return "AWAIT LIFTOFF";
-
-                case "MECO CONFIRMED":
-                    return "COAST SETUP";
-
-                case "PREPARE CIRCULARIZATION":
-                    return "PREP CIRC BURN";
-
-                case "IGNITION APPROACHING":
-                    return "IGNITION SOON";
-
-                case "CIRCULARIZATION GO":
-                    return "IGNITE NOW";
-
-                case "RAISE PERIAPSIS":
-                    return "CIRC BURN";
-
-                case "CIRC BURN REQUIRED":
-                    return "IGNITE NOW";
-
-                case "ORBIT TARGET REACHED":
-                    return "CUTOFF NOW";
-
-                case "ORBIT CUTOFF":
-                    return "CUTOFF NOW";
-
-                case "ORBIT NOMINAL":
-                    return "ORBIT NOMINAL";
-
-                case "UNPLANNED IGNITION":
-                    return "EARLY IGNITION";
-
-                default:
-                    return guidance;
-            }
         }
 
         private static string FormatDistance(
             double meters)
         {
-            if (!IsFinite(meters))
+            if (!IsFinite(
+                    meters))
             {
                 return "---";
             }
 
-            double absolute =
-                Math.Abs(meters);
-
-            if (absolute >= 1000000.0)
-            {
-                return
-                    (meters / 1000000.0)
-                    .ToString("0.00") +
-                    " MM";
-            }
-
-            if (absolute >= 1000.0)
+            if (Math.Abs(
+                    meters) >=
+                1000.0)
             {
                 return
                     (meters / 1000.0)
@@ -596,28 +506,34 @@ namespace KMC.MissionControl.Rendering.Ascent
         private static string FormatSignedDistance(
             double meters)
         {
-            if (!IsFinite(meters))
+            if (!IsFinite(
+                    meters))
             {
                 return "---";
             }
 
-            if (Math.Abs(meters) >= 1000.0)
+            if (Math.Abs(
+                    meters) >=
+                1000.0)
             {
                 return
                     (meters / 1000.0)
-                    .ToString("+0.0;-0.0;0.0") +
+                    .ToString(
+                        "+0.0;-0.0;0.0") +
                     " KM";
             }
 
             return
-                meters.ToString("+0;-0;0") +
+                meters.ToString(
+                    "+0;-0;0") +
                 " M";
         }
 
         private static string FormatAngle(
             double degrees)
         {
-            if (!IsFinite(degrees))
+            if (!IsFinite(
+                    degrees))
             {
                 return "---";
             }
@@ -627,25 +543,14 @@ namespace KMC.MissionControl.Rendering.Ascent
                 "°";
         }
 
-        private static string FormatPressure(
-            double kilopascals)
-        {
-            if (!IsFinite(kilopascals))
-            {
-                return "---";
-            }
-
-            return
-                kilopascals.ToString("0.0") +
-                " KPA";
-        }
-
         private static string SafeText(
             string value)
         {
-            return string.IsNullOrWhiteSpace(value)
-                ? "---"
-                : value;
+            return
+                string.IsNullOrWhiteSpace(
+                    value)
+                    ? "---"
+                    : value;
         }
 
         private static bool IsFinite(

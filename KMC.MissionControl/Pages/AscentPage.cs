@@ -1,76 +1,65 @@
 ﻿using System;
 using System.Drawing;
-using KMC.MissionControl.Diagnostics;
-using KMC.MissionControl.Flight;
-using KMC.MissionControl.Guidance;
+using KMC.Engine.Analysis;
+using KMC.Engine.Ascent;
+using KMC.MissionControl.Engineering;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering;
 using KMC.MissionControl.Rendering.Ascent;
 
 namespace KMC.MissionControl.Pages
 {
-    public sealed class AscentPage : IMissionPage, IMissionPageCanvasProvider
+    public sealed class AscentPage :
+        IMissionPage,
+        IMissionPageCanvasProvider
     {
-        private readonly MissionTarget _missionTarget =
-            new MissionTarget(
-                80000.0);
+        private const double DefaultTargetApoapsisMeters =
+            80000.0;
 
-        private readonly AscentProfilePlanner _profilePlanner =
-            new AscentProfilePlanner();
+        private readonly FlightDirectorRenderer
+            _flightDirectorRenderer =
+                new FlightDirectorRenderer();
 
-        private int _initialStage =
-            -1;
+        private readonly PredictionRenderer
+            _predictionRenderer =
+                new PredictionRenderer();
 
-        private readonly AscentFlightHistory _flightHistory =
-            new AscentFlightHistory();
+        private readonly OrbitTrendRenderer
+            _orbitTrendRenderer =
+                new OrbitTrendRenderer();
 
-        private readonly AscentBurnoutPredictor _burnoutPredictor =
-            new AscentBurnoutPredictor();
+        private readonly NavballRenderer
+            _navballRenderer =
+                new NavballRenderer();
 
-        private readonly MissionPlanner _missionPlanner =
-            new MissionPlanner();
+        private readonly FooterRenderer
+            _footerRenderer =
+                new FooterRenderer();
 
-        private readonly FlightDirectorRenderer _flightDirectorRenderer =
-            new FlightDirectorRenderer();
+        private readonly AscentHeaderRenderer
+            _headerRenderer =
+                new AscentHeaderRenderer();
 
-        private readonly PredictionRenderer _predictionRenderer =
-            new PredictionRenderer();
-
-        private readonly OrbitTrendRenderer _orbitTrendRenderer =
-            new OrbitTrendRenderer();
-
-        private readonly NavballRenderer _navballRenderer =
-            new NavballRenderer();
-
-        private readonly FooterRenderer _footerRenderer =
-            new FooterRenderer();
-
-        private readonly AscentHeaderRenderer _headerRenderer =
-            new AscentHeaderRenderer();
-
-        private readonly AscentGraphRenderer _ascentGraphRenderer =
-            new AscentGraphRenderer();
-
-        private readonly AscentDebugLogger _debugLogger =
-            new AscentDebugLogger();
+        private readonly AscentGraphRenderer
+            _ascentGraphRenderer =
+                new AscentGraphRenderer();
 
         public string Name
         {
-            get { return "ASCENT GUIDANCE"; }
+            get
+            {
+                return
+                    "ASCENT GUIDANCE";
+            }
         }
 
-        /// <summary>
-        /// Build 9.5.2 opts ASCENT into the existing dense-engineering canvas
-        /// path so the attitude instrument and engineering panels use more of
-        /// the physical CRT viewport.
-        /// </summary>
         public Size PreferredVirtualCanvasSize
         {
             get
             {
                 return new Size(
-                    1920,
-                    1080);
+                    2560,
+                    1024);
             }
         }
 
@@ -78,35 +67,9 @@ namespace KMC.MissionControl.Pages
         {
             get
             {
-                return MissionPageContentProfile.DenseEngineering;
-            }
-        }
-
-        public double TargetApoapsisMeters
-        {
-            get
-            {
-                return _missionTarget
-                    .TargetApoapsisMeters;
-            }
-
-            set
-            {
-                if (Math.Abs(
-                        _missionTarget
-                            .TargetApoapsisMeters -
-                        value) <
-                    0.001)
-                {
-                    return;
-                }
-
-                _missionTarget
-                    .TargetApoapsisMeters =
-                    value;
-
-                _profilePlanner.Reset();
-                _burnoutPredictor.Reset();
+                return
+                    MissionPageContentProfile
+                        .DenseEngineering;
             }
         }
 
@@ -125,14 +88,8 @@ namespace KMC.MissionControl.Pages
                 return;
             }
 
-            UpdateHistory(
-                telemetry);
-
-            CaptureLaunchPlan(
-                telemetry);
-
-            WriteAscentDebugSample(
-                telemetry);
+            AscentModel ascent =
+                GetLatestAscent();
 
             _headerRenderer.Draw(
                 context);
@@ -144,12 +101,13 @@ namespace KMC.MissionControl.Pages
             DrawAscentGraph(
                 context,
                 layout.Graph,
-                telemetry);
+                ascent);
 
             DrawNavball(
                 context,
                 layout.Navball,
-                telemetry);
+                telemetry,
+                ascent);
 
             DrawOrbitInset(
                 context,
@@ -159,198 +117,134 @@ namespace KMC.MissionControl.Pages
             DrawGuidancePanel(
                 context,
                 layout.FlightDirector,
-                telemetry);
+                ascent);
 
             DrawPredictivePanel(
                 context,
                 layout.Prediction,
-                telemetry);
+                ascent);
 
             DrawFooter(
                 context,
                 layout.Footer,
-                telemetry);
+                telemetry,
+                ascent);
         }
 
-        private void UpdateHistory(
-            MissionTelemetry telemetry)
+        private static AscentModel GetLatestAscent()
         {
-            AscentFlightHistoryUpdate update =
-                _flightHistory.Update(
-                    telemetry);
+            AnalysisPipelineResult result;
 
-            if (!update.MissionReset)
+            if (!EngineeringSnapshotStore
+                    .TryGetLatest(
+                        out result) ||
+                result == null ||
+                result.Snapshot == null ||
+                result.Snapshot.Ascent == null ||
+                !result.Snapshot.Ascent.Available)
             {
-                return;
+                return null;
             }
 
-            _profilePlanner.Reset();
-
-            _initialStage =
-                -1;
-
-            _burnoutPredictor.Reset();
-        }
-
-        private void CaptureLaunchPlan(
-            MissionTelemetry telemetry)
-        {
-            if (!_profilePlanner.CaptureLaunchPlan(
-                    telemetry))
-            {
-                return;
-            }
-
-            _initialStage =
-                telemetry.CurrentStage;
-        }
-
-        private void WriteAscentDebugSample(
-            MissionTelemetry telemetry)
-        {
-            if (telemetry == null ||
-                _flightHistory.Samples.Count == 0)
-            {
-                return;
-            }
-
-            AscentHistorySample sample =
-                _flightHistory.Samples[
-                    _flightHistory.Samples.Count - 1];
-
-            if (sample.DebugWritten)
-            {
-                return;
-            }
-
-            sample.DebugWritten =
-                true;
-
-            double profileScale =
-                _profilePlanner.GetProfileScale(
-                    telemetry);
-
-            double targetAltitude =
-                _profilePlanner.CalculateTargetAltitude(
-                    sample.DownrangeMeters,
-                    telemetry,
-                    _missionTarget.TargetApoapsisMeters);
-
-            double targetPitch =
-                _profilePlanner.CalculateTargetPitch(
-                    sample.DownrangeMeters,
-                    telemetry,
-                    _missionTarget.TargetApoapsisMeters);
-
-            BurnoutPrediction prediction =
-                _burnoutPredictor.Calculate(
-                    telemetry,
-                    _flightHistory.Samples,
-                    _missionTarget.TargetApoapsisMeters);
-
-            MissionPlannerResult missionPlan =
-                _missionPlanner.CreatePlan(
-                    telemetry,
-                    targetAltitude,
-                    targetPitch,
-                    _missionTarget.TargetApoapsisMeters);
-
-            AscentDebugRecord record =
-                new AscentDebugRecord
-                {
-                    MissionTimeSeconds =
-                        telemetry.MissionTime,
-
-                    Stage =
-                        telemetry.CurrentStage,
-
-                    InitialStage =
-                        _initialStage,
-
-                    AltitudeMeters =
-                        telemetry.Altitude,
-
-                    DownrangeMeters =
-                        sample.DownrangeMeters,
-
-                    LiveThrustToWeightRatio =
-                        telemetry.ThrustToWeightRatio,
-
-                    PlanningThrustToWeightRatio =
-                        _profilePlanner
-                            .PlanningThrustToWeightRatio,
-
-                    ProfileScaleMeters =
-                        profileScale,
-
-                    TargetAltitudeMeters =
-                        targetAltitude,
-
-                    TargetPitchDegrees =
-                        targetPitch,
-
-                    ActualPitchDegrees =
-                        telemetry.Pitch,
-
-                    ApoapsisMeters =
-                        telemetry.Apoapsis,
-
-                    PredictionAvailable =
-                        prediction.IsAvailable,
-
-                    BurnTimeRemainingSeconds =
-                        prediction.TimeRemainingSeconds,
-
-                    PredictedBurnoutVelocityMetersPerSecond =
-                        prediction.BurnoutVelocityMetersPerSecond,
-
-                    PredictedApoapsisMeters =
-                        prediction.PredictedApoapsisMeters,
-
-                    PredictionTargetErrorMeters =
-                        prediction.PredictedApoapsisMeters -
-                        _missionTarget.TargetApoapsisMeters,
-
-                    PredictionConfidencePercent =
-                        prediction.ConfidencePercent,
-
-                    PredictionStatus =
-                        prediction.Status,
-
-                    ActualApoapsisMeters =
-                        telemetry.Apoapsis,
-
-                    ActualPeriapsisMeters =
-                        telemetry.Periapsis,
-
-                    MissionPlan =
-                        missionPlan
-                };
-
-            _debugLogger.Write(
-                record);
+            return
+                result.Snapshot.Ascent;
         }
 
         private void DrawAscentGraph(
             MissionRenderContext context,
             Rectangle bounds,
-            MissionTelemetry telemetry)
+            AscentModel ascent)
         {
-            double maxDownrange =
-                CalculateGraphDownrangeLimit(
-                    telemetry);
+            AscentGraphRenderModel model =
+                new AscentGraphRenderModel();
 
-            double maxAltitude =
+            if (ascent == null ||
+                ascent.History == null ||
+                ascent.Profile == null)
+            {
+                model.MaximumDownrangeMeters =
+                    120000.0;
+
+                model.MaximumAltitudeMeters =
+                    DefaultTargetApoapsisMeters *
+                    1.15;
+
+                model.TargetPoints =
+                    new AscentGraphPoint[0];
+
+                model.ActualPoints =
+                    new AscentGraphPoint[0];
+
+                _ascentGraphRenderer.Draw(
+                    context,
+                    bounds,
+                    model);
+
+                return;
+            }
+
+            double targetApoapsis =
+                IsFinite(
+                    ascent.Profile.TargetApoapsisMeters) &&
+                ascent.Profile.TargetApoapsisMeters >
+                    0.0
+                    ? ascent.Profile.TargetApoapsisMeters
+                    : DefaultTargetApoapsisMeters;
+
+            double profileScale =
+                IsFinite(
+                    ascent.Profile.ProfileScaleMeters) &&
+                ascent.Profile.ProfileScaleMeters >
+                    1.0
+                    ? ascent.Profile.ProfileScaleMeters
+                    : 52000.0 /
+                      Math.Sqrt(
+                          1.5);
+
+            double currentDownrange =
                 Math.Max(
-                    _missionTarget.TargetApoapsisMeters *
+                    1.0,
+                    ascent.History.DownrangeMeters);
+
+            double maxDownrange =
+                Math.Max(
+                    120000.0,
+                    Math.Max(
+                        currentDownrange *
+                        1.20,
+                        profileScale *
+                        4.5));
+
+            double maxActualAltitude =
+                0.0;
+
+            for (int index = 0;
+                 index <
+                 ascent.History.Samples.Count;
+                 index++)
+            {
+                maxActualAltitude =
+                    Math.Max(
+                        maxActualAltitude,
+                        ascent.History
+                            .Samples[index]
+                            .AltitudeMeters);
+            }
+
+            model.MaximumDownrangeMeters =
+                maxDownrange;
+
+            model.MaximumAltitudeMeters =
+                Math.Max(
+                    targetApoapsis *
                     1.15,
-                    GetMaximumActualAltitude() *
+                    maxActualAltitude *
                     1.10);
 
             const int targetPointCount =
                 120;
 
-            AscentGraphPoint[] targetPoints =
+            model.TargetPoints =
                 new AscentGraphPoint[
                     targetPointCount];
 
@@ -368,35 +262,48 @@ namespace KMC.MissionControl.Pages
                     maxDownrange *
                     fraction;
 
-                targetPoints[index] =
+                double targetAltitude =
+                    targetApoapsis *
+                    (1.0 -
+                     Math.Exp(
+                         -Math.Max(
+                             0.0,
+                             downrange) /
+                         profileScale));
+
+                targetAltitude =
+                    Math.Max(
+                        0.0,
+                        Math.Min(
+                            targetApoapsis,
+                            targetAltitude));
+
+                model.TargetPoints[index] =
                     new AscentGraphPoint
                     {
                         DownrangeMeters =
                             downrange,
 
                         AltitudeMeters =
-                            _profilePlanner
-                                .CalculateTargetAltitude(
-                                    downrange,
-                                    telemetry,
-                                    _missionTarget
-                                        .TargetApoapsisMeters)
+                            targetAltitude
                     };
             }
 
-            AscentGraphPoint[] actualPoints =
+            model.ActualPoints =
                 new AscentGraphPoint[
-                    _flightHistory.Samples.Count];
+                    ascent.History
+                        .Samples.Count];
 
             for (int index = 0;
-                 index < _flightHistory.Samples.Count;
+                 index <
+                 ascent.History.Samples.Count;
                  index++)
             {
                 AscentHistorySample sample =
-                    _flightHistory.Samples[
-                        index];
+                    ascent.History
+                        .Samples[index];
 
-                actualPoints[index] =
+                model.ActualPoints[index] =
                     new AscentGraphPoint
                     {
                         DownrangeMeters =
@@ -407,22 +314,6 @@ namespace KMC.MissionControl.Pages
                     };
             }
 
-            AscentGraphRenderModel model =
-                new AscentGraphRenderModel
-                {
-                    MaximumDownrangeMeters =
-                        maxDownrange,
-
-                    MaximumAltitudeMeters =
-                        maxAltitude,
-
-                    TargetPoints =
-                        targetPoints,
-
-                    ActualPoints =
-                        actualPoints
-                };
-
             _ascentGraphRenderer.Draw(
                 context,
                 bounds,
@@ -432,52 +323,88 @@ namespace KMC.MissionControl.Pages
         private void DrawNavball(
             MissionRenderContext context,
             Rectangle bounds,
-            MissionTelemetry telemetry)
+            MissionTelemetry telemetry,
+            AscentModel ascent)
         {
-            double horizontal =
-                telemetry.HorizontalSpeed;
+            double pitch =
+                telemetry.Pitch;
 
-            double vertical =
-                telemetry.VerticalSpeed;
+            double heading =
+                telemetry.Heading;
 
-            double speed =
-                Math.Sqrt(
-                    horizontal *
-                    horizontal +
-                    vertical *
-                    vertical);
+            double roll =
+                telemetry.Roll;
 
             bool flightPathAvailable =
-                IsFinite(
-                    speed) &&
-                speed >= 1.0 &&
-                IsFinite(
-                    horizontal) &&
-                IsFinite(
-                    vertical);
+                false;
 
             double flightPathAngle =
-                flightPathAvailable
-                    ? Math.Atan2(
-                        vertical,
-                        Math.Max(
-                            0.0,
-                            horizontal)) *
-                      180.0 /
-                      Math.PI
-                    : double.NaN;
+                double.NaN;
+
+            if (ascent != null &&
+                ascent.Current != null &&
+                ascent.Current.Available)
+            {
+                pitch =
+                    ascent.Current.PitchDegrees;
+
+                heading =
+                    ascent.Current.HeadingDegrees;
+
+                roll =
+                    ascent.Current.RollDegrees;
+
+                flightPathAvailable =
+                    ascent.FlightPathAngleAvailable;
+
+                flightPathAngle =
+                    ascent.FlightPathAngleDegrees;
+            }
+            else
+            {
+                double horizontal =
+                    telemetry.HorizontalSpeed;
+
+                double vertical =
+                    telemetry.VerticalSpeed;
+
+                double speed =
+                    Math.Sqrt(
+                        horizontal *
+                        horizontal +
+                        vertical *
+                        vertical);
+
+                flightPathAvailable =
+                    IsFinite(
+                        speed) &&
+                    speed >=
+                        1.0;
+
+                if (flightPathAvailable)
+                {
+                    flightPathAngle =
+                        Math.Atan2(
+                            vertical,
+                            Math.Max(
+                                0.0,
+                                horizontal)) *
+                        180.0 /
+                        Math.PI;
+                }
+            }
 
             NavballRenderModel model =
                 new NavballRenderModel
                 {
                     PitchDegrees =
-                        telemetry.Pitch,
+                        pitch,
 
                     HeadingDegrees =
-                        telemetry.Heading,
+                        heading,
 
                     RollDegrees =
-                        telemetry.Roll,
+                        roll,
 
                     FlightPathAvailable =
                         flightPathAvailable,
@@ -525,54 +452,109 @@ namespace KMC.MissionControl.Pages
         private void DrawGuidancePanel(
             MissionRenderContext context,
             Rectangle bounds,
-            MissionTelemetry telemetry)
+            AscentModel ascent)
         {
-            double targetAltitude =
-                _profilePlanner.CalculateTargetAltitude(
-                    _flightHistory.DownrangeMeters,
-                    telemetry,
-                    _missionTarget.TargetApoapsisMeters);
-
-            double targetPitch =
-                _profilePlanner.CalculateTargetPitch(
-                    _flightHistory.DownrangeMeters,
-                    telemetry,
-                    _missionTarget.TargetApoapsisMeters);
-
-            MissionPlannerResult missionPlan =
-                _missionPlanner.CreatePlan(
-                    telemetry,
-                    targetAltitude,
-                    targetPitch,
-                    _missionTarget.TargetApoapsisMeters);
-
             FlightDirectorRenderModel model =
-                new FlightDirectorRenderModel
-                {
-                    TargetApoapsisMeters =
-                        _missionTarget.TargetApoapsisMeters,
+                new FlightDirectorRenderModel();
 
-                    DownrangeMeters =
-                        _flightHistory.DownrangeMeters,
+            if (ascent != null &&
+                ascent.Current != null &&
+                ascent.Profile != null &&
+                ascent.FlightDirector != null)
+            {
+                AscentFlightDirectorModel source =
+                    ascent.FlightDirector;
 
-                    TargetAltitudeMeters =
-                        targetAltitude,
+                model.Available =
+                    source.Available;
 
-                    ActualAltitudeMeters =
-                        telemetry.Altitude,
+                model.MissionTimeSeconds =
+                    ascent.Current
+                        .MissionTimeSeconds;
 
-                    ActualPitchDegrees =
-                        telemetry.Pitch,
+                model.FlightPhase =
+                    source.FlightPhase;
 
-                    DynamicPressureKpa =
-                        telemetry.DynamicPressureKpa,
+                model.TargetApoapsisMeters =
+                    ascent.Profile
+                        .TargetApoapsisMeters;
 
-                    MissionTimeSeconds =
-                        telemetry.MissionTime,
+                model.DownrangeMeters =
+                    ascent.History != null
+                        ? ascent.History
+                            .DownrangeMeters
+                        : 0.0;
 
-                    Plan =
-                        missionPlan
-                };
+                model.TargetAltitudeMeters =
+                    ascent.Profile
+                        .TargetAltitudeMeters;
+
+                model.ActualAltitudeMeters =
+                    ascent.Current
+                        .AltitudeMeters;
+
+                model.ActualPitchDegrees =
+                    ascent.Current
+                        .PitchDegrees;
+
+                model.DynamicPressureKpa =
+                    ascent.Current
+                        .DynamicPressureKpa;
+
+                model.NominalPitchDegrees =
+                    source.NominalPitchDegrees;
+
+                model.RecommendedPitchDegrees =
+                    source.RecommendedPitchDegrees;
+
+                model.PitchCorrectionDegrees =
+                    source.PitchCorrectionDegrees;
+
+                model.AltitudeErrorMeters =
+                    source.AltitudeErrorMeters;
+
+                model.ApoapsisErrorMeters =
+                    source.ApoapsisErrorMeters;
+
+                model.RecoveryAuthorityPercent =
+                    source.RecoveryAuthorityPercent;
+
+                model.IsTargetAchievable =
+                    source.IsTargetAchievable;
+
+                model.Command =
+                    source.Command;
+
+                model.ThrottleCommand =
+                    source.ThrottleCommand;
+
+                model.Status =
+                    source.Status;
+
+                model.NextEvent =
+                    source.NextEvent;
+
+                model.MecoCountdownSeconds =
+                    source.MecoCountdownSeconds;
+
+                model.CutoffRequired =
+                    source.CutoffRequired;
+
+                model.CoastLockoutActive =
+                    source.CoastLockoutActive;
+
+                model.OrbitHandoffRequired =
+                    source.OrbitHandoffRequired;
+
+                model.FlashAlert =
+                    source.FlashAlert;
+
+                model.PredictiveGuidanceBlended =
+                    source.PredictiveGuidanceBlended;
+
+                model.PredictiveBlendFraction =
+                    source.PredictiveBlendFraction;
+            }
 
             _flightDirectorRenderer.Draw(
                 context,
@@ -583,39 +565,100 @@ namespace KMC.MissionControl.Pages
         private void DrawPredictivePanel(
             MissionRenderContext context,
             Rectangle bounds,
-            MissionTelemetry telemetry)
+            AscentModel ascent)
         {
-            BurnoutPrediction prediction =
-                _burnoutPredictor.Calculate(
-                    telemetry,
-                    _flightHistory.Samples,
-                    _missionTarget.TargetApoapsisMeters);
-
             PredictionRenderModel model =
-                new PredictionRenderModel
+                new PredictionRenderModel();
+
+            if (ascent != null)
+            {
+                if (ascent.Prediction != null)
                 {
-                    IsAvailable =
-                        prediction.IsAvailable,
+                    AscentPredictionModel burnout =
+                        ascent.Prediction;
 
-                    TimeRemainingSeconds =
-                        prediction.TimeRemainingSeconds,
+                    model.BurnoutAvailable =
+                        burnout.Available;
 
-                    BurnoutVelocityMetersPerSecond =
-                        prediction
-                            .BurnoutVelocityMetersPerSecond,
+                    model.BurnTimeRemainingSeconds =
+                        burnout.TimeRemainingSeconds;
 
-                    PredictedApoapsisMeters =
-                        prediction.PredictedApoapsisMeters,
+                    model.BurnoutVelocityMetersPerSecond =
+                        burnout
+                            .BurnoutVelocityMetersPerSecond;
 
-                    TargetApoapsisMeters =
-                        _missionTarget.TargetApoapsisMeters,
+                    model.BurnoutPredictedApoapsisMeters =
+                        burnout
+                            .PredictedApoapsisMeters;
 
-                    ConfidencePercent =
-                        prediction.ConfidencePercent,
+                    model.BurnoutTargetErrorMeters =
+                        burnout.TargetErrorMeters;
 
-                    Status =
-                        prediction.Status
-                };
+                    model.BurnoutConfidencePercent =
+                        burnout.ConfidencePercent;
+
+                    model.BurnoutStatus =
+                        burnout.Status;
+
+                    model.BurnoutEvidence =
+                        burnout.FuelEvidence
+                            .ToString();
+                }
+
+                if (ascent.PoweredGuidance != null)
+                {
+                    PoweredAscentModel powered =
+                        ascent.PoweredGuidance;
+
+                    model.PoweredAvailable =
+                        powered.Available;
+
+                    model.PoweredMode =
+                        powered.Mode;
+
+                    model.PoweredInactiveReason =
+                        powered.InactiveReason;
+
+                    model.PoweredPredictedApoapsisMeters =
+                        powered
+                            .PredictedApoapsisMeters;
+
+                    model.PoweredPredictedPeriapsisMeters =
+                        powered
+                            .PredictedPeriapsisMeters;
+
+                    model.PoweredOrbitErrorMeters =
+                        powered.OrbitErrorMeters;
+
+                    model.PoweredRecommendedPitchDegrees =
+                        powered
+                            .RecommendedPitchDegrees;
+
+                    model.PoweredConfidencePercent =
+                        powered.ConfidencePercent;
+
+                    model.PoweredFlightSeconds =
+                        powered.PoweredFlightSeconds;
+
+                    model.CoastFlightSeconds =
+                        powered.CoastFlightSeconds;
+
+                    model.ConvergenceKnown =
+                        powered
+                            .PredictionConvergenceKnown;
+
+                    model.ConvergenceMeters =
+                        powered
+                            .PredictionConvergenceMeters;
+
+                    model.ThrustEvidence =
+                        powered.ThrustEvidence
+                            .ToString();
+
+                    model.TargetCutoffReached =
+                        powered.TargetCutoffReached;
+                }
+            }
 
             _predictionRenderer.Draw(
                 context,
@@ -626,56 +669,98 @@ namespace KMC.MissionControl.Pages
         private void DrawFooter(
             MissionRenderContext context,
             Rectangle bounds,
-            MissionTelemetry telemetry)
+            MissionTelemetry telemetry,
+            AscentModel ascent)
         {
-            double fuelPercent =
-                CalculateStageFuelPercent(
-                    telemetry);
-
-            string status =
-                telemetry.MissionTime < 1.0
-                    ? "PAD"
-                    : telemetry.Apoapsis >=
-                      _missionTarget.TargetApoapsisMeters
-                        ? "TARGET AP"
-                        : "ASCENT";
-
             FooterRenderModel model =
-                new FooterRenderModel
-                {
-                    MissionTimeSeconds =
-                        telemetry.MissionTime,
+                new FooterRenderModel();
 
-                    CurrentStage =
-                        telemetry.CurrentStage,
+            if (ascent != null &&
+                ascent.Current != null &&
+                ascent.Current.Available)
+            {
+                AscentTelemetryState current =
+                    ascent.Current;
 
-                    AltitudeMeters =
-                        telemetry.Altitude,
+                model.MissionTimeSeconds =
+                    current.MissionTimeSeconds;
 
-                    DownrangeMeters =
-                        _flightHistory.DownrangeMeters,
+                model.CurrentStage =
+                    current.CurrentStage;
 
-                    VerticalSpeedMetersPerSecond =
-                        telemetry.VerticalSpeed,
+                model.AltitudeMeters =
+                    current.AltitudeMeters;
 
-                    HorizontalSpeedMetersPerSecond =
-                        telemetry.HorizontalSpeed,
+                model.DownrangeMeters =
+                    ascent.History != null
+                        ? ascent.History
+                            .DownrangeMeters
+                        : 0.0;
 
-                    ThrustToWeightRatio =
-                        telemetry.ThrustToWeightRatio,
+                model.VerticalSpeedMetersPerSecond =
+                    current
+                        .VerticalSpeedMetersPerSecond;
 
-                    GForce =
-                        telemetry.GForce,
+                model.HorizontalSpeedMetersPerSecond =
+                    current
+                        .HorizontalSpeedMetersPerSecond;
 
-                    ApoapsisMeters =
-                        telemetry.Apoapsis,
+                model.ThrustToWeightRatio =
+                    current.ThrustToWeightRatio;
 
-                    FuelPercent =
-                        fuelPercent,
+                model.GForce =
+                    current.GForce;
 
-                    Status =
-                        status
-                };
+                model.ApoapsisMeters =
+                    current.ApoapsisMeters;
+
+                model.FuelPercent =
+                    CalculateStageFuelPercent(
+                        current);
+
+                model.Status =
+                    ascent.Phase != null &&
+                    ascent.Phase.Available
+                        ? ascent.Phase
+                            .PhaseName
+                        : "ASCENT";
+            }
+            else
+            {
+                model.MissionTimeSeconds =
+                    telemetry.MissionTime;
+
+                model.CurrentStage =
+                    telemetry.CurrentStage;
+
+                model.AltitudeMeters =
+                    telemetry.Altitude;
+
+                model.DownrangeMeters =
+                    0.0;
+
+                model.VerticalSpeedMetersPerSecond =
+                    telemetry.VerticalSpeed;
+
+                model.HorizontalSpeedMetersPerSecond =
+                    telemetry.HorizontalSpeed;
+
+                model.ThrustToWeightRatio =
+                    telemetry.ThrustToWeightRatio;
+
+                model.GForce =
+                    telemetry.GForce;
+
+                model.ApoapsisMeters =
+                    telemetry.Apoapsis;
+
+                model.FuelPercent =
+                    CalculateStageFuelPercent(
+                        telemetry);
+
+                model.Status =
+                    "ENGINE WAIT";
+            }
 
             _footerRenderer.Draw(
                 context,
@@ -684,27 +769,33 @@ namespace KMC.MissionControl.Pages
         }
 
         private static double CalculateStageFuelPercent(
-            MissionTelemetry telemetry)
+            AscentTelemetryState telemetry)
         {
             double amount =
                 Math.Max(
                     0.0,
-                    telemetry.StageLiquidFuelAmount) +
+                    telemetry
+                        .StageLiquidFuelAmount) +
                 Math.Max(
                     0.0,
-                    telemetry.StageOxidizerAmount);
+                    telemetry
+                        .StageOxidizerAmount);
 
             double capacity =
                 Math.Max(
                     0.0,
-                    telemetry.StageLiquidFuelCapacity) +
+                    telemetry
+                        .StageLiquidFuelCapacity) +
                 Math.Max(
                     0.0,
-                    telemetry.StageOxidizerCapacity);
+                    telemetry
+                        .StageOxidizerCapacity);
 
-            if (capacity <= 0.0)
+            if (capacity <=
+                0.0)
             {
-                return double.NaN;
+                return
+                    double.NaN;
             }
 
             return
@@ -717,40 +808,44 @@ namespace KMC.MissionControl.Pages
                         100.0));
         }
 
-        private double CalculateGraphDownrangeLimit(
+        private static double CalculateStageFuelPercent(
             MissionTelemetry telemetry)
         {
-            double current =
+            double amount =
                 Math.Max(
-                    1.0,
-                    _flightHistory.DownrangeMeters);
-
-            double profileScale =
-                _profilePlanner.GetProfileScale(
-                    telemetry);
-
-            return Math.Max(
-                120000.0,
+                    0.0,
+                    telemetry
+                        .StageLiquidFuelAmount) +
                 Math.Max(
-                    current * 1.20,
-                    profileScale * 4.5));
-        }
+                    0.0,
+                    telemetry
+                        .StageOxidizerAmount);
 
-        private double GetMaximumActualAltitude()
-        {
-            double maximum =
-                0.0;
+            double capacity =
+                Math.Max(
+                    0.0,
+                    telemetry
+                        .StageLiquidFuelCapacity) +
+                Math.Max(
+                    0.0,
+                    telemetry
+                        .StageOxidizerCapacity);
 
-            foreach (AscentHistorySample sample in
-                _flightHistory.Samples)
+            if (capacity <=
+                0.0)
             {
-                maximum =
-                    Math.Max(
-                        maximum,
-                        sample.AltitudeMeters);
+                return
+                    double.NaN;
             }
 
-            return maximum;
+            return
+                Math.Max(
+                    0.0,
+                    Math.Min(
+                        100.0,
+                        amount /
+                        capacity *
+                        100.0));
         }
 
         private static bool IsFinite(

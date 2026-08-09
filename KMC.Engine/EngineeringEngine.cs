@@ -325,6 +325,10 @@ namespace KMC.Engine
                 receivedUtc,
                 result.Snapshot.Propulsion);
 
+            result.Snapshot.Ascent =
+                _ascentFoundationSystem
+                    .GetLatest();
+
             return result;
         }
     }

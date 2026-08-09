@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using KMC.Engine.Ascent;
 
 namespace KMC.Engine.Models
 {
@@ -14,21 +15,81 @@ namespace KMC.Engine.Models
             PropulsionModel propulsion,
             IReadOnlyList<string> diagnostics)
         {
-            Sequence = sequence;
-            GeneratedUtc = generatedUtc;
-            Vessel = vessel;
-            Capabilities = capabilities;
-            Power = power;
-            Propulsion = propulsion;
-            Diagnostics = diagnostics;
+            Sequence =
+                sequence;
+
+            GeneratedUtc =
+                generatedUtc;
+
+            Vessel =
+                vessel;
+
+            Capabilities =
+                capabilities;
+
+            Power =
+                power;
+
+            Propulsion =
+                propulsion;
+
+            Ascent =
+                new AscentModel();
+
+            Diagnostics =
+                diagnostics;
         }
 
-        public long Sequence { get; }
-        public DateTime GeneratedUtc { get; }
-        public VesselModel Vessel { get; }
-        public CapabilityModel Capabilities { get; }
-        public PowerModel Power { get; }
-        public PropulsionModel Propulsion { get; }
-        public IReadOnlyList<string> Diagnostics { get; }
+        public long Sequence
+        {
+            get;
+            private set;
+        }
+
+        public DateTime GeneratedUtc
+        {
+            get;
+            private set;
+        }
+
+        public VesselModel Vessel
+        {
+            get;
+            private set;
+        }
+
+        public CapabilityModel Capabilities
+        {
+            get;
+            private set;
+        }
+
+        public PowerModel Power
+        {
+            get;
+            private set;
+        }
+
+        public PropulsionModel Propulsion
+        {
+            get;
+            private set;
+        }
+
+        /// <summary>
+        /// Engine-owned ASCENT state from the same flight-analysis cycle as
+        /// vessel, power, and propulsion engineering results.
+        /// </summary>
+        public AscentModel Ascent
+        {
+            get;
+            internal set;
+        }
+
+        public IReadOnlyList<string> Diagnostics
+        {
+            get;
+            private set;
+        }
     }
 }

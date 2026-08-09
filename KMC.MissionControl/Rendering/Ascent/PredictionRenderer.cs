@@ -1,11 +1,8 @@
-using System;
+﻿using System;
 using System.Drawing;
 
 namespace KMC.MissionControl.Rendering.Ascent
 {
-    /// <summary>
-    /// Stateless renderer for the Predicted Burnout panel.
-    /// </summary>
     public sealed class PredictionRenderer
     {
         public void Draw(
@@ -29,9 +26,9 @@ namespace KMC.MissionControl.Rendering.Ascent
 
             float panelFontSize =
                 Math.Max(
-                    7.0f,
+                    7.5f,
                     context.SmallFont.Size *
-                    0.72f);
+                    0.76f);
 
             using (Font panelFont =
                 new Font(
@@ -40,6 +37,10 @@ namespace KMC.MissionControl.Rendering.Ascent
                     FontStyle.Regular,
                     GraphicsUnit.Point))
             using (Pen borderPen =
+                new Pen(
+                    context.PhosphorColor,
+                    1.0f))
+            using (Pen dividerPen =
                 new Pen(
                     context.PhosphorColor,
                     1.0f))
@@ -52,16 +53,23 @@ namespace KMC.MissionControl.Rendering.Ascent
             using (Brush valueBrush =
                 new SolidBrush(
                     context.PhosphorColor))
+            using (Brush sourceBrush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        255,
+                        255,
+                        176,
+                        64)))
             {
                 graphics.DrawRectangle(
                     borderPen,
                     bounds);
 
                 const int padding = 10;
-                const int titleHeight = 28;
+                const int titleHeight = 30;
 
                 graphics.DrawString(
-                    "PREDICTED BURNOUT",
+                    "ASCENT PREDICTION / ENGINE",
                     panelFont,
                     titleBrush,
                     bounds.Left + padding,
@@ -70,170 +78,351 @@ namespace KMC.MissionControl.Rendering.Ascent
                 Rectangle content =
                     new Rectangle(
                         bounds.Left + padding,
-                        bounds.Top + titleHeight + 3,
-                        bounds.Width - padding * 2,
+                        bounds.Top + titleHeight + 4,
+                        bounds.Width -
+                        padding * 2,
                         bounds.Height -
                         titleHeight -
-                        padding - 3);
+                        padding - 4);
 
-                string[] labels =
-                {
-                    "BURN TIME",
-                    "BURNOUT VEL",
-                    "PREDICTED AP",
-                    "TARGET ERR",
-                    "CONFIDENCE",
-                    "RESULT"
-                };
+                int dividerX =
+                    content.Left +
+                    content.Width /
+                    2;
 
-                string[] values =
-                {
-                    model.IsAvailable
-                        ? FormatDurationCompact(
-                            model.TimeRemainingSeconds)
-                        : "---",
+                graphics.DrawLine(
+                    dividerPen,
+                    dividerX,
+                    content.Top,
+                    dividerX,
+                    content.Bottom);
 
-                    model.IsAvailable
-                        ? FormatSpeed(
-                            model.BurnoutVelocityMetersPerSecond)
-                        : "---",
+                Rectangle burnout =
+                    new Rectangle(
+                        content.Left,
+                        content.Top,
+                        dividerX -
+                        content.Left -
+                        12,
+                        content.Height);
 
-                    model.IsAvailable
-                        ? FormatDistance(
-                            model.PredictedApoapsisMeters)
-                        : "---",
+                Rectangle powered =
+                    new Rectangle(
+                        dividerX + 12,
+                        content.Top,
+                        content.Right -
+                        dividerX -
+                        12,
+                        content.Height);
 
-                    model.IsAvailable
-                        ? FormatSignedDistance(
-                            model.PredictedApoapsisMeters -
-                            model.TargetApoapsisMeters)
-                        : "---",
+                DrawBurnout(
+                    graphics,
+                    panelFont,
+                    labelBrush,
+                    valueBrush,
+                    sourceBrush,
+                    burnout,
+                    model);
 
-                    model.IsAvailable
-                        ? model.ConfidencePercent
-                            .ToString("0") +
-                          " %"
-                        : "WAITING",
-
-                    SafeText(
-                        model.Status)
-                };
-
-                int rowHeight =
-                    Math.Max(
-                        20,
-                        content.Height /
-                        labels.Length);
-
-                for (int index = 0;
-                     index < labels.Length;
-                     index++)
-                {
-                    DrawSafeDataRow(
-                        graphics,
-                        panelFont,
-                        labelBrush,
-                        valueBrush,
-                        content,
-                        index,
-                        rowHeight,
-                        labels[index],
-                        values[index]);
-                }
+                DrawPowered(
+                    graphics,
+                    panelFont,
+                    labelBrush,
+                    valueBrush,
+                    sourceBrush,
+                    powered,
+                    model);
             }
         }
 
-        private static void DrawSafeDataRow(
+        private static void DrawBurnout(
             Graphics graphics,
             Font font,
             Brush labelBrush,
             Brush valueBrush,
+            Brush sourceBrush,
             Rectangle bounds,
-            int index,
-            int rowHeight,
-            string label,
-            string value)
+            PredictionRenderModel model)
         {
-            int top =
-                bounds.Top +
-                index *
-                rowHeight;
-
-            int labelWidth =
-                bounds.Width * 54 /
-                100;
-
-            Rectangle labelBounds =
-                new Rectangle(
-                    bounds.Left,
-                    top,
-                    labelWidth,
-                    rowHeight);
-
-            Rectangle valueBounds =
-                new Rectangle(
-                    bounds.Left + labelWidth,
-                    top,
-                    bounds.Width - labelWidth,
-                    rowHeight);
-
-            using (StringFormat labelFormat =
-                CreateSingleLineFormat(
-                    StringAlignment.Near))
-            using (StringFormat valueFormat =
-                CreateSingleLineFormat(
-                    StringAlignment.Far))
+            string[] labels =
             {
-                graphics.DrawString(
-                    label ?? string.Empty,
-                    font,
-                    labelBrush,
-                    labelBounds,
-                    labelFormat);
+                "STAGE BURNOUT",
+                "BURN REMAIN",
+                "BURNOUT VEL",
+                "PRED AP",
+                "TARGET ERR",
+                "CONFIDENCE",
+                "STATUS",
+                "EVIDENCE"
+            };
 
-                graphics.DrawString(
-                    value ?? string.Empty,
-                    font,
-                    valueBrush,
-                    valueBounds,
-                    valueFormat);
+            string[] values =
+            {
+                model.BurnoutAvailable
+                    ? "AVAILABLE"
+                    : "WAITING",
+
+                model.BurnoutAvailable
+                    ? FormatDuration(
+                        model.BurnTimeRemainingSeconds)
+                    : "---",
+
+                model.BurnoutAvailable
+                    ? FormatSpeed(
+                        model.BurnoutVelocityMetersPerSecond)
+                    : "---",
+
+                model.BurnoutAvailable
+                    ? FormatDistance(
+                        model.BurnoutPredictedApoapsisMeters)
+                    : "---",
+
+                model.BurnoutAvailable
+                    ? FormatSignedDistance(
+                        model.BurnoutTargetErrorMeters)
+                    : "---",
+
+                model.BurnoutAvailable
+                    ? model.BurnoutConfidencePercent
+                        .ToString("0") +
+                      "%"
+                    : "---",
+
+                SafeText(
+                    model.BurnoutStatus),
+
+                SafeText(
+                    model.BurnoutEvidence)
+            };
+
+            DrawRows(
+                graphics,
+                font,
+                labelBrush,
+                valueBrush,
+                sourceBrush,
+                bounds,
+                labels,
+                values,
+                7);
+        }
+
+        private static void DrawPowered(
+            Graphics graphics,
+            Font font,
+            Brush labelBrush,
+            Brush valueBrush,
+            Brush sourceBrush,
+            Rectangle bounds,
+            PredictionRenderModel model)
+        {
+            string mode =
+                model.PoweredAvailable
+                    ? SafeText(
+                        model.PoweredMode)
+                    : SafeText(
+                        model.PoweredInactiveReason);
+
+            string timing =
+                model.PoweredAvailable
+                    ? FormatDuration(
+                        model.PoweredFlightSeconds) +
+                      " + " +
+                      FormatDuration(
+                        model.CoastFlightSeconds)
+                    : "---";
+
+            string convergence =
+                model.ConvergenceKnown
+                    ? FormatDistance(
+                        model.ConvergenceMeters)
+                    : "---";
+
+            string[] labels =
+            {
+                "POWERED TRAJ",
+                "MODE",
+                "PRED AP",
+                "PRED PE",
+                "ORBIT ERR",
+                "CMD PITCH",
+                "PWR+COAST",
+                "CONF / CONV",
+                "THRUST SRC"
+            };
+
+            string[] values =
+            {
+                model.PoweredAvailable
+                    ? model.TargetCutoffReached
+                        ? "TARGET CUTOFF"
+                        : "AVAILABLE"
+                    : "INACTIVE",
+
+                mode,
+
+                model.PoweredAvailable
+                    ? FormatDistance(
+                        model.PoweredPredictedApoapsisMeters)
+                    : "---",
+
+                model.PoweredAvailable
+                    ? FormatDistance(
+                        model.PoweredPredictedPeriapsisMeters)
+                    : "---",
+
+                model.PoweredAvailable
+                    ? FormatSignedDistance(
+                        model.PoweredOrbitErrorMeters)
+                    : "---",
+
+                model.PoweredAvailable
+                    ? FormatAngle(
+                        model.PoweredRecommendedPitchDegrees)
+                    : "---",
+
+                timing,
+
+                model.PoweredAvailable
+                    ? model.PoweredConfidencePercent
+                        .ToString("0") +
+                      "% / " +
+                      convergence
+                    : "---",
+
+                SafeText(
+                    model.ThrustEvidence)
+            };
+
+            DrawRows(
+                graphics,
+                font,
+                labelBrush,
+                valueBrush,
+                sourceBrush,
+                bounds,
+                labels,
+                values,
+                8);
+        }
+
+        private static void DrawRows(
+            Graphics graphics,
+            Font font,
+            Brush labelBrush,
+            Brush valueBrush,
+            Brush sourceBrush,
+            Rectangle bounds,
+            string[] labels,
+            string[] values,
+            int sourceRowIndex)
+        {
+            int rowHeight =
+                Math.Max(
+                    19,
+                    bounds.Height /
+                    labels.Length);
+
+            for (int index = 0;
+                 index < labels.Length;
+                 index++)
+            {
+                int top =
+                    bounds.Top +
+                    index *
+                    rowHeight;
+
+                int labelWidth =
+                    bounds.Width *
+                    44 /
+                    100;
+
+                Rectangle labelBounds =
+                    new Rectangle(
+                        bounds.Left,
+                        top,
+                        labelWidth,
+                        rowHeight);
+
+                Rectangle valueBounds =
+                    new Rectangle(
+                        bounds.Left +
+                        labelWidth,
+                        top,
+                        bounds.Width -
+                        labelWidth,
+                        rowHeight);
+
+                using (StringFormat labelFormat =
+                    CreateFormat(
+                        StringAlignment.Near))
+                using (StringFormat valueFormat =
+                    CreateFormat(
+                        StringAlignment.Far))
+                {
+                    graphics.DrawString(
+                        labels[index],
+                        font,
+                        labelBrush,
+                        labelBounds,
+                        labelFormat);
+
+                    graphics.DrawString(
+                        values[index],
+                        font,
+                        index ==
+                        sourceRowIndex
+                            ? sourceBrush
+                            : valueBrush,
+                        valueBounds,
+                        valueFormat);
+                }
             }
         }
 
-        private static StringFormat CreateSingleLineFormat(
+        private static StringFormat CreateFormat(
             StringAlignment alignment)
         {
             return new StringFormat
             {
-                Alignment = alignment,
-                LineAlignment = StringAlignment.Center,
-                Trimming = StringTrimming.EllipsisCharacter,
-                FormatFlags = StringFormatFlags.NoWrap
+                Alignment =
+                    alignment,
+                LineAlignment =
+                    StringAlignment.Center,
+                Trimming =
+                    StringTrimming.EllipsisCharacter,
+                FormatFlags =
+                    StringFormatFlags.NoWrap
             };
         }
 
-        private static string FormatDurationCompact(
+        private static string FormatDuration(
             double seconds)
         {
-            if (!IsFinite(seconds) ||
-                seconds < 0.0)
+            if (!IsFinite(
+                    seconds) ||
+                seconds <
+                    0.0)
             {
                 return "---";
             }
 
-            int totalSeconds =
-                (int)Math.Round(seconds);
+            if (seconds <
+                100.0)
+            {
+                return
+                    seconds.ToString("0.0") +
+                    " S";
+            }
 
-            int minutes =
-                totalSeconds / 60;
-
-            int remainingSeconds =
-                totalSeconds % 60;
+            int total =
+                (int)Math.Round(
+                    seconds);
 
             return string.Format(
                 "{0:00}:{1:00}",
-                minutes,
-                remainingSeconds);
+                total / 60,
+                total % 60);
         }
 
         private static string FormatSpeed(
@@ -246,30 +435,23 @@ namespace KMC.MissionControl.Rendering.Ascent
             }
 
             return
-                metersPerSecond.ToString("0") +
+                metersPerSecond
+                    .ToString("0") +
                 " M/S";
         }
 
         private static string FormatDistance(
             double meters)
         {
-            if (!IsFinite(meters))
+            if (!IsFinite(
+                    meters))
             {
                 return "---";
             }
 
-            double absolute =
-                Math.Abs(meters);
-
-            if (absolute >= 1000000.0)
-            {
-                return
-                    (meters / 1000000.0)
-                    .ToString("0.00") +
-                    " MM";
-            }
-
-            if (absolute >= 1000.0)
+            if (Math.Abs(
+                    meters) >=
+                1000.0)
             {
                 return
                     (meters / 1000.0)
@@ -285,30 +467,51 @@ namespace KMC.MissionControl.Rendering.Ascent
         private static string FormatSignedDistance(
             double meters)
         {
-            if (!IsFinite(meters))
+            if (!IsFinite(
+                    meters))
             {
                 return "---";
             }
 
-            if (Math.Abs(meters) >= 1000.0)
+            if (Math.Abs(
+                    meters) >=
+                1000.0)
             {
                 return
                     (meters / 1000.0)
-                    .ToString("+0.0;-0.0;0.0") +
+                    .ToString(
+                        "+0.0;-0.0;0.0") +
                     " KM";
             }
 
             return
-                meters.ToString("+0;-0;0") +
+                meters.ToString(
+                    "+0;-0;0") +
                 " M";
+        }
+
+        private static string FormatAngle(
+            double degrees)
+        {
+            if (!IsFinite(
+                    degrees))
+            {
+                return "---";
+            }
+
+            return
+                degrees.ToString("0.0") +
+                "°";
         }
 
         private static string SafeText(
             string value)
         {
-            return string.IsNullOrWhiteSpace(value)
-                ? "---"
-                : value;
+            return
+                string.IsNullOrWhiteSpace(
+                    value)
+                    ? "---"
+                    : value;
         }
 
         private static bool IsFinite(
