@@ -1,5 +1,6 @@
 ﻿using System;
 using KMC.Engine.Analysis;
+using KMC.Engine.Ascent;
 using KMC.Engine.Electrical;
 using KMC.Engine.Models;
 using KMC.Engine.Propulsion;
@@ -11,6 +12,9 @@ namespace KMC.Engine
     public sealed class EngineeringEngine
     {
         private readonly AnalysisPipeline _pipeline;
+
+        private readonly AscentFoundationSystem
+            _ascentFoundationSystem;
 
         private readonly ElectricalFlowTracker
             _electricalFlowTracker;
@@ -50,6 +54,9 @@ namespace KMC.Engine
 
             _pipeline =
                 pipeline;
+
+            _ascentFoundationSystem =
+                new AscentFoundationSystem();
 
             _electricalFlowTracker =
                 new ElectricalFlowTracker();
@@ -282,12 +289,23 @@ namespace KMC.Engine
             return clone;
         }
 
+        public AscentModel GetLatestAscentFoundation()
+        {
+            return
+                _ascentFoundationSystem
+                    .GetLatest();
+        }
+
         public AnalysisPipelineResult Analyze(
             long sequence,
             DateTime receivedUtc,
             object telemetryPacket,
             VesselTopology topology)
         {
+            _ascentFoundationSystem.Update(
+                telemetryPacket as KMC.Shared.TelemetryPacket,
+                receivedUtc);
+
             TelemetrySnapshot telemetry =
                 new TelemetrySnapshot(
                     sequence,

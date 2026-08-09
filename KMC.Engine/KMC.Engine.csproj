@@ -40,6 +40,11 @@
     <Compile Include="Analysis\AnalysisPipeline.cs" />
     <Compile Include="Analysis\AnalysisPipelineResult.cs" />
     <Compile Include="Analysis\IEngineeringSystem.cs" />
+    <Compile Include="Ascent\AscentTelemetryState.cs" />
+    <Compile Include="Ascent\AscentHistoryModel.cs" />
+    <Compile Include="Ascent\AscentModel.cs" />
+    <Compile Include="Ascent\AscentHistoryTracker.cs" />
+    <Compile Include="Ascent\AscentFoundationSystem.cs" />
     <Compile Include="Electrical\ElectricalEnums.cs" />
     <Compile Include="Electrical\PowerNode.cs" />
     <Compile Include="Electrical\PowerComponents.cs" />
