@@ -3,6 +3,7 @@ using KMC.Engine.Analysis;
 using KMC.Engine.Ascent;
 using KMC.Engine.Electrical;
 using KMC.Engine.Models;
+using KMC.Engine.Orbit;
 using KMC.Engine.Propulsion;
 using KMC.Engine.Systems;
 using KMC.Shared.Topology;
@@ -15,6 +16,9 @@ namespace KMC.Engine
 
         private readonly AscentFoundationSystem
             _ascentFoundationSystem;
+
+        private readonly OrbitFoundationSystem
+            _orbitFoundationSystem;
 
         private readonly ElectricalFlowTracker
             _electricalFlowTracker;
@@ -57,6 +61,9 @@ namespace KMC.Engine
 
             _ascentFoundationSystem =
                 new AscentFoundationSystem();
+
+            _orbitFoundationSystem =
+                new OrbitFoundationSystem();
 
             _electricalFlowTracker =
                 new ElectricalFlowTracker();
@@ -296,6 +303,13 @@ namespace KMC.Engine
                     .GetLatest();
         }
 
+        public OrbitModel GetLatestOrbitFoundation()
+        {
+            return
+                _orbitFoundationSystem
+                    .GetLatest();
+        }
+
         public AnalysisPipelineResult Analyze(
             long sequence,
             DateTime receivedUtc,
@@ -328,6 +342,11 @@ namespace KMC.Engine
             result.Snapshot.Ascent =
                 _ascentFoundationSystem
                     .GetLatest();
+
+            _orbitFoundationSystem.Update(
+                telemetryPacket as KMC.Shared.TelemetryPacket,
+                receivedUtc,
+                result.Snapshot.Ascent);
 
             return result;
         }

@@ -61,6 +61,9 @@
     <Compile Include="Ascent\AscentPhaseAnalyzer.cs" />
     <Compile Include="Ascent\AscentFlightDirectorModel.cs" />
     <Compile Include="Ascent\AscentFlightDirector.cs" />
+    <Compile Include="Orbit\OrbitTelemetryState.cs" />
+    <Compile Include="Orbit\OrbitModel.cs" />
+    <Compile Include="Orbit\OrbitFoundationSystem.cs" />
     <Compile Include="Electrical\ElectricalEnums.cs" />
     <Compile Include="Electrical\PowerNode.cs" />
     <Compile Include="Electrical\PowerComponents.cs" />
