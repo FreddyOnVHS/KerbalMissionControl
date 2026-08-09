@@ -6,9 +6,9 @@ namespace KMC.MissionControl.Rendering.Ascent
     /// <summary>
     /// Build 9.6.2 ASCENT layout.
     ///
-    /// Uses the existing 1920x1080 DenseEngineering canvas but reallocates
-    /// vertical space so the Engine-owned Flight Director and both prediction
-    /// columns have enough room for full engineering text without overflow.
+    /// Uses the same responsive DenseEngineering viewport strategy as POWER.
+    /// The tested 9.6.2 panel proportions are retained while MissionDisplay
+    /// supplies the full available CRT content bounds.
     /// </summary>
     public sealed class AscentLayout
     {

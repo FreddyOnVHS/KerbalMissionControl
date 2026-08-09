@@ -191,7 +191,7 @@ namespace KMC.MissionControl.Rendering.Ascent
                 SafeText(
                     model.BurnoutStatus),
 
-                SafeText(
+                FormatEvidence(
                     model.BurnoutEvidence)
             };
 
@@ -290,7 +290,7 @@ namespace KMC.MissionControl.Rendering.Ascent
                       convergence
                     : "---",
 
-                SafeText(
+                FormatEvidence(
                     model.ThrustEvidence)
             };
 
@@ -319,9 +319,11 @@ namespace KMC.MissionControl.Rendering.Ascent
         {
             int rowHeight =
                 Math.Max(
-                    19,
+                    1,
                     bounds.Height /
-                    labels.Length);
+                    Math.Max(
+                        1,
+                        labels.Length));
 
             for (int index = 0;
                  index < labels.Length;
@@ -331,6 +333,20 @@ namespace KMC.MissionControl.Rendering.Ascent
                     bounds.Top +
                     index *
                     rowHeight;
+
+                if (top >=
+                    bounds.Bottom)
+                {
+                    break;
+                }
+
+                int safeRowHeight =
+                    Math.Max(
+                        1,
+                        Math.Min(
+                            rowHeight,
+                            bounds.Bottom -
+                            top));
 
                 int labelWidth =
                     bounds.Width *
@@ -342,7 +358,7 @@ namespace KMC.MissionControl.Rendering.Ascent
                         bounds.Left,
                         top,
                         labelWidth,
-                        rowHeight);
+                        safeRowHeight);
 
                 Rectangle valueBounds =
                     new Rectangle(
@@ -351,7 +367,7 @@ namespace KMC.MissionControl.Rendering.Ascent
                         top,
                         bounds.Width -
                         labelWidth,
-                        rowHeight);
+                        safeRowHeight);
 
                 using (StringFormat labelFormat =
                     CreateFormat(
@@ -512,6 +528,42 @@ namespace KMC.MissionControl.Rendering.Ascent
                     value)
                     ? "---"
                     : value;
+        }
+
+        private static string FormatEvidence(
+            string value)
+        {
+            if (string.IsNullOrWhiteSpace(
+                    value))
+            {
+                return "---";
+            }
+
+            if (string.Equals(
+                    value,
+                    "FlightPacketStageResourceTrend",
+                    StringComparison.Ordinal))
+            {
+                return "PACKET STAGE RESOURCE TREND";
+            }
+
+            if (string.Equals(
+                    value,
+                    "VerifiedPropulsionLiveState",
+                    StringComparison.Ordinal))
+            {
+                return "VERIFIED PROP LIVE STATE";
+            }
+
+            if (string.Equals(
+                    value,
+                    "FlightPacketFallback",
+                    StringComparison.Ordinal))
+            {
+                return "FLIGHT PACKET FALLBACK";
+            }
+
+            return value;
         }
 
         private static bool IsFinite(

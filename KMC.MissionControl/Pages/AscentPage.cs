@@ -57,9 +57,12 @@ namespace KMC.MissionControl.Pages
         {
             get
             {
-                return new Size(
-                    2560,
-                    1024);
+                /*
+                 * Match POWER: Size.Empty selects MissionDisplay's responsive
+                 * full-viewport canvas instead of fitting ASCENT into a fixed
+                 * logical aspect ratio.
+                 */
+                return Size.Empty;
             }
         }
 

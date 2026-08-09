@@ -333,9 +333,11 @@ namespace KMC.MissionControl.Rendering.Ascent
 
             int rowHeight =
                 Math.Max(
-                    15,
+                    1,
                     bounds.Height /
-                    labels.Length);
+                    Math.Max(
+                        1,
+                        labels.Length));
 
             for (int index = 0;
                  index < labels.Length;
@@ -378,9 +380,11 @@ namespace KMC.MissionControl.Rendering.Ascent
         {
             int rowHeight =
                 Math.Max(
-                    15,
+                    1,
                     bounds.Height /
-                    labels.Length);
+                    Math.Max(
+                        1,
+                        labels.Length));
 
             for (int index = 0;
                  index < labels.Length;
@@ -417,6 +421,20 @@ namespace KMC.MissionControl.Rendering.Ascent
                 index *
                 rowHeight;
 
+            if (top >=
+                bounds.Bottom)
+            {
+                return;
+            }
+
+            int safeRowHeight =
+                Math.Max(
+                    1,
+                    Math.Min(
+                        rowHeight,
+                        bounds.Bottom -
+                        top));
+
             int labelWidth =
                 bounds.Width *
                 36 /
@@ -427,7 +445,7 @@ namespace KMC.MissionControl.Rendering.Ascent
                     bounds.Left,
                     top,
                     labelWidth,
-                    rowHeight);
+                    safeRowHeight);
 
             Rectangle valueBounds =
                 new Rectangle(
@@ -436,7 +454,7 @@ namespace KMC.MissionControl.Rendering.Ascent
                     top,
                     bounds.Width -
                     labelWidth,
-                    rowHeight);
+                    safeRowHeight);
 
             using (StringFormat labelFormat =
                 CreateFormat(
