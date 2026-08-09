@@ -302,10 +302,6 @@ namespace KMC.Engine
             object telemetryPacket,
             VesselTopology topology)
         {
-            _ascentFoundationSystem.Update(
-                telemetryPacket as KMC.Shared.TelemetryPacket,
-                receivedUtc);
-
             TelemetrySnapshot telemetry =
                 new TelemetrySnapshot(
                     sequence,
@@ -319,10 +315,17 @@ namespace KMC.Engine
                 new VesselModel(
                     topology);
 
-            return
+            AnalysisPipelineResult result =
                 _pipeline.Execute(
                     telemetry,
                     vessel);
+
+            _ascentFoundationSystem.Update(
+                telemetryPacket as KMC.Shared.TelemetryPacket,
+                receivedUtc,
+                result.Snapshot.Propulsion);
+
+            return result;
         }
     }
 }

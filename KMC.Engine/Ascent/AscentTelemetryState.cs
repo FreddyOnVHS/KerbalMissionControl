@@ -57,6 +57,8 @@
 
         public double ThrustToWeightRatio { get; internal set; }
 
+        public double ThrottleCommand { get; internal set; }
+
         public double AverageSpecificImpulseSeconds { get; internal set; }
 
         public double StageLiquidFuelAmount { get; internal set; }

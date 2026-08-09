@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using KMC.Engine.Models;
 using KMC.Shared;
 
 namespace KMC.Engine.Ascent
@@ -25,6 +26,9 @@ namespace KMC.Engine.Ascent
         private readonly AscentBurnoutPredictor _burnoutPredictor =
             new AscentBurnoutPredictor();
 
+        private readonly PoweredAscentGuidanceComputer _poweredGuidanceComputer =
+            new PoweredAscentGuidanceComputer();
+
         private int _initialStage =
             -1;
 
@@ -36,7 +40,8 @@ namespace KMC.Engine.Ascent
 
         public void Update(
             TelemetryPacket packet,
-            DateTime receivedUtc)
+            DateTime receivedUtc,
+            PropulsionModel propulsion)
         {
             if (packet == null)
             {
@@ -55,6 +60,8 @@ namespace KMC.Engine.Ascent
                 _profilePlanner.Reset();
 
                 _burnoutPredictor.Reset();
+
+                _poweredGuidanceComputer.Reset();
 
                 _initialStage =
                     -1;
@@ -105,6 +112,13 @@ namespace KMC.Engine.Ascent
                 _burnoutPredictor.Calculate(
                     current,
                     model.History.Samples,
+                    DefaultTargetApoapsisMeters);
+
+            model.PoweredGuidance =
+                _poweredGuidanceComputer.Calculate(
+                    current,
+                    propulsion,
+                    model.Profile.TargetPitchDegrees,
                     DefaultTargetApoapsisMeters);
 
             double vertical =
@@ -223,6 +237,9 @@ namespace KMC.Engine.Ascent
 
                     ThrustToWeightRatio =
                         packet.ThrustToWeightRatio,
+
+                    ThrottleCommand =
+                        packet.Throttle,
 
                     AverageSpecificImpulseSeconds =
                         packet.AverageSpecificImpulse,
@@ -423,6 +440,92 @@ namespace KMC.Engine.Ascent
                     : "--") +
                 " | Reset=" +
                 model.History.MissionResetDetected);
+
+            PoweredAscentModel powered =
+                model.PoweredGuidance;
+
+            Debug.WriteLine(
+                "KMC.Engine ASCENT POWERED" +
+                " | Available=" +
+                powered.Available +
+                " | Mode=" +
+                powered.Mode +
+                " | Reason=" +
+                (string.IsNullOrEmpty(
+                    powered.InactiveReason)
+                    ? "--"
+                    : powered.InactiveReason) +
+                " | ThrustEvidence=" +
+                powered.ThrustEvidence +
+                " | PropFresh=" +
+                powered.PropulsionTelemetryFresh +
+                " | PropCoverage=" +
+                powered.PropulsionCoverageComplete +
+                " | CurrentThrust=" +
+                (powered.CurrentThrustKnown
+                    ? powered.CurrentThrustKilonewtons
+                        .ToString("0.000") + "kN"
+                    : "UNKNOWN") +
+                " | AvailableThrust=" +
+                (powered.AvailableThrustKnown
+                    ? powered.AvailableThrustKilonewtons
+                        .ToString("0.000") + "kN"
+                    : "UNKNOWN") +
+                " | Throttle=" +
+                powered.ThrottleCommand
+                    .ToString("0.000") +
+                " | RefPitch=" +
+                powered.ReferencePitchDegrees
+                    .ToString("0.0") +
+                "deg | RecPitch=" +
+                (powered.Available
+                    ? powered.RecommendedPitchDegrees
+                        .ToString("0.0") + "deg"
+                    : "--") +
+                " | PitchError=" +
+                (powered.Available
+                    ? powered.PitchErrorDegrees
+                        .ToString("+0.0;-0.0;0.0") + "deg"
+                    : "--") +
+                " | PredAp=" +
+                (powered.Available
+                    ? powered.PredictedApoapsisMeters
+                        .ToString("0.0") + "m"
+                    : "--") +
+                " | PredPe=" +
+                (powered.Available
+                    ? powered.PredictedPeriapsisMeters
+                        .ToString("0.0") + "m"
+                    : "--") +
+                " | OrbitError=" +
+                (powered.Available
+                    ? powered.OrbitErrorMeters
+                        .ToString("+0.0;-0.0;0.0") + "m"
+                    : "--") +
+                " | Powered=" +
+                (powered.Available
+                    ? powered.PoweredFlightSeconds
+                        .ToString("0.0") + "s"
+                    : "--") +
+                " | Coast=" +
+                (powered.Available
+                    ? powered.CoastFlightSeconds
+                        .ToString("0.0") + "s"
+                    : "--") +
+                " | Convergence=" +
+                (powered.PredictionConvergenceKnown
+                    ? powered.PredictionConvergenceMeters
+                        .ToString("0.0") + "m"
+                    : "UNKNOWN") +
+                " | Confidence=" +
+                (powered.Available
+                    ? powered.ConfidencePercent
+                        .ToString("0.0") + "%"
+                    : "--") +
+                " | TargetCutoff=" +
+                powered.TargetCutoffReached +
+                " | Reset=" +
+                model.History.MissionResetDetected);
         }
 
         private static AscentModel Clone(
@@ -523,6 +626,9 @@ namespace KMC.Engine.Ascent
 
                     ThrustToWeightRatio =
                         source.Current.ThrustToWeightRatio,
+
+                    ThrottleCommand =
+                        source.Current.ThrottleCommand,
 
                     AverageSpecificImpulseSeconds =
                         source.Current.AverageSpecificImpulseSeconds,
@@ -724,6 +830,85 @@ namespace KMC.Engine.Ascent
 
                     Status =
                         source.Prediction.Status
+                };
+
+            clone.PoweredGuidance =
+                new PoweredAscentModel
+                {
+                    Available =
+                        source.PoweredGuidance.Available,
+
+                    Mode =
+                        source.PoweredGuidance.Mode,
+
+                    InactiveReason =
+                        source.PoweredGuidance.InactiveReason,
+
+                    ReferencePitchDegrees =
+                        source.PoweredGuidance.ReferencePitchDegrees,
+
+                    RecommendedPitchDegrees =
+                        source.PoweredGuidance.RecommendedPitchDegrees,
+
+                    PitchErrorDegrees =
+                        source.PoweredGuidance.PitchErrorDegrees,
+
+                    PredictedApoapsisMeters =
+                        source.PoweredGuidance.PredictedApoapsisMeters,
+
+                    PredictedPeriapsisMeters =
+                        source.PoweredGuidance.PredictedPeriapsisMeters,
+
+                    OrbitErrorMeters =
+                        source.PoweredGuidance.OrbitErrorMeters,
+
+                    ConfidencePercent =
+                        source.PoweredGuidance.ConfidencePercent,
+
+                    PoweredFlightSeconds =
+                        source.PoweredGuidance.PoweredFlightSeconds,
+
+                    CoastFlightSeconds =
+                        source.PoweredGuidance.CoastFlightSeconds,
+
+                    PredictionConvergenceKnown =
+                        source.PoweredGuidance.PredictionConvergenceKnown,
+
+                    PredictionConvergenceMeters =
+                        source.PoweredGuidance.PredictionConvergenceMeters,
+
+                    TargetCutoffReached =
+                        source.PoweredGuidance.TargetCutoffReached,
+
+                    ThrustEvidence =
+                        source.PoweredGuidance.ThrustEvidence,
+
+                    PropulsionTelemetryFresh =
+                        source.PoweredGuidance.PropulsionTelemetryFresh,
+
+                    PropulsionCoverageComplete =
+                        source.PoweredGuidance.PropulsionCoverageComplete,
+
+                    CurrentThrustKnown =
+                        source.PoweredGuidance.CurrentThrustKnown,
+
+                    CurrentThrustKilonewtons =
+                        source.PoweredGuidance.CurrentThrustKilonewtons,
+
+                    AvailableThrustKnown =
+                        source.PoweredGuidance.AvailableThrustKnown,
+
+                    AvailableThrustKilonewtons =
+                        source.PoweredGuidance.AvailableThrustKilonewtons,
+
+                    ThrottleCommand =
+                        source.PoweredGuidance.ThrottleCommand,
+
+                    VesselMassTonnes =
+                        source.PoweredGuidance.VesselMassTonnes,
+
+                    SpecificImpulseSeconds =
+                        source.PoweredGuidance.SpecificImpulseSeconds
                 };
 
             return clone;

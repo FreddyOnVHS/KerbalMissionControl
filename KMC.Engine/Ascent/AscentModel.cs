@@ -24,6 +24,9 @@ namespace KMC.Engine.Ascent
 
             Prediction =
                 new AscentPredictionModel();
+
+            PoweredGuidance =
+                new PoweredAscentModel();
         }
 
         public bool Available { get; internal set; }
@@ -49,6 +52,12 @@ namespace KMC.Engine.Ascent
         }
 
         public AscentPredictionModel Prediction
+        {
+            get;
+            internal set;
+        }
+
+        public PoweredAscentModel PoweredGuidance
         {
             get;
             internal set;
