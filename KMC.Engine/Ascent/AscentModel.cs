@@ -18,6 +18,9 @@ namespace KMC.Engine.Ascent
 
             History =
                 new AscentHistoryModel();
+
+            Profile =
+                new AscentProfileModel();
         }
 
         public bool Available { get; internal set; }
@@ -31,6 +34,12 @@ namespace KMC.Engine.Ascent
         }
 
         public AscentHistoryModel History
+        {
+            get;
+            internal set;
+        }
+
+        public AscentProfileModel Profile
         {
             get;
             internal set;

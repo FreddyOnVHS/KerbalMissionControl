@@ -13,8 +13,17 @@ namespace KMC.Engine.Ascent
     /// </summary>
     internal sealed class AscentFoundationSystem
     {
+        private const double DefaultTargetApoapsisMeters =
+            80000.0;
+
         private readonly AscentHistoryTracker _history =
             new AscentHistoryTracker();
+
+        private readonly AscentProfilePlanner _profilePlanner =
+            new AscentProfilePlanner();
+
+        private int _initialStage =
+            -1;
 
         private AscentModel _latest =
             new AscentModel();
@@ -38,6 +47,24 @@ namespace KMC.Engine.Ascent
                 _history.Update(
                     packet);
 
+            if (reset)
+            {
+                _profilePlanner.Reset();
+
+                _initialStage =
+                    -1;
+            }
+
+            bool capturedNow =
+                _profilePlanner.CaptureLaunchPlan(
+                    packet.ThrustToWeightRatio);
+
+            if (capturedNow)
+            {
+                _initialStage =
+                    packet.CurrentStage;
+            }
+
             AscentTelemetryState current =
                 CreateCurrentState(
                     packet);
@@ -58,6 +85,16 @@ namespace KMC.Engine.Ascent
                         _history.CreateSnapshot(
                             reset)
                 };
+
+            model.Profile =
+                _profilePlanner.CreateModel(
+                    model.History.DownrangeMeters,
+                    current.AltitudeMeters,
+                    current.PitchDegrees,
+                    current.ThrustToWeightRatio,
+                    DefaultTargetApoapsisMeters,
+                    _initialStage,
+                    capturedNow);
 
             double vertical =
                 packet.VerticalSpeed;
@@ -263,6 +300,60 @@ namespace KMC.Engine.Ascent
                     .ToString("0.0") +
                 "m | Reset=" +
                 model.History.MissionResetDetected);
+
+            AscentProfileModel profile =
+                model.Profile;
+
+            Debug.WriteLine(
+                "KMC.Engine ASCENT PROFILE" +
+                " | TargetAp=" +
+                profile.TargetApoapsisMeters
+                    .ToString("0.0") +
+                "m | PlanCaptured=" +
+                profile.LaunchPlanCaptured +
+                " | CapturedNow=" +
+                profile.CaptureOccurredThisUpdate +
+                " | InitialStage=" +
+                profile.InitialStage +
+                " | PlanTWR=" +
+                (profile.PlanningThrustToWeightRatioKnown
+                    ? profile.PlanningThrustToWeightRatio
+                        .ToString("0.000")
+                    : "UNKNOWN") +
+                " | LiveTWR=" +
+                (IsFinite(
+                    profile.LiveThrustToWeightRatio)
+                    ? profile.LiveThrustToWeightRatio
+                        .ToString("0.000")
+                    : "UNKNOWN") +
+                " | ScaleSource=" +
+                profile.ScaleSource +
+                " | Scale=" +
+                profile.ProfileScaleMeters
+                    .ToString("0.0") +
+                "m | Downrange=" +
+                profile.DownrangeMeters
+                    .ToString("0.0") +
+                "m | TargetAlt=" +
+                profile.TargetAltitudeMeters
+                    .ToString("0.0") +
+                "m | ActualAlt=" +
+                profile.ActualAltitudeMeters
+                    .ToString("0.0") +
+                "m | AltError=" +
+                profile.AltitudeErrorMeters
+                    .ToString("+0.0;-0.0;0.0") +
+                "m | TargetPitch=" +
+                profile.TargetPitchDegrees
+                    .ToString("0.0") +
+                "deg | ActualPitch=" +
+                profile.ActualPitchDegrees
+                    .ToString("0.0") +
+                "deg | PitchError=" +
+                profile.PitchErrorDegrees
+                    .ToString("+0.0;-0.0;0.0") +
+                "deg | Reset=" +
+                model.History.MissionResetDetected);
         }
 
         private static AscentModel Clone(
@@ -458,6 +549,61 @@ namespace KMC.Engine.Ascent
 
             clone.History =
                 history;
+
+            clone.Profile =
+                new AscentProfileModel
+                {
+                    Available =
+                        source.Profile.Available,
+
+                    TargetApoapsisMeters =
+                        source.Profile.TargetApoapsisMeters,
+
+                    LaunchPlanCaptured =
+                        source.Profile.LaunchPlanCaptured,
+
+                    CaptureOccurredThisUpdate =
+                        source.Profile.CaptureOccurredThisUpdate,
+
+                    InitialStage =
+                        source.Profile.InitialStage,
+
+                    PlanningThrustToWeightRatioKnown =
+                        source.Profile.PlanningThrustToWeightRatioKnown,
+
+                    PlanningThrustToWeightRatio =
+                        source.Profile.PlanningThrustToWeightRatio,
+
+                    LiveThrustToWeightRatio =
+                        source.Profile.LiveThrustToWeightRatio,
+
+                    ScaleSource =
+                        source.Profile.ScaleSource,
+
+                    ProfileScaleMeters =
+                        source.Profile.ProfileScaleMeters,
+
+                    DownrangeMeters =
+                        source.Profile.DownrangeMeters,
+
+                    TargetAltitudeMeters =
+                        source.Profile.TargetAltitudeMeters,
+
+                    ActualAltitudeMeters =
+                        source.Profile.ActualAltitudeMeters,
+
+                    AltitudeErrorMeters =
+                        source.Profile.AltitudeErrorMeters,
+
+                    TargetPitchDegrees =
+                        source.Profile.TargetPitchDegrees,
+
+                    ActualPitchDegrees =
+                        source.Profile.ActualPitchDegrees,
+
+                    PitchErrorDegrees =
+                        source.Profile.PitchErrorDegrees
+                };
 
             return clone;
         }
