@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using KMC.MissionControl.Diagnostics;
 using KMC.MissionControl.Flight;
@@ -9,7 +9,7 @@ using KMC.MissionControl.Rendering.Ascent;
 
 namespace KMC.MissionControl.Pages
 {
-    public sealed class AscentPage : IMissionPage
+    public sealed class AscentPage : IMissionPage, IMissionPageCanvasProvider
     {
         private readonly MissionTarget _missionTarget =
             new MissionTarget(
@@ -39,6 +39,9 @@ namespace KMC.MissionControl.Pages
         private readonly OrbitTrendRenderer _orbitTrendRenderer =
             new OrbitTrendRenderer();
 
+        private readonly NavballRenderer _navballRenderer =
+            new NavballRenderer();
+
         private readonly FooterRenderer _footerRenderer =
             new FooterRenderer();
 
@@ -57,12 +60,28 @@ namespace KMC.MissionControl.Pages
         }
 
         /// <summary>
-        /// Requested ascent apoapsis in meters.
-        ///
-        /// The current UI still uses the default 80 km value, but future
-        /// controls can change this property and every dependent calculation
-        /// will use the new target.
+        /// Build 9.5.2 opts ASCENT into the existing dense-engineering canvas
+        /// path so the attitude instrument and engineering panels use more of
+        /// the physical CRT viewport.
         /// </summary>
+        public Size PreferredVirtualCanvasSize
+        {
+            get
+            {
+                return new Size(
+                    1920,
+                    1080);
+            }
+        }
+
+        public MissionPageContentProfile ContentProfile
+        {
+            get
+            {
+                return MissionPageContentProfile.DenseEngineering;
+            }
+        }
+
         public double TargetApoapsisMeters
         {
             get
@@ -118,21 +137,6 @@ namespace KMC.MissionControl.Pages
             _headerRenderer.Draw(
                 context);
 
-            /*
-             * Large-format ascent layout:
-             *
-             *   Main ascent graph       Orbit inset
-             *                           Flight Director
-             *
-             *   Full-width telemetry strip
-             */
-
-            /*
-             * Phase 5 approved widescreen layout.
-             *
-             * The panel allocations intentionally include generous
-             * spacing so future data does not overlap or clip.
-             */
             AscentLayout layout =
                 AscentLayout.Create(
                     context);
@@ -140,6 +144,11 @@ namespace KMC.MissionControl.Pages
             DrawAscentGraph(
                 context,
                 layout.Graph,
+                telemetry);
+
+            DrawNavball(
+                context,
+                layout.Navball,
                 telemetry);
 
             DrawOrbitInset(
@@ -175,10 +184,6 @@ namespace KMC.MissionControl.Pages
                 return;
             }
 
-            /*
-             * The history component owns trajectory state. Page-specific
-             * planning and prediction state still resets here.
-             */
             _profilePlanner.Reset();
 
             _initialStage =
@@ -210,18 +215,16 @@ namespace KMC.MissionControl.Pages
             }
 
             AscentHistorySample sample =
-                _flightHistory.Samples[_flightHistory.Samples.Count - 1];
+                _flightHistory.Samples[
+                    _flightHistory.Samples.Count - 1];
 
-            /*
-             * Only write once per stored ascent sample. The sample cadence
-             * is already limited by MinimumSampleIntervalSeconds.
-             */
             if (sample.DebugWritten)
             {
                 return;
             }
 
-            sample.DebugWritten = true;
+            sample.DebugWritten =
+                true;
 
             double profileScale =
                 _profilePlanner.GetProfileScale(
@@ -274,7 +277,8 @@ namespace KMC.MissionControl.Pages
                         telemetry.ThrustToWeightRatio,
 
                     PlanningThrustToWeightRatio =
-                        _profilePlanner.PlanningThrustToWeightRatio,
+                        _profilePlanner
+                            .PlanningThrustToWeightRatio,
 
                     ProfileScaleMeters =
                         profileScale,
@@ -371,10 +375,12 @@ namespace KMC.MissionControl.Pages
                             downrange,
 
                         AltitudeMeters =
-                            _profilePlanner.CalculateTargetAltitude(
-                                downrange,
-                                telemetry,
-                                _missionTarget.TargetApoapsisMeters)
+                            _profilePlanner
+                                .CalculateTargetAltitude(
+                                    downrange,
+                                    telemetry,
+                                    _missionTarget
+                                        .TargetApoapsisMeters)
                     };
             }
 
@@ -387,7 +393,8 @@ namespace KMC.MissionControl.Pages
                  index++)
             {
                 AscentHistorySample sample =
-                    _flightHistory.Samples[index];
+                    _flightHistory.Samples[
+                        index];
 
                 actualPoints[index] =
                     new AscentGraphPoint
@@ -417,6 +424,69 @@ namespace KMC.MissionControl.Pages
                 };
 
             _ascentGraphRenderer.Draw(
+                context,
+                bounds,
+                model);
+        }
+
+        private void DrawNavball(
+            MissionRenderContext context,
+            Rectangle bounds,
+            MissionTelemetry telemetry)
+        {
+            double horizontal =
+                telemetry.HorizontalSpeed;
+
+            double vertical =
+                telemetry.VerticalSpeed;
+
+            double speed =
+                Math.Sqrt(
+                    horizontal *
+                    horizontal +
+                    vertical *
+                    vertical);
+
+            bool flightPathAvailable =
+                IsFinite(
+                    speed) &&
+                speed >= 1.0 &&
+                IsFinite(
+                    horizontal) &&
+                IsFinite(
+                    vertical);
+
+            double flightPathAngle =
+                flightPathAvailable
+                    ? Math.Atan2(
+                        vertical,
+                        Math.Max(
+                            0.0,
+                            horizontal)) *
+                      180.0 /
+                      Math.PI
+                    : double.NaN;
+
+            NavballRenderModel model =
+                new NavballRenderModel
+                {
+                    PitchDegrees =
+                        telemetry.Pitch,
+
+                    HeadingDegrees =
+                        telemetry.Heading,
+
+                    RollDegrees =
+                        telemetry.Roll,
+
+                    FlightPathAvailable =
+                        flightPathAvailable,
+
+                    FlightPathAngleDegrees =
+                        flightPathAngle
+                };
+
+            _navballRenderer.Draw(
                 context,
                 bounds,
                 model);
@@ -531,7 +601,8 @@ namespace KMC.MissionControl.Pages
                         prediction.TimeRemainingSeconds,
 
                     BurnoutVelocityMetersPerSecond =
-                        prediction.BurnoutVelocityMetersPerSecond,
+                        prediction
+                            .BurnoutVelocityMetersPerSecond,
 
                     PredictedApoapsisMeters =
                         prediction.PredictedApoapsisMeters,
@@ -550,34 +621,6 @@ namespace KMC.MissionControl.Pages
                 context,
                 bounds,
                 model);
-        }
-
-        private static string FormatDurationCompact(
-            double totalSeconds)
-        {
-            if (!IsFinite(totalSeconds) ||
-                totalSeconds < 0.0)
-            {
-                return "---";
-            }
-
-            if (totalSeconds < 100.0)
-            {
-                return
-                    totalSeconds.ToString("0.0") +
-                    " S";
-            }
-
-            int minutes =
-                (int)(totalSeconds / 60.0);
-
-            int seconds =
-                (int)(totalSeconds % 60.0);
-
-            return string.Format(
-                "{0:00}:{1:00}",
-                minutes,
-                seconds);
         }
 
         private void DrawFooter(
@@ -674,19 +717,6 @@ namespace KMC.MissionControl.Pages
                         100.0));
         }
 
-        private static string FormatGForceCompact(
-            double value)
-        {
-            if (!IsFinite(value))
-            {
-                return "---";
-            }
-
-            return
-                value.ToString("0.00") +
-                " G";
-        }
-
         private double CalculateGraphDownrangeLimit(
             MissionTelemetry telemetry)
         {
@@ -706,93 +736,10 @@ namespace KMC.MissionControl.Pages
                     profileScale * 4.5));
         }
 
-        private string DetermineGuidance(
-            MissionTelemetry telemetry,
-            double targetAltitude)
-        {
-            if (telemetry.ThrustToWeightRatio <
-                1.0 &&
-                telemetry.Altitude <
-                1000.0)
-            {
-                return
-                    "HOLD: INSUFFICIENT LAUNCH TWR";
-            }
-
-            if (telemetry.MissionTime <
-                1.0)
-            {
-                return
-                    "AWAITING ASCENT";
-            }
-
-            if (telemetry.DynamicPressureKpa >
-                35.0)
-            {
-                return
-                    "HIGH DYNAMIC PRESSURE - LIMIT PITCH RATE";
-            }
-
-            double altitudeError =
-                telemetry.Altitude -
-                targetAltitude;
-
-            if (altitudeError >
-                6000.0)
-            {
-                return
-                    "PROFILE HIGH - PITCH DOWN GRADUALLY";
-            }
-
-            if (altitudeError <
-                -6000.0)
-            {
-                return
-                    "PROFILE LOW - HOLD VERTICAL COMPONENT";
-            }
-
-            double targetPitch =
-                _profilePlanner.CalculateTargetPitch(
-                    Math.Max(
-                        0.0,
-                        telemetry.HorizontalSpeed *
-                        telemetry.MissionTime *
-                        0.55),
-                    telemetry,
-                    _missionTarget.TargetApoapsisMeters);
-
-            double pitchError =
-                telemetry.Pitch -
-                targetPitch;
-
-            if (pitchError >
-                12.0)
-            {
-                return
-                    "PITCH HIGH - INCREASE GRAVITY TURN";
-            }
-
-            if (pitchError <
-                -12.0)
-            {
-                return
-                    "PITCH LOW - REDUCE TURN RATE";
-            }
-
-            if (telemetry.Apoapsis >=
-                _missionTarget.TargetApoapsisMeters)
-            {
-                return
-                    "TARGET APOAPSIS ACHIEVED - PREPARE MECO";
-            }
-
-            return
-                "ASCENT PROFILE NOMINAL";
-        }
-
         private double GetMaximumActualAltitude()
         {
-            double maximum = 0.0;
+            double maximum =
+                0.0;
 
             foreach (AscentHistorySample sample in
                 _flightHistory.Samples)
@@ -806,159 +753,6 @@ namespace KMC.MissionControl.Pages
             return maximum;
         }
 
-        private static string FormatDistance(
-            double meters)
-        {
-            if (!IsFinite(meters))
-            {
-                return "---";
-            }
-
-            double absoluteValue =
-                Math.Abs(meters);
-
-            if (absoluteValue >= 1000000.0)
-            {
-                return
-                    (meters / 1000000.0)
-                    .ToString("0.00") +
-                    " MM";
-            }
-
-            if (absoluteValue >= 1000.0)
-            {
-                return
-                    (meters / 1000.0)
-                    .ToString("0.0") +
-                    " KM";
-            }
-
-            return
-                meters.ToString("0") +
-                " M";
-        }
-
-        private static string FormatSignedDistance(
-            double meters)
-        {
-            if (!IsFinite(meters))
-            {
-                return "---";
-            }
-
-            if (Math.Abs(meters) >= 1000.0)
-            {
-                return
-                    (meters / 1000.0)
-                    .ToString(
-                        "+0.0;-0.0;0.0") +
-                    " KM";
-            }
-
-            return
-                meters.ToString(
-                    "+0;-0;0") +
-                " M";
-        }
-
-        private static string FormatSpeed(
-            double metersPerSecond)
-        {
-            if (!IsFinite(metersPerSecond))
-            {
-                return "---";
-            }
-
-            return
-                metersPerSecond
-                .ToString("0.0") +
-                " M/S";
-        }
-
-        private static string FormatSignedSpeed(
-            double metersPerSecond)
-        {
-            if (!IsFinite(metersPerSecond))
-            {
-                return "---";
-            }
-
-            return
-                metersPerSecond.ToString(
-                    "+0.0;-0.0;0.0") +
-                " M/S";
-        }
-
-        private static string FormatPressure(
-            double kilopascals)
-        {
-            if (!IsFinite(kilopascals))
-            {
-                return "---";
-            }
-
-            return
-                Math.Max(
-                    0.0,
-                    kilopascals)
-                .ToString("0.00") +
-                " KPA";
-        }
-
-        private static string FormatAngle(
-            double degrees)
-        {
-            if (!IsFinite(degrees))
-            {
-                return "---";
-            }
-
-            return
-                degrees.ToString("0.0") +
-                "°";
-        }
-
-        private static string FormatRatio(
-            double value)
-        {
-            if (!IsFinite(value))
-            {
-                return "---";
-            }
-
-            return
-                Math.Max(
-                    0.0,
-                    value)
-                .ToString("0.00");
-        }
-
-        private static string FormatMissionTime(
-            double totalSeconds)
-        {
-            if (!IsFinite(totalSeconds) ||
-                totalSeconds < 0.0)
-            {
-                totalSeconds = 0.0;
-            }
-
-            int hours =
-                (int)(totalSeconds / 3600.0);
-
-            int minutes =
-                (int)(totalSeconds % 3600.0) /
-                60;
-
-            int seconds =
-                (int)(totalSeconds % 60.0);
-
-            return string.Format(
-                "{0:000}:{1:00}:{2:00}",
-                hours,
-                minutes,
-                seconds);
-        }
-
         private static bool IsFinite(
             double value)
         {
@@ -966,6 +760,5 @@ namespace KMC.MissionControl.Pages
                 !double.IsNaN(value) &&
                 !double.IsInfinity(value);
         }
-
     }
 }

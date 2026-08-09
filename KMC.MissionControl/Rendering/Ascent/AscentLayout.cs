@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 
 namespace KMC.MissionControl.Rendering.Ascent
@@ -6,12 +6,18 @@ namespace KMC.MissionControl.Rendering.Ascent
     /// <summary>
     /// Centralized geometry for the Ascent Guidance page.
     ///
-    /// Future panel resizing should be made here instead of directly in
-    /// AscentPage or the individual renderers.
+    /// Build 9.5.2 uses the 1920x1080 DenseEngineering canvas requested by
+    /// AscentPage. The FDAI is intentionally promoted to a primary instrument
+    /// while the existing graph/guidance/prediction stack remains available
+    /// for foundation validation.
+    ///
+    /// Build 9.6 will complete the Engine-owned ASCENT integration.
     /// </summary>
     public sealed class AscentLayout
     {
         public Rectangle Graph { get; private set; }
+
+        public Rectangle Navball { get; private set; }
 
         public Rectangle OrbitTrend { get; private set; }
 
@@ -34,38 +40,45 @@ namespace KMC.MissionControl.Rendering.Ascent
             {
                 Graph =
                     context.GetRelativeRectangle(
-                        0.008f,
+                        0.012f,
                         0.070f,
-                        0.555f,
-                        0.765f),
+                        0.468f,
+                        0.748f),
+
+                Navball =
+                    context.GetRelativeRectangle(
+                        0.496f,
+                        0.070f,
+                        0.286f,
+                        0.474f),
 
                 OrbitTrend =
                     context.GetRelativeRectangle(
-                        0.575f,
+                        0.797f,
                         0.070f,
-                        0.417f,
+                        0.191f,
                         0.220f),
 
                 FlightDirector =
                     context.GetRelativeRectangle(
-                        0.575f,
-                        0.302f,
-                        0.417f,
-                        0.325f),
+                        0.797f,
+                        0.305f,
+                        0.191f,
+                        0.239f),
 
                 Prediction =
                     context.GetRelativeRectangle(
-                        0.575f,
-                        0.639f,
-                        0.417f,
-                        0.196f),
+                        0.496f,
+                        0.562f,
+                        0.492f,
+                        0.256f),
 
                 Footer =
                     context.GetRelativeRectangle(
-                        0.008f,
-                        0.850f,
-                        0.984f,
-                        0.140f)
+                        0.012f,
+                        0.836f,
+                        0.976f,
+                        0.148f)
             };
         }
     }
