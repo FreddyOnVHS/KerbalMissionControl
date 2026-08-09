@@ -55,6 +55,12 @@
     <Compile Include="Ascent\GuidanceOptimizer.cs" />
     <Compile Include="Ascent\AscentEnergyManager.cs" />
     <Compile Include="Ascent\PoweredAscentGuidanceComputer.cs" />
+    <Compile Include="Ascent\AscentCutoffModel.cs" />
+    <Compile Include="Ascent\AscentCutoffAnalyzer.cs" />
+    <Compile Include="Ascent\AscentPhaseModel.cs" />
+    <Compile Include="Ascent\AscentPhaseAnalyzer.cs" />
+    <Compile Include="Ascent\AscentFlightDirectorModel.cs" />
+    <Compile Include="Ascent\AscentFlightDirector.cs" />
     <Compile Include="Electrical\ElectricalEnums.cs" />
     <Compile Include="Electrical\PowerNode.cs" />
     <Compile Include="Electrical\PowerComponents.cs" />

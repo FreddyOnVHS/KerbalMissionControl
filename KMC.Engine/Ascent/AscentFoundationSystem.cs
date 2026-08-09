@@ -29,6 +29,12 @@ namespace KMC.Engine.Ascent
         private readonly PoweredAscentGuidanceComputer _poweredGuidanceComputer =
             new PoweredAscentGuidanceComputer();
 
+        private readonly AscentPhaseAnalyzer _phaseAnalyzer =
+            new AscentPhaseAnalyzer();
+
+        private readonly AscentFlightDirector _flightDirector =
+            new AscentFlightDirector();
+
         private int _initialStage =
             -1;
 
@@ -62,6 +68,10 @@ namespace KMC.Engine.Ascent
                 _burnoutPredictor.Reset();
 
                 _poweredGuidanceComputer.Reset();
+
+                _phaseAnalyzer.Reset();
+
+                _flightDirector.Reset();
 
                 _initialStage =
                     -1;
@@ -119,6 +129,19 @@ namespace KMC.Engine.Ascent
                     current,
                     propulsion,
                     model.Profile.TargetPitchDegrees,
+                    DefaultTargetApoapsisMeters);
+
+            model.Phase =
+                _phaseAnalyzer.Update(
+                    current,
+                    DefaultTargetApoapsisMeters);
+
+            model.FlightDirector =
+                _flightDirector.Calculate(
+                    current,
+                    model.Profile,
+                    model.PoweredGuidance,
+                    model.Phase,
                     DefaultTargetApoapsisMeters);
 
             double vertical =
@@ -526,6 +549,94 @@ namespace KMC.Engine.Ascent
                 powered.TargetCutoffReached +
                 " | Reset=" +
                 model.History.MissionResetDetected);
+
+            AscentPhaseModel phase =
+                model.Phase;
+
+            Debug.WriteLine(
+                "KMC.Engine ASCENT PHASE" +
+                " | Phase=" +
+                phase.PhaseName +
+                " | MissionStarted=" +
+                phase.MissionStarted +
+                " | MecoLatched=" +
+                phase.MecoLatched +
+                " | ApRate=" +
+                (phase.Cutoff.ApoapsisRiseRateAvailable
+                    ? phase.Cutoff.ApoapsisRiseRateMetersPerSecond
+                        .ToString("0.0") + "m/s"
+                    : "UNKNOWN") +
+                " | MecoEstimate=" +
+                (phase.Cutoff.EstimatedMecoAvailable
+                    ? phase.Cutoff.EstimatedMecoSeconds
+                        .ToString("0.0") + "s"
+                    : "UNKNOWN") +
+                " | Countdown=" +
+                (phase.MecoCountdownSeconds > 0
+                    ? phase.MecoCountdownSeconds.ToString()
+                    : "--") +
+                " | CutoffThreshold=" +
+                phase.Cutoff.CutoffThresholdMeters
+                    .ToString("0.0") +
+                "m | CutoffReached=" +
+                phase.Cutoff.CutoffReached +
+                " | OrbitHandoff=" +
+                phase.OrbitHandoffRequired +
+                " | Flash=" +
+                phase.FlashAlert +
+                " | Reset=" +
+                model.History.MissionResetDetected);
+
+            AscentFlightDirectorModel director =
+                model.FlightDirector;
+
+            Debug.WriteLine(
+                "KMC.Engine ASCENT FLIGHT DIRECTOR" +
+                " | Phase=" +
+                director.FlightPhase +
+                " | Available=" +
+                director.Available +
+                " | NominalPitch=" +
+                director.NominalPitchDegrees
+                    .ToString("0.0") +
+                "deg | RecPitch=" +
+                director.RecommendedPitchDegrees
+                    .ToString("0.0") +
+                "deg | PitchCorrection=" +
+                director.PitchCorrectionDegrees
+                    .ToString("+0.0;-0.0;0.0") +
+                "deg | AltError=" +
+                director.AltitudeErrorMeters
+                    .ToString("+0.0;-0.0;0.0") +
+                "m | ApError=" +
+                director.ApoapsisErrorMeters
+                    .ToString("+0.0;-0.0;0.0") +
+                "m | Recovery=" +
+                director.RecoveryAuthorityPercent
+                    .ToString("0.0") +
+                "% | Achievable=" +
+                director.IsTargetAchievable +
+                " | PredictiveBlend=" +
+                (director.PredictiveGuidanceBlended
+                    ? director.PredictiveBlendFraction
+                        .ToString("0.00")
+                    : "--") +
+                " | Command=" +
+                director.Command +
+                " | Throttle=" +
+                director.ThrottleCommand +
+                " | Status=" +
+                director.Status +
+                " | Next=" +
+                director.NextEvent +
+                " | CutoffRequired=" +
+                director.CutoffRequired +
+                " | CoastLockout=" +
+                director.CoastLockoutActive +
+                " | OrbitHandoff=" +
+                director.OrbitHandoffRequired +
+                " | Reset=" +
+                model.History.MissionResetDetected);
         }
 
         private static AscentModel Clone(
@@ -909,6 +1020,132 @@ namespace KMC.Engine.Ascent
 
                     SpecificImpulseSeconds =
                         source.PoweredGuidance.SpecificImpulseSeconds
+                };
+
+            clone.Phase =
+                new AscentPhaseModel
+                {
+                    Available =
+                        source.Phase.Available,
+
+                    Phase =
+                        source.Phase.Phase,
+
+                    PhaseName =
+                        source.Phase.PhaseName,
+
+                    MissionStarted =
+                        source.Phase.MissionStarted,
+
+                    MecoLatched =
+                        source.Phase.MecoLatched,
+
+                    MecoCountdownSeconds =
+                        source.Phase.MecoCountdownSeconds,
+
+                    FlashAlert =
+                        source.Phase.FlashAlert,
+
+                    OrbitHandoffRequired =
+                        source.Phase.OrbitHandoffRequired,
+
+                    Cutoff =
+                        new AscentCutoffModel
+                        {
+                            Available =
+                                source.Phase.Cutoff.Available,
+
+                            TargetApoapsisMeters =
+                                source.Phase.Cutoff.TargetApoapsisMeters,
+
+                            CutoffToleranceMeters =
+                                source.Phase.Cutoff.CutoffToleranceMeters,
+
+                            CutoffThresholdMeters =
+                                source.Phase.Cutoff.CutoffThresholdMeters,
+
+                            ApoapsisRiseRateAvailable =
+                                source.Phase.Cutoff.ApoapsisRiseRateAvailable,
+
+                            ApoapsisRiseRateMetersPerSecond =
+                                source.Phase.Cutoff.ApoapsisRiseRateMetersPerSecond,
+
+                            EstimatedMecoAvailable =
+                                source.Phase.Cutoff.EstimatedMecoAvailable,
+
+                            EstimatedMecoSeconds =
+                                source.Phase.Cutoff.EstimatedMecoSeconds,
+
+                            CutoffReached =
+                                source.Phase.Cutoff.CutoffReached
+                        }
+                };
+
+            clone.FlightDirector =
+                new AscentFlightDirectorModel
+                {
+                    Available =
+                        source.FlightDirector.Available,
+
+                    FlightPhase =
+                        source.FlightDirector.FlightPhase,
+
+                    NominalPitchDegrees =
+                        source.FlightDirector.NominalPitchDegrees,
+
+                    RecommendedPitchDegrees =
+                        source.FlightDirector.RecommendedPitchDegrees,
+
+                    PitchCorrectionDegrees =
+                        source.FlightDirector.PitchCorrectionDegrees,
+
+                    AltitudeErrorMeters =
+                        source.FlightDirector.AltitudeErrorMeters,
+
+                    ApoapsisErrorMeters =
+                        source.FlightDirector.ApoapsisErrorMeters,
+
+                    RecoveryAuthorityPercent =
+                        source.FlightDirector.RecoveryAuthorityPercent,
+
+                    IsTargetAchievable =
+                        source.FlightDirector.IsTargetAchievable,
+
+                    ThrottleCommandPercent =
+                        source.FlightDirector.ThrottleCommandPercent,
+
+                    Command =
+                        source.FlightDirector.Command,
+
+                    ThrottleCommand =
+                        source.FlightDirector.ThrottleCommand,
+
+                    Status =
+                        source.FlightDirector.Status,
+
+                    NextEvent =
+                        source.FlightDirector.NextEvent,
+
+                    MecoCountdownSeconds =
+                        source.FlightDirector.MecoCountdownSeconds,
+
+                    CutoffRequired =
+                        source.FlightDirector.CutoffRequired,
+
+                    CoastLockoutActive =
+                        source.FlightDirector.CoastLockoutActive,
+
+                    OrbitHandoffRequired =
+                        source.FlightDirector.OrbitHandoffRequired,
+
+                    FlashAlert =
+                        source.FlightDirector.FlashAlert,
+
+                    PredictiveGuidanceBlended =
+                        source.FlightDirector.PredictiveGuidanceBlended,
+
+                    PredictiveBlendFraction =
+                        source.FlightDirector.PredictiveBlendFraction
                 };
 
             return clone;

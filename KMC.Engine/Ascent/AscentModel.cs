@@ -27,6 +27,12 @@ namespace KMC.Engine.Ascent
 
             PoweredGuidance =
                 new PoweredAscentModel();
+
+            Phase =
+                new AscentPhaseModel();
+
+            FlightDirector =
+                new AscentFlightDirectorModel();
         }
 
         public bool Available { get; internal set; }
@@ -58,6 +64,18 @@ namespace KMC.Engine.Ascent
         }
 
         public PoweredAscentModel PoweredGuidance
+        {
+            get;
+            internal set;
+        }
+
+        public AscentPhaseModel Phase
+        {
+            get;
+            internal set;
+        }
+
+        public AscentFlightDirectorModel FlightDirector
         {
             get;
             internal set;
