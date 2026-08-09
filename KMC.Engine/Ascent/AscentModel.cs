@@ -21,6 +21,9 @@ namespace KMC.Engine.Ascent
 
             Profile =
                 new AscentProfileModel();
+
+            Prediction =
+                new AscentPredictionModel();
         }
 
         public bool Available { get; internal set; }
@@ -40,6 +43,12 @@ namespace KMC.Engine.Ascent
         }
 
         public AscentProfileModel Profile
+        {
+            get;
+            internal set;
+        }
+
+        public AscentPredictionModel Prediction
         {
             get;
             internal set;

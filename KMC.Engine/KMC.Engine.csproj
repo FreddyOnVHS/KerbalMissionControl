@@ -47,6 +47,8 @@
     <Compile Include="Ascent\AscentFoundationSystem.cs" />
     <Compile Include="Ascent\AscentProfileModel.cs" />
     <Compile Include="Ascent\AscentProfilePlanner.cs" />
+    <Compile Include="Ascent\AscentPredictionModel.cs" />
+    <Compile Include="Ascent\AscentBurnoutPredictor.cs" />
     <Compile Include="Electrical\ElectricalEnums.cs" />
     <Compile Include="Electrical\PowerNode.cs" />
     <Compile Include="Electrical\PowerComponents.cs" />

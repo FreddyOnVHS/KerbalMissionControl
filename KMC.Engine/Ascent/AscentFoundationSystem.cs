@@ -22,6 +22,9 @@ namespace KMC.Engine.Ascent
         private readonly AscentProfilePlanner _profilePlanner =
             new AscentProfilePlanner();
 
+        private readonly AscentBurnoutPredictor _burnoutPredictor =
+            new AscentBurnoutPredictor();
+
         private int _initialStage =
             -1;
 
@@ -50,6 +53,8 @@ namespace KMC.Engine.Ascent
             if (reset)
             {
                 _profilePlanner.Reset();
+
+                _burnoutPredictor.Reset();
 
                 _initialStage =
                     -1;
@@ -95,6 +100,12 @@ namespace KMC.Engine.Ascent
                     DefaultTargetApoapsisMeters,
                     _initialStage,
                     capturedNow);
+
+            model.Prediction =
+                _burnoutPredictor.Calculate(
+                    current,
+                    model.History.Samples,
+                    DefaultTargetApoapsisMeters);
 
             double vertical =
                 packet.VerticalSpeed;
@@ -354,6 +365,64 @@ namespace KMC.Engine.Ascent
                     .ToString("+0.0;-0.0;0.0") +
                 "deg | Reset=" +
                 model.History.MissionResetDetected);
+
+            AscentPredictionModel prediction =
+                model.Prediction;
+
+            Debug.WriteLine(
+                "KMC.Engine ASCENT PREDICTION" +
+                " | Stage=" +
+                prediction.PredictionStage +
+                " | StageAge=" +
+                prediction.StageAgeSeconds
+                    .ToString("0.0") +
+                "s | Available=" +
+                prediction.Available +
+                " | Status=" +
+                prediction.Status +
+                " | Evidence=" +
+                prediction.FuelEvidence +
+                " | WindowSamples=" +
+                prediction.WindowSampleCount +
+                " | Window=" +
+                prediction.WindowDurationSeconds
+                    .ToString("0.0") +
+                "s | LFRate=" +
+                prediction.LiquidFuelConsumptionRatePerSecond
+                    .ToString("0.000") +
+                "/s | OXRate=" +
+                prediction.OxidizerConsumptionRatePerSecond
+                    .ToString("0.000") +
+                "/s | BurnRemain=" +
+                (prediction.Available
+                    ? prediction.TimeRemainingSeconds
+                        .ToString("0.0") + "s"
+                    : "--") +
+                " | BurnoutV=" +
+                (prediction.Available
+                    ? prediction.BurnoutVelocityMetersPerSecond
+                        .ToString("0.0") + "m/s"
+                    : "--") +
+                " | PredAp=" +
+                (prediction.Available
+                    ? prediction.PredictedApoapsisMeters
+                        .ToString("0.0") + "m"
+                    : "--") +
+                " | TargetAp=" +
+                prediction.TargetApoapsisMeters
+                    .ToString("0.0") +
+                "m | TargetError=" +
+                (prediction.Available
+                    ? prediction.TargetErrorMeters
+                        .ToString("+0.0;-0.0;0.0") + "m"
+                    : "--") +
+                " | Confidence=" +
+                (prediction.Available
+                    ? prediction.ConfidencePercent
+                        .ToString("0.0") + "%"
+                    : "--") +
+                " | Reset=" +
+                model.History.MissionResetDetected);
         }
 
         private static AscentModel Clone(
@@ -603,6 +672,58 @@ namespace KMC.Engine.Ascent
 
                     PitchErrorDegrees =
                         source.Profile.PitchErrorDegrees
+                };
+
+            clone.Prediction =
+                new AscentPredictionModel
+                {
+                    Available =
+                        source.Prediction.Available,
+
+                    HasFuelTrend =
+                        source.Prediction.HasFuelTrend,
+
+                    FuelEvidence =
+                        source.Prediction.FuelEvidence,
+
+                    PredictionStage =
+                        source.Prediction.PredictionStage,
+
+                    StageAgeSeconds =
+                        source.Prediction.StageAgeSeconds,
+
+                    WindowSampleCount =
+                        source.Prediction.WindowSampleCount,
+
+                    WindowDurationSeconds =
+                        source.Prediction.WindowDurationSeconds,
+
+                    LiquidFuelConsumptionRatePerSecond =
+                        source.Prediction.LiquidFuelConsumptionRatePerSecond,
+
+                    OxidizerConsumptionRatePerSecond =
+                        source.Prediction.OxidizerConsumptionRatePerSecond,
+
+                    TimeRemainingSeconds =
+                        source.Prediction.TimeRemainingSeconds,
+
+                    BurnoutVelocityMetersPerSecond =
+                        source.Prediction.BurnoutVelocityMetersPerSecond,
+
+                    PredictedApoapsisMeters =
+                        source.Prediction.PredictedApoapsisMeters,
+
+                    TargetApoapsisMeters =
+                        source.Prediction.TargetApoapsisMeters,
+
+                    TargetErrorMeters =
+                        source.Prediction.TargetErrorMeters,
+
+                    ConfidencePercent =
+                        source.Prediction.ConfidencePercent,
+
+                    Status =
+                        source.Prediction.Status
                 };
 
             return clone;
