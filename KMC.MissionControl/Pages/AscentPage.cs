@@ -416,6 +416,46 @@ namespace KMC.MissionControl.Pages
                         flightPathAngle
                 };
 
+            if (ascent != null &&
+                ascent.Current != null &&
+                ascent.Current.Available &&
+                ascent.FlightDirector != null &&
+                ascent.FlightDirector.Available)
+            {
+                model.GuidanceAvailable =
+                    true;
+
+                model.CommandedPitchDegrees =
+                    ascent.FlightDirector
+                        .RecommendedPitchDegrees;
+
+                model.PitchErrorDegrees =
+                    ascent.FlightDirector
+                        .RecommendedPitchDegrees -
+                    ascent.Current
+                        .PitchDegrees;
+
+                model.FlightPhase =
+                    ascent.FlightDirector
+                        .FlightPhase;
+
+                model.CutoffRequired =
+                    ascent.FlightDirector
+                        .CutoffRequired;
+
+                model.CoastLockoutActive =
+                    ascent.FlightDirector
+                        .CoastLockoutActive;
+
+                model.OrbitHandoffRequired =
+                    ascent.FlightDirector
+                        .OrbitHandoffRequired;
+
+                model.FlashAlert =
+                    ascent.FlightDirector
+                        .FlashAlert;
+            }
+
             _navballRenderer.Draw(
                 context,
                 bounds,

@@ -417,6 +417,22 @@ namespace KMC.MissionControl.Rendering.Ascent
         public bool FlightPathAvailable { get; set; }
 
         public double FlightPathAngleDegrees { get; set; }
+
+        public bool GuidanceAvailable { get; set; }
+
+        public double CommandedPitchDegrees { get; set; }
+
+        public double PitchErrorDegrees { get; set; }
+
+        public string FlightPhase { get; set; }
+
+        public bool CutoffRequired { get; set; }
+
+        public bool CoastLockoutActive { get; set; }
+
+        public bool OrbitHandoffRequired { get; set; }
+
+        public bool FlashAlert { get; set; }
     }
 
     /// <summary>
@@ -529,6 +545,43 @@ namespace KMC.MissionControl.Rendering.Ascent
                     Color.FromArgb(
                         52,
                         context.PhosphorColor)))
+            using (Pen guidanceOutlinePen =
+                new Pen(
+                    Color.FromArgb(
+                        225,
+                        2,
+                        10,
+                        14),
+                    5.2f))
+            using (Pen guidancePen =
+                new Pen(
+                    Color.FromArgb(
+                        255,
+                        116,
+                        255,
+                        170),
+                    2.8f))
+            using (Brush guidanceBrush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        255,
+                        116,
+                        255,
+                        170)))
+            using (Brush guidanceBackdropBrush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        210,
+                        2,
+                        10,
+                        14)))
+            using (Brush cautionBrush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        255,
+                        255,
+                        176,
+                        64)))
             {
                 graphics.DrawRectangle(
                     borderPen,
@@ -669,6 +722,43 @@ namespace KMC.MissionControl.Rendering.Ascent
                         NormalizeSigned180(
                             model.RollDegrees),
                         referencePen);
+                }
+
+                if (model.GuidanceAvailable)
+                {
+                    DrawCommandedPitchCue(
+                        graphics,
+                        center,
+                        radius,
+                        model,
+                        guidanceOutlinePen);
+
+                    DrawCommandedPitchCue(
+                        graphics,
+                        center,
+                        radius,
+                        model,
+                        guidancePen);
+
+                    DrawPitchDeviationScale(
+                        graphics,
+                        bounds,
+                        center,
+                        radius,
+                        microFont,
+                        guidancePen,
+                        guidanceBrush,
+                        guidanceBackdropBrush,
+                        model);
+
+                    DrawGuidanceAnnunciator(
+                        graphics,
+                        bounds,
+                        microFont,
+                        guidanceBrush,
+                        guidanceBackdropBrush,
+                        cautionBrush,
+                        model);
                 }
 
                 DrawNumericStrip(
@@ -1453,6 +1543,401 @@ namespace KMC.MissionControl.Rendering.Ascent
                 marker.Y - markerRadius,
                 marker.X,
                 marker.Y - markerRadius * 1.8f);
+        }
+
+
+        private static void DrawCommandedPitchCue(
+            Graphics graphics,
+            PointF center,
+            float radius,
+            NavballRenderModel model,
+            Pen pen)
+        {
+            double commandedPitch =
+                NormalizePitch(
+                    model.CommandedPitchDegrees);
+
+            AttitudeBasis basis =
+                CreateBasis(
+                    NormalizePitch(
+                        model.PitchDegrees),
+                    NormalizeHeading(
+                        model.HeadingDegrees),
+                    NormalizeSigned180(
+                        model.RollDegrees));
+
+            Vector3 commandedDirection =
+                DirectionFromHeadingPitch(
+                    NormalizeHeading(
+                        model.HeadingDegrees),
+                    commandedPitch);
+
+            ProjectedPoint projected =
+                Project(
+                    commandedDirection,
+                    basis,
+                    center,
+                    radius);
+
+            PointF cue =
+                projected.Point;
+
+            float distance =
+                Distance(
+                    center,
+                    cue);
+
+            if (!projected.Visible ||
+                distance >
+                radius * 0.76f)
+            {
+                double pitchError =
+                    Math.Max(
+                        -30.0,
+                        Math.Min(
+                            30.0,
+                            model.PitchErrorDegrees));
+
+                float pixelsPerDegree =
+                    radius /
+                    90.0f;
+
+                PointF fallback =
+                    RotateLocalPoint(
+                        center,
+                        0.0f,
+                        (float)(
+                            -pitchError *
+                            pixelsPerDegree),
+                        NormalizeSigned180(
+                            model.RollDegrees));
+
+                float fallbackDistance =
+                    Distance(
+                        center,
+                        fallback);
+
+                if (fallbackDistance >
+                    radius * 0.76f)
+                {
+                    float scale =
+                        radius * 0.76f /
+                        Math.Max(
+                            0.001f,
+                            fallbackDistance);
+
+                    fallback =
+                        new PointF(
+                            center.X +
+                            (fallback.X -
+                             center.X) *
+                            scale,
+                            center.Y +
+                            (fallback.Y -
+                             center.Y) *
+                            scale);
+                }
+
+                cue =
+                    fallback;
+            }
+
+            float half =
+                Math.Max(
+                    7.0f,
+                    radius * 0.055f);
+
+            PointF[] diamond =
+            {
+                new PointF(
+                    cue.X,
+                    cue.Y -
+                    half),
+                new PointF(
+                    cue.X +
+                    half,
+                    cue.Y),
+                new PointF(
+                    cue.X,
+                    cue.Y +
+                    half),
+                new PointF(
+                    cue.X -
+                    half,
+                    cue.Y)
+            };
+
+            graphics.DrawPolygon(
+                pen,
+                diamond);
+
+            graphics.DrawLine(
+                pen,
+                cue.X -
+                half * 1.65f,
+                cue.Y,
+                cue.X -
+                half,
+                cue.Y);
+
+            graphics.DrawLine(
+                pen,
+                cue.X +
+                half,
+                cue.Y,
+                cue.X +
+                half * 1.65f,
+                cue.Y);
+        }
+
+        private static void DrawPitchDeviationScale(
+            Graphics graphics,
+            Rectangle bounds,
+            PointF center,
+            float radius,
+            Font font,
+            Pen pen,
+            Brush brush,
+            Brush backdropBrush,
+            NavballRenderModel model)
+        {
+            float sphereRight =
+                center.X +
+                radius;
+
+            float availableRight =
+                bounds.Right -
+                sphereRight -
+                10.0f;
+
+            if (availableRight <
+                44.0f)
+            {
+                return;
+            }
+
+            float x =
+                sphereRight +
+                Math.Min(
+                    38.0f,
+                    availableRight *
+                    0.45f);
+
+            float halfHeight =
+                radius *
+                0.56f;
+
+            float top =
+                center.Y -
+                halfHeight;
+
+            float bottom =
+                center.Y +
+                halfHeight;
+
+            graphics.DrawLine(
+                pen,
+                x,
+                top,
+                x,
+                bottom);
+
+            const double ScaleLimitDegrees =
+                15.0;
+
+            for (int value = -15;
+                 value <= 15;
+                 value += 5)
+            {
+                float y =
+                    center.Y -
+                    (float)(
+                        value /
+                        ScaleLimitDegrees) *
+                    halfHeight;
+
+                float tick =
+                    value == 0
+                        ? 12.0f
+                        : 7.0f;
+
+                graphics.DrawLine(
+                    pen,
+                    x - tick,
+                    y,
+                    x + 2.0f,
+                    y);
+            }
+
+            double error =
+                Math.Max(
+                    -ScaleLimitDegrees,
+                    Math.Min(
+                        ScaleLimitDegrees,
+                        model.PitchErrorDegrees));
+
+            float pointerY =
+                center.Y -
+                (float)(
+                    error /
+                    ScaleLimitDegrees) *
+                halfHeight;
+
+            PointF[] pointer =
+            {
+                new PointF(
+                    x + 5.0f,
+                    pointerY),
+                new PointF(
+                    x + 16.0f,
+                    pointerY - 6.0f),
+                new PointF(
+                    x + 16.0f,
+                    pointerY + 6.0f)
+            };
+
+            graphics.FillPolygon(
+                brush,
+                pointer);
+
+            string errorText =
+                "P ERR " +
+                model.PitchErrorDegrees
+                    .ToString(
+                        "+0.0;-0.0;0.0") +
+                "°";
+
+            string commandText =
+                "CMD " +
+                NormalizePitch(
+                    model.CommandedPitchDegrees)
+                    .ToString("0.0") +
+                "°";
+
+            SizeF eSize =
+                graphics.MeasureString(
+                    errorText,
+                    font);
+
+            SizeF cSize =
+                graphics.MeasureString(
+                    commandText,
+                    font);
+
+            float textX =
+                Math.Min(
+                    bounds.Right -
+                    Math.Max(
+                        eSize.Width,
+                        cSize.Width) -
+                    7.0f,
+                    x +
+                    21.0f);
+
+            RectangleF backing =
+                new RectangleF(
+                    textX - 4.0f,
+                    bottom - cSize.Height - eSize.Height - 6.0f,
+                    Math.Max(
+                        eSize.Width,
+                        cSize.Width) +
+                    8.0f,
+                    cSize.Height +
+                    eSize.Height +
+                    6.0f);
+
+            graphics.FillRectangle(
+                backdropBrush,
+                backing);
+
+            graphics.DrawString(
+                commandText,
+                font,
+                brush,
+                textX,
+                backing.Top + 1.0f);
+
+            graphics.DrawString(
+                errorText,
+                font,
+                brush,
+                textX,
+                backing.Top +
+                cSize.Height);
+        }
+
+        private static void DrawGuidanceAnnunciator(
+            Graphics graphics,
+            Rectangle bounds,
+            Font font,
+            Brush guidanceBrush,
+            Brush backdropBrush,
+            Brush cautionBrush,
+            NavballRenderModel model)
+        {
+            string text;
+
+            Brush foreground =
+                guidanceBrush;
+
+            if (model.CutoffRequired)
+            {
+                text =
+                    "MECO / CUTOFF";
+
+                foreground =
+                    cautionBrush;
+            }
+            else if (model.OrbitHandoffRequired)
+            {
+                text =
+                    "ORBIT HANDOFF";
+            }
+            else if (model.CoastLockoutActive)
+            {
+                text =
+                    "COAST LOCKOUT";
+            }
+            else
+            {
+                text =
+                    string.IsNullOrWhiteSpace(
+                        model.FlightPhase)
+                        ? "GUIDANCE"
+                        : model.FlightPhase;
+            }
+
+            SizeF size =
+                graphics.MeasureString(
+                    text,
+                    font);
+
+            float x =
+                bounds.Right -
+                size.Width -
+                12.0f;
+
+            float y =
+                bounds.Top +
+                7.0f;
+
+            RectangleF backing =
+                new RectangleF(
+                    x - 5.0f,
+                    y - 2.0f,
+                    size.Width + 10.0f,
+                    size.Height + 4.0f);
+
+            graphics.FillRectangle(
+                backdropBrush,
+                backing);
+
+            graphics.DrawString(
+                text,
+                font,
+                foreground,
+                x,
+                y);
         }
 
         private static void DrawNumericStrip(
