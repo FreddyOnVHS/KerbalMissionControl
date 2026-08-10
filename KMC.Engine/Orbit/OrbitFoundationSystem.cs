@@ -34,6 +34,10 @@ namespace KMC.Engine.Orbit
             _periapsisRecoveryController =
                 new PeriapsisRecoveryController();
 
+        private readonly OrbitFlightDirector
+            _orbitFlightDirector =
+                new OrbitFlightDirector();
+
         private bool
             _circularizationStarted;
 
@@ -68,6 +72,10 @@ namespace KMC.Engine.Orbit
             _lastRecoveryDiagnosticUtc =
                 DateTime.MinValue;
 
+        private DateTime
+            _lastFlightDirectorDiagnosticUtc =
+                DateTime.MinValue;
+
         public void Update(
             KMC.Shared.TelemetryPacket packet,
             DateTime receivedUtc,
@@ -90,6 +98,7 @@ namespace KMC.Engine.Orbit
                 _circularizationPredictor.Reset();
                 _orbitSafetyController.Reset();
                 _periapsisRecoveryController.Reset();
+                _orbitFlightDirector.Reset();
 
                 _circularizationStarted =
                     false;
@@ -206,6 +215,15 @@ namespace KMC.Engine.Orbit
                     prediction,
                     recoveryActive);
 
+            OrbitFlightDirectorModel flightDirector =
+                _orbitFlightDirector.Calculate(
+                    current,
+                    prediction,
+                    safety,
+                    recovery,
+                    evaluatedVelocity,
+                    handoffObserved);
+
             OrbitModel next =
                 new OrbitModel
                 {
@@ -249,7 +267,10 @@ namespace KMC.Engine.Orbit
                         safety,
 
                     PeriapsisRecovery =
-                        recovery
+                        recovery,
+
+                    FlightDirector =
+                        flightDirector
                 };
 
             lock (_syncRoot)
@@ -278,6 +299,10 @@ namespace KMC.Engine.Orbit
                 receivedUtc);
 
             WriteRecoveryDiagnosticIfDue(
+                next,
+                receivedUtc);
+
+            WriteFlightDirectorDiagnosticIfDue(
                 next,
                 receivedUtc);
         }
@@ -790,6 +815,129 @@ namespace KMC.Engine.Orbit
                 " | OrbitCutoff=" +
                 (model.Safety != null &&
                  model.Safety.CutoffLatched) +
+                " | Reset=" +
+                model.ResetOccurredThisUpdate);
+        }
+
+        private void WriteFlightDirectorDiagnosticIfDue(
+            OrbitModel model,
+            DateTime receivedUtc)
+        {
+            if (model == null ||
+                model.FlightDirector == null)
+            {
+                return;
+            }
+
+            if (_lastFlightDirectorDiagnosticUtc !=
+                    DateTime.MinValue &&
+                (receivedUtc -
+                 _lastFlightDirectorDiagnosticUtc)
+                    .TotalSeconds <
+                    1.0)
+            {
+                return;
+            }
+
+            _lastFlightDirectorDiagnosticUtc =
+                receivedUtc;
+
+            OrbitFlightDirectorModel fd =
+                model.FlightDirector;
+
+            Debug.WriteLine(
+                "KMC.Engine ORBIT FLIGHT DIRECTOR" +
+                " | Available=" +
+                fd.Available +
+                " | Phase=" +
+                fd.FlightPhase +
+                " | Command=" +
+                fd.Command +
+                " | Attitude=" +
+                fd.AttitudeCommand +
+                " | Throttle=" +
+                Format(
+                    fd.ThrottleCommandPercent,
+                    "0") +
+                "%" +
+                " | Cutoff=" +
+                fd.CutoffRequired +
+                " | CoastLockout=" +
+                fd.CoastLockoutActive +
+                " | IgnitionDue=" +
+                fd.IgnitionDue +
+                " | CircStarted=" +
+                fd.CircularizationStarted +
+                " | Recovery=" +
+                fd.PeriapsisRecoveryActive +
+                " | OrbitAchieved=" +
+                fd.OrbitAchieved +
+                " | Prograde=" +
+                fd.ProgradeAvailable +
+                " | ProVec=(R=" +
+                Format(
+                    fd.OrbitalProgradeRightMetersPerSecond,
+                    "0.0") +
+                ",Nose=" +
+                Format(
+                    fd.OrbitalProgradeNoseMetersPerSecond,
+                    "0.0") +
+                ",RefFwd=" +
+                Format(
+                    fd.OrbitalProgradeReferenceForwardMetersPerSecond,
+                    "0.0") +
+                ")" +
+                " | ProMag=" +
+                Format(
+                    fd.OrbitalProgradeMagnitudeMetersPerSecond,
+                    "0.0") +
+                "m/s" +
+                " | IgnitionIn=" +
+                Format(
+                    fd.IgnitionInSeconds,
+                    "0.0") +
+                "s" +
+                " | Burn=" +
+                Format(
+                    fd.BurnTimeSeconds,
+                    "0.0") +
+                "s" +
+                " | DV=" +
+                Format(
+                    fd.RemainingDeltaVMetersPerSecond,
+                    "0.0") +
+                "m/s" +
+                " | Complete=" +
+                Format(
+                    fd.BurnCompletionPercent,
+                    "0.0") +
+                "%" +
+                " | ActualAp=" +
+                Format(
+                    fd.ActualApoapsisMeters,
+                    "0") +
+                "m" +
+                " | ActualPe=" +
+                Format(
+                    fd.ActualPeriapsisMeters,
+                    "0") +
+                "m" +
+                " | PredAp=" +
+                Format(
+                    fd.PredictedApoapsisMeters,
+                    "0") +
+                "m" +
+                " | PredPe=" +
+                Format(
+                    fd.PredictedPeriapsisMeters,
+                    "0") +
+                "m" +
+                " | Status=" +
+                fd.Status +
+                " | Next=" +
+                fd.NextEvent +
+                " | Source=" +
+                fd.DecisionSource +
                 " | Reset=" +
                 model.ResetOccurredThisUpdate);
         }

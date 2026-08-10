@@ -71,6 +71,8 @@
     <Compile Include="Orbit\OrbitSafetyController.cs" />
     <Compile Include="Orbit\PeriapsisRecoveryModel.cs" />
     <Compile Include="Orbit\PeriapsisRecoveryController.cs" />
+    <Compile Include="Orbit\OrbitFlightDirectorModel.cs" />
+    <Compile Include="Orbit\OrbitFlightDirector.cs" />
     <Compile Include="Electrical\ElectricalEnums.cs" />
     <Compile Include="Electrical\PowerNode.cs" />
     <Compile Include="Electrical\PowerComponents.cs" />

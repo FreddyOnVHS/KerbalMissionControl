@@ -21,6 +21,9 @@
 
             PeriapsisRecovery =
                 new PeriapsisRecoveryModel();
+
+            FlightDirector =
+                new OrbitFlightDirectorModel();
         }
 
         public bool Available { get; internal set; }
@@ -58,6 +61,12 @@
         }
 
         public PeriapsisRecoveryModel PeriapsisRecovery
+        {
+            get;
+            internal set;
+        }
+
+        public OrbitFlightDirectorModel FlightDirector
         {
             get;
             internal set;
@@ -114,6 +123,10 @@
             clone.PeriapsisRecovery =
                 PeriapsisRecoveryModel.Clone(
                     source.PeriapsisRecovery);
+
+            clone.FlightDirector =
+                OrbitFlightDirectorModel.Clone(
+                    source.FlightDirector);
 
             return clone;
         }
