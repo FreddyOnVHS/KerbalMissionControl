@@ -1,9 +1,7 @@
 ﻿namespace KMC.Engine.Orbit
 {
     /// <summary>
-    /// Build 10.0 Engine-owned ORBIT foundation.
-    ///
-    /// Guidance/prediction models are intentionally added in later milestones.
+    /// Engine-owned ORBIT state.
     /// </summary>
     public sealed class OrbitModel
     {
@@ -11,6 +9,9 @@
         {
             Current =
                 new OrbitTelemetryState();
+
+            CircularizationPrediction =
+                new CircularizationPredictionModel();
         }
 
         public bool Available { get; internal set; }
@@ -28,6 +29,12 @@
         public bool IsAboveAtmosphere { get; internal set; }
 
         public bool LivePeriapsisAboveAtmosphere { get; internal set; }
+
+        public CircularizationPredictionModel CircularizationPrediction
+        {
+            get;
+            internal set;
+        }
 
         internal static OrbitModel Clone(
             OrbitModel source)
@@ -64,6 +71,10 @@
 
             clone.LivePeriapsisAboveAtmosphere =
                 source.LivePeriapsisAboveAtmosphere;
+
+            clone.CircularizationPrediction =
+                CircularizationPredictionModel.Clone(
+                    source.CircularizationPrediction);
 
             return clone;
         }

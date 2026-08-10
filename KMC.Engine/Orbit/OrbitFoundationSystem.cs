@@ -22,6 +22,10 @@ namespace KMC.Engine.Orbit
             _syncRoot =
                 new object();
 
+        private readonly CircularizationPredictor
+            _circularizationPredictor =
+                new CircularizationPredictor();
+
         private OrbitModel
             _latest =
                 new OrbitModel();
@@ -32,6 +36,10 @@ namespace KMC.Engine.Orbit
 
         private DateTime
             _lastDiagnosticUtc =
+                DateTime.MinValue;
+
+        private DateTime
+            _lastPredictionDiagnosticUtc =
                 DateTime.MinValue;
 
         public void Update(
@@ -52,6 +60,8 @@ namespace KMC.Engine.Orbit
 
             if (reset)
             {
+                _circularizationPredictor.Reset();
+
                 lock (_syncRoot)
                 {
                     _latest =
@@ -99,6 +109,12 @@ namespace KMC.Engine.Orbit
                 }
             }
 
+            CircularizationPredictionModel prediction =
+                _circularizationPredictor.Calculate(
+                    current,
+                    targetOrbit,
+                    handoffObserved);
+
             OrbitModel next =
                 new OrbitModel
                 {
@@ -130,7 +146,10 @@ namespace KMC.Engine.Orbit
                         IsFinite(
                             current.PeriapsisMeters) &&
                         current.PeriapsisMeters >=
-                            KerbinAtmosphereTopMeters
+                            KerbinAtmosphereTopMeters,
+
+                    CircularizationPrediction =
+                        prediction
                 };
 
             lock (_syncRoot)
@@ -143,6 +162,10 @@ namespace KMC.Engine.Orbit
                 packet.MissionTime;
 
             WriteDiagnosticIfDue(
+                next,
+                receivedUtc);
+
+            WritePredictionDiagnosticIfDue(
                 next,
                 receivedUtc);
         }
@@ -249,6 +272,122 @@ namespace KMC.Engine.Orbit
                 model.IsAboveAtmosphere +
                 " | PeSafe=" +
                 model.LivePeriapsisAboveAtmosphere +
+                " | Reset=" +
+                model.ResetOccurredThisUpdate);
+        }
+
+        private void WritePredictionDiagnosticIfDue(
+            OrbitModel model,
+            DateTime receivedUtc)
+        {
+            if (model == null ||
+                model.CircularizationPrediction == null)
+            {
+                return;
+            }
+
+            if (_lastPredictionDiagnosticUtc !=
+                    DateTime.MinValue &&
+                (receivedUtc -
+                 _lastPredictionDiagnosticUtc)
+                    .TotalSeconds <
+                    1.0)
+            {
+                return;
+            }
+
+            _lastPredictionDiagnosticUtc =
+                receivedUtc;
+
+            CircularizationPredictionModel prediction =
+                model.CircularizationPrediction;
+
+            Debug.WriteLine(
+                "KMC.Engine ORBIT PREDICTION" +
+                " | Available=" +
+                prediction.Available +
+                " | Status=" +
+                prediction.Status +
+                " | Evidence=" +
+                prediction.ThrustEvidence +
+                " | Target=" +
+                Format(
+                    prediction.TargetOrbitMeters,
+                    "0") +
+                "m" +
+                " | V=" +
+                Format(
+                    prediction.CurrentOrbitalSpeedMetersPerSecond,
+                    "0.0") +
+                "m/s" +
+                " | Vtgt=" +
+                Format(
+                    prediction.TargetSpeedMetersPerSecond,
+                    "0.0") +
+                "m/s" +
+                " | DV=" +
+                Format(
+                    prediction.RemainingDeltaVMetersPerSecond,
+                    "0.0") +
+                "m/s" +
+                " | Burn=" +
+                Format(
+                    prediction.BurnTimeSeconds,
+                    "0.0") +
+                "s" +
+                " | IgnitionIn=" +
+                Format(
+                    prediction.IgnitionInSeconds,
+                    "0.0") +
+                "s" +
+                " | Throttle=" +
+                Format(
+                    prediction.RecommendedThrottleFraction *
+                    100.0,
+                    "0") +
+                "%" +
+                " | ShutdownDV=" +
+                Format(
+                    prediction.ShutdownResponseDeltaVMetersPerSecond,
+                    "0.00") +
+                "m/s" +
+                " | PredAp=" +
+                Format(
+                    prediction.PredictedApoapsisMeters,
+                    "0") +
+                "m" +
+                " | PredPe=" +
+                Format(
+                    prediction.PredictedPeriapsisMeters,
+                    "0") +
+                "m" +
+                " | OrbitErr=" +
+                Format(
+                    prediction.PredictedOrbitErrorMeters,
+                    "0") +
+                "m" +
+                " | EnergyErr=" +
+                Format(
+                    prediction.EnergyErrorJoulesPerKilogram,
+                    "0") +
+                "J/kg" +
+                " | PredEnergyErr=" +
+                Format(
+                    prediction.PredictedEnergyErrorJoulesPerKilogram,
+                    "0") +
+                "J/kg" +
+                " | InitialDV=" +
+                Format(
+                    prediction.InitialDeltaVMetersPerSecond,
+                    "0.0") +
+                "m/s" +
+                " | Complete=" +
+                Format(
+                    prediction.BurnCompletionPercent,
+                    "0.0") +
+                "%" +
+                " | Handoff=" +
+                model.AscentHandoffObserved +
                 " | Reset=" +
                 model.ResetOccurredThisUpdate);
         }
