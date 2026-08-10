@@ -18,6 +18,9 @@
 
             Safety =
                 new OrbitSafetyModel();
+
+            PeriapsisRecovery =
+                new PeriapsisRecoveryModel();
         }
 
         public bool Available { get; internal set; }
@@ -49,6 +52,12 @@
         }
 
         public OrbitSafetyModel Safety
+        {
+            get;
+            internal set;
+        }
+
+        public PeriapsisRecoveryModel PeriapsisRecovery
         {
             get;
             internal set;
@@ -101,6 +110,10 @@
             clone.Safety =
                 OrbitSafetyModel.Clone(
                     source.Safety);
+
+            clone.PeriapsisRecovery =
+                PeriapsisRecoveryModel.Clone(
+                    source.PeriapsisRecovery);
 
             return clone;
         }

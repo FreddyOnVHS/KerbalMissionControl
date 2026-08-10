@@ -30,6 +30,10 @@ namespace KMC.Engine.Orbit
             _orbitSafetyController =
                 new OrbitSafetyController();
 
+        private readonly PeriapsisRecoveryController
+            _periapsisRecoveryController =
+                new PeriapsisRecoveryController();
+
         private bool
             _circularizationStarted;
 
@@ -60,6 +64,10 @@ namespace KMC.Engine.Orbit
             _lastSafetyDiagnosticUtc =
                 DateTime.MinValue;
 
+        private DateTime
+            _lastRecoveryDiagnosticUtc =
+                DateTime.MinValue;
+
         public void Update(
             KMC.Shared.TelemetryPacket packet,
             DateTime receivedUtc,
@@ -81,6 +89,7 @@ namespace KMC.Engine.Orbit
             {
                 _circularizationPredictor.Reset();
                 _orbitSafetyController.Reset();
+                _periapsisRecoveryController.Reset();
 
                 _circularizationStarted =
                     false;
@@ -184,6 +193,19 @@ namespace KMC.Engine.Orbit
                     true;
             }
 
+            bool recoveryActive =
+                safety != null &&
+                safety.Available &&
+                safety.PauseBurn &&
+                !safety.OrbitAchieved &&
+                !_orbitCutoffLatched;
+
+            PeriapsisRecoveryModel recovery =
+                _periapsisRecoveryController.Calculate(
+                    current,
+                    prediction,
+                    recoveryActive);
+
             OrbitModel next =
                 new OrbitModel
                 {
@@ -224,7 +246,10 @@ namespace KMC.Engine.Orbit
                         evaluatedVelocity,
 
                     Safety =
-                        safety
+                        safety,
+
+                    PeriapsisRecovery =
+                        recovery
                 };
 
             lock (_syncRoot)
@@ -249,6 +274,10 @@ namespace KMC.Engine.Orbit
                 receivedUtc);
 
             WriteSafetyDiagnosticIfDue(
+                next,
+                receivedUtc);
+
+            WriteRecoveryDiagnosticIfDue(
                 next,
                 receivedUtc);
         }
@@ -677,6 +706,90 @@ namespace KMC.Engine.Orbit
                 "m/s" +
                 " | Reason=" +
                 safety.Reason +
+                " | Reset=" +
+                model.ResetOccurredThisUpdate);
+        }
+
+        private void WriteRecoveryDiagnosticIfDue(
+            OrbitModel model,
+            DateTime receivedUtc)
+        {
+            if (model == null ||
+                model.PeriapsisRecovery == null)
+            {
+                return;
+            }
+
+            if (_lastRecoveryDiagnosticUtc !=
+                    DateTime.MinValue &&
+                (receivedUtc -
+                 _lastRecoveryDiagnosticUtc)
+                    .TotalSeconds <
+                    1.0)
+            {
+                return;
+            }
+
+            _lastRecoveryDiagnosticUtc =
+                receivedUtc;
+
+            PeriapsisRecoveryModel recovery =
+                model.PeriapsisRecovery;
+
+            Debug.WriteLine(
+                "KMC.Engine PERIAPSIS RECOVERY" +
+                " | Available=" +
+                recovery.Available +
+                " | Active=" +
+                recovery.Active +
+                " | ActualPe=" +
+                Format(
+                    recovery.ActualPeriapsisMeters,
+                    "0") +
+                "m" +
+                " | PredPe=" +
+                Format(
+                    recovery.PredictedPeriapsisMeters,
+                    "0") +
+                "m" +
+                " | PeError=" +
+                Format(
+                    recovery.PeriapsisErrorMeters,
+                    "0") +
+                "m" +
+                " | ThrottleCmd=" +
+                Format(
+                    recovery.ThrottlePercent,
+                    "0") +
+                "%" +
+                " | DesiredThrottle=" +
+                Format(
+                    recovery.DesiredThrottlePercent,
+                    "0") +
+                "%" +
+                " | CmdAge=" +
+                Format(
+                    recovery.CommandAgeSeconds,
+                    "0.0") +
+                "s" +
+                " | Held=" +
+                recovery.CommandHeldByHysteresis +
+                " | Producing=" +
+                recovery.ProducingThrust +
+                " | ActualSafe=" +
+                recovery.ActualPeriapsisSafe +
+                " | PredSafe71=" +
+                recovery.PredictedPeriapsisSafe +
+                " | CutoffRequired=" +
+                recovery.CutoffRequired +
+                " | Reason=" +
+                recovery.Reason +
+                " | SafetyPause=" +
+                (model.Safety != null &&
+                 model.Safety.PauseBurn) +
+                " | OrbitCutoff=" +
+                (model.Safety != null &&
+                 model.Safety.CutoffLatched) +
                 " | Reset=" +
                 model.ResetOccurredThisUpdate);
         }
