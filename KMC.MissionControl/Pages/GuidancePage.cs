@@ -57,7 +57,9 @@ namespace KMC.MissionControl.Pages
                 content.Top + HeaderOffset;
 
             int height =
-                Math.Max(1, content.Bottom - top - 4);
+                Math.Max(
+                    1,
+                    content.Bottom - top - 4);
 
             int leftWidth =
                 Math.Max(
@@ -130,7 +132,7 @@ namespace KMC.MissionControl.Pages
                     180,
                     Math.Min(
                         inner.Width - 24,
-                        inner.Height - 130));
+                        inner.Height - 170));
 
             Rectangle sphere =
                 new Rectangle(
@@ -141,15 +143,24 @@ namespace KMC.MissionControl.Pages
                     diameter);
 
             using (Pen outer =
-                new Pen(context.PhosphorColor, 2.0f))
+                new Pen(
+                    context.PhosphorColor,
+                    2.0f))
             using (Pen grid =
-                new Pen(context.DimPhosphorColor, 1.0f))
+                new Pen(
+                    context.DimPhosphorColor,
+                    1.0f))
             using (Pen nose =
-                new Pen(Color.White, 2.0f))
+                new Pen(
+                    Color.White,
+                    2.0f))
             using (SolidBrush targetBrush =
-                new SolidBrush(Color.LimeGreen))
+                new SolidBrush(
+                    Color.LimeGreen))
             {
-                context.Graphics.DrawEllipse(outer, sphere);
+                context.Graphics.DrawEllipse(
+                    outer,
+                    sphere);
 
                 context.Graphics.DrawLine(
                     grid,
@@ -181,12 +192,30 @@ namespace KMC.MissionControl.Pages
 
                 int cx =
                     sphere.Left + sphere.Width / 2;
+
                 int cy =
                     sphere.Top + sphere.Height / 2;
 
-                context.Graphics.DrawLine(nose, cx - 18, cy, cx + 18, cy);
-                context.Graphics.DrawLine(nose, cx, cy - 18, cx, cy + 18);
-                context.Graphics.DrawEllipse(nose, cx - 8, cy - 8, 16, 16);
+                context.Graphics.DrawLine(
+                    nose,
+                    cx - 18,
+                    cy,
+                    cx + 18,
+                    cy);
+
+                context.Graphics.DrawLine(
+                    nose,
+                    cx,
+                    cy - 18,
+                    cx,
+                    cy + 18);
+
+                context.Graphics.DrawEllipse(
+                    nose,
+                    cx - 8,
+                    cy - 8,
+                    16,
+                    16);
 
                 if (guidance != null &&
                     guidance.ManeuverVectorAvailable)
@@ -210,11 +239,13 @@ namespace KMC.MissionControl.Pages
 
                     int tx =
                         cx +
-                        (int)Math.Round(x * radius);
+                        (int)Math.Round(
+                            x * radius);
 
                     int ty =
                         cy -
-                        (int)Math.Round(y * radius);
+                        (int)Math.Round(
+                            y * radius);
 
                     context.Graphics.FillEllipse(
                         targetBrush,
@@ -233,7 +264,7 @@ namespace KMC.MissionControl.Pages
             }
 
             int textY =
-                sphere.Bottom + 18;
+                sphere.Bottom + 16;
 
             DrawCentered(
                 context,
@@ -249,22 +280,43 @@ namespace KMC.MissionControl.Pages
                     ? context.PhosphorColor
                     : Color.Orange);
 
-            textY += 30;
+            textY += 28;
 
             DrawCentered(
                 context,
                 guidance != null
                     ? "ALIGN ERROR " +
-                      FormatAngle(guidance.AlignmentErrorDegrees) +
+                      FormatAngle(
+                          guidance.AlignmentErrorDegrees) +
                       "   LAT " +
-                      FormatSignedAngle(guidance.LateralErrorDegrees) +
+                      FormatSignedAngle(
+                          guidance.LateralErrorDegrees) +
                       "   VERT " +
-                      FormatSignedAngle(guidance.VerticalErrorDegrees)
+                      FormatSignedAngle(
+                          guidance.VerticalErrorDegrees)
                     : "ALIGN ERROR ---",
                 inner.Left,
                 inner.Right,
                 textY,
                 context.PhosphorColor);
+
+            textY += 34;
+
+            DrawStatusBand(
+                context,
+                Rectangle.FromLTRB(
+                    inner.Left + 30,
+                    textY,
+                    inner.Right - 30,
+                    textY + 34),
+                guidance != null &&
+                guidance.ExecutionAuthorized
+                    ? "EXECUTION INTERLOCK: GO"
+                    : "EXECUTION INTERLOCK: INHIBIT",
+                guidance != null &&
+                guidance.ExecutionAuthorized
+                    ? Color.LimeGreen
+                    : Color.Orange);
         }
 
         private static void DrawDirector(
@@ -297,24 +349,85 @@ namespace KMC.MissionControl.Pages
                     ? guidance.Status
                     : "GUIDANCE UNAVAILABLE",
                 guidance != null &&
-                guidance.Available
+                guidance.ExecutionAuthorized
                     ? Color.LimeGreen
                     : Color.Orange);
 
             y += 54;
 
-            DrawField(context, "MODE", guidance != null ? guidance.Mode : "---", left, right, ref y);
-            DrawField(context, "PLAN", guidance != null ? guidance.PlanId : "---", left, right, ref y);
-            DrawField(context, "COMMAND", guidance != null ? guidance.Command : "AWAIT GUIDANCE", left, right, ref y);
-            DrawField(context, "ATTITUDE", guidance != null ? guidance.AttitudeReference : "---", left, right, ref y);
-            DrawField(context, "THROTTLE", guidance != null ? guidance.ThrottleAdvisory : "THROTTLE 0%", left, right, ref y);
+            DrawField(context, "MODE",
+                guidance != null ? guidance.Mode : "---",
+                left, right, ref y);
+
+            DrawField(context, "PLAN",
+                guidance != null ? guidance.PlanId : "---",
+                left, right, ref y);
+
+            DrawField(context, "NODE STATE",
+                guidance != null ? guidance.NodeState : "---",
+                left, right, ref y);
+
+            DrawField(context, "EXECUTION",
+                guidance != null &&
+                guidance.ExecutionAuthorized
+                    ? "AUTHORIZED"
+                    : "INHIBITED",
+                left, right, ref y);
+
+            DrawField(context, "COMMAND",
+                guidance != null
+                    ? guidance.Command
+                    : "AWAIT GUIDANCE",
+                left, right, ref y);
+
+            DrawField(context, "ATTITUDE",
+                guidance != null
+                    ? guidance.AttitudeReference
+                    : "---",
+                left, right, ref y);
+
+            DrawField(context, "THROTTLE",
+                guidance != null
+                    ? guidance.ThrottleAdvisory
+                    : "THROTTLE 0%",
+                left, right, ref y);
 
             y += 8;
 
-            DrawField(context, "TIME TO NODE", guidance != null ? FormatDuration(guidance.TimeToNodeSeconds) : "---", left, right, ref y);
-            DrawField(context, "TIME TO IGN", guidance != null ? FormatDuration(guidance.TimeToIgnitionSeconds) : "---", left, right, ref y);
-            DrawField(context, "PLANNED DV", guidance != null ? FormatDeltaV(guidance.PlannedDeltaVMetersPerSecond) : "---", left, right, ref y);
-            DrawField(context, "BURN TIME", guidance != null ? FormatSeconds(guidance.BurnDurationSeconds) : "---", left, right, ref y);
+            DrawField(context, "TIME TO NODE",
+                guidance != null
+                    ? FormatDuration(
+                        guidance.TimeToNodeSeconds)
+                    : "---",
+                left, right, ref y);
+
+            DrawField(context, "TIME TO IGN",
+                guidance != null
+                    ? FormatDuration(
+                        guidance.TimeToIgnitionSeconds)
+                    : "---",
+                left, right, ref y);
+
+            DrawField(context, "PLANNED DV",
+                guidance != null
+                    ? FormatDeltaV(
+                        guidance.PlannedDeltaVMetersPerSecond)
+                    : "---",
+                left, right, ref y);
+
+            DrawField(context, "KSP NODE DV",
+                guidance != null
+                    ? FormatDeltaV(
+                        guidance.ActualNodeDeltaVMetersPerSecond)
+                    : "---",
+                left, right, ref y);
+
+            DrawField(context, "BURN TIME",
+                guidance != null
+                    ? FormatSeconds(
+                        guidance.BurnDurationSeconds)
+                    : "---",
+                left, right, ref y);
 
             y += 12;
 
@@ -329,14 +442,15 @@ namespace KMC.MissionControl.Pages
                     ? guidance.Command
                     : "AWAIT GUIDANCE",
                 guidance != null &&
-                guidance.Available
+                guidance.ExecutionAuthorized
                     ? context.PhosphorColor
                     : Color.Orange);
 
             y += 62;
 
             using (SolidBrush dim =
-                new SolidBrush(context.DimPhosphorColor))
+                new SolidBrush(
+                    context.DimPhosphorColor))
             {
                 context.Graphics.DrawString(
                     "ADVISORY ONLY - NO AUTOPILOT / NO VEHICLE COMMAND",
@@ -345,7 +459,9 @@ namespace KMC.MissionControl.Pages
                     new RectangleF(
                         left,
                         y,
-                        Math.Max(1, right - left),
+                        Math.Max(
+                            1,
+                            right - left),
                         24));
             }
         }
@@ -356,16 +472,23 @@ namespace KMC.MissionControl.Pages
             string title)
         {
             using (Pen pen =
-                new Pen(context.DimPhosphorColor, 1.0f))
+                new Pen(
+                    context.DimPhosphorColor,
+                    1.0f))
             using (SolidBrush brush =
-                new SolidBrush(context.DimPhosphorColor))
+                new SolidBrush(
+                    context.DimPhosphorColor))
             {
                 context.Graphics.DrawRectangle(
                     pen,
                     bounds.Left,
                     bounds.Top,
-                    Math.Max(0, bounds.Width - 1),
-                    Math.Max(0, bounds.Height - 1));
+                    Math.Max(
+                        0,
+                        bounds.Width - 1),
+                    Math.Max(
+                        0,
+                        bounds.Height - 1));
 
                 context.Graphics.DrawString(
                     title,
@@ -385,9 +508,11 @@ namespace KMC.MissionControl.Pages
             ref int y)
         {
             using (SolidBrush labelBrush =
-                new SolidBrush(context.DimPhosphorColor))
+                new SolidBrush(
+                    context.DimPhosphorColor))
             using (SolidBrush valueBrush =
-                new SolidBrush(context.PhosphorColor))
+                new SolidBrush(
+                    context.PhosphorColor))
             using (StringFormat valueFormat =
                 new StringFormat())
             {
@@ -408,12 +533,14 @@ namespace KMC.MissionControl.Pages
                     new RectangleF(
                         left + 160,
                         y,
-                        Math.Max(1, right - left - 160),
+                        Math.Max(
+                            1,
+                            right - left - 160),
                         24),
                     valueFormat);
             }
 
-            y += 30;
+            y += 27;
         }
 
         private static void DrawStatusBand(
@@ -423,9 +550,12 @@ namespace KMC.MissionControl.Pages
             Color color)
         {
             using (Pen pen =
-                new Pen(color, 1.0f))
+                new Pen(
+                    color,
+                    1.0f))
             using (SolidBrush brush =
-                new SolidBrush(color))
+                new SolidBrush(
+                    color))
             using (StringFormat format =
                 new StringFormat())
             {
@@ -434,7 +564,9 @@ namespace KMC.MissionControl.Pages
                 format.LineAlignment =
                     StringAlignment.Center;
 
-                context.Graphics.DrawRectangle(pen, bounds);
+                context.Graphics.DrawRectangle(
+                    pen,
+                    bounds);
 
                 context.Graphics.DrawString(
                     Safe(text),
@@ -454,7 +586,8 @@ namespace KMC.MissionControl.Pages
             Color color)
         {
             using (SolidBrush brush =
-                new SolidBrush(color))
+                new SolidBrush(
+                    color))
             using (StringFormat format =
                 new StringFormat())
             {
@@ -468,7 +601,9 @@ namespace KMC.MissionControl.Pages
                     new RectangleF(
                         left,
                         y,
-                        Math.Max(1, right - left),
+                        Math.Max(
+                            1,
+                            right - left),
                         24),
                     format);
             }
@@ -486,7 +621,8 @@ namespace KMC.MissionControl.Pages
                 seconds < 0.0 ? "-" : string.Empty;
 
             int total =
-                (int)Math.Floor(Math.Abs(seconds));
+                (int)Math.Floor(
+                    Math.Abs(seconds));
 
             return
                 sign +
@@ -519,7 +655,9 @@ namespace KMC.MissionControl.Pages
         private static string FormatSignedAngle(double value)
         {
             return IsFinite(value)
-                ? value.ToString("+0.00;-0.00;0.00") + " DEG"
+                ? value.ToString(
+                    "+0.00;-0.00;0.00") +
+                  " DEG"
                 : "---";
         }
 
@@ -530,9 +668,16 @@ namespace KMC.MissionControl.Pages
                 : value.Trim().ToUpperInvariant();
         }
 
-        private static double Clamp(double value, double min, double max)
+        private static double Clamp(
+            double value,
+            double min,
+            double max)
         {
-            return Math.Max(min, Math.Min(max, value));
+            return Math.Max(
+                min,
+                Math.Min(
+                    max,
+                    value));
         }
 
         private static bool IsFinite(double value)

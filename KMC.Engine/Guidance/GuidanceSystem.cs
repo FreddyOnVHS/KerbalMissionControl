@@ -9,153 +9,243 @@ namespace KMC.Engine.Guidance
     {
         private const double AlignmentHoldToleranceDegrees = 2.0;
         private const double IgnitionStandbySeconds = 10.0;
+        private const double NodeStateFreshnessSeconds = 2.0;
         private const double DiagnosticIntervalSeconds = 1.0;
 
-        private GuidanceSolutionModel _latest =
-            new GuidanceSolutionModel();
-
-        private DateTime _lastDiagnosticUtc =
-            DateTime.MinValue;
+        private GuidanceSolutionModel _latest = new GuidanceSolutionModel();
+        private DateTime _lastDiagnosticUtc = DateTime.MinValue;
 
         public void Update(
             OrbitModel orbit,
             ManeuverPlanModel plan,
             DateTime receivedUtc)
         {
-            _latest =
-                BuildSolution(
-                    orbit,
-                    plan);
+            _latest = BuildSolution(
+                orbit,
+                plan,
+                GuidanceNodeStateStore.GetLatest(),
+                receivedUtc);
 
             if (receivedUtc - _lastDiagnosticUtc >=
                 TimeSpan.FromSeconds(DiagnosticIntervalSeconds))
             {
-                _lastDiagnosticUtc =
-                    receivedUtc;
-
-                WriteDiagnostic(
-                    _latest);
+                _lastDiagnosticUtc = receivedUtc;
+                WriteDiagnostic(_latest);
             }
         }
 
         public GuidanceSolutionModel GetLatest()
         {
-            return
-                _latest != null
-                    ? _latest.Clone()
-                    : new GuidanceSolutionModel();
+            return _latest != null
+                ? _latest.Clone()
+                : new GuidanceSolutionModel();
         }
 
         private static GuidanceSolutionModel BuildSolution(
             OrbitModel orbit,
-            ManeuverPlanModel plan)
+            ManeuverPlanModel plan,
+            GuidanceNodeStateModel nodeState,
+            DateTime receivedUtc)
         {
-            GuidanceSolutionModel solution =
-                new GuidanceSolutionModel();
+            GuidanceSolutionModel solution = new GuidanceSolutionModel();
 
-            if (plan == null ||
-                !plan.Available)
+            if (plan == null || !plan.Available)
             {
-                solution.Status =
-                    "MANEUVER PLAN UNAVAILABLE";
-
+                solution.Status = "MANEUVER PLAN UNAVAILABLE";
                 return solution;
             }
 
-            solution.PlanId =
-                plan.PlanId ?? string.Empty;
-
-            solution.TimeToNodeSeconds =
-                plan.TimeToNodeSeconds;
-
+            solution.PlanId = plan.PlanId ?? string.Empty;
+            solution.TimeToNodeSeconds = plan.TimeToNodeSeconds;
             solution.TimeToIgnitionSeconds =
                 IsFinite(plan.TimeToNodeSeconds) &&
                 IsFinite(plan.IgnitionLeadSeconds)
-                    ? plan.TimeToNodeSeconds -
-                      plan.IgnitionLeadSeconds
+                    ? plan.TimeToNodeSeconds - plan.IgnitionLeadSeconds
                     : double.NaN;
-
             solution.PlannedDeltaVMetersPerSecond =
                 plan.TotalDeltaVMetersPerSecond;
-
             solution.BurnDurationSeconds =
                 plan.EstimatedBurnDurationSeconds;
+
+            PopulateNodeVerification(
+                solution,
+                plan,
+                nodeState,
+                receivedUtc);
+
+            PopulateAttitudeGuidance(
+                solution,
+                orbit);
+
+            if (!solution.ExecutionAuthorized)
+            {
+                ApplyNodeInterlockCommand(solution);
+                return solution;
+            }
+
+            bool aligned =
+                IsFinite(solution.AlignmentErrorDegrees) &&
+                solution.AlignmentErrorDegrees <=
+                    AlignmentHoldToleranceDegrees;
+
+            if (IsFinite(solution.TimeToNodeSeconds) &&
+                solution.TimeToNodeSeconds < 0.0)
+            {
+                solution.Command = "MANEUVER WINDOW PASSED";
+                solution.ThrottleAdvisory = "THROTTLE 0%";
+                solution.Status = "REPLAN REQUIRED";
+                solution.ExecutionAuthorized = false;
+                return solution;
+            }
+
+            if (!solution.ManeuverVectorAvailable)
+            {
+                solution.Command = "AWAIT TRUE ORBITAL VECTOR";
+                solution.ThrottleAdvisory = "THROTTLE 0%";
+                solution.Status = "VECTOR UNAVAILABLE";
+                solution.ExecutionAuthorized = false;
+                return solution;
+            }
+
+            if (!aligned)
+            {
+                solution.Command = "ALIGN TO MANEUVER VECTOR";
+                solution.ThrottleAdvisory = "THROTTLE 0%";
+                solution.Status = "GUIDANCE VALID";
+                return solution;
+            }
+
+            if (IsFinite(solution.TimeToIgnitionSeconds) &&
+                solution.TimeToIgnitionSeconds <= 0.0)
+            {
+                solution.Command = "IGNITE / HOLD MANEUVER VECTOR";
+                solution.ThrottleAdvisory = "THROTTLE 100%";
+                solution.Status = "IGNITION DUE";
+                return solution;
+            }
+
+            if (IsFinite(solution.TimeToIgnitionSeconds) &&
+                solution.TimeToIgnitionSeconds <= IgnitionStandbySeconds)
+            {
+                solution.Command = "IGNITION STANDBY";
+                solution.ThrottleAdvisory = "THROTTLE 0% / READY 100%";
+                solution.Status = "FINAL COUNT";
+                return solution;
+            }
+
+            solution.Command = "HOLD MANEUVER VECTOR";
+            solution.ThrottleAdvisory = "THROTTLE 0%";
+            solution.Status = "GUIDANCE VALID";
+            return solution;
+        }
+
+        private static void PopulateNodeVerification(
+            GuidanceSolutionModel solution,
+            ManeuverPlanModel plan,
+            GuidanceNodeStateModel nodeState,
+            DateTime receivedUtc)
+        {
+            if (nodeState == null || !nodeState.Available)
+            {
+                solution.NodeState = "NOT LOADED";
+                solution.NodeDetail = "NO KSP NODE VERIFICATION TELEMETRY";
+                return;
+            }
+
+            solution.NodeVerificationAvailable = true;
+            solution.NodeState =
+                string.IsNullOrWhiteSpace(nodeState.State)
+                    ? "UNKNOWN"
+                    : nodeState.State.Trim().ToUpperInvariant();
+            solution.NodeDetail = nodeState.Detail ?? string.Empty;
+            solution.NodeExists = nodeState.NodeExists;
+
+            if (IsFinite(nodeState.ProgradeDeltaVMetersPerSecond) &&
+                IsFinite(nodeState.NormalDeltaVMetersPerSecond) &&
+                IsFinite(nodeState.RadialDeltaVMetersPerSecond))
+            {
+                solution.ActualNodeDeltaVMetersPerSecond =
+                    Math.Sqrt(
+                        nodeState.ProgradeDeltaVMetersPerSecond *
+                        nodeState.ProgradeDeltaVMetersPerSecond +
+                        nodeState.NormalDeltaVMetersPerSecond *
+                        nodeState.NormalDeltaVMetersPerSecond +
+                        nodeState.RadialDeltaVMetersPerSecond *
+                        nodeState.RadialDeltaVMetersPerSecond);
+            }
+
+            bool planMatches =
+                string.Equals(
+                    nodeState.PlanId ?? string.Empty,
+                    plan.PlanId ?? string.Empty,
+                    StringComparison.Ordinal);
+
+            bool fresh =
+                nodeState.ReceivedUtc != DateTime.MinValue &&
+                receivedUtc - nodeState.ReceivedUtc <=
+                    TimeSpan.FromSeconds(NodeStateFreshnessSeconds);
+
+            solution.NodeVerified =
+                planMatches &&
+                fresh &&
+                nodeState.NodeExists &&
+                string.Equals(
+                    solution.NodeState,
+                    "NODE VERIFIED",
+                    StringComparison.Ordinal);
+
+            solution.ExecutionAuthorized = solution.NodeVerified;
+        }
+
+        private static void PopulateAttitudeGuidance(
+            GuidanceSolutionModel solution,
+            OrbitModel orbit)
+        {
+            solution.Mode = "MANEUVER GUIDANCE";
+            solution.AttitudeReference = "TRUE ORBITAL PROGRADE";
 
             if (orbit == null ||
                 !orbit.Available ||
                 orbit.VelocityVector == null ||
                 !orbit.VelocityVector.Available)
             {
-                solution.Mode =
-                    "MANEUVER GUIDANCE";
-                solution.Command =
-                    "AWAIT TRUE ORBITAL VECTOR";
-                solution.AttitudeReference =
-                    "ORBITAL PROGRADE";
-                solution.Status =
-                    "VECTOR UNAVAILABLE";
                 solution.Evidence =
-                    "Engine maneuver plan available; true orbital velocity vector unavailable.";
-                return solution;
+                    "Maneuver plan available; true orbital velocity vector unavailable.";
+                return;
             }
 
-            VelocityVectorTelemetryModel vector =
-                orbit.VelocityVector;
+            VelocityVectorTelemetryModel vector = orbit.VelocityVector;
+            double magnitude = vector.OrbitalMagnitudeMetersPerSecond;
 
-            double magnitude =
-                vector.OrbitalMagnitudeMetersPerSecond;
-
-            if (!IsFinite(magnitude) ||
-                magnitude < 1.0)
+            if (!IsFinite(magnitude) || magnitude < 1.0)
             {
-                solution.Status =
-                    "VECTOR INVALID";
-                solution.Command =
-                    "HOLD ATTITUDE";
-                return solution;
+                solution.Evidence =
+                    "ORBIT velocity vector magnitude invalid.";
+                return;
             }
 
             double right =
-                vector.OrbitalRightMetersPerSecond /
-                magnitude;
-
+                vector.OrbitalRightMetersPerSecond / magnitude;
             double nose =
-                vector.OrbitalNoseMetersPerSecond /
-                magnitude;
-
+                vector.OrbitalNoseMetersPerSecond / magnitude;
             double forward =
-                vector.OrbitalReferenceForwardMetersPerSecond /
-                magnitude;
+                vector.OrbitalReferenceForwardMetersPerSecond / magnitude;
 
-            nose =
-                Clamp(
-                    nose,
-                    -1.0,
-                    1.0);
+            nose = Clamp(nose, -1.0, 1.0);
 
-            solution.ManeuverVectorAvailable =
-                true;
-
-            solution.ManeuverRightComponent =
-                right;
-
-            solution.ManeuverNoseComponent =
-                nose;
-
-            solution.ManeuverReferenceForwardComponent =
-                forward;
+            solution.ManeuverVectorAvailable = true;
+            solution.ManeuverRightComponent = right;
+            solution.ManeuverNoseComponent = nose;
+            solution.ManeuverReferenceForwardComponent = forward;
 
             solution.AlignmentErrorDegrees =
-                RadiansToDegrees(
-                    Math.Acos(nose));
+                RadiansToDegrees(Math.Acos(nose));
 
             solution.LateralErrorDegrees =
                 RadiansToDegrees(
                     Math.Atan2(
                         right,
-                        Math.Max(
-                            0.000001,
-                            nose)));
+                        Math.Max(0.000001, nose)));
 
             solution.VerticalErrorDegrees =
                 RadiansToDegrees(
@@ -165,73 +255,48 @@ namespace KMC.Engine.Guidance
                             nose * nose +
                             right * right)));
 
-            solution.Available =
-                true;
-            solution.Mode =
-                "MANEUVER GUIDANCE";
-            solution.AttitudeReference =
-                "TRUE ORBITAL PROGRADE";
-            solution.Status =
-                "GUIDANCE VALID";
+            solution.Available = true;
             solution.Evidence =
-                "Maneuver vector from Engine plan; attitude reference from verified ORBIT velocity vector.";
+                "Maneuver vector from Engine plan; attitude reference from verified ORBIT velocity vector; execution gated by verified KSP node.";
+        }
 
-            bool aligned =
-                solution.AlignmentErrorDegrees <=
-                AlignmentHoldToleranceDegrees;
+        private static void ApplyNodeInterlockCommand(
+            GuidanceSolutionModel solution)
+        {
+            solution.ThrottleAdvisory = "THROTTLE 0%";
+            string state = solution.NodeState ?? string.Empty;
 
-            if (IsFinite(solution.TimeToNodeSeconds) &&
-                solution.TimeToNodeSeconds < 0.0)
+            if (string.Equals(state, "CREW MODIFIED", StringComparison.Ordinal))
             {
-                solution.Command =
-                    "MANEUVER WINDOW PASSED";
-                solution.ThrottleAdvisory =
-                    "THROTTLE 0%";
-                solution.Status =
-                    "REPLAN REQUIRED";
-                return solution;
+                solution.Command = "REVIEW CREW-MODIFIED NODE";
+                solution.Status = "GUIDANCE INHIBITED";
+                return;
             }
 
-            if (!aligned)
+            if (string.Equals(state, "NODE REMOVED", StringComparison.Ordinal))
             {
-                solution.Command =
-                    "ALIGN TO MANEUVER VECTOR";
-                solution.ThrottleAdvisory =
-                    "THROTTLE 0%";
-                return solution;
+                solution.Command = "UPLOAD MANEUVER NODE";
+                solution.Status = "NODE REMOVED";
+                return;
             }
 
-            if (IsFinite(solution.TimeToIgnitionSeconds) &&
-                solution.TimeToIgnitionSeconds <= 0.0)
+            if (string.Equals(state, "VESSEL NOT ACTIVE", StringComparison.Ordinal))
             {
-                solution.Command =
-                    "IGNITE / HOLD MANEUVER VECTOR";
-                solution.ThrottleAdvisory =
-                    "THROTTLE 100%";
-                solution.Status =
-                    "IGNITION DUE";
-                return solution;
+                solution.Command = "SELECT MANEUVER VESSEL";
+                solution.Status = "GUIDANCE INHIBITED";
+                return;
             }
 
-            if (IsFinite(solution.TimeToIgnitionSeconds) &&
-                solution.TimeToIgnitionSeconds <=
-                    IgnitionStandbySeconds)
+            if (string.Equals(state, "NODE LOADED", StringComparison.Ordinal) ||
+                string.Equals(state, "AWAITING ACK", StringComparison.Ordinal))
             {
-                solution.Command =
-                    "IGNITION STANDBY";
-                solution.ThrottleAdvisory =
-                    "THROTTLE 0% / READY 100%";
-                solution.Status =
-                    "FINAL COUNT";
-                return solution;
+                solution.Command = "WAIT FOR NODE VERIFICATION";
+                solution.Status = "VERIFYING NODE";
+                return;
             }
 
-            solution.Command =
-                "HOLD MANEUVER VECTOR";
-            solution.ThrottleAdvisory =
-                "THROTTLE 0%";
-
-            return solution;
+            solution.Command = "UPLOAD / VERIFY MANEUVER NODE";
+            solution.Status = "NODE NOT VERIFIED";
         }
 
         private static void WriteDiagnostic(
@@ -246,6 +311,9 @@ namespace KMC.Engine.Guidance
                 "KMC.Engine GUIDANCE" +
                 " | Available=" + guidance.Available +
                 " | PlanId=" + guidance.PlanId +
+                " | NodeState=" + guidance.NodeState +
+                " | NodeVerified=" + guidance.NodeVerified +
+                " | ExecAuthorized=" + guidance.ExecutionAuthorized +
                 " | Mode=" + guidance.Mode +
                 " | Command=" + guidance.Command +
                 " | Attitude=" + guidance.AttitudeReference +
@@ -256,18 +324,16 @@ namespace KMC.Engine.Guidance
                 " | TNode=" + Format(guidance.TimeToNodeSeconds, "0.0") + "s" +
                 " | TIgn=" + Format(guidance.TimeToIgnitionSeconds, "0.0") + "s" +
                 " | PlanDV=" + Format(guidance.PlannedDeltaVMetersPerSecond, "0.00") + "m/s" +
+                " | KspNodeDV=" + Format(guidance.ActualNodeDeltaVMetersPerSecond, "0.00") + "m/s" +
                 " | Burn=" + Format(guidance.BurnDurationSeconds, "0.00") + "s" +
                 " | Status=" + guidance.Status);
         }
 
-        private static string Format(
-            double value,
-            string format)
+        private static string Format(double value, string format)
         {
-            return
-                IsFinite(value)
-                    ? value.ToString(format)
-                    : "--";
+            return IsFinite(value)
+                ? value.ToString(format)
+                : "--";
         }
 
         private static double Clamp(
@@ -275,28 +341,18 @@ namespace KMC.Engine.Guidance
             double minimum,
             double maximum)
         {
-            return
-                Math.Max(
-                    minimum,
-                    Math.Min(
-                        maximum,
-                        value));
+            return Math.Max(minimum, Math.Min(maximum, value));
         }
 
-        private static double RadiansToDegrees(
-            double radians)
+        private static double RadiansToDegrees(double radians)
         {
-            return
-                radians *
-                (180.0 / Math.PI);
+            return radians * (180.0 / Math.PI);
         }
 
-        private static bool IsFinite(
-            double value)
+        private static bool IsFinite(double value)
         {
-            return
-                !double.IsNaN(value) &&
-                !double.IsInfinity(value);
+            return !double.IsNaN(value) &&
+                   !double.IsInfinity(value);
         }
     }
 }

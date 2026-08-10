@@ -2,6 +2,86 @@ using System;
 
 namespace KMC.Engine.Guidance
 {
+    public sealed class GuidanceNodeStateModel
+    {
+        public GuidanceNodeStateModel()
+        {
+            PlanId = string.Empty;
+            State = "UNAVAILABLE";
+            Detail = string.Empty;
+            NodeUniversalTimeSeconds = double.NaN;
+            ProgradeDeltaVMetersPerSecond = double.NaN;
+            NormalDeltaVMetersPerSecond = double.NaN;
+            RadialDeltaVMetersPerSecond = double.NaN;
+            ReceivedUtc = DateTime.MinValue;
+        }
+
+        public bool Available { get; set; }
+        public string PlanId { get; set; }
+        public string State { get; set; }
+        public string Detail { get; set; }
+        public bool NodeExists { get; set; }
+        public double NodeUniversalTimeSeconds { get; set; }
+        public double ProgradeDeltaVMetersPerSecond { get; set; }
+        public double NormalDeltaVMetersPerSecond { get; set; }
+        public double RadialDeltaVMetersPerSecond { get; set; }
+        public DateTime ReceivedUtc { get; set; }
+
+        internal GuidanceNodeStateModel Clone()
+        {
+            return new GuidanceNodeStateModel
+            {
+                Available = Available,
+                PlanId = PlanId ?? string.Empty,
+                State = State ?? string.Empty,
+                Detail = Detail ?? string.Empty,
+                NodeExists = NodeExists,
+                NodeUniversalTimeSeconds = NodeUniversalTimeSeconds,
+                ProgradeDeltaVMetersPerSecond = ProgradeDeltaVMetersPerSecond,
+                NormalDeltaVMetersPerSecond = NormalDeltaVMetersPerSecond,
+                RadialDeltaVMetersPerSecond = RadialDeltaVMetersPerSecond,
+                ReceivedUtc = ReceivedUtc
+            };
+        }
+    }
+
+    public static class GuidanceNodeStateStore
+    {
+        private static readonly object SyncRoot = new object();
+        private static GuidanceNodeStateModel _latest = new GuidanceNodeStateModel();
+
+        public static void Clear()
+        {
+            lock (SyncRoot)
+            {
+                _latest = new GuidanceNodeStateModel();
+            }
+        }
+
+        public static void Publish(GuidanceNodeStateModel state)
+        {
+            if (state == null)
+            {
+                return;
+            }
+
+            lock (SyncRoot)
+            {
+                _latest = state.Clone();
+            }
+        }
+
+        public static GuidanceNodeStateModel GetLatest()
+        {
+            lock (SyncRoot)
+            {
+                return _latest != null
+                    ? _latest.Clone()
+                    : new GuidanceNodeStateModel();
+            }
+        }
+    }
+
     public sealed class GuidanceSolutionModel
     {
         public GuidanceSolutionModel()
@@ -13,12 +93,15 @@ namespace KMC.Engine.Guidance
             ThrottleAdvisory = "THROTTLE 0%";
             Status = "UNAVAILABLE";
             Evidence = string.Empty;
+            NodeState = "UNAVAILABLE";
+            NodeDetail = string.Empty;
             AlignmentErrorDegrees = double.NaN;
             LateralErrorDegrees = double.NaN;
             VerticalErrorDegrees = double.NaN;
             TimeToNodeSeconds = double.NaN;
             TimeToIgnitionSeconds = double.NaN;
             PlannedDeltaVMetersPerSecond = double.NaN;
+            ActualNodeDeltaVMetersPerSecond = double.NaN;
             BurnDurationSeconds = double.NaN;
         }
 
@@ -31,6 +114,14 @@ namespace KMC.Engine.Guidance
         public string Status { get; internal set; }
         public string Evidence { get; internal set; }
 
+        public bool NodeVerificationAvailable { get; internal set; }
+        public bool NodeVerified { get; internal set; }
+        public bool ExecutionAuthorized { get; internal set; }
+        public string NodeState { get; internal set; }
+        public string NodeDetail { get; internal set; }
+        public bool NodeExists { get; internal set; }
+        public double ActualNodeDeltaVMetersPerSecond { get; internal set; }
+
         public bool ManeuverVectorAvailable { get; internal set; }
         public double ManeuverRightComponent { get; internal set; }
         public double ManeuverNoseComponent { get; internal set; }
@@ -39,7 +130,6 @@ namespace KMC.Engine.Guidance
         public double AlignmentErrorDegrees { get; internal set; }
         public double LateralErrorDegrees { get; internal set; }
         public double VerticalErrorDegrees { get; internal set; }
-
         public double TimeToNodeSeconds { get; internal set; }
         public double TimeToIgnitionSeconds { get; internal set; }
         public double PlannedDeltaVMetersPerSecond { get; internal set; }
@@ -57,6 +147,13 @@ namespace KMC.Engine.Guidance
                 ThrottleAdvisory = ThrottleAdvisory,
                 Status = Status,
                 Evidence = Evidence,
+                NodeVerificationAvailable = NodeVerificationAvailable,
+                NodeVerified = NodeVerified,
+                ExecutionAuthorized = ExecutionAuthorized,
+                NodeState = NodeState,
+                NodeDetail = NodeDetail,
+                NodeExists = NodeExists,
+                ActualNodeDeltaVMetersPerSecond = ActualNodeDeltaVMetersPerSecond,
                 ManeuverVectorAvailable = ManeuverVectorAvailable,
                 ManeuverRightComponent = ManeuverRightComponent,
                 ManeuverNoseComponent = ManeuverNoseComponent,

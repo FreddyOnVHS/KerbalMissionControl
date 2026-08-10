@@ -1,4 +1,5 @@
 using System;
+using KMC.Engine.Guidance;
 using KMC.Shared;
 
 namespace KMC.MissionControl.Engineering
@@ -44,42 +45,44 @@ namespace KMC.MissionControl.Engineering
                 _latest =
                     new ManeuverUplinkStatusSnapshot();
             }
+
+            GuidanceNodeStateStore.Clear();
         }
 
         public static void PublishPending(
             string planId,
             double nodeUt)
         {
-            lock (SyncRoot)
-            {
-                _latest =
-                    new ManeuverUplinkStatusSnapshot
-                    {
-                        State = "AWAITING ACK",
-                        PlanId = planId ?? string.Empty,
-                        Detail = "UPLINK SENT TO KSP PLUGIN",
-                        NodeUniversalTimeSeconds = nodeUt,
-                        UpdatedUtc = DateTime.UtcNow
-                    };
-            }
+            ManeuverUplinkStatusSnapshot snapshot =
+                new ManeuverUplinkStatusSnapshot
+                {
+                    State = "AWAITING ACK",
+                    PlanId = planId ?? string.Empty,
+                    Detail = "UPLINK SENT TO KSP PLUGIN",
+                    NodeUniversalTimeSeconds = nodeUt,
+                    UpdatedUtc = DateTime.UtcNow
+                };
+
+            PublishSnapshot(snapshot);
+            PublishGuidanceState(snapshot, true);
         }
 
         public static void PublishRejected(
             string planId,
             string detail)
         {
-            lock (SyncRoot)
-            {
-                _latest =
-                    new ManeuverUplinkStatusSnapshot
-                    {
-                        State = "NOT SENT",
-                        PlanId = planId ?? string.Empty,
-                        Detail = detail ?? string.Empty,
-                        NodeUniversalTimeSeconds = double.NaN,
-                        UpdatedUtc = DateTime.UtcNow
-                    };
-            }
+            ManeuverUplinkStatusSnapshot snapshot =
+                new ManeuverUplinkStatusSnapshot
+                {
+                    State = "NOT SENT",
+                    PlanId = planId ?? string.Empty,
+                    Detail = detail ?? string.Empty,
+                    NodeUniversalTimeSeconds = double.NaN,
+                    UpdatedUtc = DateTime.UtcNow
+                };
+
+            PublishSnapshot(snapshot);
+            PublishGuidanceState(snapshot, true);
         }
 
         public static void PublishAck(
@@ -90,29 +93,29 @@ namespace KMC.MissionControl.Engineering
                 return;
             }
 
-            lock (SyncRoot)
-            {
-                _latest =
-                    new ManeuverUplinkStatusSnapshot
-                    {
-                        State =
-                            string.IsNullOrWhiteSpace(ack.Status)
-                                ? "ACK RECEIVED"
-                                : ack.Status,
+            ManeuverUplinkStatusSnapshot snapshot =
+                new ManeuverUplinkStatusSnapshot
+                {
+                    State =
+                        string.IsNullOrWhiteSpace(ack.Status)
+                            ? "ACK RECEIVED"
+                            : ack.Status,
 
-                        PlanId =
-                            ack.PlanId ?? string.Empty,
+                    PlanId =
+                        ack.PlanId ?? string.Empty,
 
-                        Detail =
-                            ack.Detail ?? string.Empty,
+                    Detail =
+                        ack.Detail ?? string.Empty,
 
-                        NodeUniversalTimeSeconds =
-                            ack.NodeUniversalTimeSeconds,
+                    NodeUniversalTimeSeconds =
+                        ack.NodeUniversalTimeSeconds,
 
-                        UpdatedUtc =
-                            DateTime.UtcNow
-                    };
-            }
+                    UpdatedUtc =
+                        DateTime.UtcNow
+                };
+
+            PublishSnapshot(snapshot);
+            PublishGuidanceState(snapshot, true);
         }
 
         public static void PublishNodeState(
@@ -123,70 +126,120 @@ namespace KMC.MissionControl.Engineering
                 return;
             }
 
-            lock (SyncRoot)
-            {
-                _latest =
-                    new ManeuverUplinkStatusSnapshot
-                    {
-                        State =
-                            string.IsNullOrWhiteSpace(packet.State)
-                                ? "NODE STATE RECEIVED"
-                                : packet.State,
+            ManeuverUplinkStatusSnapshot snapshot =
+                new ManeuverUplinkStatusSnapshot
+                {
+                    State =
+                        string.IsNullOrWhiteSpace(packet.State)
+                            ? "NODE STATE RECEIVED"
+                            : packet.State,
 
-                        PlanId =
-                            packet.PlanId ?? string.Empty,
+                    PlanId =
+                        packet.PlanId ?? string.Empty,
 
-                        Detail =
-                            packet.Detail ?? string.Empty,
+                    Detail =
+                        packet.Detail ?? string.Empty,
 
-                        NodeStateTelemetryAvailable =
-                            true,
+                    NodeStateTelemetryAvailable =
+                        true,
 
-                        NodeExists =
-                            packet.NodeExists,
+                    NodeExists =
+                        packet.NodeExists,
 
-                        NodeUniversalTimeSeconds =
-                            packet.NodeUniversalTimeSeconds,
+                    NodeUniversalTimeSeconds =
+                        packet.NodeUniversalTimeSeconds,
 
-                        ProgradeDeltaVMetersPerSecond =
-                            packet.ProgradeDeltaVMetersPerSecond,
+                    ProgradeDeltaVMetersPerSecond =
+                        packet.ProgradeDeltaVMetersPerSecond,
 
-                        NormalDeltaVMetersPerSecond =
-                            packet.NormalDeltaVMetersPerSecond,
+                    NormalDeltaVMetersPerSecond =
+                        packet.NormalDeltaVMetersPerSecond,
 
-                        RadialDeltaVMetersPerSecond =
-                            packet.RadialDeltaVMetersPerSecond,
+                    RadialDeltaVMetersPerSecond =
+                        packet.RadialDeltaVMetersPerSecond,
 
-                        UpdatedUtc =
-                            DateTime.UtcNow
-                    };
-            }
+                    UpdatedUtc =
+                        DateTime.UtcNow
+                };
+
+            PublishSnapshot(snapshot);
+            PublishGuidanceState(snapshot, true);
         }
 
         public static ManeuverUplinkStatusSnapshot GetLatest()
         {
             lock (SyncRoot)
             {
-                return
-                    new ManeuverUplinkStatusSnapshot
-                    {
-                        State = _latest.State,
-                        PlanId = _latest.PlanId,
-                        Detail = _latest.Detail,
-                        NodeStateTelemetryAvailable =
-                            _latest.NodeStateTelemetryAvailable,
-                        NodeExists = _latest.NodeExists,
-                        NodeUniversalTimeSeconds =
-                            _latest.NodeUniversalTimeSeconds,
-                        ProgradeDeltaVMetersPerSecond =
-                            _latest.ProgradeDeltaVMetersPerSecond,
-                        NormalDeltaVMetersPerSecond =
-                            _latest.NormalDeltaVMetersPerSecond,
-                        RadialDeltaVMetersPerSecond =
-                            _latest.RadialDeltaVMetersPerSecond,
-                        UpdatedUtc = _latest.UpdatedUtc
-                    };
+                return Clone(_latest);
             }
+        }
+
+        private static void PublishSnapshot(
+            ManeuverUplinkStatusSnapshot snapshot)
+        {
+            lock (SyncRoot)
+            {
+                _latest =
+                    Clone(snapshot);
+            }
+        }
+
+        private static void PublishGuidanceState(
+            ManeuverUplinkStatusSnapshot snapshot,
+            bool available)
+        {
+            if (snapshot == null)
+            {
+                return;
+            }
+
+            GuidanceNodeStateStore.Publish(
+                new GuidanceNodeStateModel
+                {
+                    Available = available,
+                    PlanId = snapshot.PlanId ?? string.Empty,
+                    State = snapshot.State ?? string.Empty,
+                    Detail = snapshot.Detail ?? string.Empty,
+                    NodeExists = snapshot.NodeExists,
+                    NodeUniversalTimeSeconds =
+                        snapshot.NodeUniversalTimeSeconds,
+                    ProgradeDeltaVMetersPerSecond =
+                        snapshot.ProgradeDeltaVMetersPerSecond,
+                    NormalDeltaVMetersPerSecond =
+                        snapshot.NormalDeltaVMetersPerSecond,
+                    RadialDeltaVMetersPerSecond =
+                        snapshot.RadialDeltaVMetersPerSecond,
+                    ReceivedUtc = DateTime.UtcNow
+                });
+        }
+
+        private static ManeuverUplinkStatusSnapshot Clone(
+            ManeuverUplinkStatusSnapshot source)
+        {
+            if (source == null)
+            {
+                return new ManeuverUplinkStatusSnapshot();
+            }
+
+            return
+                new ManeuverUplinkStatusSnapshot
+                {
+                    State = source.State,
+                    PlanId = source.PlanId,
+                    Detail = source.Detail,
+                    NodeStateTelemetryAvailable =
+                        source.NodeStateTelemetryAvailable,
+                    NodeExists = source.NodeExists,
+                    NodeUniversalTimeSeconds =
+                        source.NodeUniversalTimeSeconds,
+                    ProgradeDeltaVMetersPerSecond =
+                        source.ProgradeDeltaVMetersPerSecond,
+                    NormalDeltaVMetersPerSecond =
+                        source.NormalDeltaVMetersPerSecond,
+                    RadialDeltaVMetersPerSecond =
+                        source.RadialDeltaVMetersPerSecond,
+                    UpdatedUtc = source.UpdatedUtc
+                };
         }
     }
 }
