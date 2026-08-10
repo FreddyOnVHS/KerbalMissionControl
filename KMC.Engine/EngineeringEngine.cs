@@ -397,6 +397,10 @@ namespace KMC.Engine
                 result.Snapshot.Ascent,
                 GetVelocityVectorTelemetry());
 
+            result.Snapshot.Orbit =
+                _orbitFoundationSystem
+                    .GetLatest();
+
             return result;
         }
     }

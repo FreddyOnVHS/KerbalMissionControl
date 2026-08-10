@@ -399,12 +399,11 @@ namespace KMC.MissionControl.Rendering.Ascent
     }
 
     /// <summary>
-    /// Render-only attitude state for the Build 9.5 FDAI/navball foundation.
+    /// Render-only attitude state for the FDAI/navball.
     ///
-    /// Full 3-D velocity-vector markers are intentionally deferred because
-    /// current telemetry does not yet provide explicit North/East/Up velocity
-    /// components. FlightPathAngle therefore supplies the initial vertical
-    /// prograde/flight-path cue.
+    /// Build 10.1.6 adds the verified vessel-frame three-dimensional velocity
+    /// vector. FlightPathAngle remains available as a scalar numeric value and
+    /// as the visual fallback when 3-D velocity telemetry is unavailable.
     /// </summary>
     public sealed class NavballRenderModel
     {
@@ -417,6 +416,22 @@ namespace KMC.MissionControl.Rendering.Ascent
         public bool FlightPathAvailable { get; set; }
 
         public double FlightPathAngleDegrees { get; set; }
+
+        public bool ProgradeAvailable { get; set; }
+
+        public double ProgradeRightMetersPerSecond { get; set; }
+
+        public double ProgradeNoseMetersPerSecond { get; set; }
+
+        public double ProgradeReferenceForwardMetersPerSecond
+        {
+            get;
+            set;
+        }
+
+        public double ProgradeMagnitudeMetersPerSecond { get; set; }
+
+        public string ProgradeReference { get; set; }
 
         public bool GuidanceAvailable { get; set; }
 
@@ -534,6 +549,29 @@ namespace KMC.MissionControl.Rendering.Ascent
                 new Pen(
                     Color.FromArgb(255, 255, 176, 64),
                     3.15f))
+            using (Pen progradeOutlinePen =
+                new Pen(
+                    Color.FromArgb(
+                        232,
+                        2,
+                        10,
+                        14),
+                    5.8f))
+            using (Pen progradePen =
+                new Pen(
+                    Color.FromArgb(
+                        255,
+                        188,
+                        240,
+                        255),
+                    3.0f))
+            using (Brush progradeBrush =
+                new SolidBrush(
+                    Color.FromArgb(
+                        255,
+                        188,
+                        240,
+                        255)))
             using (Brush brightBrush =
                 new SolidBrush(
                     Color.FromArgb(244, 220, 235, 245)))
@@ -699,7 +737,32 @@ namespace KMC.MissionControl.Rendering.Ascent
                     radius,
                     referencePen);
 
-                if (model.FlightPathAvailable)
+                if (model.ProgradeAvailable)
+                {
+                    DrawTrueProgradeMarker(
+                        graphics,
+                        center,
+                        radius,
+                        model,
+                        progradeOutlinePen);
+
+                    DrawTrueProgradeMarker(
+                        graphics,
+                        center,
+                        radius,
+                        model,
+                        progradePen);
+
+                    DrawProgradeReferenceLabel(
+                        graphics,
+                        bounds,
+                        center,
+                        radius,
+                        microFont,
+                        progradeBrush,
+                        model);
+                }
+                else if (model.FlightPathAvailable)
                 {
                     DrawFlightPathMarker(
                         graphics,
@@ -1445,6 +1508,248 @@ namespace KMC.MissionControl.Rendering.Ascent
                 center.Y,
                 center.X + inner,
                 center.Y + drop);
+        }
+
+        private static void DrawTrueProgradeMarker(
+            Graphics graphics,
+            PointF center,
+            float radius,
+            NavballRenderModel model,
+            Pen pen)
+        {
+            double magnitude =
+                model.ProgradeMagnitudeMetersPerSecond;
+
+            if (!IsFinite(magnitude) ||
+                magnitude <
+                    0.001)
+            {
+                return;
+            }
+
+            /*
+             * KMC-VEL1 is already resolved into the vessel reference frame:
+             *
+             * Right            = screen horizontal axis
+             * Nose             = boresight / hemisphere depth
+             * ReferenceForward = remaining screen-plane axis
+             *
+             * The FDAI vehicle reference is fixed at center, so the true
+             * velocity vector can be projected directly without rotating it
+             * again through the world attitude basis.
+             *
+             * ReferenceForward sign is intentionally kept explicit. Build
+             * 10.1.6 validates this screen-Y convention directly against the
+             * KSP navball before it is treated as frozen display semantics.
+             */
+            double right =
+                model.ProgradeRightMetersPerSecond /
+                magnitude;
+
+            double nose =
+                model.ProgradeNoseMetersPerSecond /
+                magnitude;
+
+            double referenceForward =
+                model.ProgradeReferenceForwardMetersPerSecond /
+                magnitude;
+
+            float screenX =
+                center.X +
+                (float)right *
+                radius;
+
+            float screenY =
+                center.Y -
+                (float)referenceForward *
+                radius;
+
+            float dx =
+                screenX -
+                center.X;
+
+            float dy =
+                screenY -
+                center.Y;
+
+            float distance =
+                (float)Math.Sqrt(
+                    dx * dx +
+                    dy * dy);
+
+            /*
+             * A prograde vector behind the vehicle belongs on the opposite
+             * hemisphere. We do not fake a front-hemisphere point. Instead,
+             * clamp an off-axis indication to the ball edge so the operator
+             * can see the velocity is not forward-facing.
+             */
+            bool forwardHemisphere =
+                nose >=
+                    0.0;
+
+            float maximumRadius =
+                radius *
+                (forwardHemisphere
+                    ? 0.82f
+                    : 0.94f);
+
+            if (distance >
+                maximumRadius)
+            {
+                float scale =
+                    maximumRadius /
+                    Math.Max(
+                        0.001f,
+                        distance);
+
+                screenX =
+                    center.X +
+                    dx *
+                    scale;
+
+                screenY =
+                    center.Y +
+                    dy *
+                    scale;
+            }
+
+            PointF marker =
+                new PointF(
+                    screenX,
+                    screenY);
+
+            float markerRadius =
+                Math.Max(
+                    6.0f,
+                    radius *
+                    0.050f);
+
+            graphics.DrawEllipse(
+                pen,
+                marker.X -
+                markerRadius,
+                marker.Y -
+                markerRadius,
+                markerRadius *
+                2.0f,
+                markerRadius *
+                2.0f);
+
+            /*
+             * KSP-style prograde symbol:
+             * circle with left, right, and top radial bars.
+             */
+            graphics.DrawLine(
+                pen,
+                marker.X -
+                markerRadius *
+                1.85f,
+                marker.Y,
+                marker.X -
+                markerRadius,
+                marker.Y);
+
+            graphics.DrawLine(
+                pen,
+                marker.X +
+                markerRadius,
+                marker.Y,
+                marker.X +
+                markerRadius *
+                1.85f,
+                marker.Y);
+
+            graphics.DrawLine(
+                pen,
+                marker.X,
+                marker.Y -
+                markerRadius,
+                marker.X,
+                marker.Y -
+                markerRadius *
+                1.85f);
+
+            if (!forwardHemisphere)
+            {
+                /*
+                 * Small lower tick differentiates a rear-hemisphere velocity
+                 * indication from normal forward prograde without introducing
+                 * a second retrograde symbol in this milestone.
+                 */
+                graphics.DrawLine(
+                    pen,
+                    marker.X,
+                    marker.Y +
+                    markerRadius,
+                    marker.X,
+                    marker.Y +
+                    markerRadius *
+                    1.45f);
+            }
+        }
+
+        private static void DrawProgradeReferenceLabel(
+            Graphics graphics,
+            Rectangle bounds,
+            PointF center,
+            float radius,
+            Font font,
+            Brush brush,
+            NavballRenderModel model)
+        {
+            string reference =
+                string.IsNullOrWhiteSpace(
+                    model.ProgradeReference)
+                    ? "VEL"
+                    : model.ProgradeReference;
+
+            string text =
+                "PRO " +
+                reference;
+
+            SizeF size =
+                graphics.MeasureString(
+                    text,
+                    font);
+
+            float x =
+                center.X -
+                radius +
+                8.0f;
+
+            float y =
+                Math.Max(
+                    bounds.Top +
+                    23.0f,
+                    center.Y -
+                    radius -
+                    size.Height -
+                    5.0f);
+
+            using (Brush backdrop =
+                new SolidBrush(
+                    Color.FromArgb(
+                        190,
+                        2,
+                        10,
+                        14)))
+            {
+                graphics.FillRectangle(
+                    backdrop,
+                    x - 4.0f,
+                    y - 2.0f,
+                    size.Width +
+                    8.0f,
+                    size.Height +
+                    4.0f);
+            }
+
+            graphics.DrawString(
+                text,
+                font,
+                brush,
+                x,
+                y);
         }
 
         private static void DrawFlightPathMarker(

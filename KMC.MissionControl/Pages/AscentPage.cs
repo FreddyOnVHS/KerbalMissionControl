@@ -2,6 +2,7 @@
 using System.Drawing;
 using KMC.Engine.Analysis;
 using KMC.Engine.Ascent;
+using KMC.Engine.Orbit;
 using KMC.MissionControl.Engineering;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering;
@@ -94,6 +95,9 @@ namespace KMC.MissionControl.Pages
             AscentModel ascent =
                 GetLatestAscent();
 
+            OrbitModel orbit =
+                GetLatestOrbit();
+
             _headerRenderer.Draw(
                 context);
 
@@ -110,7 +114,8 @@ namespace KMC.MissionControl.Pages
                 context,
                 layout.Navball,
                 telemetry,
-                ascent);
+                ascent,
+                orbit);
 
             DrawOrbitInset(
                 context,
@@ -151,6 +156,25 @@ namespace KMC.MissionControl.Pages
 
             return
                 result.Snapshot.Ascent;
+        }
+
+        private static OrbitModel GetLatestOrbit()
+        {
+            AnalysisPipelineResult result;
+
+            if (!EngineeringSnapshotStore
+                    .TryGetLatest(
+                        out result) ||
+                result == null ||
+                result.Snapshot == null ||
+                result.Snapshot.Orbit == null ||
+                !result.Snapshot.Orbit.Available)
+            {
+                return null;
+            }
+
+            return
+                result.Snapshot.Orbit;
         }
 
         private void DrawAscentGraph(
@@ -327,7 +351,8 @@ namespace KMC.MissionControl.Pages
             MissionRenderContext context,
             Rectangle bounds,
             MissionTelemetry telemetry,
-            AscentModel ascent)
+            AscentModel ascent,
+            OrbitModel orbit)
         {
             double pitch =
                 telemetry.Pitch;
@@ -415,6 +440,73 @@ namespace KMC.MissionControl.Pages
                     FlightPathAngleDegrees =
                         flightPathAngle
                 };
+
+            if (orbit != null &&
+                orbit.VelocityVector != null &&
+                orbit.VelocityVector.Available)
+            {
+                VelocityVectorTelemetryModel velocity =
+                    orbit.VelocityVector;
+
+                bool useOrbital =
+                    orbit.AscentHandoffObserved;
+
+                double right =
+                    useOrbital
+                        ? velocity
+                            .OrbitalRightMetersPerSecond
+                        : velocity
+                            .SurfaceRightMetersPerSecond;
+
+                double nose =
+                    useOrbital
+                        ? velocity
+                            .OrbitalNoseMetersPerSecond
+                        : velocity
+                            .SurfaceNoseMetersPerSecond;
+
+                double referenceForward =
+                    useOrbital
+                        ? velocity
+                            .OrbitalReferenceForwardMetersPerSecond
+                        : velocity
+                            .SurfaceReferenceForwardMetersPerSecond;
+
+                double magnitude =
+                    useOrbital
+                        ? velocity
+                            .OrbitalMagnitudeMetersPerSecond
+                        : velocity
+                            .SurfaceMagnitudeMetersPerSecond;
+
+                if (IsFinite(right) &&
+                    IsFinite(nose) &&
+                    IsFinite(referenceForward) &&
+                    IsFinite(magnitude) &&
+                    magnitude >=
+                        1.0)
+                {
+                    model.ProgradeAvailable =
+                        true;
+
+                    model.ProgradeRightMetersPerSecond =
+                        right;
+
+                    model.ProgradeNoseMetersPerSecond =
+                        nose;
+
+                    model.ProgradeReferenceForwardMetersPerSecond =
+                        referenceForward;
+
+                    model.ProgradeMagnitudeMetersPerSecond =
+                        magnitude;
+
+                    model.ProgradeReference =
+                        useOrbital
+                            ? "ORBIT"
+                            : "SURF";
+                }
+            }
 
             if (ascent != null &&
                 ascent.Current != null &&
