@@ -3,6 +3,7 @@ using KMC.Engine.Analysis;
 using KMC.Engine.Ascent;
 using KMC.Engine.Electrical;
 using KMC.Engine.Maneuver;
+using KMC.Engine.Guidance;
 using KMC.Engine.Models;
 using KMC.Engine.Orbit;
 using KMC.Engine.Propulsion;
@@ -17,6 +18,7 @@ namespace KMC.Engine
         private readonly AscentFoundationSystem _ascentFoundationSystem;
         private readonly OrbitFoundationSystem _orbitFoundationSystem;
         private readonly ManeuverPlanningSystem _maneuverPlanningSystem;
+        private readonly GuidanceSystem _guidanceSystem;
         private readonly ElectricalFlowTracker _electricalFlowTracker;
         private readonly object _electricalAttributionSyncRoot;
         private ElectricalAttributionModel _latestElectricalAttribution;
@@ -50,6 +52,7 @@ namespace KMC.Engine
             _ascentFoundationSystem = new AscentFoundationSystem();
             _orbitFoundationSystem = new OrbitFoundationSystem();
             _maneuverPlanningSystem = new ManeuverPlanningSystem();
+            _guidanceSystem = new GuidanceSystem();
             _electricalFlowTracker = new ElectricalFlowTracker();
             _electricalAttributionSyncRoot = new object();
             _latestElectricalAttribution = new ElectricalAttributionModel();
@@ -325,6 +328,14 @@ namespace KMC.Engine
                 receivedUtc);
 
             result.Snapshot.ManeuverPlan = _maneuverPlanningSystem.GetLatest();
+
+            _guidanceSystem.Update(
+                result.Snapshot.Orbit,
+                result.Snapshot.ManeuverPlan,
+                receivedUtc);
+
+            result.Snapshot.Guidance =
+                _guidanceSystem.GetLatest();
 
             return result;
         }

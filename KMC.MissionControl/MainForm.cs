@@ -393,8 +393,7 @@ namespace KMC.MissionControl
 
             _navigationBar.AddPage(
                 "GUID",
-                new AscentPage(),
-                enabled: false);
+                new GuidancePage());
 
             _navigationBar.AddPage(
                 "POWER",

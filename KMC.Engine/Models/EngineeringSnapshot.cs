@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using KMC.Engine.Ascent;
 using KMC.Engine.Maneuver;
 using KMC.Engine.Orbit;
+using KMC.Engine.Guidance;
 
 namespace KMC.Engine.Models
 {
@@ -26,6 +27,7 @@ namespace KMC.Engine.Models
             Ascent = new AscentModel();
             Orbit = new OrbitModel();
             ManeuverPlan = new ManeuverPlanModel();
+            Guidance = new GuidanceSolutionModel();
             Diagnostics = diagnostics;
         }
 
@@ -54,6 +56,8 @@ namespace KMC.Engine.Models
         /// analysis cycle. Build 11.0 supports circularization at apoapsis only.
         /// </summary>
         public ManeuverPlanModel ManeuverPlan { get; internal set; }
+
+        public GuidanceSolutionModel Guidance { get; internal set; }
 
         public IReadOnlyList<string> Diagnostics { get; private set; }
     }

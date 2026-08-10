@@ -77,6 +77,8 @@
     <Compile Include="Maneuver\ManeuverPlanModel.cs" />
     <Compile Include="Maneuver\CircularizeAtApoapsisPlanner.cs" />
     <Compile Include="Maneuver\ManeuverPlanningSystem.cs" />
+    <Compile Include="Guidance\GuidanceSolutionModel.cs" />
+    <Compile Include="Guidance\GuidanceSystem.cs" />
     <Compile Include="Electrical\ElectricalEnums.cs" />
     <Compile Include="Electrical\PowerNode.cs" />
     <Compile Include="Electrical\PowerComponents.cs" />
