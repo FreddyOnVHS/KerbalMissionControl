@@ -76,6 +76,7 @@
     <Compile Include="Simulation\SimulatedResource.cs" />
 
     <Compile Include="TelemetrySender.cs" />
+    <Compile Include="VelocityVectorTelemetrySender.cs" />
     <Compile Include="SolidFuelTelemetrySender.cs" />
     <Compile Include="EngineStateTelemetrySender.cs" />
     <Compile Include="ElectricalAttributionTelemetry.cs" />

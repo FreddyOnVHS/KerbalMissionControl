@@ -35,6 +35,12 @@ namespace KMC.Engine
         private PropulsionTelemetryModel
             _latestPropulsionTelemetry;
 
+        private readonly object
+            _velocityVectorTelemetrySyncRoot;
+
+        private VelocityVectorTelemetryModel
+            _latestVelocityVectorTelemetry;
+
         public EngineeringEngine()
             : this(
                 new AnalysisPipeline(
@@ -79,6 +85,12 @@ namespace KMC.Engine
 
             _latestPropulsionTelemetry =
                 new PropulsionTelemetryModel();
+
+            _velocityVectorTelemetrySyncRoot =
+                new object();
+
+            _latestVelocityVectorTelemetry =
+                new VelocityVectorTelemetryModel();
         }
 
         public void PublishElectricalTelemetry(
@@ -146,6 +158,31 @@ namespace KMC.Engine
             }
         }
 
+        public void PublishVelocityVectorTelemetry(
+            VelocityVectorTelemetryModel telemetry)
+        {
+            if (telemetry == null)
+            {
+                return;
+            }
+
+            lock (_velocityVectorTelemetrySyncRoot)
+            {
+                _latestVelocityVectorTelemetry =
+                    VelocityVectorTelemetryModel.Clone(
+                        telemetry);
+            }
+        }
+
+        public void ClearVelocityVectorTelemetry()
+        {
+            lock (_velocityVectorTelemetrySyncRoot)
+            {
+                _latestVelocityVectorTelemetry =
+                    new VelocityVectorTelemetryModel();
+            }
+        }
+
         private ElectricalAttributionModel
             GetElectricalAttribution()
         {
@@ -165,6 +202,17 @@ namespace KMC.Engine
                 return
                     ClonePropulsionTelemetry(
                         _latestPropulsionTelemetry);
+            }
+        }
+
+        private VelocityVectorTelemetryModel
+            GetVelocityVectorTelemetry()
+        {
+            lock (_velocityVectorTelemetrySyncRoot)
+            {
+                return
+                    VelocityVectorTelemetryModel.Clone(
+                        _latestVelocityVectorTelemetry);
             }
         }
 
@@ -346,7 +394,8 @@ namespace KMC.Engine
             _orbitFoundationSystem.Update(
                 telemetryPacket as KMC.Shared.TelemetryPacket,
                 receivedUtc,
-                result.Snapshot.Ascent);
+                result.Snapshot.Ascent,
+                GetVelocityVectorTelemetry());
 
             return result;
         }

@@ -12,6 +12,9 @@
 
             CircularizationPrediction =
                 new CircularizationPredictionModel();
+
+            VelocityVector =
+                new VelocityVectorTelemetryModel();
         }
 
         public bool Available { get; internal set; }
@@ -31,6 +34,12 @@
         public bool LivePeriapsisAboveAtmosphere { get; internal set; }
 
         public CircularizationPredictionModel CircularizationPrediction
+        {
+            get;
+            internal set;
+        }
+
+        public VelocityVectorTelemetryModel VelocityVector
         {
             get;
             internal set;
@@ -75,6 +84,10 @@
             clone.CircularizationPrediction =
                 CircularizationPredictionModel.Clone(
                     source.CircularizationPrediction);
+
+            clone.VelocityVector =
+                VelocityVectorTelemetryModel.Clone(
+                    source.VelocityVector);
 
             return clone;
         }

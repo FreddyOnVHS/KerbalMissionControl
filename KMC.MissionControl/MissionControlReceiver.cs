@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using KMC.Engine;
 using KMC.Engine.Analysis;
 using KMC.Engine.Electrical;
+using KMC.Engine.Orbit;
 using KMC.Engine.Propulsion;
 using KMC.MissionControl.Debugging;
 using KMC.MissionControl.Diagnostics;
@@ -56,6 +57,9 @@ namespace KMC.MissionControl
 
             _transport.EngineStateTelemetryReceived +=
                 OnEngineStateTelemetryReceived;
+
+            _transport.VelocityVectorTelemetryReceived +=
+                OnVelocityVectorTelemetryReceived;
         }
 
         public event Action<TelemetryPacket> TelemetryReceived;
@@ -72,6 +76,7 @@ namespace KMC.MissionControl
 
             _engineeringEngine.ClearElectricalTelemetry();
             _engineeringEngine.ClearPropulsionTelemetry();
+            _engineeringEngine.ClearVelocityVectorTelemetry();
 
             EngineStateTelemetryStore.Clear();
 
@@ -87,6 +92,50 @@ namespace KMC.MissionControl
 
             _running =
                 true;
+        }
+
+        private void OnVelocityVectorTelemetryReceived(
+            VelocityVectorTelemetrySample sample)
+        {
+            if (sample == null)
+            {
+                return;
+            }
+
+            _engineeringEngine.PublishVelocityVectorTelemetry(
+                new VelocityVectorTelemetryModel
+                {
+                    TelemetryAvailable =
+                        true,
+
+                    SourceTimestampUtc =
+                        sample.SourceTimestampUtc,
+
+                    ReceivedUtc =
+                        sample.ReceivedUtc,
+
+                    VesselName =
+                        sample.VesselName ??
+                        string.Empty,
+
+                    SurfaceRightMetersPerSecond =
+                        sample.SurfaceRightMetersPerSecond,
+
+                    SurfaceNoseMetersPerSecond =
+                        sample.SurfaceNoseMetersPerSecond,
+
+                    SurfaceReferenceForwardMetersPerSecond =
+                        sample.SurfaceReferenceForwardMetersPerSecond,
+
+                    OrbitalRightMetersPerSecond =
+                        sample.OrbitalRightMetersPerSecond,
+
+                    OrbitalNoseMetersPerSecond =
+                        sample.OrbitalNoseMetersPerSecond,
+
+                    OrbitalReferenceForwardMetersPerSecond =
+                        sample.OrbitalReferenceForwardMetersPerSecond
+                });
         }
 
         private void OnEngineStateTelemetryReceived(
@@ -387,6 +436,7 @@ namespace KMC.MissionControl
 
             _engineeringEngine.ClearElectricalTelemetry();
             _engineeringEngine.ClearPropulsionTelemetry();
+            _engineeringEngine.ClearVelocityVectorTelemetry();
 
             _cache.Clear();
         }
@@ -406,6 +456,9 @@ namespace KMC.MissionControl
 
             _transport.EngineStateTelemetryReceived -=
                 OnEngineStateTelemetryReceived;
+
+            _transport.VelocityVectorTelemetryReceived -=
+                OnVelocityVectorTelemetryReceived;
 
             _transport.Dispose();
         }

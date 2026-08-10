@@ -42,10 +42,15 @@ namespace KMC.Engine.Orbit
             _lastPredictionDiagnosticUtc =
                 DateTime.MinValue;
 
+        private DateTime
+            _lastVelocityDiagnosticUtc =
+                DateTime.MinValue;
+
         public void Update(
             KMC.Shared.TelemetryPacket packet,
             DateTime receivedUtc,
-            AscentModel ascent)
+            AscentModel ascent,
+            VelocityVectorTelemetryModel velocityVector)
         {
             if (packet == null)
             {
@@ -109,6 +114,14 @@ namespace KMC.Engine.Orbit
                 }
             }
 
+            VelocityVectorTelemetryModel evaluatedVelocity =
+                VelocityVectorTelemetryModel.Clone(
+                    velocityVector);
+
+            evaluatedVelocity.EvaluateAgainstFlightPacket(
+                packet,
+                receivedUtc);
+
             CircularizationPredictionModel prediction =
                 _circularizationPredictor.Calculate(
                     current,
@@ -149,7 +162,10 @@ namespace KMC.Engine.Orbit
                             KerbinAtmosphereTopMeters,
 
                     CircularizationPrediction =
-                        prediction
+                        prediction,
+
+                    VelocityVector =
+                        evaluatedVelocity
                 };
 
             lock (_syncRoot)
@@ -166,6 +182,10 @@ namespace KMC.Engine.Orbit
                 receivedUtc);
 
             WritePredictionDiagnosticIfDue(
+                next,
+                receivedUtc);
+
+            WriteVelocityDiagnosticIfDue(
                 next,
                 receivedUtc);
         }
@@ -390,6 +410,110 @@ namespace KMC.Engine.Orbit
                 model.AscentHandoffObserved +
                 " | Reset=" +
                 model.ResetOccurredThisUpdate);
+        }
+
+        private void WriteVelocityDiagnosticIfDue(
+            OrbitModel model,
+            DateTime receivedUtc)
+        {
+            if (model == null ||
+                model.VelocityVector == null)
+            {
+                return;
+            }
+
+            if (_lastVelocityDiagnosticUtc !=
+                    DateTime.MinValue &&
+                (receivedUtc -
+                 _lastVelocityDiagnosticUtc)
+                    .TotalSeconds <
+                    1.0)
+            {
+                return;
+            }
+
+            _lastVelocityDiagnosticUtc =
+                receivedUtc;
+
+            VelocityVectorTelemetryModel vector =
+                model.VelocityVector;
+
+            Debug.WriteLine(
+                "KMC.Engine VELOCITY VECTOR" +
+                " | Available=" +
+                vector.Available +
+                " | Status=" +
+                vector.Status +
+                " | Fresh=" +
+                vector.Fresh +
+                " | VesselMatch=" +
+                vector.VesselMatchesFlightPacket +
+                " | Surface=(" +
+                "R=" +
+                Format(
+                    vector.SurfaceRightMetersPerSecond,
+                    "0.0") +
+                "," +
+                "Nose=" +
+                Format(
+                    vector.SurfaceNoseMetersPerSecond,
+                    "0.0") +
+                "," +
+                "RefFwd=" +
+                Format(
+                    vector.SurfaceReferenceForwardMetersPerSecond,
+                    "0.0") +
+                ")" +
+                " | SurfaceMag=" +
+                Format(
+                    vector.SurfaceMagnitudeMetersPerSecond,
+                    "0.0") +
+                "m/s" +
+                " | SurfacePacket=" +
+                Format(
+                    vector.FlightPacketSurfaceSpeedMetersPerSecond,
+                    "0.0") +
+                "m/s" +
+                " | SurfaceDiff=" +
+                Format(
+                    vector.SurfaceSpeedDifferenceMetersPerSecond,
+                    "0.00") +
+                "m/s" +
+                " | SurfaceAgree=" +
+                vector.SurfaceSpeedAgreement +
+                " | Orbital=(" +
+                "R=" +
+                Format(
+                    vector.OrbitalRightMetersPerSecond,
+                    "0.0") +
+                "," +
+                "Nose=" +
+                Format(
+                    vector.OrbitalNoseMetersPerSecond,
+                    "0.0") +
+                "," +
+                "RefFwd=" +
+                Format(
+                    vector.OrbitalReferenceForwardMetersPerSecond,
+                    "0.0") +
+                ")" +
+                " | OrbitalMag=" +
+                Format(
+                    vector.OrbitalMagnitudeMetersPerSecond,
+                    "0.0") +
+                "m/s" +
+                " | OrbitalPacket=" +
+                Format(
+                    vector.FlightPacketOrbitalSpeedMetersPerSecond,
+                    "0.0") +
+                "m/s" +
+                " | OrbitalDiff=" +
+                Format(
+                    vector.OrbitalSpeedDifferenceMetersPerSecond,
+                    "0.00") +
+                "m/s" +
+                " | OrbitalAgree=" +
+                vector.OrbitalSpeedAgreement);
         }
 
         private static string Format(

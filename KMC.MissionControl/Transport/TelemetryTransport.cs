@@ -25,6 +25,8 @@ namespace KMC.MissionControl.Transport
         private const int EngineStateTelemetryPort = 5058;
         private const string EngineStateProtocolId = "KMC-ENGINE1";
 
+        private const string VelocityVectorProtocolId = "KMC-VEL1";
+
         private const int SystemsTelemetryPort = 5091;
         private const string SystemsProtocolId = "KMCSYS1";
 
@@ -36,6 +38,9 @@ namespace KMC.MissionControl.Transport
         public event Action<TelemetryPacket> FlightTelemetryReceived;
         public event Action<VesselTopology> TopologyReceived;
         public event Action<SystemsTelemetrySample> SystemsTelemetryReceived;
+
+        public event Action<VelocityVectorTelemetrySample>
+            VelocityVectorTelemetryReceived;
 
         public event Action<
             DateTime,
@@ -253,6 +258,25 @@ namespace KMC.MissionControl.Transport
                 return;
             }
 
+            VelocityVectorTelemetrySample velocityVector;
+
+            if (TryParseVelocityVector(
+                    text,
+                    out velocityVector))
+            {
+                Action<VelocityVectorTelemetrySample>
+                    velocityHandler =
+                        VelocityVectorTelemetryReceived;
+
+                if (velocityHandler != null)
+                {
+                    velocityHandler(
+                        velocityVector);
+                }
+
+                return;
+            }
+
             TelemetryPacket packet;
 
             if (TelemetryPacket.TryParse(
@@ -421,6 +445,121 @@ namespace KMC.MissionControl.Transport
                                 maximumThrust)
                     };
             }
+
+            return true;
+        }
+
+        private static bool TryParseVelocityVector(
+            string message,
+            out VelocityVectorTelemetrySample sample)
+        {
+            sample =
+                null;
+
+            if (string.IsNullOrWhiteSpace(
+                    message))
+            {
+                return false;
+            }
+
+            string[] fields =
+                message.Split(
+                    '|');
+
+            if (fields.Length != 9 ||
+                !string.Equals(
+                    fields[0],
+                    VelocityVectorProtocolId,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            long ticks;
+
+            if (!long.TryParse(
+                    fields[1],
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out ticks))
+            {
+                return false;
+            }
+
+            DateTime sourceTimestampUtc;
+
+            try
+            {
+                sourceTimestampUtc =
+                    new DateTime(
+                        ticks,
+                        DateTimeKind.Utc);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return false;
+            }
+
+            double surfaceRight;
+            double surfaceNose;
+            double surfaceReferenceForward;
+            double orbitalRight;
+            double orbitalNose;
+            double orbitalReferenceForward;
+
+            if (!TryDouble(
+                    fields[3],
+                    out surfaceRight) ||
+                !TryDouble(
+                    fields[4],
+                    out surfaceNose) ||
+                !TryDouble(
+                    fields[5],
+                    out surfaceReferenceForward) ||
+                !TryDouble(
+                    fields[6],
+                    out orbitalRight) ||
+                !TryDouble(
+                    fields[7],
+                    out orbitalNose) ||
+                !TryDouble(
+                    fields[8],
+                    out orbitalReferenceForward))
+            {
+                return false;
+            }
+
+            sample =
+                new VelocityVectorTelemetrySample
+                {
+                    SourceTimestampUtc =
+                        sourceTimestampUtc,
+
+                    ReceivedUtc =
+                        DateTime.UtcNow,
+
+                    VesselName =
+                        Uri.UnescapeDataString(
+                            fields[2]),
+
+                    SurfaceRightMetersPerSecond =
+                        surfaceRight,
+
+                    SurfaceNoseMetersPerSecond =
+                        surfaceNose,
+
+                    SurfaceReferenceForwardMetersPerSecond =
+                        surfaceReferenceForward,
+
+                    OrbitalRightMetersPerSecond =
+                        orbitalRight,
+
+                    OrbitalNoseMetersPerSecond =
+                        orbitalNose,
+
+                    OrbitalReferenceForwardMetersPerSecond =
+                        orbitalReferenceForward
+                };
 
             return true;
         }
