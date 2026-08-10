@@ -12,6 +12,7 @@ namespace KMC.Engine.Maneuver
         public ManeuverPlanModel()
         {
             PlanId = string.Empty;
+            VesselId = string.Empty;
             Objective = string.Empty;
             Status = "PLAN UNAVAILABLE";
             Evidence = new List<string>();
@@ -31,6 +32,8 @@ namespace KMC.Engine.Maneuver
         public bool Available { get; internal set; }
 
         public string PlanId { get; internal set; }
+
+        public string VesselId { get; internal set; }
 
         public string Objective { get; internal set; }
 
@@ -90,6 +93,7 @@ namespace KMC.Engine.Maneuver
 
             clone.Available = source.Available;
             clone.PlanId = source.PlanId;
+            clone.VesselId = source.VesselId;
             clone.Objective = source.Objective;
             clone.NodeUniversalTimeAvailable = source.NodeUniversalTimeAvailable;
             clone.NodeUniversalTimeSeconds = source.NodeUniversalTimeSeconds;

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -73,6 +73,7 @@
     <Compile Include="Orbit\PeriapsisRecoveryController.cs" />
     <Compile Include="Orbit\OrbitFlightDirectorModel.cs" />
     <Compile Include="Orbit\OrbitFlightDirector.cs" />
+    <Compile Include="Maneuver\ManeuverEpochTelemetryModel.cs" />
     <Compile Include="Maneuver\ManeuverPlanModel.cs" />
     <Compile Include="Maneuver\CircularizeAtApoapsisPlanner.cs" />
     <Compile Include="Maneuver\ManeuverPlanningSystem.cs" />

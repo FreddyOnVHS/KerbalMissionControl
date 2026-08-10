@@ -9,10 +9,10 @@ using KMC.MissionControl.Rendering;
 namespace KMC.MissionControl.Pages
 {
     /// <summary>
-    /// Build 11.1 maneuver planning review display.
+    /// Build 11.2 maneuver planning review / uplink display.
     ///
-    /// This page is display-only. It consumes the Engine-owned ManeuverPlanModel
-    /// and does not perform or duplicate orbital / maneuver calculations.
+    /// This page consumes the Engine-owned ManeuverPlanModel and uplink ACK status.
+    /// It never performs or duplicates orbital / maneuver calculations.
     /// </summary>
     public sealed class ManeuverPage :
         IMissionPage,
@@ -132,13 +132,14 @@ namespace KMC.MissionControl.Pages
                 "PREDICTED ECC",
                 FormatRatio(plan.PredictedEccentricity));
 
+            ManeuverUplinkStatusSnapshot uplink =
+                ManeuverUplinkStatusStore.GetLatest();
+
             layout.Row(
                 "PREDICTED PERIOD",
                 FormatDuration(plan.PredictedPeriodSeconds),
-                "NODE SOURCE",
-                plan.NodeUniversalTimeAvailable
-                    ? "KSP UNIVERSAL TIME"
-                    : "MISSION ELAPSED TIME");
+                "UPLINK STATUS",
+                Safe(uplink.State));
 
             Rectangle reviewRegion =
                 layout.ReserveRegion(
@@ -153,12 +154,56 @@ namespace KMC.MissionControl.Pages
                 reviewRegion,
                 plan);
 
+            string footer;
+
+            bool nodeLoaded =
+                string.Equals(
+                    uplink.State,
+                    "NODE LOADED",
+                    StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(
+                    uplink.PlanId,
+                    plan.PlanId,
+                    StringComparison.Ordinal);
+
+            if (nodeLoaded)
+            {
+                footer =
+                    "NODE LOADED - PLUGIN ACKNOWLEDGED " +
+                    Safe(plan.PlanId);
+            }
+            else if (string.Equals(
+                         uplink.State,
+                         "AWAITING ACK",
+                         StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(
+                         uplink.PlanId,
+                         plan.PlanId,
+                         StringComparison.Ordinal))
+            {
+                footer =
+                    "UPLINK SENT - AWAITING PLUGIN ACK";
+            }
+            else if (!plan.NodeUniversalTimeAvailable)
+            {
+                footer =
+                    "WAITING FOR KSP UNIVERSAL TIME - UPLINK INHIBITED";
+            }
+            else if (plan.Available)
+            {
+                footer =
+                    "PLAN READY - CLICK UPLOAD MNV";
+            }
+            else
+            {
+                footer =
+                    "PLAN NOT AVAILABLE - REVIEW ENGINE EVIDENCE";
+            }
+
             DrawReviewBand(
                 context,
-                plan.Available
-                    ? "PLAN READY FOR REVIEW - NO UPLINK / NO VEHICLE COMMAND"
-                    : "PLAN NOT AVAILABLE - REVIEW ENGINE EVIDENCE",
-                plan.Available);
+                footer,
+                plan.Available && plan.NodeUniversalTimeAvailable);
         }
 
         private static ManeuverPlanModel GetLatestPlan()

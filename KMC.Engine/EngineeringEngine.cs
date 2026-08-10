@@ -24,6 +24,8 @@ namespace KMC.Engine
         private PropulsionTelemetryModel _latestPropulsionTelemetry;
         private readonly object _velocityVectorTelemetrySyncRoot;
         private VelocityVectorTelemetryModel _latestVelocityVectorTelemetry;
+        private readonly object _maneuverEpochSyncRoot;
+        private ManeuverEpochTelemetryModel _latestManeuverEpochTelemetry;
 
         public EngineeringEngine()
             : this(
@@ -55,6 +57,8 @@ namespace KMC.Engine
             _latestPropulsionTelemetry = new PropulsionTelemetryModel();
             _velocityVectorTelemetrySyncRoot = new object();
             _latestVelocityVectorTelemetry = new VelocityVectorTelemetryModel();
+            _maneuverEpochSyncRoot = new object();
+            _latestManeuverEpochTelemetry = new ManeuverEpochTelemetryModel();
         }
 
         public void PublishElectricalTelemetry(double storedEc, double capacityEc, DateTime receivedUtc)
@@ -126,6 +130,42 @@ namespace KMC.Engine
             lock (_velocityVectorTelemetrySyncRoot)
             {
                 _latestVelocityVectorTelemetry = new VelocityVectorTelemetryModel();
+            }
+        }
+
+        public void PublishManeuverEpochTelemetry(
+            ManeuverEpochTelemetryModel telemetry)
+        {
+            if (telemetry == null)
+            {
+                return;
+            }
+
+            lock (_maneuverEpochSyncRoot)
+            {
+                _latestManeuverEpochTelemetry =
+                    ManeuverEpochTelemetryModel.Clone(
+                        telemetry);
+            }
+        }
+
+        public void ClearManeuverEpochTelemetry()
+        {
+            lock (_maneuverEpochSyncRoot)
+            {
+                _latestManeuverEpochTelemetry =
+                    new ManeuverEpochTelemetryModel();
+            }
+        }
+
+        private ManeuverEpochTelemetryModel
+            GetManeuverEpochTelemetry()
+        {
+            lock (_maneuverEpochSyncRoot)
+            {
+                return
+                    ManeuverEpochTelemetryModel.Clone(
+                        _latestManeuverEpochTelemetry);
             }
         }
 
@@ -281,6 +321,7 @@ namespace KMC.Engine
 
             _maneuverPlanningSystem.Update(
                 result.Snapshot.Orbit,
+                GetManeuverEpochTelemetry(),
                 receivedUtc);
 
             result.Snapshot.ManeuverPlan = _maneuverPlanningSystem.GetLatest();

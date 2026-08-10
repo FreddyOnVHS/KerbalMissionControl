@@ -20,9 +20,15 @@ namespace KMC.Engine.Maneuver
         private int _planSequence;
         private DateTime _lastDiagnosticUtc = DateTime.MinValue;
 
-        public void Update(OrbitModel orbit, DateTime receivedUtc)
+        public void Update(
+            OrbitModel orbit,
+            ManeuverEpochTelemetryModel epoch,
+            DateTime receivedUtc)
         {
-            ManeuverPlanModel next = _planner.Calculate(orbit);
+            ManeuverPlanModel next =
+                _planner.Calculate(
+                    orbit,
+                    epoch);
 
             if (next.Available)
             {
@@ -48,9 +54,11 @@ namespace KMC.Engine.Maneuver
         private void AssignStablePlanId(ManeuverPlanModel plan, OrbitModel orbit)
         {
             string vesselName =
-                orbit != null && orbit.Current != null
-                    ? orbit.Current.VesselName ?? string.Empty
-                    : string.Empty;
+                !string.IsNullOrWhiteSpace(plan.VesselId)
+                    ? plan.VesselId
+                    : orbit != null && orbit.Current != null
+                        ? orbit.Current.VesselName ?? string.Empty
+                        : string.Empty;
 
             long nodeSecond =
                 IsFinite(plan.NodeMissionTimeSeconds)
@@ -68,7 +76,7 @@ namespace KMC.Engine.Maneuver
                 _planSequence++;
                 _activeVesselName = vesselName;
                 _activeNodeSecond = nodeSecond;
-                _activePlanId = "MNV-11.0-" + _planSequence.ToString("D4");
+                _activePlanId = "MNV-11.2-" + _planSequence.ToString("D4");
             }
             else
             {
@@ -96,6 +104,8 @@ namespace KMC.Engine.Maneuver
                 " | Status=" + plan.Status +
                 " | NodeMET=" + Format(plan.NodeMissionTimeSeconds, "0.0") + "s" +
                 " | NodeUTAvailable=" + plan.NodeUniversalTimeAvailable +
+                " | NodeUT=" + Format(plan.NodeUniversalTimeSeconds, "0.0") + "s" +
+                " | VesselId=" + plan.VesselId +
                 " | TNode=" + Format(plan.TimeToNodeSeconds, "0.0") + "s" +
                 " | ProgradeDV=" + Format(plan.ProgradeDeltaVMetersPerSecond, "0.00") + "m/s" +
                 " | NormalDV=" + Format(plan.NormalDeltaVMetersPerSecond, "0.00") + "m/s" +

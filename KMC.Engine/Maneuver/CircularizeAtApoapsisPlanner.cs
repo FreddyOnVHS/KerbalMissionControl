@@ -15,7 +15,9 @@ namespace KMC.Engine.Maneuver
         private const double StandardGravity = 9.80665;
         private const double MinimumUsefulDeltaV = 0.05;
 
-        public ManeuverPlanModel Calculate(OrbitModel orbit)
+        public ManeuverPlanModel Calculate(
+            OrbitModel orbit,
+            ManeuverEpochTelemetryModel epoch)
         {
             ManeuverPlanModel plan = new ManeuverPlanModel
             {
@@ -117,6 +119,19 @@ namespace KMC.Engine.Maneuver
             plan.NodeUniversalTimeAvailable = false;
             plan.NodeUniversalTimeSeconds = double.NaN;
             plan.NodeMissionTimeSeconds = nodeMissionTime;
+
+            if (IsUsableEpoch(epoch, current))
+            {
+                plan.VesselId =
+                    epoch.VesselId ?? string.Empty;
+
+                plan.NodeUniversalTimeAvailable =
+                    true;
+
+                plan.NodeUniversalTimeSeconds =
+                    epoch.UniversalTimeSeconds +
+                    current.TimeToApoapsisSeconds;
+            }
             plan.TimeToNodeSeconds = current.TimeToApoapsisSeconds;
             plan.ProgradeDeltaVMetersPerSecond = progradeDeltaV;
             plan.NormalDeltaVMetersPerSecond = 0.0;
@@ -135,12 +150,53 @@ namespace KMC.Engine.Maneuver
                 : "PLAN VALID";
 
             plan.Evidence.Add("Objective solved from Engine-owned ORBIT telemetry.");
-            plan.Evidence.Add("Node epoch uses MET + time-to-apoapsis; KSP Universal Time is not present in KMC6 telemetry.");
+            if (plan.NodeUniversalTimeAvailable)
+            {
+                plan.Evidence.Add("Node epoch uses genuine KSP Universal Time from KMC-EPOCH1 plus time-to-apoapsis.");
+            }
+            else
+            {
+                plan.Evidence.Add("KSP Universal Time side-channel unavailable or not matched to the current vessel; uplink is inhibited.");
+            }
             plan.Evidence.Add("Delta-v uses Kerbin vis-viva solution at the next apoapsis.");
             plan.Evidence.Add("Burn duration uses vessel mass, maximum thrust, and average specific impulse from flight telemetry.");
             plan.Evidence.Add("Predicted circular orbit preserves current apoapsis radius and inclination.");
 
             return plan;
+        }
+
+
+        private static bool IsUsableEpoch(
+            ManeuverEpochTelemetryModel epoch,
+            OrbitTelemetryState current)
+        {
+            if (epoch == null ||
+                !epoch.Available ||
+                current == null ||
+                string.IsNullOrWhiteSpace(epoch.VesselId) ||
+                !IsFinite(epoch.UniversalTimeSeconds) ||
+                !IsFinite(epoch.MissionTimeSeconds))
+            {
+                return false;
+            }
+
+            if (!string.Equals(
+                    epoch.VesselName ?? string.Empty,
+                    current.VesselName ?? string.Empty,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (Math.Abs(
+                    epoch.MissionTimeSeconds -
+                    current.MissionTimeSeconds) >
+                2.0)
+            {
+                return false;
+            }
+
+            return true;
         }
 
         private static double ResolveSemiMajorAxis(

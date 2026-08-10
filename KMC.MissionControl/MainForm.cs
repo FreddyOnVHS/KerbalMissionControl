@@ -39,6 +39,7 @@ namespace KMC.MissionControl
         private readonly FormsTimer _performanceOverlayTimer;
         private readonly Label _connectionLabel;
         private readonly Label _displayRefreshLabel;
+        private readonly Button _maneuverUploadButton;
         private readonly TrackBar _displayRefreshSlider;
         private readonly ConsolePanel _displayPanel;
         private readonly MissionDisplay _missionDisplay;
@@ -72,6 +73,7 @@ namespace KMC.MissionControl
 
             _connectionLabel = CreateConnectionLabel();
             _displayRefreshLabel = CreateDisplayRefreshLabel();
+            _maneuverUploadButton = CreateManeuverUploadButton();
             _displayRefreshSlider = CreateDisplayRefreshSlider();
 
             _displayPanel =
@@ -143,6 +145,7 @@ namespace KMC.MissionControl
 
             _receiver = new MissionControlReceiver();
             _receiver.TelemetryReceived += OnTelemetryReceived;
+            _receiver.ManeuverAcknowledgmentReceived += OnManeuverAcknowledgmentReceived;
 
             _displayRefreshTimer = new FormsTimer();
             _displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
@@ -235,7 +238,7 @@ namespace KMC.MissionControl
                     BackColor = ApolloTheme.WindowBackground,
                     Margin = Padding.Empty,
                     Padding = Padding.Empty,
-                    ColumnCount = 4,
+                    ColumnCount = 5,
                     RowCount = 1
                 };
 
@@ -243,6 +246,11 @@ namespace KMC.MissionControl
                 new ColumnStyle(
                     SizeType.Percent,
                     100.0f));
+
+            headerLayout.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Absolute,
+                    150.0f));
 
             headerLayout.ColumnStyles.Add(
                 new ColumnStyle(
@@ -277,9 +285,10 @@ namespace KMC.MissionControl
                 };
 
             headerLayout.Controls.Add(titleLabel, 0, 0);
-            headerLayout.Controls.Add(_displayRefreshLabel, 1, 0);
-            headerLayout.Controls.Add(_displayRefreshSlider, 2, 0);
-            headerLayout.Controls.Add(_connectionLabel, 3, 0);
+            headerLayout.Controls.Add(_maneuverUploadButton, 1, 0);
+            headerLayout.Controls.Add(_displayRefreshLabel, 2, 0);
+            headerLayout.Controls.Add(_displayRefreshSlider, 3, 0);
+            headerLayout.Controls.Add(_connectionLabel, 4, 0);
 
             return headerLayout;
         }
@@ -310,6 +319,34 @@ namespace KMC.MissionControl
                     ForeColor = Color.FromArgb(150, 220, 255),
                     Font = new Font("Consolas", 10.0f, FontStyle.Bold)
                 };
+        }
+
+        private Button CreateManeuverUploadButton()
+        {
+            Button button =
+                new Button
+                {
+                    Text = "UPLOAD MNV",
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(6, 8, 6, 8),
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.FromArgb(45, 55, 49),
+                    ForeColor = Color.FromArgb(190, 255, 190),
+                    Font = new Font("Consolas", 9.0f, FontStyle.Bold),
+                    Visible = false,
+                    TabStop = false
+                };
+
+            button.FlatAppearance.BorderColor =
+                Color.FromArgb(120, 150, 125);
+
+            button.FlatAppearance.MouseOverBackColor =
+                Color.FromArgb(58, 70, 62);
+
+            button.Click +=
+                OnManeuverUploadClick;
+
+            return button;
         }
 
         private TrackBar CreateDisplayRefreshSlider()
@@ -389,6 +426,50 @@ namespace KMC.MissionControl
             _missionDisplay.SetPage(page);
             _missionDisplay.ScreenTitle = title + " DATA";
             _displayPanel.PanelTitle = title + " DISPLAY";
+
+            _maneuverUploadButton.Visible =
+                string.Equals(
+                    title,
+                    "MNV",
+                    StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void OnManeuverUploadClick(
+            object sender,
+            EventArgs e)
+        {
+            if (_receiver == null)
+            {
+                return;
+            }
+
+            string resultText;
+
+            _receiver.UploadLatestManeuver(
+                out resultText);
+
+            _missionDisplay.RequestRender();
+        }
+
+        private void OnManeuverAcknowledgmentReceived(
+            ManeuverUplinkAck ack)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(
+                    new Action<ManeuverUplinkAck>(
+                        OnManeuverAcknowledgmentReceived),
+                    ack);
+
+                return;
+            }
+
+            _missionDisplay.RequestRender();
         }
 
         private void OnMainFormResize(
@@ -805,6 +886,9 @@ namespace KMC.MissionControl
 
             _receiver.TelemetryReceived -=
                 OnTelemetryReceived;
+
+            _receiver.ManeuverAcknowledgmentReceived -=
+                OnManeuverAcknowledgmentReceived;
 
             _receiver.Dispose();
         }
