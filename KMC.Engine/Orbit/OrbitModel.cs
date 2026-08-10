@@ -15,6 +15,9 @@
 
             VelocityVector =
                 new VelocityVectorTelemetryModel();
+
+            Safety =
+                new OrbitSafetyModel();
         }
 
         public bool Available { get; internal set; }
@@ -40,6 +43,12 @@
         }
 
         public VelocityVectorTelemetryModel VelocityVector
+        {
+            get;
+            internal set;
+        }
+
+        public OrbitSafetyModel Safety
         {
             get;
             internal set;
@@ -88,6 +97,10 @@
             clone.VelocityVector =
                 VelocityVectorTelemetryModel.Clone(
                     source.VelocityVector);
+
+            clone.Safety =
+                OrbitSafetyModel.Clone(
+                    source.Safety);
 
             return clone;
         }

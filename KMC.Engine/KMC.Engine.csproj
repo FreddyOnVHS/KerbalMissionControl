@@ -67,6 +67,8 @@
     <Compile Include="Orbit\CircularizationPredictionModel.cs" />
     <Compile Include="Orbit\CircularizationPredictor.cs" />
     <Compile Include="Orbit\VelocityVectorTelemetryModel.cs" />
+    <Compile Include="Orbit\OrbitSafetyModel.cs" />
+    <Compile Include="Orbit\OrbitSafetyController.cs" />
     <Compile Include="Electrical\ElectricalEnums.cs" />
     <Compile Include="Electrical\PowerNode.cs" />
     <Compile Include="Electrical\PowerComponents.cs" />

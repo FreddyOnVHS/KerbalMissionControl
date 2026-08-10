@@ -26,6 +26,16 @@ namespace KMC.Engine.Orbit
             _circularizationPredictor =
                 new CircularizationPredictor();
 
+        private readonly OrbitSafetyController
+            _orbitSafetyController =
+                new OrbitSafetyController();
+
+        private bool
+            _circularizationStarted;
+
+        private bool
+            _orbitCutoffLatched;
+
         private OrbitModel
             _latest =
                 new OrbitModel();
@@ -44,6 +54,10 @@ namespace KMC.Engine.Orbit
 
         private DateTime
             _lastVelocityDiagnosticUtc =
+                DateTime.MinValue;
+
+        private DateTime
+            _lastSafetyDiagnosticUtc =
                 DateTime.MinValue;
 
         public void Update(
@@ -66,6 +80,13 @@ namespace KMC.Engine.Orbit
             if (reset)
             {
                 _circularizationPredictor.Reset();
+                _orbitSafetyController.Reset();
+
+                _circularizationStarted =
+                    false;
+
+                _orbitCutoffLatched =
+                    false;
 
                 lock (_syncRoot)
                 {
@@ -128,6 +149,41 @@ namespace KMC.Engine.Orbit
                     targetOrbit,
                     handoffObserved);
 
+            if (!_circularizationStarted &&
+                handoffObserved &&
+                prediction != null &&
+                prediction.Available &&
+                prediction.IgnitionInSeconds <=
+                    0.0 &&
+                current.CurrentThrustKilonewtons >
+                    0.1)
+            {
+                _circularizationStarted =
+                    true;
+            }
+
+            OrbitSafetyModel safety =
+                _orbitSafetyController.Evaluate(
+                    current,
+                    prediction,
+                    targetOrbit,
+                    _circularizationStarted,
+                    _orbitCutoffLatched);
+
+            if (!_orbitCutoffLatched &&
+                safety != null &&
+                safety.OrbitAchieved)
+            {
+                _orbitCutoffLatched =
+                    true;
+
+                safety.CutoffLatched =
+                    true;
+
+                safety.CutoffRequired =
+                    true;
+            }
+
             OrbitModel next =
                 new OrbitModel
                 {
@@ -165,7 +221,10 @@ namespace KMC.Engine.Orbit
                         prediction,
 
                     VelocityVector =
-                        evaluatedVelocity
+                        evaluatedVelocity,
+
+                    Safety =
+                        safety
                 };
 
             lock (_syncRoot)
@@ -186,6 +245,10 @@ namespace KMC.Engine.Orbit
                 receivedUtc);
 
             WriteVelocityDiagnosticIfDue(
+                next,
+                receivedUtc);
+
+            WriteSafetyDiagnosticIfDue(
                 next,
                 receivedUtc);
         }
@@ -514,6 +577,108 @@ namespace KMC.Engine.Orbit
                 "m/s" +
                 " | OrbitalAgree=" +
                 vector.OrbitalSpeedAgreement);
+        }
+
+        private void WriteSafetyDiagnosticIfDue(
+            OrbitModel model,
+            DateTime receivedUtc)
+        {
+            if (model == null ||
+                model.Safety == null)
+            {
+                return;
+            }
+
+            if (_lastSafetyDiagnosticUtc !=
+                    DateTime.MinValue &&
+                (receivedUtc -
+                 _lastSafetyDiagnosticUtc)
+                    .TotalSeconds <
+                    1.0)
+            {
+                return;
+            }
+
+            _lastSafetyDiagnosticUtc =
+                receivedUtc;
+
+            OrbitSafetyModel safety =
+                model.Safety;
+
+            Debug.WriteLine(
+                "KMC.Engine ORBIT SAFETY" +
+                " | Available=" +
+                safety.Available +
+                " | CircStarted=" +
+                safety.CircularizationStarted +
+                " | OrbitAchieved=" +
+                safety.OrbitAchieved +
+                " | CutoffRequired=" +
+                safety.CutoffRequired +
+                " | CutoffLatched=" +
+                safety.CutoffLatched +
+                " | PauseBurn=" +
+                safety.PauseBurn +
+                " | ActualPeSafe=" +
+                safety.ActualPeriapsisSafe +
+                " | PredPeSafe=" +
+                safety.PredictedPeriapsisSafe +
+                " | EnergyOK=" +
+                safety.EnergySatisfied +
+                " | DeltaVOK=" +
+                safety.DeltaVSatisfied +
+                " | PredNominal=" +
+                safety.PredictedOrbitNominal +
+                " | PredApHigh=" +
+                safety.PredictedApoapsisTooHigh +
+                " | ActualApHigh=" +
+                safety.ActualApoapsisTooHigh +
+                " | PredOrbitHigh=" +
+                safety.PredictedOrbitTooHigh +
+                " | Target=" +
+                Format(
+                    safety.TargetOrbitMeters,
+                    "0") +
+                "m" +
+                " | ActualAp=" +
+                Format(
+                    safety.ActualApoapsisMeters,
+                    "0") +
+                "m" +
+                " | ActualPe=" +
+                Format(
+                    safety.ActualPeriapsisMeters,
+                    "0") +
+                "m" +
+                " | PredAp=" +
+                Format(
+                    safety.PredictedApoapsisMeters,
+                    "0") +
+                "m" +
+                " | PredPe=" +
+                Format(
+                    safety.PredictedPeriapsisMeters,
+                    "0") +
+                "m" +
+                " | OrbitErr=" +
+                Format(
+                    safety.PredictedOrbitErrorMeters,
+                    "0") +
+                "m" +
+                " | PredEnergyErr=" +
+                Format(
+                    safety.PredictedEnergyErrorJoulesPerKilogram,
+                    "0") +
+                "J/kg" +
+                " | DV=" +
+                Format(
+                    safety.RemainingDeltaVMetersPerSecond,
+                    "0.0") +
+                "m/s" +
+                " | Reason=" +
+                safety.Reason +
+                " | Reset=" +
+                model.ResetOccurredThisUpdate);
         }
 
         private static string Format(
