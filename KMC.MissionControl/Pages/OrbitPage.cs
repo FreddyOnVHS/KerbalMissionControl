@@ -894,12 +894,39 @@ namespace KMC.MissionControl.Pages
                     leftColumn.Right,
                     leftY);
 
+                bool livePeriapsisSafe =
+                    safety != null &&
+                    safety.Available
+                        ? safety.ActualPeriapsisSafe
+                        : orbit != null &&
+                          orbit.Current != null &&
+                          orbit.Current.Available &&
+                          IsFinite(
+                              orbit.Current
+                                  .PeriapsisMeters) &&
+                          orbit.Current
+                              .PeriapsisMeters >=
+                              70000.0;
+
+                bool predictedPeriapsisSafe =
+                    safety != null &&
+                    safety.Available
+                        ? safety.PredictedPeriapsisSafe
+                        : orbit != null &&
+                          orbit.CircularizationPrediction != null &&
+                          orbit.CircularizationPrediction.Available &&
+                          IsFinite(
+                              orbit.CircularizationPrediction
+                                  .PredictedPeriapsisMeters) &&
+                          orbit.CircularizationPrediction
+                              .PredictedPeriapsisMeters >=
+                              70000.0;
+
                 DrawCompactField(
                     context,
                     "LIVE PE SAFE",
                     FormatBool(
-                        safety != null &&
-                        safety.ActualPeriapsisSafe),
+                        livePeriapsisSafe),
                     rightColumn.Left,
                     rightColumn.Right,
                     rightY);
@@ -911,8 +938,7 @@ namespace KMC.MissionControl.Pages
                     context,
                     "PRED PE SAFE",
                     FormatBool(
-                        safety != null &&
-                        safety.PredictedPeriapsisSafe),
+                        predictedPeriapsisSafe),
                     rightColumn.Left,
                     rightColumn.Right,
                     rightY);
@@ -944,12 +970,23 @@ namespace KMC.MissionControl.Pages
                     rightColumn.Right,
                     rightY);
 
+                bool reacquiredOrbit =
+                    fd != null &&
+                    string.Equals(
+                        fd.DecisionSource,
+                        "ORBIT REACQUISITION",
+                        StringComparison.Ordinal);
+
                 string reason =
-                    safety != null &&
+                    reacquiredOrbit &&
                     !string.IsNullOrWhiteSpace(
-                        safety.Reason)
-                        ? safety.Reason
-                        : "SAFETY WAITING";
+                        fd.Status)
+                        ? fd.Status
+                        : safety != null &&
+                          !string.IsNullOrWhiteSpace(
+                              safety.Reason)
+                            ? safety.Reason
+                            : "SAFETY WAITING";
 
                 int decisionHeight =
                     58;
@@ -975,7 +1012,8 @@ namespace KMC.MissionControl.Pages
                             innerRight,
                             innerBottom),
                         reason,
-                        safety);
+                        safety,
+                        fd);
                 }
             }
             finally
@@ -1079,7 +1117,8 @@ namespace KMC.MissionControl.Pages
             MissionRenderContext context,
             Rectangle bounds,
             string reason,
-            OrbitSafetyModel safety)
+            OrbitSafetyModel safety,
+            OrbitFlightDirectorModel fd)
         {
             bool cutoff =
                 safety != null &&
@@ -1089,12 +1128,24 @@ namespace KMC.MissionControl.Pages
                 safety != null &&
                 safety.PauseBurn;
 
+            bool reacquired =
+                fd != null &&
+                string.Equals(
+                    fd.DecisionSource,
+                    "ORBIT REACQUISITION",
+                    StringComparison.Ordinal);
+
             Color stateColor =
                 cutoff
                     ? Color.Orange
                     : pause
                         ? Color.Gold
-                        : Color.LightSkyBlue;
+                        : reacquired &&
+                          fd.OrbitAchieved
+                            ? Color.LightGreen
+                            : reacquired
+                                ? Color.Gold
+                                : Color.LightSkyBlue;
 
             using (SolidBrush fillBrush =
                 new SolidBrush(
@@ -1425,7 +1476,11 @@ namespace KMC.MissionControl.Pages
                 return Color.Orange;
             }
 
-            if (fd.PeriapsisRecoveryActive)
+            if (fd.PeriapsisRecoveryActive ||
+                string.Equals(
+                    fd.FlightPhase,
+                    "SAFE ORBIT",
+                    StringComparison.Ordinal))
             {
                 return Color.Gold;
             }

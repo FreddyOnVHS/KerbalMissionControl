@@ -17,6 +17,12 @@ namespace KMC.Engine.Orbit
         private const double CircularizationReadyLeadSeconds =
             8.0;
 
+        private const double KerbinAtmosphereTopMeters =
+            70000.0;
+
+        private const double OrbitNominalToleranceMeters =
+            3000.0;
+
         public void Reset()
         {
             /*
@@ -114,6 +120,49 @@ namespace KMC.Engine.Orbit
                 return result;
             }
 
+            /*
+             * Build 10.6 - safe-orbit reacquisition.
+             *
+             * A quick-load/reconnect can place KMC into a vessel that is
+             * already safely orbiting while the stateful circularization
+             * latch is intentionally reset. In that case the mathematical
+             * circularization predictor can still produce a future ignition
+             * time, but that is not an operational burn command.
+             *
+             * Only use this path before circularization has started. Active
+             * burn/recovery/safety states retain their established priority.
+             */
+            bool circularizationStarted =
+                safety != null &&
+                safety.CircularizationStarted;
+
+            if (!circularizationStarted &&
+                IsSafeOrbit(
+                    current))
+            {
+                double targetOrbitMeters =
+                    safety != null
+                        ? safety.TargetOrbitMeters
+                        : double.NaN;
+
+                if (IsNominalOrbit(
+                        current,
+                        targetOrbitMeters))
+                {
+                    ConfigureReacquiredNominalOrbit(
+                        result,
+                        current);
+
+                    return result;
+                }
+
+                ConfigureReacquiredSafeOrbit(
+                    result,
+                    current);
+
+                return result;
+            }
+
             if (prediction == null ||
                 !prediction.Available)
             {
@@ -147,10 +196,6 @@ namespace KMC.Engine.Orbit
 
                 return result;
             }
-
-            bool circularizationStarted =
-                safety != null &&
-                safety.CircularizationStarted;
 
             result.CircularizationStarted =
                 circularizationStarted;
@@ -238,6 +283,176 @@ namespace KMC.Engine.Orbit
                 velocityVector);
 
             return result;
+        }
+
+        private static bool IsSafeOrbit(
+            OrbitTelemetryState current)
+        {
+            if (current == null ||
+                !current.Available ||
+                !IsFinite(
+                    current.ApoapsisMeters) ||
+                !IsFinite(
+                    current.PeriapsisMeters))
+            {
+                return false;
+            }
+
+            return
+                current.ApoapsisMeters >=
+                    KerbinAtmosphereTopMeters &&
+                current.PeriapsisMeters >=
+                    KerbinAtmosphereTopMeters;
+        }
+
+        private static bool IsNominalOrbit(
+            OrbitTelemetryState current,
+            double targetOrbitMeters)
+        {
+            if (!IsSafeOrbit(
+                    current) ||
+                !IsFinite(
+                    targetOrbitMeters) ||
+                targetOrbitMeters <=
+                    KerbinAtmosphereTopMeters)
+            {
+                return false;
+            }
+
+            return
+                Math.Abs(
+                    current.ApoapsisMeters -
+                    targetOrbitMeters) <=
+                    OrbitNominalToleranceMeters &&
+                Math.Abs(
+                    current.PeriapsisMeters -
+                    targetOrbitMeters) <=
+                    OrbitNominalToleranceMeters;
+        }
+
+        private static void ConfigureReacquiredNominalOrbit(
+            OrbitFlightDirectorModel result,
+            OrbitTelemetryState current)
+        {
+            bool producingThrust =
+                IsProducingThrust(
+                    current);
+
+            result.Available =
+                true;
+
+            result.FlightPhase =
+                "ORBIT ACHIEVED";
+
+            result.OrbitAchieved =
+                true;
+
+            result.CutoffRequired =
+                producingThrust;
+
+            result.CoastLockoutActive =
+                true;
+
+            result.IgnitionDue =
+                false;
+
+            result.CircularizationStarted =
+                false;
+
+            result.PeriapsisRecoveryActive =
+                false;
+
+            result.AttitudeCommand =
+                GetProgradeAttitudeCommand(
+                    result);
+
+            result.ThrottleCommandPercent =
+                0.0;
+
+            result.ThrottleCommand =
+                "THROTTLE 0%";
+
+            result.Command =
+                producingThrust
+                    ? "CUTOFF - HOLD ORBITAL PROGRADE"
+                    : "HOLD ORBITAL PROGRADE";
+
+            result.Status =
+                "NOMINAL ORBIT REACQUIRED";
+
+            result.NextEvent =
+                "VERIFY ORBIT";
+
+            result.DecisionSource =
+                "ORBIT REACQUISITION";
+        }
+
+        private static void ConfigureReacquiredSafeOrbit(
+            OrbitFlightDirectorModel result,
+            OrbitTelemetryState current)
+        {
+            bool producingThrust =
+                IsProducingThrust(
+                    current);
+
+            result.Available =
+                true;
+
+            result.FlightPhase =
+                "SAFE ORBIT";
+
+            result.OrbitAchieved =
+                false;
+
+            result.CutoffRequired =
+                producingThrust;
+
+            result.CoastLockoutActive =
+                true;
+
+            result.IgnitionDue =
+                false;
+
+            result.CircularizationStarted =
+                false;
+
+            result.PeriapsisRecoveryActive =
+                false;
+
+            result.AttitudeCommand =
+                GetProgradeAttitudeCommand(
+                    result);
+
+            result.ThrottleCommandPercent =
+                0.0;
+
+            result.ThrottleCommand =
+                "THROTTLE 0%";
+
+            result.Command =
+                producingThrust
+                    ? "CUTOFF - HOLD ORBITAL PROGRADE"
+                    : "HOLD ORBITAL PROGRADE";
+
+            result.Status =
+                "OFF-NOMINAL / NO BURN COMMANDED";
+
+            result.NextEvent =
+                "MANEUVER PLAN REQUIRED";
+
+            result.DecisionSource =
+                "ORBIT REACQUISITION";
+        }
+
+        private static bool IsProducingThrust(
+            OrbitTelemetryState current)
+        {
+            return
+                current != null &&
+                (current.CurrentThrustKilonewtons >
+                    0.1 ||
+                 current.Throttle >
+                    0.01);
         }
 
         private static void ConfigureCoast(
