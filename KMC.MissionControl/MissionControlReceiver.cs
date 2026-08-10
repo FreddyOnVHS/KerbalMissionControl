@@ -70,6 +70,9 @@ namespace KMC.MissionControl
 
             _maneuverLink.AcknowledgmentReceived +=
                 OnManeuverAcknowledgmentReceived;
+
+            _maneuverLink.NodeStateReceived +=
+                OnManeuverNodeStateReceived;
         }
 
         public event Action<TelemetryPacket> TelemetryReceived;
@@ -232,6 +235,14 @@ namespace KMC.MissionControl
             {
                 handler(ack);
             }
+        }
+
+
+        private void OnManeuverNodeStateReceived(
+            ManeuverNodeStatePacket packet)
+        {
+            ManeuverUplinkStatusStore.PublishNodeState(
+                packet);
         }
 
         private void OnVelocityVectorTelemetryReceived(
@@ -547,6 +558,9 @@ namespace KMC.MissionControl
 
             _maneuverLink.AcknowledgmentReceived -=
                 OnManeuverAcknowledgmentReceived;
+
+            _maneuverLink.NodeStateReceived -=
+                OnManeuverNodeStateReceived;
 
             _transport.Dispose();
             _maneuverLink.Dispose();

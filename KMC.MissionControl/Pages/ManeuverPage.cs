@@ -9,10 +9,11 @@ using KMC.MissionControl.Rendering;
 namespace KMC.MissionControl.Pages
 {
     /// <summary>
-    /// Build 11.2 maneuver planning review / uplink display.
+    /// Build 11.3 maneuver planning review / uplink / synchronization display.
     ///
-    /// This page consumes the Engine-owned ManeuverPlanModel and uplink ACK status.
-    /// It never performs or duplicates orbital / maneuver calculations.
+    /// This page consumes the Engine-owned ManeuverPlanModel plus KSP node
+    /// verification telemetry. It never performs or duplicates orbital /
+    /// maneuver calculations.
     /// </summary>
     public sealed class ManeuverPage :
         IMissionPage,
@@ -141,6 +142,40 @@ namespace KMC.MissionControl.Pages
                 "UPLINK STATUS",
                 Safe(uplink.State));
 
+            bool currentNodeState =
+                uplink.NodeStateTelemetryAvailable &&
+                string.Equals(
+                    uplink.PlanId,
+                    plan.PlanId,
+                    StringComparison.Ordinal);
+
+            if (currentNodeState)
+            {
+                layout.Row(
+                    "KSP NODE UT",
+                    uplink.NodeExists
+                        ? FormatDuration(
+                            uplink.NodeUniversalTimeSeconds)
+                        : "---",
+                    "KSP PROGRADE DV",
+                    uplink.NodeExists
+                        ? FormatDeltaV(
+                            uplink.ProgradeDeltaVMetersPerSecond)
+                        : "---");
+
+                layout.Row(
+                    "KSP NORMAL DV",
+                    uplink.NodeExists
+                        ? FormatDeltaV(
+                            uplink.NormalDeltaVMetersPerSecond)
+                        : "---",
+                    "KSP RADIAL DV",
+                    uplink.NodeExists
+                        ? FormatDeltaV(
+                            uplink.RadialDeltaVMetersPerSecond)
+                        : "---");
+            }
+
             Rectangle reviewRegion =
                 layout.ReserveRegion(
                     Math.Max(
@@ -156,30 +191,78 @@ namespace KMC.MissionControl.Pages
 
             string footer;
 
-            bool nodeLoaded =
-                string.Equals(
-                    uplink.State,
-                    "NODE LOADED",
-                    StringComparison.OrdinalIgnoreCase) &&
+            bool samePlan =
                 string.Equals(
                     uplink.PlanId,
                     plan.PlanId,
                     StringComparison.Ordinal);
 
-            if (nodeLoaded)
+            bool nodeVerified =
+                samePlan &&
+                string.Equals(
+                    uplink.State,
+                    "NODE VERIFIED",
+                    StringComparison.OrdinalIgnoreCase);
+
+            bool crewModified =
+                samePlan &&
+                string.Equals(
+                    uplink.State,
+                    "CREW MODIFIED",
+                    StringComparison.OrdinalIgnoreCase);
+
+            bool nodeRemoved =
+                samePlan &&
+                string.Equals(
+                    uplink.State,
+                    "NODE REMOVED",
+                    StringComparison.OrdinalIgnoreCase);
+
+            bool vesselNotActive =
+                samePlan &&
+                string.Equals(
+                    uplink.State,
+                    "VESSEL NOT ACTIVE",
+                    StringComparison.OrdinalIgnoreCase);
+
+            bool nodeLoaded =
+                samePlan &&
+                string.Equals(
+                    uplink.State,
+                    "NODE LOADED",
+                    StringComparison.OrdinalIgnoreCase);
+
+            if (nodeVerified)
             {
                 footer =
-                    "NODE LOADED - PLUGIN ACKNOWLEDGED " +
+                    "NODE VERIFIED - KSP MATCHES " +
                     Safe(plan.PlanId);
             }
-            else if (string.Equals(
+            else if (crewModified)
+            {
+                footer =
+                    "CREW MODIFIED NODE - KSP STATE DIFFERS FROM PLAN";
+            }
+            else if (nodeRemoved)
+            {
+                footer =
+                    "NODE REMOVED - UPLOAD REQUIRED";
+            }
+            else if (vesselNotActive)
+            {
+                footer =
+                    "TRACKED NODE VESSEL NOT ACTIVE";
+            }
+            else if (nodeLoaded)
+            {
+                footer =
+                    "NODE LOADED - VERIFYING KSP NODE";
+            }
+            else if (samePlan &&
+                     string.Equals(
                          uplink.State,
                          "AWAITING ACK",
-                         StringComparison.OrdinalIgnoreCase) &&
-                     string.Equals(
-                         uplink.PlanId,
-                         plan.PlanId,
-                         StringComparison.Ordinal))
+                         StringComparison.OrdinalIgnoreCase))
             {
                 footer =
                     "UPLINK SENT - AWAITING PLUGIN ACK";
@@ -200,10 +283,17 @@ namespace KMC.MissionControl.Pages
                     "PLAN NOT AVAILABLE - REVIEW ENGINE EVIDENCE";
             }
 
+            bool healthyStatus =
+                plan.Available &&
+                plan.NodeUniversalTimeAvailable &&
+                !crewModified &&
+                !nodeRemoved &&
+                !vesselNotActive;
+
             DrawReviewBand(
                 context,
                 footer,
-                plan.Available && plan.NodeUniversalTimeAvailable);
+                healthyStatus);
         }
 
         private static ManeuverPlanModel GetLatestPlan()

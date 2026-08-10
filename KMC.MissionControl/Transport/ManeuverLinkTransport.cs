@@ -18,13 +18,19 @@ namespace KMC.MissionControl.Transport
     {
         private UdpClient _epochClient;
         private UdpClient _ackClient;
+        private UdpClient _nodeStateClient;
         private UdpClient _commandClient;
         private Thread _epochThread;
         private Thread _ackThread;
+        private Thread _nodeStateThread;
+        private readonly System.Collections.Generic.Dictionary<string, string>
+            _lastLoggedNodeStateByPlan =
+                new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);
         private volatile bool _running;
 
         public event Action<ManeuverEpochPacket> EpochReceived;
         public event Action<ManeuverUplinkAck> AcknowledgmentReceived;
+        public event Action<ManeuverNodeStatePacket> NodeStateReceived;
 
         public void Start()
         {
@@ -45,6 +51,12 @@ namespace KMC.MissionControl.Transport
                         IPAddress.Any,
                         ManeuverUplinkPacket.AckPort));
 
+            _nodeStateClient =
+                new UdpClient(
+                    new IPEndPoint(
+                        IPAddress.Any,
+                        ManeuverUplinkPacket.NodeStatePort));
+
             _commandClient =
                 new UdpClient();
 
@@ -55,6 +67,10 @@ namespace KMC.MissionControl.Transport
             Debug.WriteLine(
                 "KMC.Transport BOUND | UDP " +
                 ManeuverUplinkPacket.AckPort);
+
+            Debug.WriteLine(
+                "KMC.Transport BOUND | UDP " +
+                ManeuverUplinkPacket.NodeStatePort);
 
             _running = true;
 
@@ -72,8 +88,16 @@ namespace KMC.MissionControl.Transport
             _ackThread.IsBackground = true;
             _ackThread.Name = "KMC Maneuver ACK";
 
+            _nodeStateThread =
+                new Thread(
+                    NodeStateReceiveLoop);
+
+            _nodeStateThread.IsBackground = true;
+            _nodeStateThread.Name = "KMC Maneuver Node State";
+
             _epochThread.Start();
             _ackThread.Start();
+            _nodeStateThread.Start();
         }
 
         public void Send(
@@ -129,6 +153,13 @@ namespace KMC.MissionControl.Transport
             ReceiveLoop(
                 _ackClient,
                 HandleAck);
+        }
+
+        private void NodeStateReceiveLoop()
+        {
+            ReceiveLoop(
+                _nodeStateClient,
+                HandleNodeState);
         }
 
         private void ReceiveLoop(
@@ -219,16 +250,79 @@ namespace KMC.MissionControl.Transport
             }
         }
 
+
+        private void HandleNodeState(
+            string text)
+        {
+            ManeuverNodeStatePacket packet;
+
+            if (!ManeuverNodeStatePacket.TryParse(
+                    text,
+                    out packet))
+            {
+                return;
+            }
+
+            string priorState;
+
+            if (!_lastLoggedNodeStateByPlan.TryGetValue(
+                    packet.PlanId,
+                    out priorState) ||
+                !string.Equals(
+                    priorState,
+                    packet.State,
+                    StringComparison.Ordinal))
+            {
+                _lastLoggedNodeStateByPlan[packet.PlanId] =
+                    packet.State ?? string.Empty;
+
+                Debug.WriteLine(
+                    "KMC.MissionControl MANEUVER NODE STATE" +
+                    " | PlanId=" + packet.PlanId +
+                    " | VesselId=" + packet.VesselId +
+                    " | Status=" + packet.State +
+                    " | Exists=" + packet.NodeExists +
+                    " | NodeUT=" + FormatOptional(packet.NodeUniversalTimeSeconds, "0.0") +
+                    " | ProgradeDV=" + FormatOptional(packet.ProgradeDeltaVMetersPerSecond, "0.00") +
+                    " | NormalDV=" + FormatOptional(packet.NormalDeltaVMetersPerSecond, "0.00") +
+                    " | RadialDV=" + FormatOptional(packet.RadialDeltaVMetersPerSecond, "0.00") +
+                    " | Detail=" + packet.Detail);
+            }
+
+            Action<ManeuverNodeStatePacket> handler =
+                NodeStateReceived;
+
+            if (handler != null)
+            {
+                handler(packet);
+            }
+        }
+
+        private static string FormatOptional(
+            double value,
+            string format)
+        {
+            return
+                double.IsNaN(value) ||
+                double.IsInfinity(value)
+                    ? "N/A"
+                    : value.ToString(format);
+        }
+
         public void Stop()
         {
             _running = false;
 
             CloseClient(ref _epochClient);
             CloseClient(ref _ackClient);
+            CloseClient(ref _nodeStateClient);
             CloseClient(ref _commandClient);
 
             JoinThread(ref _epochThread);
             JoinThread(ref _ackThread);
+            JoinThread(ref _nodeStateThread);
+
+            _lastLoggedNodeStateByPlan.Clear();
         }
 
         public void Dispose()

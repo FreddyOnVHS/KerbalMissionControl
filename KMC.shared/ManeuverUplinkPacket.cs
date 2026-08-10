@@ -12,8 +12,10 @@ namespace KMC.Shared
     {
         public const string ProtocolId = "KMC-MNV1";
         public const string AckProtocolId = "KMC-MNV1-ACK";
+        public const string NodeStateProtocolId = "KMC-MNV1-STATE";
         public const int CommandPort = 5095;
         public const int AckPort = 5096;
+        public const int NodeStatePort = 5097;
 
         public string VesselId { get; set; }
         public string PlanId { get; set; }
@@ -194,4 +196,164 @@ namespace KMC.Shared
             return true;
         }
     }
+
+    /// <summary>
+    /// Build 11.3 KSP-to-Mission-Control synchronization packet.
+    /// Reports the actual stock maneuver node after upload so Mission Control
+    /// can verify the node, detect player edits, or detect removal.
+    /// </summary>
+    public sealed class ManeuverNodeStatePacket
+    {
+        public string VesselId { get; set; }
+        public string PlanId { get; set; }
+        public string State { get; set; }
+        public bool NodeExists { get; set; }
+        public double NodeUniversalTimeSeconds { get; set; }
+        public double ProgradeDeltaVMetersPerSecond { get; set; }
+        public double NormalDeltaVMetersPerSecond { get; set; }
+        public double RadialDeltaVMetersPerSecond { get; set; }
+        public string Detail { get; set; }
+
+        public ManeuverNodeStatePacket()
+        {
+            VesselId = string.Empty;
+            PlanId = string.Empty;
+            State = string.Empty;
+            Detail = string.Empty;
+            NodeUniversalTimeSeconds = double.NaN;
+            ProgradeDeltaVMetersPerSecond = double.NaN;
+            NormalDeltaVMetersPerSecond = double.NaN;
+            RadialDeltaVMetersPerSecond = double.NaN;
+        }
+
+        public string Serialize()
+        {
+            return string.Join(
+                "|",
+                new[]
+                {
+                    ManeuverUplinkPacket.NodeStateProtocolId,
+                    Uri.EscapeDataString(VesselId ?? string.Empty),
+                    Uri.EscapeDataString(PlanId ?? string.Empty),
+                    Uri.EscapeDataString(State ?? string.Empty),
+                    NodeExists ? "1" : "0",
+                    FormatOptional(NodeUniversalTimeSeconds),
+                    FormatOptional(ProgradeDeltaVMetersPerSecond),
+                    FormatOptional(NormalDeltaVMetersPerSecond),
+                    FormatOptional(RadialDeltaVMetersPerSecond),
+                    Uri.EscapeDataString(Detail ?? string.Empty)
+                });
+        }
+
+        public static bool TryParse(
+            string message,
+            out ManeuverNodeStatePacket packet)
+        {
+            packet = null;
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return false;
+            }
+
+            string[] fields =
+                message.Split('|');
+
+            if (fields.Length != 10 ||
+                !string.Equals(
+                    fields[0],
+                    ManeuverUplinkPacket.NodeStateProtocolId,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            double nodeUt;
+            double prograde;
+            double normal;
+            double radial;
+
+            if (!TryOptionalDouble(fields[5], out nodeUt) ||
+                !TryOptionalDouble(fields[6], out prograde) ||
+                !TryOptionalDouble(fields[7], out normal) ||
+                !TryOptionalDouble(fields[8], out radial))
+            {
+                return false;
+            }
+
+            packet =
+                new ManeuverNodeStatePacket
+                {
+                    VesselId =
+                        Uri.UnescapeDataString(fields[1]),
+
+                    PlanId =
+                        Uri.UnescapeDataString(fields[2]),
+
+                    State =
+                        Uri.UnescapeDataString(fields[3]),
+
+                    NodeExists =
+                        fields[4] == "1",
+
+                    NodeUniversalTimeSeconds =
+                        nodeUt,
+
+                    ProgradeDeltaVMetersPerSecond =
+                        prograde,
+
+                    NormalDeltaVMetersPerSecond =
+                        normal,
+
+                    RadialDeltaVMetersPerSecond =
+                        radial,
+
+                    Detail =
+                        Uri.UnescapeDataString(fields[9])
+                };
+
+            return
+                !string.IsNullOrWhiteSpace(packet.VesselId) &&
+                !string.IsNullOrWhiteSpace(packet.PlanId);
+        }
+
+        private static string FormatOptional(
+            double value)
+        {
+            return
+                double.IsNaN(value) ||
+                double.IsInfinity(value)
+                    ? "N/A"
+                    : value.ToString(
+                        "R",
+                        CultureInfo.InvariantCulture);
+        }
+
+        private static bool TryOptionalDouble(
+            string value,
+            out double result)
+        {
+            if (string.Equals(
+                    value,
+                    "N/A",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                result = double.NaN;
+                return true;
+            }
+
+            if (!double.TryParse(
+                    value,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out result))
+            {
+                return false;
+            }
+
+            return
+                !double.IsInfinity(result);
+        }
+    }
+
 }

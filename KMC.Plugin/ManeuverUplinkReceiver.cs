@@ -10,9 +10,11 @@ using UnityEngine;
 namespace KMC.Plugin
 {
     /// <summary>
-    /// Receives reviewed Mission Control maneuver plans and creates a stock KSP
-    /// maneuver node on the matching active vessel. KSP flight-state changes are
-    /// performed only from Update(), never from the UDP receiver thread.
+    /// Receives reviewed Mission Control maneuver plans, creates stock KSP
+    /// maneuver nodes, and reports the live KSP node state back to Mission
+    /// Control for Build 11.3 verification / synchronization.
+    ///
+    /// All KSP flight-state access remains on Unity's Update() thread.
     /// </summary>
     [KSPAddon(
         KSPAddon.Startup.Flight,
@@ -20,19 +22,46 @@ namespace KMC.Plugin
     public sealed class ManeuverUplinkReceiver :
         MonoBehaviour
     {
+        private const float StateSendIntervalSeconds =
+            0.25f;
+
+        private const double NodeUtToleranceSeconds =
+            0.25;
+
+        private const double DeltaVToleranceMetersPerSecond =
+            0.05;
+
+        private sealed class TrackedManeuver
+        {
+            public string VesselId;
+            public string PlanId;
+            public ManeuverNode Node;
+
+            public double PlannedNodeUt;
+            public double PlannedPrograde;
+            public double PlannedNormal;
+            public double PlannedRadial;
+        }
+
         private readonly object _syncRoot =
             new object();
 
-        private readonly HashSet<string> _loadedPlanIds =
-            new HashSet<string>(
-                StringComparer.Ordinal);
+        private readonly Dictionary<string, TrackedManeuver>
+            _trackedPlans =
+                new Dictionary<string, TrackedManeuver>(
+                    StringComparer.Ordinal);
 
         private UdpClient _receiveClient;
         private UdpClient _ackClient;
+        private UdpClient _stateClient;
+
         private IPEndPoint _ackEndpoint;
+        private IPEndPoint _stateEndpoint;
+
         private Thread _receiveThread;
         private volatile bool _running;
         private ManeuverUplinkPacket _pending;
+        private float _nextStateSendTime;
 
         public void Start()
         {
@@ -47,10 +76,18 @@ namespace KMC.Plugin
                 _ackClient =
                     new UdpClient();
 
+                _stateClient =
+                    new UdpClient();
+
                 _ackEndpoint =
                     new IPEndPoint(
                         IPAddress.Loopback,
                         ManeuverUplinkPacket.AckPort);
+
+                _stateEndpoint =
+                    new IPEndPoint(
+                        IPAddress.Loopback,
+                        ManeuverUplinkPacket.NodeStatePort);
 
                 _running = true;
 
@@ -58,12 +95,16 @@ namespace KMC.Plugin
                     new Thread(
                         ReceiveLoop);
 
-                _receiveThread.IsBackground = true;
-                _receiveThread.Name = "KMC Maneuver Uplink";
+                _receiveThread.IsBackground =
+                    true;
+
+                _receiveThread.Name =
+                    "KMC Maneuver Uplink";
+
                 _receiveThread.Start();
 
                 Debug.Log(
-                    "[KMC] Maneuver uplink receiver started.");
+                    "[KMC] Maneuver uplink / verification receiver started.");
             }
             catch (Exception ex)
             {
@@ -75,20 +116,35 @@ namespace KMC.Plugin
 
         public void Update()
         {
-            ManeuverUplinkPacket packet = null;
+            ManeuverUplinkPacket packet =
+                null;
 
             lock (_syncRoot)
             {
                 if (_pending != null)
                 {
-                    packet = _pending;
-                    _pending = null;
+                    packet =
+                        _pending;
+
+                    _pending =
+                        null;
                 }
             }
 
             if (packet != null)
             {
-                ApplyManeuver(packet);
+                ApplyManeuver(
+                    packet);
+            }
+
+            if (Time.realtimeSinceStartup >=
+                _nextStateSendTime)
+            {
+                _nextStateSendTime =
+                    Time.realtimeSinceStartup +
+                    StateSendIntervalSeconds;
+
+                PublishTrackedNodeStates();
             }
         }
 
@@ -122,7 +178,8 @@ namespace KMC.Plugin
 
                     lock (_syncRoot)
                     {
-                        _pending = packet;
+                        _pending =
+                            packet;
                     }
                 }
                 catch (ObjectDisposedException)
@@ -179,14 +236,17 @@ namespace KMC.Plugin
                 return;
             }
 
-            if (_loadedPlanIds.Contains(
-                    packet.PlanId))
+            TrackedManeuver existing;
+
+            if (_trackedPlans.TryGetValue(
+                    packet.PlanId,
+                    out existing))
             {
                 SendAck(
                     packet,
                     "NODE LOADED",
-                    "PLAN ALREADY LOADED - DUPLICATE SUPPRESSED",
-                    packet.NodeUniversalTimeSeconds);
+                    "PLAN ALREADY TRACKED - DUPLICATE SUPPRESSED",
+                    existing.PlannedNodeUt);
 
                 return;
             }
@@ -194,7 +254,8 @@ namespace KMC.Plugin
             double currentUt =
                 Planetarium.GetUniversalTime();
 
-            if (!IsFinite(packet.NodeUniversalTimeSeconds) ||
+            if (!IsFinite(
+                    packet.NodeUniversalTimeSeconds) ||
                 packet.NodeUniversalTimeSeconds <=
                     currentUt + 0.25)
             {
@@ -207,9 +268,12 @@ namespace KMC.Plugin
                 return;
             }
 
-            if (!IsFinite(packet.ProgradeDeltaVMetersPerSecond) ||
-                !IsFinite(packet.NormalDeltaVMetersPerSecond) ||
-                !IsFinite(packet.RadialDeltaVMetersPerSecond))
+            if (!IsFinite(
+                    packet.ProgradeDeltaVMetersPerSecond) ||
+                !IsFinite(
+                    packet.NormalDeltaVMetersPerSecond) ||
+                !IsFinite(
+                    packet.RadialDeltaVMetersPerSecond))
             {
                 SendAck(
                     packet,
@@ -262,8 +326,31 @@ namespace KMC.Plugin
                 vessel.patchedConicSolver
                     .UpdateFlightPlan();
 
-                _loadedPlanIds.Add(
-                    packet.PlanId);
+                _trackedPlans.Add(
+                    packet.PlanId,
+                    new TrackedManeuver
+                    {
+                        VesselId =
+                            packet.VesselId,
+
+                        PlanId =
+                            packet.PlanId,
+
+                        Node =
+                            node,
+
+                        PlannedNodeUt =
+                            packet.NodeUniversalTimeSeconds,
+
+                        PlannedPrograde =
+                            packet.ProgradeDeltaVMetersPerSecond,
+
+                        PlannedNormal =
+                            packet.NormalDeltaVMetersPerSecond,
+
+                        PlannedRadial =
+                            packet.RadialDeltaVMetersPerSecond
+                    });
 
                 SendAck(
                     packet,
@@ -271,13 +358,23 @@ namespace KMC.Plugin
                     "PLUGIN CREATED MANEUVER NODE",
                     packet.NodeUniversalTimeSeconds);
 
+                /*
+                 * Publish immediately as well as on the periodic cycle so
+                 * Mission Control can transition from NODE LOADED to
+                 * NODE VERIFIED without waiting for the next interval.
+                 */
+                PublishTrackedNodeState(
+                    vessel,
+                    _trackedPlans[packet.PlanId]);
+
                 ScreenMessages.PostScreenMessage(
                     "KMC maneuver node loaded",
                     4f,
                     ScreenMessageStyle.UPPER_CENTER);
 
                 Debug.Log(
-                    "[KMC] MANEUVER NODE LOADED | PlanId=" +
+                    "[KMC] MANEUVER NODE LOADED" +
+                    " | PlanId=" +
                     packet.PlanId +
                     " | VesselId=" +
                     packet.VesselId +
@@ -305,6 +402,203 @@ namespace KMC.Plugin
             }
         }
 
+        private void PublishTrackedNodeStates()
+        {
+            if (_trackedPlans.Count == 0)
+            {
+                return;
+            }
+
+            Vessel activeVessel =
+                FlightGlobals.ActiveVessel;
+
+            foreach (
+                KeyValuePair<string, TrackedManeuver> pair
+                in _trackedPlans)
+            {
+                PublishTrackedNodeState(
+                    activeVessel,
+                    pair.Value);
+            }
+        }
+
+        private void PublishTrackedNodeState(
+            Vessel activeVessel,
+            TrackedManeuver tracked)
+        {
+            if (tracked == null)
+            {
+                return;
+            }
+
+            if (activeVessel == null ||
+                !string.Equals(
+                    activeVessel.id.ToString(),
+                    tracked.VesselId,
+                    StringComparison.Ordinal))
+            {
+                SendNodeState(
+                    tracked,
+                    "VESSEL NOT ACTIVE",
+                    false,
+                    double.NaN,
+                    double.NaN,
+                    double.NaN,
+                    double.NaN,
+                    "TRACKED MANEUVER VESSEL IS NOT THE ACTIVE VESSEL");
+
+                return;
+            }
+
+            PatchedConicSolver solver =
+                activeVessel.patchedConicSolver;
+
+            if (solver == null ||
+                solver.maneuverNodes == null ||
+                tracked.Node == null ||
+                !solver.maneuverNodes.Contains(
+                    tracked.Node))
+            {
+                SendNodeState(
+                    tracked,
+                    "NODE REMOVED",
+                    false,
+                    double.NaN,
+                    double.NaN,
+                    double.NaN,
+                    double.NaN,
+                    "TRACKED KSP MANEUVER NODE NO LONGER EXISTS");
+
+                return;
+            }
+
+            double actualUt =
+                tracked.Node.UT;
+
+            Vector3d actualDeltaV =
+                tracked.Node.DeltaV;
+
+            double actualRadial =
+                actualDeltaV.x;
+
+            double actualNormal =
+                actualDeltaV.y;
+
+            double actualPrograde =
+                actualDeltaV.z;
+
+            bool utMatches =
+                Math.Abs(
+                    actualUt -
+                    tracked.PlannedNodeUt) <=
+                NodeUtToleranceSeconds;
+
+            bool progradeMatches =
+                Math.Abs(
+                    actualPrograde -
+                    tracked.PlannedPrograde) <=
+                DeltaVToleranceMetersPerSecond;
+
+            bool normalMatches =
+                Math.Abs(
+                    actualNormal -
+                    tracked.PlannedNormal) <=
+                DeltaVToleranceMetersPerSecond;
+
+            bool radialMatches =
+                Math.Abs(
+                    actualRadial -
+                    tracked.PlannedRadial) <=
+                DeltaVToleranceMetersPerSecond;
+
+            bool verified =
+                utMatches &&
+                progradeMatches &&
+                normalMatches &&
+                radialMatches;
+
+            SendNodeState(
+                tracked,
+                verified
+                    ? "NODE VERIFIED"
+                    : "CREW MODIFIED",
+                true,
+                actualUt,
+                actualPrograde,
+                actualNormal,
+                actualRadial,
+                verified
+                    ? "KSP NODE MATCHES UPLINKED PLAN"
+                    : "KSP NODE DIFFERS FROM UPLINKED PLAN");
+        }
+
+        private void SendNodeState(
+            TrackedManeuver tracked,
+            string state,
+            bool nodeExists,
+            double nodeUt,
+            double prograde,
+            double normal,
+            double radial,
+            string detail)
+        {
+            if (_stateClient == null ||
+                _stateEndpoint == null ||
+                tracked == null)
+            {
+                return;
+            }
+
+            try
+            {
+                ManeuverNodeStatePacket packet =
+                    new ManeuverNodeStatePacket
+                    {
+                        VesselId =
+                            tracked.VesselId ?? string.Empty,
+
+                        PlanId =
+                            tracked.PlanId ?? string.Empty,
+
+                        State =
+                            state ?? string.Empty,
+
+                        NodeExists =
+                            nodeExists,
+
+                        NodeUniversalTimeSeconds =
+                            nodeUt,
+
+                        ProgradeDeltaVMetersPerSecond =
+                            prograde,
+
+                        NormalDeltaVMetersPerSecond =
+                            normal,
+
+                        RadialDeltaVMetersPerSecond =
+                            radial,
+
+                        Detail =
+                            detail ?? string.Empty
+                    };
+
+                byte[] data =
+                    Encoding.UTF8.GetBytes(
+                        packet.Serialize());
+
+                _stateClient.Send(
+                    data,
+                    data.Length,
+                    _stateEndpoint);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError(
+                    "[KMC] Maneuver node-state send failed: " +
+                    ex);
+            }
+        }
+
         private void SendAck(
             ManeuverUplinkPacket packet,
             string status,
@@ -324,19 +618,23 @@ namespace KMC.Plugin
                     new ManeuverUplinkAck
                     {
                         VesselId =
-                            packet.VesselId ?? string.Empty,
+                            packet.VesselId ??
+                            string.Empty,
 
                         PlanId =
-                            packet.PlanId ?? string.Empty,
+                            packet.PlanId ??
+                            string.Empty,
 
                         Status =
-                            status ?? string.Empty,
+                            status ??
+                            string.Empty,
 
                         NodeUniversalTimeSeconds =
                             nodeUt,
 
                         Detail =
-                            detail ?? string.Empty
+                            detail ??
+                            string.Empty
                     };
 
                 byte[] data =
@@ -366,7 +664,8 @@ namespace KMC.Plugin
 
         public void OnDestroy()
         {
-            _running = false;
+            _running =
+                false;
 
             if (_receiveClient != null)
             {
@@ -380,13 +679,21 @@ namespace KMC.Plugin
                 _ackClient = null;
             }
 
+            if (_stateClient != null)
+            {
+                _stateClient.Close();
+                _stateClient = null;
+            }
+
             if (_receiveThread != null &&
                 _receiveThread.IsAlive)
             {
-                _receiveThread.Join(250);
+                _receiveThread.Join(
+                    250);
             }
 
-            _receiveThread = null;
+            _receiveThread =
+                null;
         }
     }
 }
