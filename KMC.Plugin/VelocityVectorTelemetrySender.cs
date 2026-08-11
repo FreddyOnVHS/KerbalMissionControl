@@ -133,17 +133,20 @@ namespace KMC.Plugin
                     _velocityEndpoint);
 
                 /*
-                 * Orbital normal follows the standard specific angular-
-                 * momentum direction h = r x v.
+                 * Build 13.4.1 polarity correction.
                  *
-                 * vessel.upAxis is radial-out from the current main body.
-                 * The result is normalized before resolving it in the vessel
-                 * ReferenceTransform frame.
+                 * KSP's Normal SAS direction is opposite the original
+                 * Build 13.4 radial-out x orbital-velocity result in this
+                 * coordinate convention.
+                 *
+                 * Reversing the cross-product order makes:
+                 *   +NormalDV -> KSP Normal
+                 *   -NormalDV -> KSP Anti-Normal
                  */
                 Vector3d orbitNormal =
                     Vector3d.Cross(
-                        vessel.upAxis,
-                        vessel.obt_velocity);
+                        vessel.obt_velocity,
+                        vessel.upAxis);
 
                 double normalMagnitude =
                     orbitNormal.magnitude;
