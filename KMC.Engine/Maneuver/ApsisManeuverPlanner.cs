@@ -289,6 +289,49 @@ namespace KMC.Engine.Maneuver
                 return plan;
             }
 
+            /*
+             * Build 13.1 safety boundary:
+             * selectable targets are now exposed in MissionControl, but
+             * retrograde FDAI / attitude guidance arrives in Build 13.2.
+             * Do not make a negative-prograde maneuver uploadable yet.
+             */
+            if (signedProgradeDeltaV <
+                -MinimumUsefulDeltaV)
+            {
+                plan.Status =
+                    "RETROGRADE GUIDANCE PENDING";
+
+                plan.ProgradeDeltaVMetersPerSecond =
+                    signedProgradeDeltaV;
+
+                plan.NormalDeltaVMetersPerSecond =
+                    0.0;
+
+                plan.RadialDeltaVMetersPerSecond =
+                    0.0;
+
+                plan.TotalDeltaVMetersPerSecond =
+                    totalDeltaV;
+
+                plan.PredictedApoapsisMeters =
+                    nodeAtApoapsis
+                        ? nodeAltitude
+                        : oppositeAltitude;
+
+                plan.PredictedPeriapsisMeters =
+                    nodeAtApoapsis
+                        ? oppositeAltitude
+                        : nodeAltitude;
+
+                plan.Evidence.Add(
+                    "Requested target requires a retrograde burn.");
+
+                plan.Evidence.Add(
+                    "Build 13.1 inhibits upload until Build 13.2 adds true orbital retrograde FDAI guidance.");
+
+                return plan;
+            }
+
             double burnDuration =
                 EstimateBurnDuration(
                     current,

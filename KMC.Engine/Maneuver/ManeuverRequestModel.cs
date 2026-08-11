@@ -72,6 +72,50 @@ namespace KMC.Engine.Maneuver
         }
     }
 
+
+    /// <summary>
+    /// Process-local request bridge used by MissionControl to select the
+    /// Engine-owned maneuver objective. The planner always consumes a clone.
+    /// </summary>
+    public static class ManeuverRequestStore
+    {
+        private static readonly object SyncRoot =
+            new object();
+
+        private static ManeuverRequestModel _latest =
+            ManeuverRequestModel.CreateDefault();
+
+        public static void Set(
+            ManeuverRequestModel request)
+        {
+            lock (SyncRoot)
+            {
+                _latest =
+                    ManeuverRequestModel.Clone(
+                        request);
+            }
+        }
+
+        public static ManeuverRequestModel Get()
+        {
+            lock (SyncRoot)
+            {
+                return
+                    ManeuverRequestModel.Clone(
+                        _latest);
+            }
+        }
+
+        public static void Reset()
+        {
+            lock (SyncRoot)
+            {
+                _latest =
+                    ManeuverRequestModel.CreateDefault();
+            }
+        }
+    }
+
     public enum ManeuverRequestType
     {
         CircularizeAtApoapsis = 0,

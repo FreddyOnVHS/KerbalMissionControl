@@ -1,3 +1,4 @@
+using KMC.Engine.Maneuver;
 using KMC.MissionControl.Controls;
 using KMC.MissionControl.Diagnostics;
 using KMC.MissionControl.Models;
@@ -39,6 +40,9 @@ namespace KMC.MissionControl
         private readonly FormsTimer _performanceOverlayTimer;
         private readonly Label _connectionLabel;
         private readonly Label _displayRefreshLabel;
+        private readonly ComboBox _maneuverTypeSelector;
+        private readonly NumericUpDown _maneuverTargetKm;
+        private readonly Button _maneuverComputeButton;
         private readonly Button _maneuverUploadButton;
         private readonly TrackBar _displayRefreshSlider;
         private readonly ConsolePanel _displayPanel;
@@ -73,8 +77,13 @@ namespace KMC.MissionControl
 
             _connectionLabel = CreateConnectionLabel();
             _displayRefreshLabel = CreateDisplayRefreshLabel();
+            _maneuverTypeSelector = CreateManeuverTypeSelector();
+            _maneuverTargetKm = CreateManeuverTargetControl();
+            _maneuverComputeButton = CreateManeuverComputeButton();
             _maneuverUploadButton = CreateManeuverUploadButton();
             _displayRefreshSlider = CreateDisplayRefreshSlider();
+
+            UpdateManeuverTargetControlState();
 
             _displayPanel =
                 new ConsolePanel
@@ -238,7 +247,7 @@ namespace KMC.MissionControl
                     BackColor = ApolloTheme.WindowBackground,
                     Margin = Padding.Empty,
                     Padding = Padding.Empty,
-                    ColumnCount = 5,
+                    ColumnCount = 8,
                     RowCount = 1
                 };
 
@@ -250,7 +259,22 @@ namespace KMC.MissionControl
             headerLayout.ColumnStyles.Add(
                 new ColumnStyle(
                     SizeType.Absolute,
-                    150.0f));
+                    205.0f));
+
+            headerLayout.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Absolute,
+                    125.0f));
+
+            headerLayout.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Absolute,
+                    105.0f));
+
+            headerLayout.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Absolute,
+                    135.0f));
 
             headerLayout.ColumnStyles.Add(
                 new ColumnStyle(
@@ -285,10 +309,13 @@ namespace KMC.MissionControl
                 };
 
             headerLayout.Controls.Add(titleLabel, 0, 0);
-            headerLayout.Controls.Add(_maneuverUploadButton, 1, 0);
-            headerLayout.Controls.Add(_displayRefreshLabel, 2, 0);
-            headerLayout.Controls.Add(_displayRefreshSlider, 3, 0);
-            headerLayout.Controls.Add(_connectionLabel, 4, 0);
+            headerLayout.Controls.Add(_maneuverTypeSelector, 1, 0);
+            headerLayout.Controls.Add(_maneuverTargetKm, 2, 0);
+            headerLayout.Controls.Add(_maneuverComputeButton, 3, 0);
+            headerLayout.Controls.Add(_maneuverUploadButton, 4, 0);
+            headerLayout.Controls.Add(_displayRefreshLabel, 5, 0);
+            headerLayout.Controls.Add(_displayRefreshSlider, 6, 0);
+            headerLayout.Controls.Add(_connectionLabel, 7, 0);
 
             return headerLayout;
         }
@@ -319,6 +346,81 @@ namespace KMC.MissionControl
                     ForeColor = Color.FromArgb(150, 220, 255),
                     Font = new Font("Consolas", 10.0f, FontStyle.Bold)
                 };
+        }
+
+        private ComboBox CreateManeuverTypeSelector()
+        {
+            ComboBox selector =
+                new ComboBox
+                {
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(6, 9, 6, 9),
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                    BackColor = Color.FromArgb(35, 45, 40),
+                    ForeColor = Color.FromArgb(190, 255, 190),
+                    Font = new Font("Consolas", 9.0f, FontStyle.Bold),
+                    Visible = false,
+                    TabStop = false
+                };
+
+            selector.Items.Add("CIRCULARIZE AP");
+            selector.Items.Add("SET PE @ AP");
+            selector.Items.Add("SET AP @ PE");
+            selector.SelectedIndex = 0;
+
+            selector.SelectedIndexChanged +=
+                OnManeuverTypeChanged;
+
+            return selector;
+        }
+
+        private static NumericUpDown CreateManeuverTargetControl()
+        {
+            return
+                new NumericUpDown
+                {
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(6, 9, 6, 9),
+                    DecimalPlaces = 1,
+                    Increment = 5.0M,
+                    Minimum = 0.0M,
+                    Maximum = 100000.0M,
+                    Value = 100.0M,
+                    ThousandsSeparator = true,
+                    BackColor = Color.FromArgb(35, 45, 40),
+                    ForeColor = Color.FromArgb(190, 255, 190),
+                    Font = new Font("Consolas", 9.0f, FontStyle.Bold),
+                    Visible = false,
+                    TabStop = false
+                };
+        }
+
+        private Button CreateManeuverComputeButton()
+        {
+            Button button =
+                new Button
+                {
+                    Text = "COMPUTE",
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(6, 8, 6, 8),
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.FromArgb(45, 55, 49),
+                    ForeColor = Color.FromArgb(190, 255, 190),
+                    Font = new Font("Consolas", 9.0f, FontStyle.Bold),
+                    Visible = false,
+                    TabStop = false
+                };
+
+            button.FlatAppearance.BorderColor =
+                Color.FromArgb(120, 150, 125);
+
+            button.FlatAppearance.MouseOverBackColor =
+                Color.FromArgb(58, 70, 62);
+
+            button.Click +=
+                OnManeuverComputeClick;
+
+            return button;
         }
 
         private Button CreateManeuverUploadButton()
@@ -426,11 +528,92 @@ namespace KMC.MissionControl
             _missionDisplay.ScreenTitle = title + " DATA";
             _displayPanel.PanelTitle = title + " DISPLAY";
 
-            _maneuverUploadButton.Visible =
+            bool maneuverPage =
                 string.Equals(
                     title,
                     "MNV",
                     StringComparison.OrdinalIgnoreCase);
+
+            _maneuverTypeSelector.Visible =
+                maneuverPage;
+
+            _maneuverTargetKm.Visible =
+                maneuverPage;
+
+            _maneuverComputeButton.Visible =
+                maneuverPage;
+
+            _maneuverUploadButton.Visible =
+                maneuverPage;
+
+            if (maneuverPage)
+            {
+                UpdateManeuverTargetControlState();
+            }
+        }
+
+        private void OnManeuverTypeChanged(
+            object sender,
+            EventArgs e)
+        {
+            UpdateManeuverTargetControlState();
+        }
+
+        private void UpdateManeuverTargetControlState()
+        {
+            if (_maneuverTargetKm == null ||
+                _maneuverTypeSelector == null)
+            {
+                return;
+            }
+
+            bool targetRequired =
+                _maneuverTypeSelector.SelectedIndex == 1 ||
+                _maneuverTypeSelector.SelectedIndex == 2;
+
+            _maneuverTargetKm.Enabled =
+                targetRequired;
+        }
+
+        private void OnManeuverComputeClick(
+            object sender,
+            EventArgs e)
+        {
+            ManeuverRequestType type;
+
+            switch (_maneuverTypeSelector.SelectedIndex)
+            {
+                case 1:
+                    type =
+                        ManeuverRequestType.SetPeriapsisAtApoapsis;
+                    break;
+
+                case 2:
+                    type =
+                        ManeuverRequestType.SetApoapsisAtPeriapsis;
+                    break;
+
+                default:
+                    type =
+                        ManeuverRequestType.CircularizeAtApoapsis;
+                    break;
+            }
+
+            ManeuverRequestStore.Set(
+                new ManeuverRequestModel
+                {
+                    Type = type,
+                    TargetAltitudeMeters =
+                        type ==
+                        ManeuverRequestType.CircularizeAtApoapsis
+                            ? double.NaN
+                            : (double)_maneuverTargetKm.Value *
+                              1000.0,
+                    RequestedUtc =
+                        DateTime.UtcNow
+                });
+
+            _missionDisplay.RequestRender();
         }
 
         private void OnManeuverUploadClick(
@@ -591,6 +774,7 @@ namespace KMC.MissionControl
         {
             try
             {
+                ManeuverRequestStore.Reset();
                 _receiver.Start();
                 _displayRefreshTimer.Start();
                 _connectionTimer.Start();

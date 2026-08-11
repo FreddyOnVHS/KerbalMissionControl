@@ -33,9 +33,6 @@ namespace KMC.Engine.Maneuver
         private ManeuverPlanModel _latest =
             new ManeuverPlanModel();
 
-        private ManeuverRequestModel _request =
-            ManeuverRequestModel.CreateDefault();
-
         private string _activePlanId =
             string.Empty;
 
@@ -71,22 +68,14 @@ namespace KMC.Engine.Maneuver
         public void SetRequest(
             ManeuverRequestModel request)
         {
-            lock (_syncRoot)
-            {
-                _request =
-                    ManeuverRequestModel.Clone(
-                        request);
-            }
+            ManeuverRequestStore.Set(
+                request);
         }
 
         public ManeuverRequestModel GetRequest()
         {
-            lock (_syncRoot)
-            {
-                return
-                    ManeuverRequestModel.Clone(
-                        _request);
-            }
+            return
+                ManeuverRequestStore.Get();
         }
 
         public void Update(
@@ -94,14 +83,8 @@ namespace KMC.Engine.Maneuver
             ManeuverEpochTelemetryModel epoch,
             DateTime receivedUtc)
         {
-            ManeuverRequestModel request;
-
-            lock (_syncRoot)
-            {
-                request =
-                    ManeuverRequestModel.Clone(
-                        _request);
-            }
+            ManeuverRequestModel request =
+                ManeuverRequestStore.Get();
 
             ManeuverPlanModel next =
                 _planner.Calculate(

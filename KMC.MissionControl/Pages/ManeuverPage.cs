@@ -9,11 +9,10 @@ using KMC.MissionControl.Rendering;
 namespace KMC.MissionControl.Pages
 {
     /// <summary>
-    /// Build 11.3 maneuver planning review / uplink / synchronization display.
+    /// Maneuver planning review / uplink / synchronization display.
     ///
-    /// This page consumes the Engine-owned ManeuverPlanModel plus KSP node
-    /// verification telemetry. It never performs or duplicates orbital /
-    /// maneuver calculations.
+    /// Build 13.1.1 prevents stale uplink state from a previous maneuver
+    /// from being shown for a newly computed unavailable plan.
     /// </summary>
     public sealed class ManeuverPage :
         IMissionPage,
@@ -69,6 +68,40 @@ namespace KMC.MissionControl.Pages
                     false);
 
                 return;
+            }
+
+            ManeuverUplinkStatusSnapshot uplink =
+                ManeuverUplinkStatusStore.GetLatest();
+
+            bool samePlan =
+                !string.IsNullOrWhiteSpace(plan.PlanId) &&
+                string.Equals(
+                    uplink.PlanId,
+                    plan.PlanId,
+                    StringComparison.Ordinal);
+
+            bool retrogradePending =
+                string.Equals(
+                    plan.Status,
+                    "RETROGRADE GUIDANCE PENDING",
+                    StringComparison.OrdinalIgnoreCase);
+
+            string displayedUplinkState;
+
+            if (!plan.Available)
+            {
+                displayedUplinkState =
+                    "INHIBITED";
+            }
+            else if (samePlan)
+            {
+                displayedUplinkState =
+                    Safe(uplink.State);
+            }
+            else
+            {
+                displayedUplinkState =
+                    "IDLE";
             }
 
             layout.Row(
@@ -133,21 +166,16 @@ namespace KMC.MissionControl.Pages
                 "PREDICTED ECC",
                 FormatRatio(plan.PredictedEccentricity));
 
-            ManeuverUplinkStatusSnapshot uplink =
-                ManeuverUplinkStatusStore.GetLatest();
-
             layout.Row(
                 "PREDICTED PERIOD",
                 FormatDuration(plan.PredictedPeriodSeconds),
                 "UPLINK STATUS",
-                Safe(uplink.State));
+                displayedUplinkState);
 
             bool currentNodeState =
-                uplink.NodeStateTelemetryAvailable &&
-                string.Equals(
-                    uplink.PlanId,
-                    plan.PlanId,
-                    StringComparison.Ordinal);
+                plan.Available &&
+                samePlan &&
+                uplink.NodeStateTelemetryAvailable;
 
             if (currentNodeState)
             {
@@ -189,14 +217,6 @@ namespace KMC.MissionControl.Pages
                 reviewRegion,
                 plan);
 
-            string footer;
-
-            bool samePlan =
-                string.Equals(
-                    uplink.PlanId,
-                    plan.PlanId,
-                    StringComparison.Ordinal);
-
             bool nodeVerified =
                 samePlan &&
                 string.Equals(
@@ -232,7 +252,25 @@ namespace KMC.MissionControl.Pages
                     "NODE LOADED",
                     StringComparison.OrdinalIgnoreCase);
 
-            if (nodeVerified)
+            string footer;
+
+            /*
+             * Build 13.1.1:
+             * Plan availability owns the uplink presentation.
+             * Do not let stale state from an older maneuver outrank a newly
+             * computed unavailable plan.
+             */
+            if (retrogradePending)
+            {
+                footer =
+                    "RETROGRADE GUIDANCE REQUIRED - UPLINK INHIBITED";
+            }
+            else if (!plan.Available)
+            {
+                footer =
+                    "PLAN NOT AVAILABLE - REVIEW ENGINE EVIDENCE";
+            }
+            else if (nodeVerified)
             {
                 footer =
                     "NODE VERIFIED - KSP MATCHES " +
@@ -272,15 +310,10 @@ namespace KMC.MissionControl.Pages
                 footer =
                     "WAITING FOR KSP UNIVERSAL TIME - UPLINK INHIBITED";
             }
-            else if (plan.Available)
-            {
-                footer =
-                    "PLAN READY - CLICK UPLOAD MNV";
-            }
             else
             {
                 footer =
-                    "PLAN NOT AVAILABLE - REVIEW ENGINE EVIDENCE";
+                    "PLAN READY - CLICK UPLOAD MNV";
             }
 
             bool healthyStatus =

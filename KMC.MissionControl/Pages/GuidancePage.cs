@@ -23,6 +23,7 @@ namespace KMC.MissionControl.Pages
         private const int Padding = 14;
         private const int PanelTitleHeight = 38;
         private const int InnerGap = 10;
+        private const double AlignmentDisplayToleranceDegrees = 2.0;
 
         public string Name
         {
@@ -308,7 +309,8 @@ namespace KMC.MissionControl.Pages
                 inner.Left,
                 inner.Right,
                 textY,
-                context.PhosphorColor);
+                GetAlignmentColor(
+                    guidance));
 
             textY += 32;
 
@@ -849,7 +851,7 @@ namespace KMC.MissionControl.Pages
                     bounds.Bottom - 12);
 
             Color color =
-                GetStatusColor(
+                GetCrewCommandColor(
                     guidance);
 
             using (SolidBrush brush =
@@ -1095,6 +1097,67 @@ namespace KMC.MissionControl.Pages
                     bounds,
                     format);
             }
+        }
+
+        private static Color GetAlignmentColor(
+            GuidanceSolutionModel guidance)
+        {
+            if (guidance == null ||
+                !guidance.ManeuverVectorAvailable ||
+                !IsFinite(
+                    guidance.AlignmentErrorDegrees))
+            {
+                return Color.Orange;
+            }
+
+            return
+                guidance.AlignmentErrorDegrees <=
+                    AlignmentDisplayToleranceDegrees
+                    ? Color.LimeGreen
+                    : Color.Red;
+        }
+
+        private static Color GetCrewCommandColor(
+            GuidanceSolutionModel guidance)
+        {
+            if (guidance == null)
+            {
+                return Color.Orange;
+            }
+
+            string command =
+                guidance.Command ??
+                string.Empty;
+
+            if (string.Equals(
+                    command,
+                    "ALIGN TO MANEUVER VECTOR",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Color.Red;
+            }
+
+            if (string.Equals(
+                    command,
+                    "HOLD MANEUVER VECTOR",
+                    StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(
+                    command,
+                    "IGNITION STANDBY",
+                    StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(
+                    command,
+                    "IGNITE / HOLD MANEUVER VECTOR",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return
+                    GetAlignmentColor(
+                        guidance);
+            }
+
+            return
+                GetStatusColor(
+                    guidance);
         }
 
         private static Color GetStatusColor(
