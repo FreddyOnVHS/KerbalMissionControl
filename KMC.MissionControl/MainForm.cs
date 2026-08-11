@@ -42,6 +42,7 @@ namespace KMC.MissionControl
         private readonly Label _displayRefreshLabel;
         private readonly ComboBox _maneuverTypeSelector;
         private readonly NumericUpDown _maneuverTargetKm;
+        private readonly NumericUpDown _maneuverNodeDelaySeconds;
         private readonly Button _maneuverComputeButton;
         private readonly Button _maneuverUploadButton;
         private readonly TrackBar _displayRefreshSlider;
@@ -79,6 +80,7 @@ namespace KMC.MissionControl
             _displayRefreshLabel = CreateDisplayRefreshLabel();
             _maneuverTypeSelector = CreateManeuverTypeSelector();
             _maneuverTargetKm = CreateManeuverTargetControl();
+            _maneuverNodeDelaySeconds = CreateManeuverNodeDelayControl();
             _maneuverComputeButton = CreateManeuverComputeButton();
             _maneuverUploadButton = CreateManeuverUploadButton();
             _displayRefreshSlider = CreateDisplayRefreshSlider();
@@ -247,7 +249,7 @@ namespace KMC.MissionControl
                     BackColor = ApolloTheme.WindowBackground,
                     Margin = Padding.Empty,
                     Padding = Padding.Empty,
-                    ColumnCount = 8,
+                    ColumnCount = 9,
                     RowCount = 1
                 };
 
@@ -265,6 +267,11 @@ namespace KMC.MissionControl
                 new ColumnStyle(
                     SizeType.Absolute,
                     125.0f));
+
+            headerLayout.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Absolute,
+                    110.0f));
 
             headerLayout.ColumnStyles.Add(
                 new ColumnStyle(
@@ -311,11 +318,12 @@ namespace KMC.MissionControl
             headerLayout.Controls.Add(titleLabel, 0, 0);
             headerLayout.Controls.Add(_maneuverTypeSelector, 1, 0);
             headerLayout.Controls.Add(_maneuverTargetKm, 2, 0);
-            headerLayout.Controls.Add(_maneuverComputeButton, 3, 0);
-            headerLayout.Controls.Add(_maneuverUploadButton, 4, 0);
-            headerLayout.Controls.Add(_displayRefreshLabel, 5, 0);
-            headerLayout.Controls.Add(_displayRefreshSlider, 6, 0);
-            headerLayout.Controls.Add(_connectionLabel, 7, 0);
+            headerLayout.Controls.Add(_maneuverNodeDelaySeconds, 3, 0);
+            headerLayout.Controls.Add(_maneuverComputeButton, 4, 0);
+            headerLayout.Controls.Add(_maneuverUploadButton, 5, 0);
+            headerLayout.Controls.Add(_displayRefreshLabel, 6, 0);
+            headerLayout.Controls.Add(_displayRefreshSlider, 7, 0);
+            headerLayout.Controls.Add(_connectionLabel, 8, 0);
 
             return headerLayout;
         }
@@ -366,6 +374,7 @@ namespace KMC.MissionControl
             selector.Items.Add("CIRCULARIZE AP");
             selector.Items.Add("SET PE @ AP");
             selector.Items.Add("SET AP @ PE");
+            selector.Items.Add("MANUAL PRO/RETRO");
             selector.SelectedIndex = 0;
 
             selector.SelectedIndexChanged +=
@@ -391,6 +400,28 @@ namespace KMC.MissionControl
                     ForeColor = Color.FromArgb(190, 255, 190),
                     Font = new Font("Consolas", 9.0f, FontStyle.Bold),
                     Visible = false,
+                    TabStop = false
+                };
+        }
+
+        private static NumericUpDown CreateManeuverNodeDelayControl()
+        {
+            return
+                new NumericUpDown
+                {
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(6, 9, 6, 9),
+                    DecimalPlaces = 0,
+                    Increment = 10.0M,
+                    Minimum = 10.0M,
+                    Maximum = 86400.0M,
+                    Value = 300.0M,
+                    ThousandsSeparator = true,
+                    BackColor = Color.FromArgb(35, 45, 40),
+                    ForeColor = Color.FromArgb(190, 255, 190),
+                    Font = new Font("Consolas", 9.0f, FontStyle.Bold),
+                    Visible = false,
+                    Enabled = false,
                     TabStop = false
                 };
         }
@@ -540,6 +571,9 @@ namespace KMC.MissionControl
             _maneuverTargetKm.Visible =
                 maneuverPage;
 
+            _maneuverNodeDelaySeconds.Visible =
+                maneuverPage;
+
             _maneuverComputeButton.Visible =
                 maneuverPage;
 
@@ -567,12 +601,56 @@ namespace KMC.MissionControl
                 return;
             }
 
-            bool targetRequired =
+            bool apsisTargetRequired =
                 _maneuverTypeSelector.SelectedIndex == 1 ||
                 _maneuverTypeSelector.SelectedIndex == 2;
 
+            bool manual =
+                _maneuverTypeSelector.SelectedIndex == 3;
+
             _maneuverTargetKm.Enabled =
-                targetRequired;
+                apsisTargetRequired ||
+                manual;
+
+            _maneuverNodeDelaySeconds.Enabled =
+                manual;
+
+            if (manual)
+            {
+                _maneuverTargetKm.Minimum =
+                    -5000.0M;
+
+                _maneuverTargetKm.Maximum =
+                    5000.0M;
+
+                _maneuverTargetKm.Increment =
+                    1.0M;
+
+                if (_maneuverTargetKm.Value == 0.0M ||
+                    Math.Abs(
+                        _maneuverTargetKm.Value) > 5000.0M)
+                {
+                    _maneuverTargetKm.Value =
+                        10.0M;
+                }
+            }
+            else
+            {
+                _maneuverTargetKm.Minimum =
+                    0.0M;
+
+                _maneuverTargetKm.Maximum =
+                    100000.0M;
+
+                _maneuverTargetKm.Increment =
+                    5.0M;
+
+                if (_maneuverTargetKm.Value < 0.0M)
+                {
+                    _maneuverTargetKm.Value =
+                        100.0M;
+                }
+            }
         }
 
         private void OnManeuverComputeClick(
@@ -593,6 +671,11 @@ namespace KMC.MissionControl
                         ManeuverRequestType.SetApoapsisAtPeriapsis;
                     break;
 
+                case 3:
+                    type =
+                        ManeuverRequestType.ManualProgradeRetrograde;
+                    break;
+
                 default:
                     type =
                         ManeuverRequestType.CircularizeAtApoapsis;
@@ -605,10 +688,25 @@ namespace KMC.MissionControl
                     Type = type,
                     TargetAltitudeMeters =
                         type ==
-                        ManeuverRequestType.CircularizeAtApoapsis
-                            ? double.NaN
-                            : (double)_maneuverTargetKm.Value *
-                              1000.0,
+                        ManeuverRequestType.SetPeriapsisAtApoapsis ||
+                        type ==
+                        ManeuverRequestType.SetApoapsisAtPeriapsis
+                            ? (double)_maneuverTargetKm.Value *
+                              1000.0
+                            : double.NaN,
+
+                    ManualProgradeDeltaVMetersPerSecond =
+                        type ==
+                        ManeuverRequestType.ManualProgradeRetrograde
+                            ? (double)_maneuverTargetKm.Value
+                            : double.NaN,
+
+                    NodeDelaySeconds =
+                        type ==
+                        ManeuverRequestType.ManualProgradeRetrograde
+                            ? (double)_maneuverNodeDelaySeconds.Value
+                            : double.NaN,
+
                     RequestedUtc =
                         DateTime.UtcNow
                 });

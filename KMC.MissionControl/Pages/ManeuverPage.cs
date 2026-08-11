@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using KMC.Engine.Analysis;
+using KMC.Engine.Guidance;
 using KMC.Engine.Maneuver;
 using KMC.MissionControl.Engineering;
 using KMC.MissionControl.Models;
@@ -49,8 +50,12 @@ namespace KMC.MissionControl.Pages
                 Name,
                 "FDO / REVIEW");
 
-            ManeuverPlanModel plan =
-                GetLatestPlan();
+            ManeuverPlanModel plan;
+            GuidanceSolutionModel guidance;
+
+            GetLatestManeuverState(
+                out plan,
+                out guidance);
 
             if (plan == null)
             {
@@ -92,9 +97,38 @@ namespace KMC.MissionControl.Pages
                     "MANEUVER WINDOW MISSED",
                     StringComparison.OrdinalIgnoreCase);
 
+            /*
+             * Build 13.3.1:
+             * A successfully completed manual burn owns the post-burn MNV
+             * presentation even though the planning clock has naturally moved
+             * past the original node epoch.
+             */
+            bool manualManeuverComplete =
+                guidance != null &&
+                guidance.BurnComplete &&
+                string.Equals(
+                    guidance.PlanId,
+                    plan.PlanId,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    guidance.PostBurnResult,
+                    "DV COMPLETE",
+                    StringComparison.OrdinalIgnoreCase);
+
             string displayedUplinkState;
 
-            if (!plan.Available)
+            if (manualManeuverComplete &&
+                samePlan)
+            {
+                displayedUplinkState =
+                    Safe(uplink.State);
+            }
+            else if (manualManeuverComplete)
+            {
+                displayedUplinkState =
+                    "COMPLETED";
+            }
+            else if (!plan.Available)
             {
                 displayedUplinkState =
                     "INHIBITED";
@@ -110,17 +144,24 @@ namespace KMC.MissionControl.Pages
                     "IDLE";
             }
 
+            string displayedPlanStatus =
+                manualManeuverComplete
+                    ? "MANEUVER COMPLETE"
+                    : Safe(plan.Status);
+
             layout.Row(
                 "PLAN ID",
                 Safe(plan.PlanId),
                 "STATUS",
-                Safe(plan.Status));
+                displayedPlanStatus);
 
             layout.Row(
                 "OBJECTIVE",
                 Safe(plan.Objective),
                 "AVAILABLE",
-                plan.Available ? "YES" : "NO");
+                manualManeuverComplete
+                    ? "NO"
+                    : plan.Available ? "YES" : "NO");
 
             layout.Space();
 
@@ -179,7 +220,8 @@ namespace KMC.MissionControl.Pages
                 displayedUplinkState);
 
             bool currentNodeState =
-                plan.Available &&
+                (plan.Available ||
+                 manualManeuverComplete) &&
                 samePlan &&
                 uplink.NodeStateTelemetryAvailable;
 
@@ -266,7 +308,14 @@ namespace KMC.MissionControl.Pages
              * Do not let stale state from an older maneuver outrank a newly
              * computed unavailable plan.
              */
-            if (maneuverWindowMissed)
+            if (manualManeuverComplete)
+            {
+                footer =
+                    nodeRemoved
+                        ? "MANUAL MANEUVER COMPLETE - NODE REMOVED"
+                        : "MANUAL MANEUVER COMPLETE - REMOVE NODE";
+            }
+            else if (maneuverWindowMissed)
             {
                 footer =
                     "MANEUVER WINDOW MISSED - CLICK COMPUTE TO REPLAN";
@@ -328,11 +377,12 @@ namespace KMC.MissionControl.Pages
             }
 
             bool healthyStatus =
-                plan.Available &&
-                plan.NodeUniversalTimeAvailable &&
-                !crewModified &&
-                !nodeRemoved &&
-                !vesselNotActive;
+                manualManeuverComplete ||
+                (plan.Available &&
+                 plan.NodeUniversalTimeAvailable &&
+                 !crewModified &&
+                 !nodeRemoved &&
+                 !vesselNotActive);
 
             DrawReviewBand(
                 context,
@@ -340,19 +390,30 @@ namespace KMC.MissionControl.Pages
                 healthyStatus);
         }
 
-        private static ManeuverPlanModel GetLatestPlan()
+        private static void GetLatestManeuverState(
+            out ManeuverPlanModel plan,
+            out GuidanceSolutionModel guidance)
         {
+            plan =
+                null;
+
+            guidance =
+                null;
+
             AnalysisPipelineResult result;
 
             if (!EngineeringSnapshotStore.TryGetLatest(out result) ||
                 result == null ||
-                result.Snapshot == null ||
-                result.Snapshot.ManeuverPlan == null)
+                result.Snapshot == null)
             {
-                return null;
+                return;
             }
 
-            return result.Snapshot.ManeuverPlan;
+            plan =
+                result.Snapshot.ManeuverPlan;
+
+            guidance =
+                result.Snapshot.Guidance;
         }
 
         private static void DrawEvidence(

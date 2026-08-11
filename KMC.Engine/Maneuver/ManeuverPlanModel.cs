@@ -31,6 +31,12 @@ namespace KMC.Engine.Maneuver
 
         public bool Available { get; internal set; }
 
+        /// <summary>
+        /// True when post-burn verification has a specific predicted orbit
+        /// target to compare against. Manual signed-DV maneuvers set this false.
+        /// </summary>
+        public bool OrbitTargetVerificationRequired { get; internal set; }
+
         public string PlanId { get; internal set; }
 
         public string VesselId { get; internal set; }
@@ -92,6 +98,8 @@ namespace KMC.Engine.Maneuver
             }
 
             clone.Available = source.Available;
+            clone.OrbitTargetVerificationRequired =
+                source.OrbitTargetVerificationRequired;
             clone.PlanId = source.PlanId;
             clone.VesselId = source.VesselId;
             clone.Objective = source.Objective;

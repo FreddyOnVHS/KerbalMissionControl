@@ -121,11 +121,33 @@ namespace KMC.Engine.Maneuver
                     !string.IsNullOrWhiteSpace(
                         _activePlanId);
 
+                bool manualEpochAnchored =
+                    request != null &&
+                    request.Type ==
+                        ManeuverRequestType.ManualProgradeRetrograde &&
+                    IsFinite(
+                        _activeNodeUtAnchor);
+
                 if (activePlanExists &&
                     !requestChanged &&
-                    !CandidateMatchesActivePlan(
-                        candidate,
-                        orbit))
+                    manualEpochAnchored)
+                {
+                    /*
+                     * Build 13.3:
+                     * Manual T+ is relative to the COMPUTE event, not a
+                     * continuously moving "now". Once genuine UT is anchored,
+                     * hold that exact node epoch until crew re-COMPUTEs.
+                     */
+                    next =
+                        BuildHeldActivePlan(
+                            orbit,
+                            epoch);
+                }
+                else if (activePlanExists &&
+                         !requestChanged &&
+                         !CandidateMatchesActivePlan(
+                             candidate,
+                             orbit))
                 {
                     /*
                      * Build 13.2.1:

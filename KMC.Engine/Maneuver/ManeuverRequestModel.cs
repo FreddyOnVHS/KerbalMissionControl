@@ -19,6 +19,12 @@ namespace KMC.Engine.Maneuver
             TargetAltitudeMeters =
                 double.NaN;
 
+            ManualProgradeDeltaVMetersPerSecond =
+                double.NaN;
+
+            NodeDelaySeconds =
+                double.NaN;
+
             RequestedUtc =
                 DateTime.MinValue;
         }
@@ -31,6 +37,19 @@ namespace KMC.Engine.Maneuver
         /// </summary>
         public double TargetAltitudeMeters { get; set; }
 
+        /// <summary>
+        /// Crew-entered signed prograde-axis Delta-V.
+        /// Positive = orbital prograde. Negative = orbital retrograde.
+        /// Used only by ManualProgradeRetrograde.
+        /// </summary>
+        public double ManualProgradeDeltaVMetersPerSecond { get; set; }
+
+        /// <summary>
+        /// Relative maneuver-node delay from the current verified KSP epoch.
+        /// Used only by ManualProgradeRetrograde.
+        /// </summary>
+        public double NodeDelaySeconds { get; set; }
+
         public DateTime RequestedUtc { get; set; }
 
         public static ManeuverRequestModel CreateDefault()
@@ -42,6 +61,12 @@ namespace KMC.Engine.Maneuver
                         ManeuverRequestType.CircularizeAtApoapsis,
 
                     TargetAltitudeMeters =
+                        double.NaN,
+
+                    ManualProgradeDeltaVMetersPerSecond =
+                        double.NaN,
+
+                    NodeDelaySeconds =
                         double.NaN,
 
                     RequestedUtc =
@@ -65,6 +90,12 @@ namespace KMC.Engine.Maneuver
 
                     TargetAltitudeMeters =
                         source.TargetAltitudeMeters,
+
+                    ManualProgradeDeltaVMetersPerSecond =
+                        source.ManualProgradeDeltaVMetersPerSecond,
+
+                    NodeDelaySeconds =
+                        source.NodeDelaySeconds,
 
                     RequestedUtc =
                         source.RequestedUtc
@@ -120,6 +151,7 @@ namespace KMC.Engine.Maneuver
     {
         CircularizeAtApoapsis = 0,
         SetPeriapsisAtApoapsis = 1,
-        SetApoapsisAtPeriapsis = 2
+        SetApoapsisAtPeriapsis = 2,
+        ManualProgradeRetrograde = 3
     }
 }

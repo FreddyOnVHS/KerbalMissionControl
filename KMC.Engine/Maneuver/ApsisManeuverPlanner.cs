@@ -77,6 +77,16 @@ namespace KMC.Engine.Maneuver
                 return plan;
             }
 
+            if (effectiveRequest.Type ==
+                ManeuverRequestType.ManualProgradeRetrograde)
+            {
+                return
+                    CalculateManualProgradeRetrograde(
+                        current,
+                        epoch,
+                        effectiveRequest);
+            }
+
             double currentSemiMajorAxis =
                 ResolveCurrentSemiMajorAxis(
                     current);
@@ -355,6 +365,9 @@ namespace KMC.Engine.Maneuver
             plan.Available =
                 true;
 
+            plan.OrbitTargetVerificationRequired =
+                true;
+
             plan.NodeUniversalTimeAvailable =
                 false;
 
@@ -459,6 +472,206 @@ namespace KMC.Engine.Maneuver
                 plan.Evidence.Add(
                     "Build 13.2 supports signed prograde/retrograde apsis execution through verified GUID/FDAI guidance.");
             }
+
+            return plan;
+        }
+
+        private ManeuverPlanModel CalculateManualProgradeRetrograde(
+            OrbitTelemetryState current,
+            ManeuverEpochTelemetryModel epoch,
+            ManeuverRequestModel request)
+        {
+            ManeuverPlanModel plan =
+                new ManeuverPlanModel
+                {
+                    Objective =
+                        BuildObjective(
+                            request),
+
+                    Status =
+                        "PLAN UNAVAILABLE"
+                };
+
+            double signedDeltaV =
+                request.ManualProgradeDeltaVMetersPerSecond;
+
+            double nodeDelay =
+                request.NodeDelaySeconds;
+
+            if (!IsFinite(
+                    signedDeltaV) ||
+                Math.Abs(
+                    signedDeltaV) <
+                    MinimumUsefulDeltaV)
+            {
+                plan.Status =
+                    "MANUAL DELTA V REQUIRED";
+
+                plan.Evidence.Add(
+                    "Manual prograde/retrograde requests require a non-zero signed Delta-V.");
+
+                return plan;
+            }
+
+            if (!IsFinite(
+                    nodeDelay) ||
+                nodeDelay < 10.0 ||
+                nodeDelay > 86400.0)
+            {
+                plan.Status =
+                    "INVALID MANUAL NODE TIME";
+
+                plan.Evidence.Add(
+                    "Manual maneuver node delay must be between 10 seconds and 24 hours.");
+
+                return plan;
+            }
+
+            /*
+             * A relative T+ node must be anchored to a genuine KSP epoch.
+             * Do not accept a manual plan while KMC-EPOCH1 is unavailable,
+             * otherwise the requested node time would be ambiguous.
+             */
+            if (!IsUsableEpoch(
+                    epoch,
+                    current))
+            {
+                plan.Status =
+                    "WAITING FOR KSP UNIVERSAL TIME";
+
+                plan.ProgradeDeltaVMetersPerSecond =
+                    signedDeltaV;
+
+                plan.NormalDeltaVMetersPerSecond =
+                    0.0;
+
+                plan.RadialDeltaVMetersPerSecond =
+                    0.0;
+
+                plan.TotalDeltaVMetersPerSecond =
+                    Math.Abs(
+                        signedDeltaV);
+
+                plan.Evidence.Add(
+                    "Manual relative-time maneuver requires matched KMC-EPOCH1 telemetry before its node epoch can be anchored.");
+
+                return plan;
+            }
+
+            double totalDeltaV =
+                Math.Abs(
+                    signedDeltaV);
+
+            double burnDuration =
+                EstimateBurnDuration(
+                    current,
+                    totalDeltaV);
+
+            if (!IsFinite(
+                    burnDuration))
+            {
+                plan.Status =
+                    "BURN ESTIMATE UNAVAILABLE";
+
+                plan.Evidence.Add(
+                    "Mass/thrust telemetry cannot produce a burn-duration estimate.");
+
+                return plan;
+            }
+
+            double nodeMissionTime =
+                current.MissionTimeSeconds +
+                nodeDelay;
+
+            double nodeUniversalTime =
+                epoch.UniversalTimeSeconds +
+                nodeDelay;
+
+            double ignitionLead =
+                burnDuration /
+                2.0;
+
+            plan.Available =
+                true;
+
+            plan.OrbitTargetVerificationRequired =
+                false;
+
+            plan.VesselId =
+                epoch.VesselId ??
+                string.Empty;
+
+            plan.NodeUniversalTimeAvailable =
+                true;
+
+            plan.NodeUniversalTimeSeconds =
+                nodeUniversalTime;
+
+            plan.NodeMissionTimeSeconds =
+                nodeMissionTime;
+
+            plan.TimeToNodeSeconds =
+                nodeDelay;
+
+            plan.ProgradeDeltaVMetersPerSecond =
+                signedDeltaV;
+
+            plan.NormalDeltaVMetersPerSecond =
+                0.0;
+
+            plan.RadialDeltaVMetersPerSecond =
+                0.0;
+
+            plan.TotalDeltaVMetersPerSecond =
+                totalDeltaV;
+
+            plan.EstimatedBurnDurationSeconds =
+                burnDuration;
+
+            plan.IgnitionLeadSeconds =
+                ignitionLead;
+
+            plan.IgnitionMissionTimeSeconds =
+                nodeMissionTime -
+                ignitionLead;
+
+            /*
+             * Build 13.3 intentionally does not claim an arbitrary-node
+             * target orbit prediction. That requires orbital propagation to
+             * the future true anomaly and is deferred to a later milestone.
+             */
+            plan.PredictedApoapsisMeters =
+                double.NaN;
+
+            plan.PredictedPeriapsisMeters =
+                double.NaN;
+
+            plan.PredictedInclinationDegrees =
+                double.NaN;
+
+            plan.PredictedEccentricity =
+                double.NaN;
+
+            plan.PredictedPeriodSeconds =
+                double.NaN;
+
+            plan.Status =
+                "PLAN VALID";
+
+            plan.Evidence.Add(
+                "Crew-entered signed prograde-axis Delta-V; positive is true orbital prograde and negative is true orbital retrograde.");
+
+            plan.Evidence.Add(
+                "Node epoch is anchored to genuine KSP Universal Time at COMPUTE plus the requested T+ delay.");
+
+            plan.Evidence.Add(
+                "Manual node uses the existing KMC-MNV1 signed prograde uplink axis; normal and radial Delta-V remain zero.");
+
+            plan.Evidence.Add(
+                "Build 13.3 does not fabricate an arbitrary-node target orbit; post-burn verification confirms maneuver Delta-V completion instead.");
+
+            plan.Evidence.Add(
+                "Burn duration uses absolute Delta-V, vessel mass, maximum thrust, and average specific impulse.");
 
             return plan;
         }
@@ -583,6 +796,26 @@ namespace KMC.Engine.Maneuver
                                   request.TargetAltitudeMeters) +
                               " AT PERIAPSIS"
                             : "SET APOAPSIS AT PERIAPSIS";
+
+                case ManeuverRequestType.ManualProgradeRetrograde:
+                    if (!IsFinite(
+                            request.ManualProgradeDeltaVMetersPerSecond))
+                    {
+                        return
+                            "MANUAL PROGRADE / RETROGRADE";
+                    }
+
+                    return
+                        request.ManualProgradeDeltaVMetersPerSecond >= 0.0
+                            ? "MANUAL PROGRADE " +
+                              request.ManualProgradeDeltaVMetersPerSecond
+                                  .ToString("+0.00;-0.00;0.00") +
+                              " M/S"
+                            : "MANUAL RETROGRADE " +
+                              Math.Abs(
+                                  request.ManualProgradeDeltaVMetersPerSecond)
+                                  .ToString("0.00") +
+                              " M/S";
 
                 default:
                     return

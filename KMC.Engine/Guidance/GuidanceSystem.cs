@@ -73,6 +73,7 @@ namespace KMC.Engine.Guidance
         private bool _burnActive;
         private bool _burnComplete;
         private bool _burnRetrograde;
+        private bool _burnRequiresOrbitTargetVerification;
 
         private bool _cutoffCommanded;
         private DateTime _cutoffCommandedUtc =
@@ -1137,6 +1138,9 @@ namespace KMC.Engine.Guidance
                     plan.ProgradeDeltaVMetersPerSecond) &&
                 plan.ProgradeDeltaVMetersPerSecond < 0.0;
 
+            _burnRequiresOrbitTargetVerification =
+                plan.OrbitTargetVerificationRequired;
+
             _cutoffCommanded =
                 false;
 
@@ -1236,6 +1240,45 @@ namespace KMC.Engine.Guidance
 
                 solution.PostBurnResult =
                     "ORBIT SETTLING";
+
+                return;
+            }
+
+            bool completedNodeRemoved =
+                nodeState != null &&
+                nodeState.Available &&
+                string.Equals(
+                    nodeState.PlanId ?? string.Empty,
+                    _burnPlanId,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    nodeState.State ?? string.Empty,
+                    "NODE REMOVED",
+                    StringComparison.Ordinal);
+
+            if (!_burnRequiresOrbitTargetVerification)
+            {
+                /*
+                 * Build 13.3 manual maneuvers have no claimed target orbit.
+                 * The verified result is successful delivery of the reviewed
+                 * signed Delta-V followed by actual thrust zero.
+                 */
+                solution.PostBurnVerificationAvailable =
+                    true;
+
+                solution.ReacquisitionReady =
+                    completedNodeRemoved;
+
+                solution.PostBurnResult =
+                    "DV COMPLETE";
+
+                solution.Status =
+                    "MANEUVER COMPLETE";
+
+                solution.Command =
+                    completedNodeRemoved
+                        ? "REACQUIRING NEXT MANEUVER"
+                        : "MANUAL MANEUVER COMPLETE / REMOVE NODE";
 
                 return;
             }
@@ -1349,18 +1392,6 @@ namespace KMC.Engine.Guidance
                     eccentricityError,
                     AcceptableEccentricityLimit);
 
-            bool completedNodeRemoved =
-                nodeState != null &&
-                nodeState.Available &&
-                string.Equals(
-                    nodeState.PlanId ?? string.Empty,
-                    _burnPlanId,
-                    StringComparison.Ordinal) &&
-                string.Equals(
-                    nodeState.State ?? string.Empty,
-                    "NODE REMOVED",
-                    StringComparison.Ordinal);
-
             solution.ReacquisitionReady =
                 completedNodeRemoved;
 
@@ -1469,6 +1500,9 @@ namespace KMC.Engine.Guidance
                 double.NaN;
 
             _burnRetrograde =
+                false;
+
+            _burnRequiresOrbitTargetVerification =
                 false;
 
             _cutoffCommanded =
