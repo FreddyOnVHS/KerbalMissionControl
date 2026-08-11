@@ -37,9 +37,12 @@ namespace KMC.Engine.Guidance
                 Detail = Detail ?? string.Empty,
                 NodeExists = NodeExists,
                 NodeUniversalTimeSeconds = NodeUniversalTimeSeconds,
-                ProgradeDeltaVMetersPerSecond = ProgradeDeltaVMetersPerSecond,
-                NormalDeltaVMetersPerSecond = NormalDeltaVMetersPerSecond,
-                RadialDeltaVMetersPerSecond = RadialDeltaVMetersPerSecond,
+                ProgradeDeltaVMetersPerSecond =
+                    ProgradeDeltaVMetersPerSecond,
+                NormalDeltaVMetersPerSecond =
+                    NormalDeltaVMetersPerSecond,
+                RadialDeltaVMetersPerSecond =
+                    RadialDeltaVMetersPerSecond,
                 ReceivedUtc = ReceivedUtc
             };
         }
@@ -47,18 +50,23 @@ namespace KMC.Engine.Guidance
 
     public static class GuidanceNodeStateStore
     {
-        private static readonly object SyncRoot = new object();
-        private static GuidanceNodeStateModel _latest = new GuidanceNodeStateModel();
+        private static readonly object SyncRoot =
+            new object();
+
+        private static GuidanceNodeStateModel _latest =
+            new GuidanceNodeStateModel();
 
         public static void Clear()
         {
             lock (SyncRoot)
             {
-                _latest = new GuidanceNodeStateModel();
+                _latest =
+                    new GuidanceNodeStateModel();
             }
         }
 
-        public static void Publish(GuidanceNodeStateModel state)
+        public static void Publish(
+            GuidanceNodeStateModel state)
         {
             if (state == null)
             {
@@ -67,7 +75,8 @@ namespace KMC.Engine.Guidance
 
             lock (SyncRoot)
             {
-                _latest = state.Clone();
+                _latest =
+                    state.Clone();
             }
         }
 
@@ -75,9 +84,10 @@ namespace KMC.Engine.Guidance
         {
             lock (SyncRoot)
             {
-                return _latest != null
-                    ? _latest.Clone()
-                    : new GuidanceNodeStateModel();
+                return
+                    _latest != null
+                        ? _latest.Clone()
+                        : new GuidanceNodeStateModel();
             }
         }
     }
@@ -95,6 +105,7 @@ namespace KMC.Engine.Guidance
             Evidence = string.Empty;
             NodeState = "UNAVAILABLE";
             NodeDetail = string.Empty;
+
             AlignmentErrorDegrees = double.NaN;
             LateralErrorDegrees = double.NaN;
             VerticalErrorDegrees = double.NaN;
@@ -103,6 +114,12 @@ namespace KMC.Engine.Guidance
             PlannedDeltaVMetersPerSecond = double.NaN;
             ActualNodeDeltaVMetersPerSecond = double.NaN;
             BurnDurationSeconds = double.NaN;
+
+            DeliveredDeltaVMetersPerSecond = double.NaN;
+            RemainingDeltaVMetersPerSecond = double.NaN;
+            BurnProgressPercent = double.NaN;
+            LiveThrustKilonewtons = double.NaN;
+            LiveAccelerationMetersPerSecondSquared = double.NaN;
         }
 
         public bool Available { get; internal set; }
@@ -130,10 +147,20 @@ namespace KMC.Engine.Guidance
         public double AlignmentErrorDegrees { get; internal set; }
         public double LateralErrorDegrees { get; internal set; }
         public double VerticalErrorDegrees { get; internal set; }
+
         public double TimeToNodeSeconds { get; internal set; }
         public double TimeToIgnitionSeconds { get; internal set; }
         public double PlannedDeltaVMetersPerSecond { get; internal set; }
         public double BurnDurationSeconds { get; internal set; }
+
+        public bool BurnActive { get; internal set; }
+        public bool BurnComplete { get; internal set; }
+        public bool ProducingThrust { get; internal set; }
+        public double DeliveredDeltaVMetersPerSecond { get; internal set; }
+        public double RemainingDeltaVMetersPerSecond { get; internal set; }
+        public double BurnProgressPercent { get; internal set; }
+        public double LiveThrustKilonewtons { get; internal set; }
+        public double LiveAccelerationMetersPerSecondSquared { get; internal set; }
 
         internal GuidanceSolutionModel Clone()
         {
@@ -147,24 +174,84 @@ namespace KMC.Engine.Guidance
                 ThrottleAdvisory = ThrottleAdvisory,
                 Status = Status,
                 Evidence = Evidence,
-                NodeVerificationAvailable = NodeVerificationAvailable,
-                NodeVerified = NodeVerified,
-                ExecutionAuthorized = ExecutionAuthorized,
-                NodeState = NodeState,
-                NodeDetail = NodeDetail,
-                NodeExists = NodeExists,
-                ActualNodeDeltaVMetersPerSecond = ActualNodeDeltaVMetersPerSecond,
-                ManeuverVectorAvailable = ManeuverVectorAvailable,
-                ManeuverRightComponent = ManeuverRightComponent,
-                ManeuverNoseComponent = ManeuverNoseComponent,
-                ManeuverReferenceForwardComponent = ManeuverReferenceForwardComponent,
-                AlignmentErrorDegrees = AlignmentErrorDegrees,
-                LateralErrorDegrees = LateralErrorDegrees,
-                VerticalErrorDegrees = VerticalErrorDegrees,
-                TimeToNodeSeconds = TimeToNodeSeconds,
-                TimeToIgnitionSeconds = TimeToIgnitionSeconds,
-                PlannedDeltaVMetersPerSecond = PlannedDeltaVMetersPerSecond,
-                BurnDurationSeconds = BurnDurationSeconds
+
+                NodeVerificationAvailable =
+                    NodeVerificationAvailable,
+
+                NodeVerified =
+                    NodeVerified,
+
+                ExecutionAuthorized =
+                    ExecutionAuthorized,
+
+                NodeState =
+                    NodeState,
+
+                NodeDetail =
+                    NodeDetail,
+
+                NodeExists =
+                    NodeExists,
+
+                ActualNodeDeltaVMetersPerSecond =
+                    ActualNodeDeltaVMetersPerSecond,
+
+                ManeuverVectorAvailable =
+                    ManeuverVectorAvailable,
+
+                ManeuverRightComponent =
+                    ManeuverRightComponent,
+
+                ManeuverNoseComponent =
+                    ManeuverNoseComponent,
+
+                ManeuverReferenceForwardComponent =
+                    ManeuverReferenceForwardComponent,
+
+                AlignmentErrorDegrees =
+                    AlignmentErrorDegrees,
+
+                LateralErrorDegrees =
+                    LateralErrorDegrees,
+
+                VerticalErrorDegrees =
+                    VerticalErrorDegrees,
+
+                TimeToNodeSeconds =
+                    TimeToNodeSeconds,
+
+                TimeToIgnitionSeconds =
+                    TimeToIgnitionSeconds,
+
+                PlannedDeltaVMetersPerSecond =
+                    PlannedDeltaVMetersPerSecond,
+
+                BurnDurationSeconds =
+                    BurnDurationSeconds,
+
+                BurnActive =
+                    BurnActive,
+
+                BurnComplete =
+                    BurnComplete,
+
+                ProducingThrust =
+                    ProducingThrust,
+
+                DeliveredDeltaVMetersPerSecond =
+                    DeliveredDeltaVMetersPerSecond,
+
+                RemainingDeltaVMetersPerSecond =
+                    RemainingDeltaVMetersPerSecond,
+
+                BurnProgressPercent =
+                    BurnProgressPercent,
+
+                LiveThrustKilonewtons =
+                    LiveThrustKilonewtons,
+
+                LiveAccelerationMetersPerSecondSquared =
+                    LiveAccelerationMetersPerSecondSquared
             };
         }
     }

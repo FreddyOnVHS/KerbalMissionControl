@@ -332,6 +332,7 @@ namespace KMC.Engine
             _guidanceSystem.Update(
                 result.Snapshot.Orbit,
                 result.Snapshot.ManeuverPlan,
+                telemetryPacket as KMC.Shared.TelemetryPacket,
                 receivedUtc);
 
             result.Snapshot.Guidance =
