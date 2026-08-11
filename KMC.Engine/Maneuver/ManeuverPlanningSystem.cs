@@ -62,6 +62,11 @@ namespace KMC.Engine.Maneuver
 
         private int _planSequence;
 
+        private DateTime _activeRequestUtc =
+            DateTime.MinValue;
+
+        private ManeuverPlanModel _activePlanSnapshot;
+
         private DateTime _lastDiagnosticUtc =
             DateTime.MinValue;
 
@@ -86,17 +91,81 @@ namespace KMC.Engine.Maneuver
             ManeuverRequestModel request =
                 ManeuverRequestStore.Get();
 
-            ManeuverPlanModel next =
+            bool requestChanged =
+                HasRequestChanged(
+                    request);
+
+            if (requestChanged)
+            {
+                ResetActivePlanIdentity();
+
+                _activeRequestUtc =
+                    request != null
+                        ? request.RequestedUtc
+                        : DateTime.MinValue;
+            }
+
+            ManeuverPlanModel candidate =
                 _planner.Calculate(
                     orbit,
                     epoch,
                     request);
 
-            if (next.Available)
+            ManeuverPlanModel next =
+                candidate;
+
+            if (candidate.Available)
             {
-                AssignStablePlanId(
-                    next,
-                    orbit);
+                bool activePlanExists =
+                    _activePlanSnapshot != null &&
+                    !string.IsNullOrWhiteSpace(
+                        _activePlanId);
+
+                if (activePlanExists &&
+                    !requestChanged &&
+                    !CandidateMatchesActivePlan(
+                        candidate,
+                        orbit))
+                {
+                    /*
+                     * Build 13.2.1:
+                     * Do not silently roll a reviewed maneuver forward to the
+                     * next apsis / next orbit. Hold the original accepted
+                     * maneuver until the crew explicitly presses COMPUTE.
+                     */
+                    next =
+                        BuildHeldActivePlan(
+                            orbit,
+                            epoch);
+                }
+                else
+                {
+                    AssignStablePlanId(
+                        candidate,
+                        orbit);
+
+                    _activePlanSnapshot =
+                        ManeuverPlanModel.Clone(
+                            candidate);
+
+                    next =
+                        candidate;
+                }
+            }
+            else if (_activePlanSnapshot != null &&
+                     !requestChanged &&
+                     CurrentVesselMatchesActivePlan(
+                         orbit))
+            {
+                /*
+                 * Preserve the reviewed plan through transient planner
+                 * unavailability. The held plan remains tied to its original
+                 * immutable node epoch.
+                 */
+                next =
+                    BuildHeldActivePlan(
+                        orbit,
+                        epoch);
             }
 
             lock (_syncRoot)
@@ -119,6 +188,321 @@ namespace KMC.Engine.Maneuver
                     ManeuverPlanModel.Clone(
                         _latest);
             }
+        }
+
+        private bool HasRequestChanged(
+            ManeuverRequestModel request)
+        {
+            DateTime requestedUtc =
+                request != null
+                    ? request.RequestedUtc
+                    : DateTime.MinValue;
+
+            return
+                requestedUtc !=
+                _activeRequestUtc;
+        }
+
+        private void ResetActivePlanIdentity()
+        {
+            _activePlanId =
+                string.Empty;
+
+            _activeVesselId =
+                string.Empty;
+
+            _activeVesselName =
+                string.Empty;
+
+            _activeObjective =
+                string.Empty;
+
+            _activeNodeUtAnchor =
+                double.NaN;
+
+            _activeNodeMissionTimeAnchor =
+                double.NaN;
+
+            _activeProgradeDeltaV =
+                double.NaN;
+
+            _activeNormalDeltaV =
+                double.NaN;
+
+            _activeRadialDeltaV =
+                double.NaN;
+
+            _activePlanSnapshot =
+                null;
+        }
+
+        private bool CandidateMatchesActivePlan(
+            ManeuverPlanModel plan,
+            OrbitModel orbit)
+        {
+            if (plan == null ||
+                string.IsNullOrWhiteSpace(
+                    _activePlanId))
+            {
+                return false;
+            }
+
+            string candidateVesselId =
+                plan.VesselId ??
+                string.Empty;
+
+            string candidateVesselName =
+                orbit != null &&
+                orbit.Current != null
+                    ? orbit.Current.VesselName ??
+                      string.Empty
+                    : string.Empty;
+
+            bool vesselMatches;
+
+            if (!string.IsNullOrWhiteSpace(
+                    candidateVesselId) &&
+                !string.IsNullOrWhiteSpace(
+                    _activeVesselId))
+            {
+                vesselMatches =
+                    string.Equals(
+                        candidateVesselId,
+                        _activeVesselId,
+                        StringComparison.Ordinal);
+            }
+            else
+            {
+                vesselMatches =
+                    !string.IsNullOrWhiteSpace(
+                        candidateVesselName) &&
+                    !string.IsNullOrWhiteSpace(
+                        _activeVesselName) &&
+                    string.Equals(
+                        candidateVesselName,
+                        _activeVesselName,
+                        StringComparison.Ordinal);
+            }
+
+            bool objectiveMatches =
+                string.Equals(
+                    plan.Objective ??
+                    string.Empty,
+                    _activeObjective,
+                    StringComparison.Ordinal);
+
+            bool deltaVMatches =
+                IsWithin(
+                    plan.ProgradeDeltaVMetersPerSecond,
+                    _activeProgradeDeltaV,
+                    DeltaVIdentityToleranceMetersPerSecond) &&
+                IsWithin(
+                    plan.NormalDeltaVMetersPerSecond,
+                    _activeNormalDeltaV,
+                    DeltaVIdentityToleranceMetersPerSecond) &&
+                IsWithin(
+                    plan.RadialDeltaVMetersPerSecond,
+                    _activeRadialDeltaV,
+                    DeltaVIdentityToleranceMetersPerSecond);
+
+            bool epochMatches =
+                false;
+
+            if (plan.NodeUniversalTimeAvailable &&
+                IsFinite(
+                    plan.NodeUniversalTimeSeconds) &&
+                IsFinite(
+                    _activeNodeUtAnchor))
+            {
+                epochMatches =
+                    Math.Abs(
+                        plan.NodeUniversalTimeSeconds -
+                        _activeNodeUtAnchor) <=
+                    NodeUtAnchorToleranceSeconds;
+            }
+            else if (IsFinite(
+                         plan.NodeMissionTimeSeconds) &&
+                     IsFinite(
+                         _activeNodeMissionTimeAnchor))
+            {
+                epochMatches =
+                    Math.Abs(
+                        plan.NodeMissionTimeSeconds -
+                        _activeNodeMissionTimeAnchor) <=
+                    NodeMetFallbackToleranceSeconds;
+            }
+
+            return
+                vesselMatches &&
+                objectiveMatches &&
+                deltaVMatches &&
+                epochMatches;
+        }
+
+        private bool CurrentVesselMatchesActivePlan(
+            OrbitModel orbit)
+        {
+            string currentVesselName =
+                orbit != null &&
+                orbit.Current != null
+                    ? orbit.Current.VesselName ??
+                      string.Empty
+                    : string.Empty;
+
+            return
+                !string.IsNullOrWhiteSpace(
+                    currentVesselName) &&
+                !string.IsNullOrWhiteSpace(
+                    _activeVesselName) &&
+                string.Equals(
+                    currentVesselName,
+                    _activeVesselName,
+                    StringComparison.Ordinal);
+        }
+
+        private ManeuverPlanModel BuildHeldActivePlan(
+            OrbitModel orbit,
+            ManeuverEpochTelemetryModel epoch)
+        {
+            ManeuverPlanModel held =
+                ManeuverPlanModel.Clone(
+                    _activePlanSnapshot);
+
+            if (held == null)
+            {
+                return
+                    new ManeuverPlanModel();
+            }
+
+            held.PlanId =
+                _activePlanId;
+
+            if (IsFinite(
+                    _activeNodeUtAnchor))
+            {
+                held.NodeUniversalTimeAvailable =
+                    true;
+
+                held.NodeUniversalTimeSeconds =
+                    _activeNodeUtAnchor;
+            }
+
+            if (IsFinite(
+                    _activeNodeMissionTimeAnchor))
+            {
+                held.NodeMissionTimeSeconds =
+                    _activeNodeMissionTimeAnchor;
+
+                if (IsFinite(
+                        held.IgnitionLeadSeconds))
+                {
+                    held.IgnitionMissionTimeSeconds =
+                        _activeNodeMissionTimeAnchor -
+                        held.IgnitionLeadSeconds;
+                }
+            }
+
+            double timeToNode =
+                ResolveHeldTimeToNode(
+                    orbit,
+                    epoch);
+
+            held.TimeToNodeSeconds =
+                timeToNode;
+
+            if (IsFinite(
+                    timeToNode) &&
+                timeToNode < 0.0)
+            {
+                held.Available =
+                    false;
+
+                held.Status =
+                    "MANEUVER WINDOW MISSED";
+
+                AddEvidenceOnce(
+                    held,
+                    "Original reviewed maneuver epoch has passed; plan is held and cannot roll forward automatically.");
+
+                AddEvidenceOnce(
+                    held,
+                    "Press COMPUTE to generate and review a new maneuver at the next valid apsis.");
+            }
+
+            return held;
+        }
+
+        private double ResolveHeldTimeToNode(
+            OrbitModel orbit,
+            ManeuverEpochTelemetryModel epoch)
+        {
+            if (IsFinite(
+                    _activeNodeUtAnchor) &&
+                epoch != null &&
+                epoch.Available &&
+                IsFinite(
+                    epoch.UniversalTimeSeconds))
+            {
+                bool vesselMatches =
+                    string.IsNullOrWhiteSpace(
+                        _activeVesselId) ||
+                    string.IsNullOrWhiteSpace(
+                        epoch.VesselId) ||
+                    string.Equals(
+                        epoch.VesselId,
+                        _activeVesselId,
+                        StringComparison.Ordinal);
+
+                if (vesselMatches)
+                {
+                    return
+                        _activeNodeUtAnchor -
+                        epoch.UniversalTimeSeconds;
+                }
+            }
+
+            if (IsFinite(
+                    _activeNodeMissionTimeAnchor) &&
+                orbit != null &&
+                orbit.Current != null &&
+                IsFinite(
+                    orbit.Current.MissionTimeSeconds))
+            {
+                return
+                    _activeNodeMissionTimeAnchor -
+                    orbit.Current.MissionTimeSeconds;
+            }
+
+            return double.NaN;
+        }
+
+        private static void AddEvidenceOnce(
+            ManeuverPlanModel plan,
+            string evidence)
+        {
+            if (plan == null ||
+                plan.Evidence == null ||
+                string.IsNullOrWhiteSpace(
+                    evidence))
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < plan.Evidence.Count;
+                 index++)
+            {
+                if (string.Equals(
+                        plan.Evidence[index],
+                        evidence,
+                        StringComparison.Ordinal))
+                {
+                    return;
+                }
+            }
+
+            plan.Evidence.Add(
+                evidence);
         }
 
         private void AssignStablePlanId(

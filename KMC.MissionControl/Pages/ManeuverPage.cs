@@ -86,6 +86,12 @@ namespace KMC.MissionControl.Pages
                     "RETROGRADE GUIDANCE PENDING",
                     StringComparison.OrdinalIgnoreCase);
 
+            bool maneuverWindowMissed =
+                string.Equals(
+                    plan.Status,
+                    "MANEUVER WINDOW MISSED",
+                    StringComparison.OrdinalIgnoreCase);
+
             string displayedUplinkState;
 
             if (!plan.Available)
@@ -260,7 +266,12 @@ namespace KMC.MissionControl.Pages
              * Do not let stale state from an older maneuver outrank a newly
              * computed unavailable plan.
              */
-            if (retrogradePending)
+            if (maneuverWindowMissed)
+            {
+                footer =
+                    "MANEUVER WINDOW MISSED - CLICK COMPUTE TO REPLAN";
+            }
+            else if (retrogradePending)
             {
                 footer =
                     "RETROGRADE GUIDANCE REQUIRED - UPLINK INHIBITED";

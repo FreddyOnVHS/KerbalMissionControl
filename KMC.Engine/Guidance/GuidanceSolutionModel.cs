@@ -150,6 +150,7 @@ namespace KMC.Engine.Guidance
         public double ActualNodeDeltaVMetersPerSecond { get; internal set; }
 
         public bool ManeuverVectorAvailable { get; internal set; }
+        public bool CommandedRetrograde { get; internal set; }
         public double ManeuverRightComponent { get; internal set; }
         public double ManeuverNoseComponent { get; internal set; }
         public double ManeuverReferenceForwardComponent { get; internal set; }
@@ -220,6 +221,9 @@ namespace KMC.Engine.Guidance
 
                 ManeuverVectorAvailable =
                     ManeuverVectorAvailable,
+
+                CommandedRetrograde =
+                    CommandedRetrograde,
 
                 ManeuverRightComponent =
                     ManeuverRightComponent,

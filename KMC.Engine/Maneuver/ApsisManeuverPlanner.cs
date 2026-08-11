@@ -289,49 +289,6 @@ namespace KMC.Engine.Maneuver
                 return plan;
             }
 
-            /*
-             * Build 13.1 safety boundary:
-             * selectable targets are now exposed in MissionControl, but
-             * retrograde FDAI / attitude guidance arrives in Build 13.2.
-             * Do not make a negative-prograde maneuver uploadable yet.
-             */
-            if (signedProgradeDeltaV <
-                -MinimumUsefulDeltaV)
-            {
-                plan.Status =
-                    "RETROGRADE GUIDANCE PENDING";
-
-                plan.ProgradeDeltaVMetersPerSecond =
-                    signedProgradeDeltaV;
-
-                plan.NormalDeltaVMetersPerSecond =
-                    0.0;
-
-                plan.RadialDeltaVMetersPerSecond =
-                    0.0;
-
-                plan.TotalDeltaVMetersPerSecond =
-                    totalDeltaV;
-
-                plan.PredictedApoapsisMeters =
-                    nodeAtApoapsis
-                        ? nodeAltitude
-                        : oppositeAltitude;
-
-                plan.PredictedPeriapsisMeters =
-                    nodeAtApoapsis
-                        ? oppositeAltitude
-                        : nodeAltitude;
-
-                plan.Evidence.Add(
-                    "Requested target requires a retrograde burn.");
-
-                plan.Evidence.Add(
-                    "Build 13.1 inhibits upload until Build 13.2 adds true orbital retrograde FDAI guidance.");
-
-                return plan;
-            }
-
             double burnDuration =
                 EstimateBurnDuration(
                     current,
@@ -500,7 +457,7 @@ namespace KMC.Engine.Maneuver
                 ManeuverRequestType.CircularizeAtApoapsis)
             {
                 plan.Evidence.Add(
-                    "Build 13.0 foundation only: selectable MissionControl request controls arrive in 13.1 and retrograde GUID cue support in 13.2.");
+                    "Build 13.2 supports signed prograde/retrograde apsis execution through verified GUID/FDAI guidance.");
             }
 
             return plan;

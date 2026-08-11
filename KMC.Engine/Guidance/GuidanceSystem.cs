@@ -27,6 +27,18 @@ namespace KMC.Engine.Guidance
         private const double CutoffDeltaVMetersPerSecond = 0.15;
         private const double FineThrottleDeltaVMetersPerSecond = 0.50;
         private const double TaperDeltaVMetersPerSecond = 2.00;
+
+        /*
+         * Build 13.2.2 predictive cutoff.
+         *
+         * First burn uses a conservative crew/engine shutdown-response
+         * allowance. After a real cutoff, KMC learns the observed time from
+         * CUTOFF NOW to thrust zero and reuses that response on later burns.
+         */
+        private const double DefaultCutoffResponseSeconds = 0.60;
+        private const double MinimumCutoffResponseSeconds = 0.20;
+        private const double MaximumCutoffResponseSeconds = 1.50;
+        private const double PredictiveCutoffMarginMetersPerSecond = 0.15;
         private const double MaximumIntegrationStepSeconds = 0.50;
         private const double PostBurnSettleSeconds = 1.0;
         private const double ReacquisitionDelaySeconds = 1.0;
@@ -60,6 +72,14 @@ namespace KMC.Engine.Guidance
 
         private bool _burnActive;
         private bool _burnComplete;
+        private bool _burnRetrograde;
+
+        private bool _cutoffCommanded;
+        private DateTime _cutoffCommandedUtc =
+            DateTime.MinValue;
+
+        private double _observedCutoffResponseSeconds =
+            double.NaN;
 
         private double _burnPredictedApoapsisMeters =
             double.NaN;
@@ -172,6 +192,39 @@ namespace KMC.Engine.Guidance
             PopulateLivePropulsion(
                 solution,
                 flight);
+
+            bool maneuverWindowMissed =
+                plan != null &&
+                string.Equals(
+                    plan.Status,
+                    "MANEUVER WINDOW MISSED",
+                    StringComparison.OrdinalIgnoreCase);
+
+            /*
+             * Build 13.2.1:
+             * A missed reviewed epoch outranks stale/wrapped KSP node state.
+             * Crew must explicitly COMPUTE a new plan before execution can
+             * become authorized again.
+             */
+            if (maneuverWindowMissed)
+            {
+                solution.Available =
+                    true;
+
+                solution.Command =
+                    "MANEUVER WINDOW MISSED / REPLAN";
+
+                solution.ThrottleAdvisory =
+                    "THROTTLE 0%";
+
+                solution.Status =
+                    "REPLAN REQUIRED";
+
+                solution.ExecutionAuthorized =
+                    false;
+
+                return solution;
+            }
 
             if (plan == null ||
                 !plan.Available)
@@ -303,7 +356,9 @@ namespace KMC.Engine.Guidance
                 "MANEUVER EXECUTION";
 
             solution.AttitudeReference =
-                "TRUE ORBITAL PROGRADE";
+                _burnRetrograde
+                    ? "TRUE ORBITAL RETROGRADE"
+                    : "TRUE ORBITAL PROGRADE";
 
             solution.PlannedDeltaVMetersPerSecond =
                 _burnPlannedDeltaV;
@@ -325,7 +380,8 @@ namespace KMC.Engine.Guidance
 
             PopulateAttitudeGuidance(
                 solution,
-                orbit);
+                orbit,
+                _burnRetrograde);
 
             PopulateLivePropulsion(
                 solution,
@@ -368,19 +424,53 @@ namespace KMC.Engine.Guidance
                 solution.RemainingDeltaVMetersPerSecond;
 
             /*
-             * Build 12.3.1:
-             * Maneuver completion has higher priority than node/interlock loss.
+             * Build 13.2.2:
              *
-             * Once the latched maneuver has reached the cutoff Delta-V
-             * threshold, the burn is complete. Removing the completed KSP
-             * node after that point is expected crew cleanup and must not
-             * push GUID back into BURN INHIBITED.
+             * Do NOT declare the maneuver complete merely because integrated
+             * remaining Delta-V reached the old 0.15 m/s threshold while the
+             * engine is still producing thrust.
+             *
+             * Instead:
+             * 1. command cutoff early using live acceleration and a learned
+             *    shutdown-response allowance;
+             * 2. keep integrating delivered Delta-V while thrust decays;
+             * 3. declare completion only after thrust actually reaches zero.
              */
-            if (!_burnComplete &&
+            double predictiveCutoffDeltaV =
+                CalculatePredictiveCutoffDeltaV(
+                    solution);
+
+            bool cutoffDue =
                 IsFinite(remaining) &&
                 remaining <=
-                    CutoffDeltaVMetersPerSecond)
+                    predictiveCutoffDeltaV;
+
+            if (!_cutoffCommanded &&
+                cutoffDue)
             {
+                _cutoffCommanded =
+                    true;
+
+                _cutoffCommandedUtc =
+                    receivedUtc;
+            }
+
+            /*
+             * Build 13.2.3:
+             * Latch the transition to BurnComplete only once.
+             *
+             * Without the !_burnComplete guard, every zero-thrust update
+             * re-entered this block and reset _postBurnZeroThrustSinceUtc.
+             * That prevented the existing post-burn settle timer from ever
+             * reaching PostBurnSettleSeconds.
+             */
+            if (!_burnComplete &&
+                _cutoffCommanded &&
+                !solution.ProducingThrust)
+            {
+                ObserveCutoffResponse(
+                    receivedUtc);
+
                 _burnComplete =
                     true;
 
@@ -405,6 +495,24 @@ namespace KMC.Engine.Guidance
                     nodeState,
                     flight,
                     receivedUtc);
+
+                return solution;
+            }
+
+            if (_cutoffCommanded)
+            {
+                solution.Command =
+                    solution.ProducingThrust
+                        ? "CUTOFF NOW"
+                        : "HOLD CUTOFF / VERIFY THRUST ZERO";
+
+                solution.ThrottleAdvisory =
+                    "THROTTLE 0%";
+
+                solution.Status =
+                    solution.ProducingThrust
+                        ? "PREDICTIVE CUTOFF"
+                        : "CUTOFF CONFIRMATION";
 
                 return solution;
             }
@@ -521,8 +629,19 @@ namespace KMC.Engine.Guidance
             GuidanceSolutionModel solution =
                 new GuidanceSolutionModel();
 
-            if (plan == null ||
-                !plan.Available)
+            if (plan == null)
+            {
+                return solution;
+            }
+
+            bool maneuverWindowMissed =
+                string.Equals(
+                    plan.Status,
+                    "MANEUVER WINDOW MISSED",
+                    StringComparison.OrdinalIgnoreCase);
+
+            if (!plan.Available &&
+                !maneuverWindowMissed)
             {
                 return solution;
             }
@@ -560,9 +679,15 @@ namespace KMC.Engine.Guidance
                 plan,
                 nodeState);
 
+            bool retrograde =
+                IsFinite(
+                    plan.ProgradeDeltaVMetersPerSecond) &&
+                plan.ProgradeDeltaVMetersPerSecond < 0.0;
+
             PopulateAttitudeGuidance(
                 solution,
-                orbit);
+                orbit,
+                retrograde);
 
             return solution;
         }
@@ -648,7 +773,8 @@ namespace KMC.Engine.Guidance
 
         private static void PopulateAttitudeGuidance(
             GuidanceSolutionModel solution,
-            OrbitModel orbit)
+            OrbitModel orbit,
+            bool retrograde)
         {
             if (solution.Mode ==
                 "GUIDANCE WAITING")
@@ -657,8 +783,13 @@ namespace KMC.Engine.Guidance
                     "MANEUVER GUIDANCE";
             }
 
+            solution.CommandedRetrograde =
+                retrograde;
+
             solution.AttitudeReference =
-                "TRUE ORBITAL PROGRADE";
+                retrograde
+                    ? "TRUE ORBITAL RETROGRADE"
+                    : "TRUE ORBITAL PROGRADE";
 
             if (orbit == null ||
                 !orbit.Available ||
@@ -686,15 +817,29 @@ namespace KMC.Engine.Guidance
                 return;
             }
 
+            /*
+             * Build 13.2:
+             * Prograde uses the verified orbital velocity unit vector.
+             * Retrograde uses its exact inverse. No new spacecraft telemetry
+             * or coordinate convention is introduced.
+             */
+            double direction =
+                retrograde
+                    ? -1.0
+                    : 1.0;
+
             double right =
+                direction *
                 vector.OrbitalRightMetersPerSecond /
                 magnitude;
 
             double nose =
+                direction *
                 vector.OrbitalNoseMetersPerSecond /
                 magnitude;
 
             double forward =
+                direction *
                 vector.OrbitalReferenceForwardMetersPerSecond /
                 magnitude;
 
@@ -741,7 +886,9 @@ namespace KMC.Engine.Guidance
                 true;
 
             solution.Evidence =
-                "True orbital prograde attitude reference; maneuver execution remains crew advisory.";
+                retrograde
+                    ? "True orbital retrograde attitude reference from inverted verified orbital velocity vector; maneuver execution remains crew advisory."
+                    : "True orbital prograde attitude reference from verified orbital velocity vector; maneuver execution remains crew advisory.";
         }
 
         private static void PopulateLivePropulsion(
@@ -863,6 +1010,84 @@ namespace KMC.Engine.Guidance
             }
         }
 
+        private double CalculatePredictiveCutoffDeltaV(
+            GuidanceSolutionModel solution)
+        {
+            double responseSeconds =
+                IsFinite(
+                    _observedCutoffResponseSeconds)
+                    ? Clamp(
+                        _observedCutoffResponseSeconds,
+                        MinimumCutoffResponseSeconds,
+                        MaximumCutoffResponseSeconds)
+                    : DefaultCutoffResponseSeconds;
+
+            double acceleration =
+                solution != null &&
+                IsFinite(
+                    solution.LiveAccelerationMetersPerSecondSquared)
+                    ? Math.Max(
+                        0.0,
+                        solution.LiveAccelerationMetersPerSecondSquared)
+                    : 0.0;
+
+            double predictedShutdownDeltaV =
+                acceleration *
+                responseSeconds;
+
+            return
+                Math.Max(
+                    CutoffDeltaVMetersPerSecond,
+                    predictedShutdownDeltaV +
+                    PredictiveCutoffMarginMetersPerSecond);
+        }
+
+        private void ObserveCutoffResponse(
+            DateTime receivedUtc)
+        {
+            if (_cutoffCommandedUtc ==
+                DateTime.MinValue)
+            {
+                return;
+            }
+
+            double observed =
+                (receivedUtc -
+                 _cutoffCommandedUtc)
+                .TotalSeconds;
+
+            if (!IsFinite(observed) ||
+                observed <= 0.0)
+            {
+                return;
+            }
+
+            observed =
+                Clamp(
+                    observed,
+                    MinimumCutoffResponseSeconds,
+                    MaximumCutoffResponseSeconds);
+
+            if (!IsFinite(
+                    _observedCutoffResponseSeconds))
+            {
+                _observedCutoffResponseSeconds =
+                    observed;
+            }
+            else
+            {
+                /*
+                 * Gentle exponential learning so one unusual crew reaction
+                 * does not completely redefine the next maneuver.
+                 */
+                _observedCutoffResponseSeconds =
+                    (_observedCutoffResponseSeconds *
+                     0.70) +
+                    (observed *
+                     0.30);
+            }
+        }
+
         private static bool ShouldStartBurn(
             GuidanceSolutionModel solution,
             TelemetryPacket flight)
@@ -906,6 +1131,17 @@ namespace KMC.Engine.Guidance
 
             _burnPlannedDuration =
                 plan.EstimatedBurnDurationSeconds;
+
+            _burnRetrograde =
+                IsFinite(
+                    plan.ProgradeDeltaVMetersPerSecond) &&
+                plan.ProgradeDeltaVMetersPerSecond < 0.0;
+
+            _cutoffCommanded =
+                false;
+
+            _cutoffCommandedUtc =
+                DateTime.MinValue;
 
             _burnPredictedApoapsisMeters =
                 plan.PredictedApoapsisMeters;
@@ -1075,6 +1311,22 @@ namespace KMC.Engine.Guidance
                     AcceptableOrbitErrorFraction,
                     AcceptableOrbitErrorFloorMeters);
 
+            double eccentricityError =
+                IsFinite(
+                    solution.AchievedEccentricity) &&
+                IsFinite(
+                    _burnPredictedEccentricity)
+                    ? solution.AchievedEccentricity -
+                      _burnPredictedEccentricity
+                    : double.NaN;
+
+            /*
+             * Build 13.2:
+             * General apsis maneuvers may intentionally target an elliptical
+             * orbit. Verify achieved eccentricity against the planned
+             * eccentricity instead of assuming every successful maneuver is
+             * near-circular.
+             */
             bool nominal =
                 IsWithinTolerance(
                     solution.ApoapsisErrorMeters,
@@ -1082,10 +1334,9 @@ namespace KMC.Engine.Guidance
                 IsWithinTolerance(
                     solution.PeriapsisErrorMeters,
                     nominalPeTolerance) &&
-                IsFinite(
-                    solution.AchievedEccentricity) &&
-                solution.AchievedEccentricity <=
-                    NominalEccentricityLimit;
+                IsWithinTolerance(
+                    eccentricityError,
+                    NominalEccentricityLimit);
 
             bool acceptable =
                 IsWithinTolerance(
@@ -1094,10 +1345,9 @@ namespace KMC.Engine.Guidance
                 IsWithinTolerance(
                     solution.PeriapsisErrorMeters,
                     acceptablePeTolerance) &&
-                IsFinite(
-                    solution.AchievedEccentricity) &&
-                solution.AchievedEccentricity <=
-                    AcceptableEccentricityLimit;
+                IsWithinTolerance(
+                    eccentricityError,
+                    AcceptableEccentricityLimit);
 
             bool completedNodeRemoved =
                 nodeState != null &&
@@ -1217,6 +1467,15 @@ namespace KMC.Engine.Guidance
 
             _burnPlannedDuration =
                 double.NaN;
+
+            _burnRetrograde =
+                false;
+
+            _cutoffCommanded =
+                false;
+
+            _cutoffCommandedUtc =
+                DateTime.MinValue;
 
             _burnPredictedApoapsisMeters =
                 double.NaN;
