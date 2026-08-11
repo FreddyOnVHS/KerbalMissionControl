@@ -5,13 +5,13 @@ using KMC.Engine.Orbit;
 namespace KMC.Engine.Maneuver
 {
     /// <summary>
-    /// Stateful Engine owner for maneuver planning. Build 11.0 exposes exactly
-    /// one objective: circularization at the next apoapsis.
+    /// Stateful Engine owner for maneuver planning.
     ///
-    /// Build 12.3.2:
-    /// Stable maneuver identity is based on genuine Node UT whenever available.
-    /// This prevents time warp / sparse packet timing from creating a new
-    /// PlanId for the same physical maneuver.
+    /// Build 13.0 introduces an Engine-owned maneuver request and generalized
+    /// apsis planner while retaining Build 12.3.3 immutable maneuver identity
+    /// anchoring through time warp.
+    ///
+    /// The default request remains CIRCULARIZE AT APOAPSIS.
     /// </summary>
     public sealed class ManeuverPlanningSystem
     {
@@ -27,13 +27,19 @@ namespace KMC.Engine.Maneuver
         private readonly object _syncRoot =
             new object();
 
-        private readonly CircularizeAtApoapsisPlanner _planner =
-            new CircularizeAtApoapsisPlanner();
+        private readonly ApsisManeuverPlanner _planner =
+            new ApsisManeuverPlanner();
 
         private ManeuverPlanModel _latest =
             new ManeuverPlanModel();
 
+        private ManeuverRequestModel _request =
+            ManeuverRequestModel.CreateDefault();
+
         private string _activePlanId =
+            string.Empty;
+
+        private string _activeVesselId =
             string.Empty;
 
         private string _activeVesselName =
@@ -58,18 +64,50 @@ namespace KMC.Engine.Maneuver
             double.NaN;
 
         private int _planSequence;
+
         private DateTime _lastDiagnosticUtc =
             DateTime.MinValue;
+
+        public void SetRequest(
+            ManeuverRequestModel request)
+        {
+            lock (_syncRoot)
+            {
+                _request =
+                    ManeuverRequestModel.Clone(
+                        request);
+            }
+        }
+
+        public ManeuverRequestModel GetRequest()
+        {
+            lock (_syncRoot)
+            {
+                return
+                    ManeuverRequestModel.Clone(
+                        _request);
+            }
+        }
 
         public void Update(
             OrbitModel orbit,
             ManeuverEpochTelemetryModel epoch,
             DateTime receivedUtc)
         {
+            ManeuverRequestModel request;
+
+            lock (_syncRoot)
+            {
+                request =
+                    ManeuverRequestModel.Clone(
+                        _request);
+            }
+
             ManeuverPlanModel next =
                 _planner.Calculate(
                     orbit,
-                    epoch);
+                    epoch,
+                    request);
 
             if (next.Available)
             {
@@ -86,6 +124,7 @@ namespace KMC.Engine.Maneuver
 
             WriteDiagnosticIfDue(
                 next,
+                request,
                 receivedUtc);
         }
 
@@ -103,25 +142,57 @@ namespace KMC.Engine.Maneuver
             ManeuverPlanModel plan,
             OrbitModel orbit)
         {
-            string vesselName =
-                !string.IsNullOrWhiteSpace(
-                    plan.VesselId)
-                    ? plan.VesselId
-                    : orbit != null &&
-                      orbit.Current != null
-                        ? orbit.Current.VesselName ??
-                          string.Empty
-                        : string.Empty;
+            string candidateVesselId =
+                plan.VesselId ??
+                string.Empty;
+
+            string candidateVesselName =
+                orbit != null &&
+                orbit.Current != null
+                    ? orbit.Current.VesselName ??
+                      string.Empty
+                    : string.Empty;
 
             string objective =
                 plan.Objective ??
                 string.Empty;
 
-            bool vesselMatches =
-                string.Equals(
-                    vesselName,
-                    _activeVesselName,
-                    StringComparison.Ordinal);
+            /*
+             * Build 13.0.1:
+             *
+             * Vessel ID and vessel name are different identity domains.
+             * Never compare a GUID-like KSP vessel ID to the display name.
+             *
+             * KMC-EPOCH1 may briefly be unavailable during high-rate time warp.
+             * In that case plan.VesselId becomes empty, but ORBIT still knows
+             * the active vessel name. A temporary epoch dropout must not create
+             * a new maneuver identity.
+             */
+            bool vesselMatches;
+
+            if (!string.IsNullOrWhiteSpace(
+                    candidateVesselId) &&
+                !string.IsNullOrWhiteSpace(
+                    _activeVesselId))
+            {
+                vesselMatches =
+                    string.Equals(
+                        candidateVesselId,
+                        _activeVesselId,
+                        StringComparison.Ordinal);
+            }
+            else
+            {
+                vesselMatches =
+                    !string.IsNullOrWhiteSpace(
+                        candidateVesselName) &&
+                    !string.IsNullOrWhiteSpace(
+                        _activeVesselName) &&
+                    string.Equals(
+                        candidateVesselName,
+                        _activeVesselName,
+                        StringComparison.Ordinal);
+            }
 
             bool objectiveMatches =
                 string.Equals(
@@ -147,20 +218,11 @@ namespace KMC.Engine.Maneuver
                 false;
 
             /*
-             * Build 12.3.3:
+             * Preserve the Build 12.3.3 immutable epoch anchor.
              *
-             * The first accepted maneuver epoch is an immutable identity
-             * anchor. Do NOT move the anchor on every telemetry update.
-             *
-             * The KSP UT side channel and the ordinary orbital telemetry
-             * packet are not sampled at exactly the same instant during
-             * time warp. That can make the freshly calculated Node UT drift
-             * by roughly a second even though the physical maneuver is the
-             * same. Comparing every new sample against the PREVIOUS sample
-             * allowed that error to walk the identity forward and eventually
-             * create a new PlanId.
-             *
-             * Instead, every candidate is compared to the ORIGINAL anchor.
+             * Prefer genuine UT when both the candidate and anchor have UT.
+             * If the epoch side-channel temporarily drops out, fall back to
+             * the immutable Node MET anchor rather than declaring a new plan.
              */
             if (plan.NodeUniversalTimeAvailable &&
                 IsFinite(
@@ -198,14 +260,17 @@ namespace KMC.Engine.Maneuver
             {
                 _planSequence++;
 
+                _activeVesselId =
+                    candidateVesselId;
+
                 _activeVesselName =
-                    vesselName;
+                    candidateVesselName;
 
                 _activeObjective =
                     objective;
 
                 _activePlanId =
-                    "MNV-11.2-" +
+                    "MNV-13.0-" +
                     _planSequence.ToString(
                         "D4");
 
@@ -231,19 +296,40 @@ namespace KMC.Engine.Maneuver
                 _activeRadialDeltaV =
                     plan.RadialDeltaVMetersPerSecond;
             }
-            else if (!IsFinite(
-                         _activeNodeUtAnchor) &&
-                     plan.NodeUniversalTimeAvailable &&
-                     IsFinite(
-                         plan.NodeUniversalTimeSeconds))
+            else
             {
                 /*
-                 * A plan that was initially identified using the MET fallback
-                 * may later receive genuine UT telemetry. Adopt UT once, then
-                 * keep it fixed for the rest of this maneuver identity.
+                 * If the plan was first established while the epoch channel
+                 * was unavailable, adopt the genuine vessel ID and UT once
+                 * they return. Do not change PlanId.
                  */
-                _activeNodeUtAnchor =
-                    plan.NodeUniversalTimeSeconds;
+                if (string.IsNullOrWhiteSpace(
+                        _activeVesselId) &&
+                    !string.IsNullOrWhiteSpace(
+                        candidateVesselId))
+                {
+                    _activeVesselId =
+                        candidateVesselId;
+                }
+
+                if (string.IsNullOrWhiteSpace(
+                        _activeVesselName) &&
+                    !string.IsNullOrWhiteSpace(
+                        candidateVesselName))
+                {
+                    _activeVesselName =
+                        candidateVesselName;
+                }
+
+                if (!IsFinite(
+                        _activeNodeUtAnchor) &&
+                    plan.NodeUniversalTimeAvailable &&
+                    IsFinite(
+                        plan.NodeUniversalTimeSeconds))
+                {
+                    _activeNodeUtAnchor =
+                        plan.NodeUniversalTimeSeconds;
+                }
             }
 
             plan.PlanId =
@@ -266,6 +352,7 @@ namespace KMC.Engine.Maneuver
 
         private void WriteDiagnosticIfDue(
             ManeuverPlanModel plan,
+            ManeuverRequestModel request,
             DateTime receivedUtc)
         {
             if (_lastDiagnosticUtc !=
@@ -284,6 +371,16 @@ namespace KMC.Engine.Maneuver
                 "KMC.Engine MANEUVER PLAN" +
                 " | Available=" + plan.Available +
                 " | PlanId=" + plan.PlanId +
+                " | Request=" +
+                (request != null
+                    ? request.Type.ToString()
+                    : "DEFAULT") +
+                " | TargetAlt=" +
+                Format(
+                    request != null
+                        ? request.TargetAltitudeMeters
+                        : double.NaN,
+                    "0") + "m" +
                 " | Objective=" + plan.Objective +
                 " | Status=" + plan.Status +
                 " | NodeMET=" +

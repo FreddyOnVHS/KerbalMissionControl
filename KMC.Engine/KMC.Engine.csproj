@@ -75,7 +75,9 @@
     <Compile Include="Orbit\OrbitFlightDirector.cs" />
     <Compile Include="Maneuver\ManeuverEpochTelemetryModel.cs" />
     <Compile Include="Maneuver\ManeuverPlanModel.cs" />
+    <Compile Include="Maneuver\ManeuverRequestModel.cs" />
     <Compile Include="Maneuver\CircularizeAtApoapsisPlanner.cs" />
+    <Compile Include="Maneuver\ApsisManeuverPlanner.cs" />
     <Compile Include="Maneuver\ManeuverPlanningSystem.cs" />
     <Compile Include="Guidance\GuidanceSolutionModel.cs" />
     <Compile Include="Guidance\GuidanceSystem.cs" />
