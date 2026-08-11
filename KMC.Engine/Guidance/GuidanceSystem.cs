@@ -103,6 +103,14 @@ namespace KMC.Engine.Guidance
         private DateTime _completedNodeRemovedSinceUtc =
             DateTime.MinValue;
 
+        /*
+         * Build 13.4.2:
+         * Once the completed maneuver's node is observed removed, preserve
+         * that evidence even if GuidanceNodeStateStore later advances to a
+         * newly computed or uploaded maneuver.
+         */
+        private bool _completedNodeRemovalLatched;
+
         public void Update(
             OrbitModel orbit,
             ManeuverPlanModel plan,
@@ -1558,8 +1566,51 @@ namespace KMC.Engine.Guidance
             TelemetryPacket flight,
             DateTime receivedUtc)
         {
-            if (!_burnComplete ||
-                currentPlan == null ||
+            if (!_burnComplete)
+            {
+                _completedNodeRemovedSinceUtc =
+                    DateTime.MinValue;
+
+                _completedNodeRemovalLatched =
+                    false;
+
+                return false;
+            }
+
+            /*
+             * Build 13.4.2:
+             * Latch completed-node cleanup evidence once. The node-state
+             * store may move on to a newly computed/uploaded maneuver after
+             * this without erasing proof that the old node was removed.
+             */
+            if (!_completedNodeRemovalLatched &&
+                nodeState != null &&
+                nodeState.Available &&
+                string.Equals(
+                    nodeState.PlanId ?? string.Empty,
+                    _burnPlanId,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    nodeState.State ?? string.Empty,
+                    "NODE REMOVED",
+                    StringComparison.Ordinal))
+            {
+                _completedNodeRemovalLatched =
+                    true;
+
+                _completedNodeRemovedSinceUtc =
+                    receivedUtc;
+            }
+
+            if (!_completedNodeRemovalLatched)
+            {
+                _completedNodeRemovedSinceUtc =
+                    DateTime.MinValue;
+
+                return false;
+            }
+
+            if (currentPlan == null ||
                 !currentPlan.Available ||
                 string.IsNullOrWhiteSpace(
                     currentPlan.PlanId) ||
@@ -1570,21 +1621,8 @@ namespace KMC.Engine.Guidance
                 flight == null ||
                 (IsFinite(flight.CurrentThrust) &&
                  flight.CurrentThrust >=
-                    MinimumThrustKilonewtons) ||
-                nodeState == null ||
-                !nodeState.Available ||
-                !string.Equals(
-                    nodeState.PlanId ?? string.Empty,
-                    _burnPlanId,
-                    StringComparison.Ordinal) ||
-                !string.Equals(
-                    nodeState.State ?? string.Empty,
-                    "NODE REMOVED",
-                    StringComparison.Ordinal))
+                    MinimumThrustKilonewtons))
             {
-                _completedNodeRemovedSinceUtc =
-                    DateTime.MinValue;
-
                 return false;
             }
 
@@ -1650,6 +1688,9 @@ namespace KMC.Engine.Guidance
 
             _completedNodeRemovedSinceUtc =
                 DateTime.MinValue;
+
+            _completedNodeRemovalLatched =
+                false;
 
             _burnActive =
                 false;
