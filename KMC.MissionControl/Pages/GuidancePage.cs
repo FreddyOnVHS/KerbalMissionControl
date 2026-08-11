@@ -463,39 +463,73 @@ namespace KMC.MissionControl.Pages
                             : "INHIBIT"),
 
                     new FieldPair(
-                        "STATUS",
-                        guidance != null
-                            ? guidance.Status
-                            : "---")
+                        guidance != null &&
+                        guidance.PostBurnVerificationAvailable
+                            ? "RESULT"
+                            : "STATUS",
+                        guidance != null &&
+                        guidance.PostBurnVerificationAvailable
+                            ? guidance.PostBurnResult
+                            : guidance != null
+                                ? guidance.Status
+                                : "---")
                 });
 
-            DrawCompactGroup(
-                context,
-                timingBox,
-                "TIMING",
-                new[]
-                {
-                    new FieldPair(
-                        "NODE",
-                        guidance != null
-                            ? FormatDuration(
-                                guidance.TimeToNodeSeconds)
-                            : "---"),
+            if (guidance != null &&
+                guidance.PostBurnVerificationAvailable)
+            {
+                DrawCompactGroup(
+                    context,
+                    timingBox,
+                    "ORBIT RESULT",
+                    new[]
+                    {
+                        new FieldPair(
+                            "AP",
+                            FormatDistance(
+                                guidance.AchievedApoapsisMeters)),
 
-                    new FieldPair(
-                        "IGNITION",
-                        guidance != null
-                            ? FormatDuration(
-                                guidance.TimeToIgnitionSeconds)
-                            : "---"),
+                        new FieldPair(
+                            "PE",
+                            FormatDistance(
+                                guidance.AchievedPeriapsisMeters)),
 
-                    new FieldPair(
-                        "BURN EST",
-                        guidance != null
-                            ? FormatSeconds(
-                                guidance.BurnDurationSeconds)
-                            : "---")
-                });
+                        new FieldPair(
+                            "ECC",
+                            FormatEccentricity(
+                                guidance.AchievedEccentricity))
+                    });
+            }
+            else
+            {
+                DrawCompactGroup(
+                    context,
+                    timingBox,
+                    "TIMING",
+                    new[]
+                    {
+                        new FieldPair(
+                            "NODE",
+                            guidance != null
+                                ? FormatDuration(
+                                    guidance.TimeToNodeSeconds)
+                                : "---"),
+
+                        new FieldPair(
+                            "IGNITION",
+                            guidance != null
+                                ? FormatDuration(
+                                    guidance.TimeToIgnitionSeconds)
+                                : "---"),
+
+                        new FieldPair(
+                            "BURN EST",
+                            guidance != null
+                                ? FormatSeconds(
+                                    guidance.BurnDurationSeconds)
+                                : "---")
+                    });
+            }
 
             DrawBurnPerformanceGroup(
                 context,
@@ -1192,6 +1226,36 @@ namespace KMC.MissionControl.Pages
                         24),
                     format);
             }
+        }
+
+        private static string FormatDistance(
+            double meters)
+        {
+            if (!IsFinite(meters))
+            {
+                return "---";
+            }
+
+            if (Math.Abs(meters) >= 1000.0)
+            {
+                return
+                    (meters / 1000.0)
+                    .ToString("0.000") +
+                    " KM";
+            }
+
+            return
+                meters.ToString("0") +
+                " M";
+        }
+
+        private static string FormatEccentricity(
+            double value)
+        {
+            return
+                IsFinite(value)
+                    ? value.ToString("0.000000")
+                    : "---";
         }
 
         private static string FormatDuration(

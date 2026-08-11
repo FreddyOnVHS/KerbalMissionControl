@@ -20,11 +20,22 @@ namespace KMC.Engine.Guidance
         private const double IgnitionStandbySeconds = 10.0;
         private const double BurnStartWindowSeconds = 2.5;
         private const double NodeStateFreshnessSeconds = 2.0;
+        private const double NodeUtToleranceSeconds = 0.25;
+        private const double NodeDeltaVToleranceMetersPerSecond = 0.05;
+        private const double OrbitWrapToleranceSeconds = 2.0;
         private const double MinimumThrustKilonewtons = 0.10;
         private const double CutoffDeltaVMetersPerSecond = 0.15;
         private const double FineThrottleDeltaVMetersPerSecond = 0.50;
         private const double TaperDeltaVMetersPerSecond = 2.00;
         private const double MaximumIntegrationStepSeconds = 0.50;
+        private const double PostBurnSettleSeconds = 1.0;
+        private const double ReacquisitionDelaySeconds = 1.0;
+        private const double NominalOrbitErrorFraction = 0.01;
+        private const double NominalOrbitErrorFloorMeters = 2000.0;
+        private const double AcceptableOrbitErrorFraction = 0.03;
+        private const double AcceptableOrbitErrorFloorMeters = 5000.0;
+        private const double NominalEccentricityLimit = 0.010;
+        private const double AcceptableEccentricityLimit = 0.030;
         private const double DiagnosticIntervalSeconds = 1.0;
 
         private GuidanceSolutionModel _latest =
@@ -50,6 +61,24 @@ namespace KMC.Engine.Guidance
         private bool _burnActive;
         private bool _burnComplete;
 
+        private double _burnPredictedApoapsisMeters =
+            double.NaN;
+
+        private double _burnPredictedPeriapsisMeters =
+            double.NaN;
+
+        private double _burnPredictedInclinationDegrees =
+            double.NaN;
+
+        private double _burnPredictedEccentricity =
+            double.NaN;
+
+        private DateTime _postBurnZeroThrustSinceUtc =
+            DateTime.MinValue;
+
+        private DateTime _completedNodeRemovedSinceUtc =
+            DateTime.MinValue;
+
         public void Update(
             OrbitModel orbit,
             ManeuverPlanModel plan,
@@ -58,6 +87,16 @@ namespace KMC.Engine.Guidance
         {
             GuidanceNodeStateModel nodeState =
                 GuidanceNodeStateStore.GetLatest();
+
+            if (_burnComplete &&
+                ShouldReacquireNextPlan(
+                    plan,
+                    nodeState,
+                    flight,
+                    receivedUtc))
+            {
+                ResetCompletedBurn();
+            }
 
             if (_burnActive ||
                 _burnComplete)
@@ -325,6 +364,51 @@ namespace KMC.Engine.Guidance
                         100.0)
                     : double.NaN;
 
+            double remaining =
+                solution.RemainingDeltaVMetersPerSecond;
+
+            /*
+             * Build 12.3.1:
+             * Maneuver completion has higher priority than node/interlock loss.
+             *
+             * Once the latched maneuver has reached the cutoff Delta-V
+             * threshold, the burn is complete. Removing the completed KSP
+             * node after that point is expected crew cleanup and must not
+             * push GUID back into BURN INHIBITED.
+             */
+            if (!_burnComplete &&
+                IsFinite(remaining) &&
+                remaining <=
+                    CutoffDeltaVMetersPerSecond)
+            {
+                _burnComplete =
+                    true;
+
+                _burnActive =
+                    false;
+
+                _postBurnZeroThrustSinceUtc =
+                    DateTime.MinValue;
+            }
+
+            solution.BurnActive =
+                _burnActive;
+
+            solution.BurnComplete =
+                _burnComplete;
+
+            if (_burnComplete)
+            {
+                ApplyPostBurnVerification(
+                    solution,
+                    orbit,
+                    nodeState,
+                    flight,
+                    receivedUtc);
+
+                return solution;
+            }
+
             if (!solution.ExecutionAuthorized)
             {
                 solution.Command =
@@ -366,40 +450,6 @@ namespace KMC.Engine.Guidance
 
                 solution.Status =
                     "ATTITUDE ERROR";
-
-                return solution;
-            }
-
-            double remaining =
-                solution.RemainingDeltaVMetersPerSecond;
-
-            if (_burnComplete ||
-                (IsFinite(remaining) &&
-                 remaining <=
-                    CutoffDeltaVMetersPerSecond))
-            {
-                _burnComplete =
-                    true;
-
-                _burnActive =
-                    false;
-
-                solution.BurnActive =
-                    false;
-
-                solution.BurnComplete =
-                    true;
-
-                solution.Command =
-                    "CUTOFF / HOLD MANEUVER VECTOR";
-
-                solution.ThrottleAdvisory =
-                    "THROTTLE 0%";
-
-                solution.Status =
-                    solution.ProducingThrust
-                        ? "CUTOFF NOW"
-                        : "MANEUVER COMPLETE";
 
                 return solution;
             }
@@ -504,6 +554,11 @@ namespace KMC.Engine.Guidance
                 plan.PlanId,
                 nodeState,
                 receivedUtc);
+
+            ApplyTimeWarpNodeClassification(
+                solution,
+                plan,
+                nodeState);
 
             PopulateAttitudeGuidance(
                 solution,
@@ -852,6 +907,24 @@ namespace KMC.Engine.Guidance
             _burnPlannedDuration =
                 plan.EstimatedBurnDurationSeconds;
 
+            _burnPredictedApoapsisMeters =
+                plan.PredictedApoapsisMeters;
+
+            _burnPredictedPeriapsisMeters =
+                plan.PredictedPeriapsisMeters;
+
+            _burnPredictedInclinationDegrees =
+                plan.PredictedInclinationDegrees;
+
+            _burnPredictedEccentricity =
+                plan.PredictedEccentricity;
+
+            _postBurnZeroThrustSinceUtc =
+                DateTime.MinValue;
+
+            _completedNodeRemovedSinceUtc =
+                DateTime.MinValue;
+
             _deliveredDeltaV =
                 0.0;
 
@@ -863,6 +936,345 @@ namespace KMC.Engine.Guidance
 
             _burnComplete =
                 false;
+        }
+
+        private void ApplyPostBurnVerification(
+            GuidanceSolutionModel solution,
+            OrbitModel orbit,
+            GuidanceNodeStateModel nodeState,
+            TelemetryPacket flight,
+            DateTime receivedUtc)
+        {
+            solution.BurnActive =
+                false;
+
+            solution.BurnComplete =
+                true;
+
+            solution.Mode =
+                "POST-BURN VERIFICATION";
+
+            solution.ThrottleAdvisory =
+                "THROTTLE 0%";
+
+            solution.PlannedApoapsisMeters =
+                _burnPredictedApoapsisMeters;
+
+            solution.PlannedPeriapsisMeters =
+                _burnPredictedPeriapsisMeters;
+
+            if (solution.ProducingThrust)
+            {
+                _postBurnZeroThrustSinceUtc =
+                    DateTime.MinValue;
+
+                solution.Command =
+                    "CUTOFF NOW";
+
+                solution.Status =
+                    "CUTOFF NOW";
+
+                solution.PostBurnResult =
+                    "WAITING FOR THRUST ZERO";
+
+                return;
+            }
+
+            if (_postBurnZeroThrustSinceUtc ==
+                DateTime.MinValue)
+            {
+                _postBurnZeroThrustSinceUtc =
+                    receivedUtc;
+            }
+
+            if (receivedUtc -
+                    _postBurnZeroThrustSinceUtc <
+                TimeSpan.FromSeconds(
+                    PostBurnSettleSeconds))
+            {
+                solution.Command =
+                    "HOLD ATTITUDE / VERIFY ORBIT";
+
+                solution.Status =
+                    "POST-BURN CHECK";
+
+                solution.PostBurnResult =
+                    "ORBIT SETTLING";
+
+                return;
+            }
+
+            if (orbit == null ||
+                !orbit.Available ||
+                orbit.Current == null ||
+                !orbit.Current.Available)
+            {
+                solution.Command =
+                    "HOLD ATTITUDE / AWAIT ORBIT DATA";
+
+                solution.Status =
+                    "POST-BURN CHECK";
+
+                solution.PostBurnResult =
+                    "ORBIT DATA UNAVAILABLE";
+
+                return;
+            }
+
+            OrbitTelemetryState current =
+                orbit.Current;
+
+            solution.PostBurnVerificationAvailable =
+                true;
+
+            solution.AchievedApoapsisMeters =
+                current.ApoapsisMeters;
+
+            solution.AchievedPeriapsisMeters =
+                current.PeriapsisMeters;
+
+            solution.AchievedEccentricity =
+                current.Eccentricity;
+
+            solution.AchievedInclinationDegrees =
+                current.InclinationDegrees;
+
+            solution.ApoapsisErrorMeters =
+                IsFinite(_burnPredictedApoapsisMeters)
+                    ? current.ApoapsisMeters -
+                      _burnPredictedApoapsisMeters
+                    : double.NaN;
+
+            solution.PeriapsisErrorMeters =
+                IsFinite(_burnPredictedPeriapsisMeters)
+                    ? current.PeriapsisMeters -
+                      _burnPredictedPeriapsisMeters
+                    : double.NaN;
+
+            double nominalApTolerance =
+                ResolveOrbitTolerance(
+                    _burnPredictedApoapsisMeters,
+                    NominalOrbitErrorFraction,
+                    NominalOrbitErrorFloorMeters);
+
+            double nominalPeTolerance =
+                ResolveOrbitTolerance(
+                    _burnPredictedPeriapsisMeters,
+                    NominalOrbitErrorFraction,
+                    NominalOrbitErrorFloorMeters);
+
+            double acceptableApTolerance =
+                ResolveOrbitTolerance(
+                    _burnPredictedApoapsisMeters,
+                    AcceptableOrbitErrorFraction,
+                    AcceptableOrbitErrorFloorMeters);
+
+            double acceptablePeTolerance =
+                ResolveOrbitTolerance(
+                    _burnPredictedPeriapsisMeters,
+                    AcceptableOrbitErrorFraction,
+                    AcceptableOrbitErrorFloorMeters);
+
+            bool nominal =
+                IsWithinTolerance(
+                    solution.ApoapsisErrorMeters,
+                    nominalApTolerance) &&
+                IsWithinTolerance(
+                    solution.PeriapsisErrorMeters,
+                    nominalPeTolerance) &&
+                IsFinite(
+                    solution.AchievedEccentricity) &&
+                solution.AchievedEccentricity <=
+                    NominalEccentricityLimit;
+
+            bool acceptable =
+                IsWithinTolerance(
+                    solution.ApoapsisErrorMeters,
+                    acceptableApTolerance) &&
+                IsWithinTolerance(
+                    solution.PeriapsisErrorMeters,
+                    acceptablePeTolerance) &&
+                IsFinite(
+                    solution.AchievedEccentricity) &&
+                solution.AchievedEccentricity <=
+                    AcceptableEccentricityLimit;
+
+            bool completedNodeRemoved =
+                nodeState != null &&
+                nodeState.Available &&
+                string.Equals(
+                    nodeState.PlanId ?? string.Empty,
+                    _burnPlanId,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    nodeState.State ?? string.Empty,
+                    "NODE REMOVED",
+                    StringComparison.Ordinal);
+
+            solution.ReacquisitionReady =
+                completedNodeRemoved;
+
+            if (nominal)
+            {
+                solution.PostBurnResult =
+                    "NOMINAL";
+
+                solution.Status =
+                    "MANEUVER VERIFIED";
+
+                solution.Command =
+                    completedNodeRemoved
+                        ? "REACQUIRING NEXT MANEUVER"
+                        : "MANEUVER VERIFIED / REMOVE NODE";
+            }
+            else if (acceptable)
+            {
+                solution.PostBurnResult =
+                    "ACCEPTABLE";
+
+                solution.Status =
+                    "ORBIT ACCEPTABLE";
+
+                solution.Command =
+                    completedNodeRemoved
+                        ? "REACQUIRING NEXT MANEUVER"
+                        : "ORBIT ACCEPTABLE / REMOVE NODE";
+            }
+            else
+            {
+                solution.PostBurnResult =
+                    "OFF-NOMINAL";
+
+                solution.Status =
+                    "POST-BURN OFF-NOMINAL";
+
+                solution.Command =
+                    completedNodeRemoved
+                        ? "REVIEW ORBIT / NEXT PLAN"
+                        : "REVIEW ORBIT / REMOVE NODE";
+            }
+        }
+
+        private bool ShouldReacquireNextPlan(
+            ManeuverPlanModel currentPlan,
+            GuidanceNodeStateModel nodeState,
+            TelemetryPacket flight,
+            DateTime receivedUtc)
+        {
+            if (!_burnComplete ||
+                currentPlan == null ||
+                !currentPlan.Available ||
+                string.IsNullOrWhiteSpace(
+                    currentPlan.PlanId) ||
+                string.Equals(
+                    currentPlan.PlanId,
+                    _burnPlanId,
+                    StringComparison.Ordinal) ||
+                flight == null ||
+                (IsFinite(flight.CurrentThrust) &&
+                 flight.CurrentThrust >=
+                    MinimumThrustKilonewtons) ||
+                nodeState == null ||
+                !nodeState.Available ||
+                !string.Equals(
+                    nodeState.PlanId ?? string.Empty,
+                    _burnPlanId,
+                    StringComparison.Ordinal) ||
+                !string.Equals(
+                    nodeState.State ?? string.Empty,
+                    "NODE REMOVED",
+                    StringComparison.Ordinal))
+            {
+                _completedNodeRemovedSinceUtc =
+                    DateTime.MinValue;
+
+                return false;
+            }
+
+            if (_completedNodeRemovedSinceUtc ==
+                DateTime.MinValue)
+            {
+                _completedNodeRemovedSinceUtc =
+                    receivedUtc;
+
+                return false;
+            }
+
+            return
+                receivedUtc -
+                    _completedNodeRemovedSinceUtc >=
+                TimeSpan.FromSeconds(
+                    ReacquisitionDelaySeconds);
+        }
+
+        private void ResetCompletedBurn()
+        {
+            _burnPlanId =
+                string.Empty;
+
+            _burnPlannedDeltaV =
+                double.NaN;
+
+            _burnPlannedDuration =
+                double.NaN;
+
+            _burnPredictedApoapsisMeters =
+                double.NaN;
+
+            _burnPredictedPeriapsisMeters =
+                double.NaN;
+
+            _burnPredictedInclinationDegrees =
+                double.NaN;
+
+            _burnPredictedEccentricity =
+                double.NaN;
+
+            _deliveredDeltaV =
+                0.0;
+
+            _lastBurnUpdateUtc =
+                DateTime.MinValue;
+
+            _postBurnZeroThrustSinceUtc =
+                DateTime.MinValue;
+
+            _completedNodeRemovedSinceUtc =
+                DateTime.MinValue;
+
+            _burnActive =
+                false;
+
+            _burnComplete =
+                false;
+        }
+
+        private static double ResolveOrbitTolerance(
+            double plannedMeters,
+            double fraction,
+            double floorMeters)
+        {
+            if (!IsFinite(plannedMeters))
+            {
+                return floorMeters;
+            }
+
+            return
+                Math.Max(
+                    floorMeters,
+                    Math.Abs(plannedMeters) *
+                    fraction);
+        }
+
+        private static bool IsWithinTolerance(
+            double error,
+            double tolerance)
+        {
+            return
+                IsFinite(error) &&
+                IsFinite(tolerance) &&
+                Math.Abs(error) <=
+                    tolerance;
         }
 
         private static bool IsAligned(
@@ -877,6 +1289,125 @@ namespace KMC.Engine.Guidance
                     toleranceDegrees;
         }
 
+        private static void ApplyTimeWarpNodeClassification(
+            GuidanceSolutionModel solution,
+            ManeuverPlanModel plan,
+            GuidanceNodeStateModel nodeState)
+        {
+            if (solution == null ||
+                plan == null ||
+                nodeState == null ||
+                !nodeState.Available ||
+                !nodeState.NodeExists ||
+                !string.Equals(
+                    nodeState.PlanId ?? string.Empty,
+                    plan.PlanId ?? string.Empty,
+                    StringComparison.Ordinal) ||
+                !string.Equals(
+                    nodeState.State ?? string.Empty,
+                    "CREW MODIFIED",
+                    StringComparison.Ordinal) ||
+                !plan.NodeUniversalTimeAvailable ||
+                !IsFinite(
+                    plan.NodeUniversalTimeSeconds) ||
+                !IsFinite(
+                    nodeState.NodeUniversalTimeSeconds) ||
+                !IsFinite(
+                    plan.PredictedPeriodSeconds) ||
+                plan.PredictedPeriodSeconds <= 0.0)
+            {
+                return;
+            }
+
+            bool deltaVMatches =
+                IsWithin(
+                    nodeState.ProgradeDeltaVMetersPerSecond,
+                    plan.ProgradeDeltaVMetersPerSecond,
+                    NodeDeltaVToleranceMetersPerSecond) &&
+                IsWithin(
+                    nodeState.NormalDeltaVMetersPerSecond,
+                    plan.NormalDeltaVMetersPerSecond,
+                    NodeDeltaVToleranceMetersPerSecond) &&
+                IsWithin(
+                    nodeState.RadialDeltaVMetersPerSecond,
+                    plan.RadialDeltaVMetersPerSecond,
+                    NodeDeltaVToleranceMetersPerSecond);
+
+            if (!deltaVMatches)
+            {
+                return;
+            }
+
+            double utShift =
+                nodeState.NodeUniversalTimeSeconds -
+                plan.NodeUniversalTimeSeconds;
+
+            if (Math.Abs(utShift) <=
+                NodeUtToleranceSeconds)
+            {
+                return;
+            }
+
+            double wraps =
+                utShift /
+                plan.PredictedPeriodSeconds;
+
+            double nearestWrap =
+                Math.Round(wraps);
+
+            if (Math.Abs(nearestWrap) < 1.0)
+            {
+                return;
+            }
+
+            double expectedShift =
+                nearestWrap *
+                plan.PredictedPeriodSeconds;
+
+            if (Math.Abs(
+                    utShift -
+                    expectedShift) >
+                OrbitWrapToleranceSeconds)
+            {
+                return;
+            }
+
+            /*
+             * KSP can advance a maneuver node to the corresponding orbital
+             * point on a later revolution when time warp passes the intended
+             * node epoch. The DV vector is unchanged, but this is NOT the
+             * reviewed maneuver anymore. Do not mislabel it as a crew edit,
+             * and do not automatically authorize the next-orbit burn.
+             */
+            solution.NodeVerified =
+                false;
+
+            solution.ExecutionAuthorized =
+                false;
+
+            solution.NodeState =
+                "MANEUVER WINDOW MISSED";
+
+            solution.NodeDetail =
+                "NODE UT SHIFTED BY " +
+                nearestWrap.ToString("0") +
+                " ORBIT(S) DURING TIME WARP; REPLAN REQUIRED";
+        }
+
+        private static bool IsWithin(
+            double actual,
+            double planned,
+            double tolerance)
+        {
+            return
+                IsFinite(actual) &&
+                IsFinite(planned) &&
+                Math.Abs(
+                    actual -
+                    planned) <=
+                tolerance;
+        }
+
         private static void ApplyNodeInterlockCommand(
             GuidanceSolutionModel solution)
         {
@@ -885,6 +1416,23 @@ namespace KMC.Engine.Guidance
 
             string state =
                 solution.NodeState ?? string.Empty;
+
+            if (string.Equals(
+                    state,
+                    "MANEUVER WINDOW MISSED",
+                    StringComparison.Ordinal))
+            {
+                solution.Command =
+                    "MANEUVER WINDOW MISSED / REPLAN";
+
+                solution.ThrottleAdvisory =
+                    "THROTTLE 0%";
+
+                solution.Status =
+                    "REPLAN REQUIRED";
+
+                return;
+            }
 
             if (string.Equals(
                     state,
@@ -983,6 +1531,13 @@ namespace KMC.Engine.Guidance
                 " | Accel=" + Format(guidance.LiveAccelerationMetersPerSecondSquared, "0.00") + "m/s2" +
                 " | BurnActive=" + guidance.BurnActive +
                 " | BurnComplete=" + guidance.BurnComplete +
+                " | PostBurn=" + guidance.PostBurnResult +
+                " | AchAp=" + Format(guidance.AchievedApoapsisMeters, "0") + "m" +
+                " | AchPe=" + Format(guidance.AchievedPeriapsisMeters, "0") + "m" +
+                " | ApErr=" + Format(guidance.ApoapsisErrorMeters, "0") + "m" +
+                " | PeErr=" + Format(guidance.PeriapsisErrorMeters, "0") + "m" +
+                " | AchEcc=" + Format(guidance.AchievedEccentricity, "0.000000") +
+                " | ReacqReady=" + guidance.ReacquisitionReady +
                 " | Status=" + guidance.Status);
         }
 

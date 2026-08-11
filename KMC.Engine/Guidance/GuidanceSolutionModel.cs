@@ -120,6 +120,16 @@ namespace KMC.Engine.Guidance
             BurnProgressPercent = double.NaN;
             LiveThrustKilonewtons = double.NaN;
             LiveAccelerationMetersPerSecondSquared = double.NaN;
+
+            PostBurnResult = "NOT AVAILABLE";
+            PlannedApoapsisMeters = double.NaN;
+            PlannedPeriapsisMeters = double.NaN;
+            AchievedApoapsisMeters = double.NaN;
+            AchievedPeriapsisMeters = double.NaN;
+            ApoapsisErrorMeters = double.NaN;
+            PeriapsisErrorMeters = double.NaN;
+            AchievedEccentricity = double.NaN;
+            AchievedInclinationDegrees = double.NaN;
         }
 
         public bool Available { get; internal set; }
@@ -161,6 +171,18 @@ namespace KMC.Engine.Guidance
         public double BurnProgressPercent { get; internal set; }
         public double LiveThrustKilonewtons { get; internal set; }
         public double LiveAccelerationMetersPerSecondSquared { get; internal set; }
+
+        public bool PostBurnVerificationAvailable { get; internal set; }
+        public bool ReacquisitionReady { get; internal set; }
+        public string PostBurnResult { get; internal set; }
+        public double PlannedApoapsisMeters { get; internal set; }
+        public double PlannedPeriapsisMeters { get; internal set; }
+        public double AchievedApoapsisMeters { get; internal set; }
+        public double AchievedPeriapsisMeters { get; internal set; }
+        public double ApoapsisErrorMeters { get; internal set; }
+        public double PeriapsisErrorMeters { get; internal set; }
+        public double AchievedEccentricity { get; internal set; }
+        public double AchievedInclinationDegrees { get; internal set; }
 
         internal GuidanceSolutionModel Clone()
         {
@@ -251,7 +273,40 @@ namespace KMC.Engine.Guidance
                     LiveThrustKilonewtons,
 
                 LiveAccelerationMetersPerSecondSquared =
-                    LiveAccelerationMetersPerSecondSquared
+                    LiveAccelerationMetersPerSecondSquared,
+
+                PostBurnVerificationAvailable =
+                    PostBurnVerificationAvailable,
+
+                ReacquisitionReady =
+                    ReacquisitionReady,
+
+                PostBurnResult =
+                    PostBurnResult,
+
+                PlannedApoapsisMeters =
+                    PlannedApoapsisMeters,
+
+                PlannedPeriapsisMeters =
+                    PlannedPeriapsisMeters,
+
+                AchievedApoapsisMeters =
+                    AchievedApoapsisMeters,
+
+                AchievedPeriapsisMeters =
+                    AchievedPeriapsisMeters,
+
+                ApoapsisErrorMeters =
+                    ApoapsisErrorMeters,
+
+                PeriapsisErrorMeters =
+                    PeriapsisErrorMeters,
+
+                AchievedEccentricity =
+                    AchievedEccentricity,
+
+                AchievedInclinationDegrees =
+                    AchievedInclinationDegrees
             };
         }
     }
