@@ -87,6 +87,16 @@ namespace KMC.Engine.Maneuver
                         effectiveRequest);
             }
 
+            if (effectiveRequest.Type ==
+                ManeuverRequestType.ManualNormalAntiNormal)
+            {
+                return
+                    CalculateManualNormalAntiNormal(
+                        current,
+                        epoch,
+                        effectiveRequest);
+            }
+
             double currentSemiMajorAxis =
                 ResolveCurrentSemiMajorAxis(
                     current);
@@ -676,6 +686,196 @@ namespace KMC.Engine.Maneuver
             return plan;
         }
 
+        private ManeuverPlanModel CalculateManualNormalAntiNormal(
+            OrbitTelemetryState current,
+            ManeuverEpochTelemetryModel epoch,
+            ManeuverRequestModel request)
+        {
+            ManeuverPlanModel plan =
+                new ManeuverPlanModel
+                {
+                    Objective =
+                        BuildObjective(
+                            request),
+
+                    Status =
+                        "PLAN UNAVAILABLE"
+                };
+
+            double signedDeltaV =
+                request.ManualNormalDeltaVMetersPerSecond;
+
+            double nodeDelay =
+                request.NodeDelaySeconds;
+
+            if (!IsFinite(
+                    signedDeltaV) ||
+                Math.Abs(
+                    signedDeltaV) <
+                    MinimumUsefulDeltaV)
+            {
+                plan.Status =
+                    "MANUAL DELTA V REQUIRED";
+
+                plan.Evidence.Add(
+                    "Manual normal/anti-normal requests require a non-zero signed Delta-V.");
+
+                return plan;
+            }
+
+            if (!IsFinite(
+                    nodeDelay) ||
+                nodeDelay < 10.0 ||
+                nodeDelay > 86400.0)
+            {
+                plan.Status =
+                    "INVALID MANUAL NODE TIME";
+
+                plan.Evidence.Add(
+                    "Manual maneuver node delay must be between 10 seconds and 24 hours.");
+
+                return plan;
+            }
+
+            if (!IsUsableEpoch(
+                    epoch,
+                    current))
+            {
+                plan.Status =
+                    "WAITING FOR KSP UNIVERSAL TIME";
+
+                plan.ProgradeDeltaVMetersPerSecond =
+                    0.0;
+
+                plan.NormalDeltaVMetersPerSecond =
+                    signedDeltaV;
+
+                plan.RadialDeltaVMetersPerSecond =
+                    0.0;
+
+                plan.TotalDeltaVMetersPerSecond =
+                    Math.Abs(
+                        signedDeltaV);
+
+                plan.Evidence.Add(
+                    "Manual relative-time maneuver requires matched KMC-EPOCH1 telemetry before its node epoch can be anchored.");
+
+                return plan;
+            }
+
+            double totalDeltaV =
+                Math.Abs(
+                    signedDeltaV);
+
+            double burnDuration =
+                EstimateBurnDuration(
+                    current,
+                    totalDeltaV);
+
+            if (!IsFinite(
+                    burnDuration))
+            {
+                plan.Status =
+                    "BURN ESTIMATE UNAVAILABLE";
+
+                plan.Evidence.Add(
+                    "Mass/thrust telemetry cannot produce a burn-duration estimate.");
+
+                return plan;
+            }
+
+            double nodeMissionTime =
+                current.MissionTimeSeconds +
+                nodeDelay;
+
+            double nodeUniversalTime =
+                epoch.UniversalTimeSeconds +
+                nodeDelay;
+
+            double ignitionLead =
+                burnDuration /
+                2.0;
+
+            plan.Available =
+                true;
+
+            plan.OrbitTargetVerificationRequired =
+                false;
+
+            plan.VesselId =
+                epoch.VesselId ??
+                string.Empty;
+
+            plan.NodeUniversalTimeAvailable =
+                true;
+
+            plan.NodeUniversalTimeSeconds =
+                nodeUniversalTime;
+
+            plan.NodeMissionTimeSeconds =
+                nodeMissionTime;
+
+            plan.TimeToNodeSeconds =
+                nodeDelay;
+
+            plan.ProgradeDeltaVMetersPerSecond =
+                0.0;
+
+            plan.NormalDeltaVMetersPerSecond =
+                signedDeltaV;
+
+            plan.RadialDeltaVMetersPerSecond =
+                0.0;
+
+            plan.TotalDeltaVMetersPerSecond =
+                totalDeltaV;
+
+            plan.EstimatedBurnDurationSeconds =
+                burnDuration;
+
+            plan.IgnitionLeadSeconds =
+                ignitionLead;
+
+            plan.IgnitionMissionTimeSeconds =
+                nodeMissionTime -
+                ignitionLead;
+
+            plan.PredictedApoapsisMeters =
+                double.NaN;
+
+            plan.PredictedPeriapsisMeters =
+                double.NaN;
+
+            plan.PredictedInclinationDegrees =
+                double.NaN;
+
+            plan.PredictedEccentricity =
+                double.NaN;
+
+            plan.PredictedPeriodSeconds =
+                double.NaN;
+
+            plan.Status =
+                "PLAN VALID";
+
+            plan.Evidence.Add(
+                "Crew-entered signed normal-axis Delta-V; positive is true orbital normal and negative is true orbital anti-normal.");
+
+            plan.Evidence.Add(
+                "Node epoch is anchored to genuine KSP Universal Time at COMPUTE plus the requested T+ delay.");
+
+            plan.Evidence.Add(
+                "Manual node uses the existing KMC-MNV1 normal uplink axis; prograde and radial Delta-V remain zero.");
+
+            plan.Evidence.Add(
+                "Build 13.4 uses KMC-NORM1 true orbital-plane normal telemetry for GUID/FDAI attitude guidance.");
+
+            plan.Evidence.Add(
+                "Build 13.4 does not fabricate an arbitrary-node target orbit; post-burn verification confirms maneuver Delta-V completion instead.");
+
+            return plan;
+        }
+
         private static bool ValidateTargetPeriapsis(
             OrbitTelemetryState current,
             double targetAltitude,
@@ -814,6 +1014,26 @@ namespace KMC.Engine.Maneuver
                             : "MANUAL RETROGRADE " +
                               Math.Abs(
                                   request.ManualProgradeDeltaVMetersPerSecond)
+                                  .ToString("0.00") +
+                              " M/S";
+
+                case ManeuverRequestType.ManualNormalAntiNormal:
+                    if (!IsFinite(
+                            request.ManualNormalDeltaVMetersPerSecond))
+                    {
+                        return
+                            "MANUAL NORMAL / ANTI-NORMAL";
+                    }
+
+                    return
+                        request.ManualNormalDeltaVMetersPerSecond >= 0.0
+                            ? "MANUAL NORMAL +" +
+                              request.ManualNormalDeltaVMetersPerSecond
+                                  .ToString("0.00") +
+                              " M/S"
+                            : "MANUAL ANTI-NORMAL " +
+                              Math.Abs(
+                                  request.ManualNormalDeltaVMetersPerSecond)
                                   .ToString("0.00") +
                               " M/S";
 

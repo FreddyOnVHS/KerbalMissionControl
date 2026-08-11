@@ -22,6 +22,9 @@ namespace KMC.Engine.Maneuver
             ManualProgradeDeltaVMetersPerSecond =
                 double.NaN;
 
+            ManualNormalDeltaVMetersPerSecond =
+                double.NaN;
+
             NodeDelaySeconds =
                 double.NaN;
 
@@ -45,6 +48,13 @@ namespace KMC.Engine.Maneuver
         public double ManualProgradeDeltaVMetersPerSecond { get; set; }
 
         /// <summary>
+        /// Crew-entered signed normal-axis Delta-V.
+        /// Positive = orbital normal. Negative = orbital anti-normal.
+        /// Used only by ManualNormalAntiNormal.
+        /// </summary>
+        public double ManualNormalDeltaVMetersPerSecond { get; set; }
+
+        /// <summary>
         /// Relative maneuver-node delay from the current verified KSP epoch.
         /// Used only by ManualProgradeRetrograde.
         /// </summary>
@@ -64,6 +74,9 @@ namespace KMC.Engine.Maneuver
                         double.NaN,
 
                     ManualProgradeDeltaVMetersPerSecond =
+                        double.NaN,
+
+                    ManualNormalDeltaVMetersPerSecond =
                         double.NaN,
 
                     NodeDelaySeconds =
@@ -93,6 +106,9 @@ namespace KMC.Engine.Maneuver
 
                     ManualProgradeDeltaVMetersPerSecond =
                         source.ManualProgradeDeltaVMetersPerSecond,
+
+                    ManualNormalDeltaVMetersPerSecond =
+                        source.ManualNormalDeltaVMetersPerSecond,
 
                     NodeDelaySeconds =
                         source.NodeDelaySeconds,
@@ -152,6 +168,7 @@ namespace KMC.Engine.Maneuver
         CircularizeAtApoapsis = 0,
         SetPeriapsisAtApoapsis = 1,
         SetApoapsisAtPeriapsis = 2,
-        ManualProgradeRetrograde = 3
+        ManualProgradeRetrograde = 3,
+        ManualNormalAntiNormal = 4
     }
 }

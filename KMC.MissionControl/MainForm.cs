@@ -1,10 +1,12 @@
 using KMC.Engine.Maneuver;
+using KMC.Engine.Orbit;
 using KMC.MissionControl.Controls;
 using KMC.MissionControl.Diagnostics;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Pages;
 using KMC.MissionControl.Rendering.Propulsion;
 using KMC.MissionControl.Telemetry;
+using KMC.MissionControl.Transport;
 using KMC.MissionControl.Themes;
 using KMC.Shared;
 using System;
@@ -34,6 +36,7 @@ namespace KMC.MissionControl
 
         private readonly TableLayoutPanel _rootLayout;
         private readonly MissionControlReceiver _receiver;
+        private readonly OrbitNormalTelemetryReceiver _orbitNormalReceiver;
         private readonly LatestTelemetryBuffer _telemetryBuffer;
         private readonly FormsTimer _connectionTimer;
         private readonly FormsTimer _displayRefreshTimer;
@@ -155,6 +158,13 @@ namespace KMC.MissionControl
             _telemetryBuffer = new LatestTelemetryBuffer();
 
             _receiver = new MissionControlReceiver();
+
+            _orbitNormalReceiver =
+                new OrbitNormalTelemetryReceiver();
+
+            _orbitNormalReceiver.SampleReceived +=
+                OnOrbitNormalTelemetryReceived;
+
             _receiver.TelemetryReceived += OnTelemetryReceived;
             _receiver.ManeuverAcknowledgmentReceived += OnManeuverAcknowledgmentReceived;
 
@@ -375,6 +385,7 @@ namespace KMC.MissionControl
             selector.Items.Add("SET PE @ AP");
             selector.Items.Add("SET AP @ PE");
             selector.Items.Add("MANUAL PRO/RETRO");
+            selector.Items.Add("MANUAL NORM/ANTI");
             selector.SelectedIndex = 0;
 
             selector.SelectedIndexChanged +=
@@ -606,7 +617,8 @@ namespace KMC.MissionControl
                 _maneuverTypeSelector.SelectedIndex == 2;
 
             bool manual =
-                _maneuverTypeSelector.SelectedIndex == 3;
+                _maneuverTypeSelector.SelectedIndex == 3 ||
+                _maneuverTypeSelector.SelectedIndex == 4;
 
             _maneuverTargetKm.Enabled =
                 apsisTargetRequired ||
@@ -676,6 +688,11 @@ namespace KMC.MissionControl
                         ManeuverRequestType.ManualProgradeRetrograde;
                     break;
 
+                case 4:
+                    type =
+                        ManeuverRequestType.ManualNormalAntiNormal;
+                    break;
+
                 default:
                     type =
                         ManeuverRequestType.CircularizeAtApoapsis;
@@ -701,9 +718,17 @@ namespace KMC.MissionControl
                             ? (double)_maneuverTargetKm.Value
                             : double.NaN,
 
+                    ManualNormalDeltaVMetersPerSecond =
+                        type ==
+                        ManeuverRequestType.ManualNormalAntiNormal
+                            ? (double)_maneuverTargetKm.Value
+                            : double.NaN,
+
                     NodeDelaySeconds =
                         type ==
-                        ManeuverRequestType.ManualProgradeRetrograde
+                            ManeuverRequestType.ManualProgradeRetrograde ||
+                        type ==
+                            ManeuverRequestType.ManualNormalAntiNormal
                             ? (double)_maneuverNodeDelaySeconds.Value
                             : double.NaN,
 
@@ -873,6 +898,8 @@ namespace KMC.MissionControl
             try
             {
                 ManeuverRequestStore.Reset();
+                OrbitNormalTelemetryStore.Clear();
+                _orbitNormalReceiver.Start();
                 _receiver.Start();
                 _displayRefreshTimer.Start();
                 _connectionTimer.Start();
@@ -888,6 +915,41 @@ namespace KMC.MissionControl
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
+        }
+
+        private void OnOrbitNormalTelemetryReceived(
+            OrbitNormalTelemetrySample sample)
+        {
+            if (sample == null)
+            {
+                return;
+            }
+
+            OrbitNormalTelemetryStore.Publish(
+                new OrbitNormalTelemetryModel
+                {
+                    TelemetryAvailable =
+                        true,
+
+                    SourceTimestampUtc =
+                        sample.SourceTimestampUtc,
+
+                    ReceivedUtc =
+                        sample.ReceivedUtc,
+
+                    VesselName =
+                        sample.VesselName ??
+                        string.Empty,
+
+                    RightComponent =
+                        sample.RightComponent,
+
+                    NoseComponent =
+                        sample.NoseComponent,
+
+                    ReferenceForwardComponent =
+                        sample.ReferenceForwardComponent
+                });
         }
 
         private void OnTelemetryReceived(
@@ -1170,6 +1232,12 @@ namespace KMC.MissionControl
 
             _receiver.ManeuverAcknowledgmentReceived -=
                 OnManeuverAcknowledgmentReceived;
+
+            _orbitNormalReceiver.SampleReceived -=
+                OnOrbitNormalTelemetryReceived;
+
+            _orbitNormalReceiver.Dispose();
+            OrbitNormalTelemetryStore.Clear();
 
             _receiver.Dispose();
         }

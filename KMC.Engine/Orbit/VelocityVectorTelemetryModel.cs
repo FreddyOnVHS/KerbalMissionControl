@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace KMC.Engine.Orbit
 {
@@ -296,6 +296,227 @@ namespace KMC.Engine.Orbit
                     ? Math.Sqrt(
                         squared)
                     : 0.0;
+        }
+    }
+
+    /// <summary>
+    /// Build 13.4 true orbital-plane normal direction resolved into the same
+    /// vessel ReferenceTransform frame used by KMC-VEL1.
+    /// Components are unit-vector components, not velocities.
+    /// </summary>
+    public sealed class OrbitNormalTelemetryModel
+    {
+        public bool TelemetryAvailable { get; set; }
+
+        public DateTime SourceTimestampUtc { get; set; }
+
+        public DateTime ReceivedUtc { get; set; }
+
+        public string VesselName { get; set; } =
+            string.Empty;
+
+        public double RightComponent { get; set; }
+
+        public double NoseComponent { get; set; }
+
+        public double ReferenceForwardComponent { get; set; }
+
+        public double Magnitude { get; internal set; }
+
+        public double VelocityOrthogonalityDot { get; internal set; }
+
+        public bool Fresh { get; internal set; }
+
+        public bool VesselMatchesVelocityVector { get; internal set; }
+
+        public bool Available { get; internal set; }
+
+        public string Status { get; internal set; } =
+            "NO ORBIT NORMAL TELEMETRY";
+
+        internal void EvaluateAgainstVelocity(
+            VelocityVectorTelemetryModel velocity,
+            DateTime analysisUtc)
+        {
+            Magnitude =
+                Math.Sqrt(
+                    RightComponent * RightComponent +
+                    NoseComponent * NoseComponent +
+                    ReferenceForwardComponent *
+                    ReferenceForwardComponent);
+
+            double ageSeconds =
+                Math.Abs(
+                    (analysisUtc -
+                     ReceivedUtc)
+                    .TotalSeconds);
+
+            Fresh =
+                TelemetryAvailable &&
+                ageSeconds <=
+                    0.75;
+
+            VesselMatchesVelocityVector =
+                velocity != null &&
+                (string.IsNullOrEmpty(VesselName) ||
+                 string.IsNullOrEmpty(velocity.VesselName) ||
+                 string.Equals(
+                     VesselName,
+                     velocity.VesselName,
+                     StringComparison.Ordinal));
+
+            VelocityOrthogonalityDot =
+                double.NaN;
+
+            if (velocity != null &&
+                velocity.OrbitalMagnitudeMetersPerSecond > 1.0 &&
+                Magnitude > 0.5)
+            {
+                VelocityOrthogonalityDot =
+                    (RightComponent *
+                         velocity.OrbitalRightMetersPerSecond +
+                     NoseComponent *
+                         velocity.OrbitalNoseMetersPerSecond +
+                     ReferenceForwardComponent *
+                         velocity.OrbitalReferenceForwardMetersPerSecond) /
+                    (Magnitude *
+                     velocity.OrbitalMagnitudeMetersPerSecond);
+            }
+
+            bool magnitudeValid =
+                Magnitude >= 0.95 &&
+                Magnitude <= 1.05;
+
+            bool orthogonal =
+                !double.IsNaN(
+                    VelocityOrthogonalityDot) &&
+                !double.IsInfinity(
+                    VelocityOrthogonalityDot) &&
+                Math.Abs(
+                    VelocityOrthogonalityDot) <=
+                    0.02;
+
+            Available =
+                TelemetryAvailable &&
+                Fresh &&
+                VesselMatchesVelocityVector &&
+                magnitudeValid &&
+                orthogonal;
+
+            if (!TelemetryAvailable)
+            {
+                Status =
+                    "NO ORBIT NORMAL TELEMETRY";
+            }
+            else if (!Fresh)
+            {
+                Status =
+                    "ORBIT NORMAL TELEMETRY STALE";
+            }
+            else if (!VesselMatchesVelocityVector)
+            {
+                Status =
+                    "ORBIT NORMAL VESSEL MISMATCH";
+            }
+            else if (!magnitudeValid)
+            {
+                Status =
+                    "ORBIT NORMAL MAGNITUDE INVALID";
+            }
+            else if (!orthogonal)
+            {
+                Status =
+                    "ORBIT NORMAL NOT ORTHOGONAL";
+            }
+            else
+            {
+                Status =
+                    "ORBIT NORMAL VERIFIED";
+            }
+        }
+
+        internal static OrbitNormalTelemetryModel Clone(
+            OrbitNormalTelemetryModel source)
+        {
+            if (source == null)
+            {
+                return
+                    new OrbitNormalTelemetryModel();
+            }
+
+            return
+                new OrbitNormalTelemetryModel
+                {
+                    TelemetryAvailable =
+                        source.TelemetryAvailable,
+                    SourceTimestampUtc =
+                        source.SourceTimestampUtc,
+                    ReceivedUtc =
+                        source.ReceivedUtc,
+                    VesselName =
+                        source.VesselName,
+                    RightComponent =
+                        source.RightComponent,
+                    NoseComponent =
+                        source.NoseComponent,
+                    ReferenceForwardComponent =
+                        source.ReferenceForwardComponent,
+                    Magnitude =
+                        source.Magnitude,
+                    VelocityOrthogonalityDot =
+                        source.VelocityOrthogonalityDot,
+                    Fresh =
+                        source.Fresh,
+                    VesselMatchesVelocityVector =
+                        source.VesselMatchesVelocityVector,
+                    Available =
+                        source.Available,
+                    Status =
+                        source.Status
+                };
+        }
+    }
+
+    /// <summary>
+    /// Process-local MissionControl-to-Engine bridge for KMC-NORM1.
+    /// Socket ownership remains in MissionControl.
+    /// </summary>
+    public static class OrbitNormalTelemetryStore
+    {
+        private static readonly object SyncRoot =
+            new object();
+
+        private static OrbitNormalTelemetryModel _latest =
+            new OrbitNormalTelemetryModel();
+
+        public static void Publish(
+            OrbitNormalTelemetryModel sample)
+        {
+            lock (SyncRoot)
+            {
+                _latest =
+                    OrbitNormalTelemetryModel.Clone(
+                        sample);
+            }
+        }
+
+        public static OrbitNormalTelemetryModel GetLatest()
+        {
+            lock (SyncRoot)
+            {
+                return
+                    OrbitNormalTelemetryModel.Clone(
+                        _latest);
+            }
+        }
+
+        public static void Clear()
+        {
+            lock (SyncRoot)
+            {
+                _latest =
+                    new OrbitNormalTelemetryModel();
+            }
         }
     }
 }

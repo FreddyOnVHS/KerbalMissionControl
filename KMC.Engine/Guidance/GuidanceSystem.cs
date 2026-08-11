@@ -72,7 +72,10 @@ namespace KMC.Engine.Guidance
 
         private bool _burnActive;
         private bool _burnComplete;
-        private bool _burnRetrograde;
+
+        private ManeuverAttitudeMode _burnAttitudeMode =
+            ManeuverAttitudeMode.Prograde;
+
         private bool _burnRequiresOrbitTargetVerification;
 
         private bool _cutoffCommanded;
@@ -357,9 +360,8 @@ namespace KMC.Engine.Guidance
                 "MANEUVER EXECUTION";
 
             solution.AttitudeReference =
-                _burnRetrograde
-                    ? "TRUE ORBITAL RETROGRADE"
-                    : "TRUE ORBITAL PROGRADE";
+                GetAttitudeReference(
+                    _burnAttitudeMode);
 
             solution.PlannedDeltaVMetersPerSecond =
                 _burnPlannedDeltaV;
@@ -382,7 +384,8 @@ namespace KMC.Engine.Guidance
             PopulateAttitudeGuidance(
                 solution,
                 orbit,
-                _burnRetrograde);
+                _burnAttitudeMode,
+                receivedUtc);
 
             PopulateLivePropulsion(
                 solution,
@@ -680,15 +683,15 @@ namespace KMC.Engine.Guidance
                 plan,
                 nodeState);
 
-            bool retrograde =
-                IsFinite(
-                    plan.ProgradeDeltaVMetersPerSecond) &&
-                plan.ProgradeDeltaVMetersPerSecond < 0.0;
+            ManeuverAttitudeMode attitudeMode =
+                ResolveAttitudeMode(
+                    plan);
 
             PopulateAttitudeGuidance(
                 solution,
                 orbit,
-                retrograde);
+                attitudeMode,
+                receivedUtc);
 
             return solution;
         }
@@ -775,7 +778,8 @@ namespace KMC.Engine.Guidance
         private static void PopulateAttitudeGuidance(
             GuidanceSolutionModel solution,
             OrbitModel orbit,
-            bool retrograde)
+            ManeuverAttitudeMode attitudeMode,
+            DateTime receivedUtc)
         {
             if (solution.Mode ==
                 "GUIDANCE WAITING")
@@ -785,12 +789,12 @@ namespace KMC.Engine.Guidance
             }
 
             solution.CommandedRetrograde =
-                retrograde;
+                attitudeMode ==
+                ManeuverAttitudeMode.Retrograde;
 
             solution.AttitudeReference =
-                retrograde
-                    ? "TRUE ORBITAL RETROGRADE"
-                    : "TRUE ORBITAL PROGRADE";
+                GetAttitudeReference(
+                    attitudeMode);
 
             if (orbit == null ||
                 !orbit.Available ||
@@ -803,46 +807,102 @@ namespace KMC.Engine.Guidance
                 return;
             }
 
-            VelocityVectorTelemetryModel vector =
-                orbit.VelocityVector;
+            double right;
+            double nose;
+            double forward;
 
-            double magnitude =
-                vector.OrbitalMagnitudeMetersPerSecond;
-
-            if (!IsFinite(magnitude) ||
-                magnitude < 1.0)
+            if (attitudeMode ==
+                    ManeuverAttitudeMode.Normal ||
+                attitudeMode ==
+                    ManeuverAttitudeMode.AntiNormal)
             {
+                OrbitNormalTelemetryModel normal =
+                    OrbitNormalTelemetryStore.GetLatest();
+
+                normal.EvaluateAgainstVelocity(
+                    orbit.VelocityVector,
+                    receivedUtc);
+
+                if (!normal.Available)
+                {
+                    solution.Evidence =
+                        "True orbital normal vector unavailable: " +
+                        normal.Status;
+
+                    return;
+                }
+
+                double direction =
+                    attitudeMode ==
+                    ManeuverAttitudeMode.AntiNormal
+                        ? -1.0
+                        : 1.0;
+
+                right =
+                    direction *
+                    normal.RightComponent /
+                    normal.Magnitude;
+
+                nose =
+                    direction *
+                    normal.NoseComponent /
+                    normal.Magnitude;
+
+                forward =
+                    direction *
+                    normal.ReferenceForwardComponent /
+                    normal.Magnitude;
+
                 solution.Evidence =
-                    "ORBIT velocity vector magnitude invalid.";
-
-                return;
+                    attitudeMode ==
+                    ManeuverAttitudeMode.AntiNormal
+                        ? "True orbital anti-normal attitude reference from inverted verified KMC-NORM1 orbital-plane normal; maneuver execution remains crew advisory."
+                        : "True orbital normal attitude reference from verified KMC-NORM1 orbital-plane normal; maneuver execution remains crew advisory.";
             }
+            else
+            {
+                VelocityVectorTelemetryModel vector =
+                    orbit.VelocityVector;
 
-            /*
-             * Build 13.2:
-             * Prograde uses the verified orbital velocity unit vector.
-             * Retrograde uses its exact inverse. No new spacecraft telemetry
-             * or coordinate convention is introduced.
-             */
-            double direction =
-                retrograde
-                    ? -1.0
-                    : 1.0;
+                double magnitude =
+                    vector.OrbitalMagnitudeMetersPerSecond;
 
-            double right =
-                direction *
-                vector.OrbitalRightMetersPerSecond /
-                magnitude;
+                if (!IsFinite(magnitude) ||
+                    magnitude < 1.0)
+                {
+                    solution.Evidence =
+                        "ORBIT velocity vector magnitude invalid.";
 
-            double nose =
-                direction *
-                vector.OrbitalNoseMetersPerSecond /
-                magnitude;
+                    return;
+                }
 
-            double forward =
-                direction *
-                vector.OrbitalReferenceForwardMetersPerSecond /
-                magnitude;
+                double direction =
+                    attitudeMode ==
+                    ManeuverAttitudeMode.Retrograde
+                        ? -1.0
+                        : 1.0;
+
+                right =
+                    direction *
+                    vector.OrbitalRightMetersPerSecond /
+                    magnitude;
+
+                nose =
+                    direction *
+                    vector.OrbitalNoseMetersPerSecond /
+                    magnitude;
+
+                forward =
+                    direction *
+                    vector.OrbitalReferenceForwardMetersPerSecond /
+                    magnitude;
+
+                solution.Evidence =
+                    attitudeMode ==
+                    ManeuverAttitudeMode.Retrograde
+                        ? "True orbital retrograde attitude reference from inverted verified orbital velocity vector; maneuver execution remains crew advisory."
+                        : "True orbital prograde attitude reference from verified orbital velocity vector; maneuver execution remains crew advisory.";
+            }
 
             nose =
                 Clamp(
@@ -885,11 +945,68 @@ namespace KMC.Engine.Guidance
 
             solution.Available =
                 true;
+        }
 
-            solution.Evidence =
-                retrograde
-                    ? "True orbital retrograde attitude reference from inverted verified orbital velocity vector; maneuver execution remains crew advisory."
-                    : "True orbital prograde attitude reference from verified orbital velocity vector; maneuver execution remains crew advisory.";
+        private static ManeuverAttitudeMode ResolveAttitudeMode(
+            ManeuverPlanModel plan)
+        {
+            if (plan != null &&
+                IsFinite(
+                    plan.NormalDeltaVMetersPerSecond) &&
+                Math.Abs(
+                    plan.NormalDeltaVMetersPerSecond) >
+                    NodeDeltaVToleranceMetersPerSecond &&
+                IsFinite(
+                    plan.ProgradeDeltaVMetersPerSecond) &&
+                Math.Abs(
+                    plan.ProgradeDeltaVMetersPerSecond) <=
+                    NodeDeltaVToleranceMetersPerSecond &&
+                IsFinite(
+                    plan.RadialDeltaVMetersPerSecond) &&
+                Math.Abs(
+                    plan.RadialDeltaVMetersPerSecond) <=
+                    NodeDeltaVToleranceMetersPerSecond)
+            {
+                return
+                    plan.NormalDeltaVMetersPerSecond < 0.0
+                        ? ManeuverAttitudeMode.AntiNormal
+                        : ManeuverAttitudeMode.Normal;
+            }
+
+            if (plan != null &&
+                IsFinite(
+                    plan.ProgradeDeltaVMetersPerSecond) &&
+                plan.ProgradeDeltaVMetersPerSecond < 0.0)
+            {
+                return
+                    ManeuverAttitudeMode.Retrograde;
+            }
+
+            return
+                ManeuverAttitudeMode.Prograde;
+        }
+
+        private static string GetAttitudeReference(
+            ManeuverAttitudeMode mode)
+        {
+            switch (mode)
+            {
+                case ManeuverAttitudeMode.Retrograde:
+                    return
+                        "TRUE ORBITAL RETROGRADE";
+
+                case ManeuverAttitudeMode.Normal:
+                    return
+                        "TRUE ORBITAL NORMAL";
+
+                case ManeuverAttitudeMode.AntiNormal:
+                    return
+                        "TRUE ORBITAL ANTI-NORMAL";
+
+                default:
+                    return
+                        "TRUE ORBITAL PROGRADE";
+            }
         }
 
         private static void PopulateLivePropulsion(
@@ -1133,10 +1250,9 @@ namespace KMC.Engine.Guidance
             _burnPlannedDuration =
                 plan.EstimatedBurnDurationSeconds;
 
-            _burnRetrograde =
-                IsFinite(
-                    plan.ProgradeDeltaVMetersPerSecond) &&
-                plan.ProgradeDeltaVMetersPerSecond < 0.0;
+            _burnAttitudeMode =
+                ResolveAttitudeMode(
+                    plan);
 
             _burnRequiresOrbitTargetVerification =
                 plan.OrbitTargetVerificationRequired;
@@ -1499,8 +1615,8 @@ namespace KMC.Engine.Guidance
             _burnPlannedDuration =
                 double.NaN;
 
-            _burnRetrograde =
-                false;
+            _burnAttitudeMode =
+                ManeuverAttitudeMode.Prograde;
 
             _burnRequiresOrbitTargetVerification =
                 false;
@@ -1871,6 +1987,14 @@ namespace KMC.Engine.Guidance
             return
                 degrees *
                 (Math.PI / 180.0);
+        }
+
+        private enum ManeuverAttitudeMode
+        {
+            Prograde = 0,
+            Retrograde = 1,
+            Normal = 2,
+            AntiNormal = 3
         }
 
         private static bool IsFinite(

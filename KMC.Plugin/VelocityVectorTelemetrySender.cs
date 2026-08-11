@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
@@ -8,13 +8,12 @@ using UnityEngine;
 namespace KMC.Plugin
 {
     /// <summary>
-    /// Publishes true three-dimensional surface and orbital velocity vectors
-    /// resolved into the active vessel reference frame.
+    /// Publishes true three-dimensional surface/orbital velocity vectors and
+    /// the true orbital-plane normal, all resolved into the active vessel
+    /// reference frame.
     ///
-    /// This shares the established Mission Control UDP 5058 transport socket
-    /// with KMC-ENGINE1. Packets are demultiplexed by protocol ID, so no
-    /// additional Mission Control socket is required and KMC6 remains
-    /// unchanged.
+    /// KMC-VEL1 remains unchanged on UDP 5058.
+    /// Build 13.4 adds KMC-NORM1 on UDP 5098.
     /// </summary>
     [KSPAddon(
         KSPAddon.Startup.Flight,
@@ -25,14 +24,21 @@ namespace KMC.Plugin
         private const int VelocityTelemetryPort =
             5058;
 
-        private const string ProtocolId =
+        private const int OrbitNormalTelemetryPort =
+            5098;
+
+        private const string VelocityProtocolId =
             "KMC-VEL1";
+
+        private const string OrbitNormalProtocolId =
+            "KMC-NORM1";
 
         private const float SendIntervalSeconds =
             0.1f;
 
         private UdpClient _udpClient;
-        private IPEndPoint _endpoint;
+        private IPEndPoint _velocityEndpoint;
+        private IPEndPoint _orbitNormalEndpoint;
         private float _nextSendTime;
 
         public void Start()
@@ -42,18 +48,23 @@ namespace KMC.Plugin
                 _udpClient =
                     new UdpClient();
 
-                _endpoint =
+                _velocityEndpoint =
                     new IPEndPoint(
                         IPAddress.Loopback,
                         VelocityTelemetryPort);
 
+                _orbitNormalEndpoint =
+                    new IPEndPoint(
+                        IPAddress.Loopback,
+                        OrbitNormalTelemetryPort);
+
                 Debug.Log(
-                    "[KMC] Velocity-vector telemetry sender started.");
+                    "[KMC] Velocity/orbit-normal telemetry sender started.");
             }
             catch (Exception ex)
             {
                 Debug.LogError(
-                    "[KMC] Velocity-vector sender failed to start: " +
+                    "[KMC] Velocity/orbit-normal sender failed to start: " +
                     ex);
             }
         }
@@ -82,20 +93,23 @@ namespace KMC.Plugin
 
             try
             {
+                DateTime nowUtc =
+                    DateTime.UtcNow;
+
                 VectorComponents surface =
-                    ResolveVelocity(
+                    ResolveVector(
                         vessel.srf_velocity,
                         vessel);
 
                 VectorComponents orbital =
-                    ResolveVelocity(
+                    ResolveVector(
                         vessel.obt_velocity,
                         vessel);
 
-                string message =
-                    ProtocolId +
+                string velocityMessage =
+                    VelocityProtocolId +
                     "|" +
-                    DateTime.UtcNow.Ticks.ToString(
+                    nowUtc.Ticks.ToString(
                         CultureInfo.InvariantCulture) +
                     "|" +
                     Uri.EscapeDataString(
@@ -114,25 +128,96 @@ namespace KMC.Plugin
                     "|" +
                     Format(orbital.ReferenceForward);
 
-                byte[] payload =
-                    Encoding.UTF8.GetBytes(
-                        message);
+                Send(
+                    velocityMessage,
+                    _velocityEndpoint);
 
-                _udpClient.Send(
-                    payload,
-                    payload.Length,
-                    _endpoint);
+                /*
+                 * Orbital normal follows the standard specific angular-
+                 * momentum direction h = r x v.
+                 *
+                 * vessel.upAxis is radial-out from the current main body.
+                 * The result is normalized before resolving it in the vessel
+                 * ReferenceTransform frame.
+                 */
+                Vector3d orbitNormal =
+                    Vector3d.Cross(
+                        vessel.upAxis,
+                        vessel.obt_velocity);
+
+                double normalMagnitude =
+                    orbitNormal.magnitude;
+
+                if (normalMagnitude >
+                    1.0e-9)
+                {
+                    orbitNormal =
+                        orbitNormal /
+                        normalMagnitude;
+                }
+                else
+                {
+                    orbitNormal =
+                        Vector3d.zero;
+                }
+
+                VectorComponents normal =
+                    ResolveVector(
+                        orbitNormal,
+                        vessel);
+
+                string normalMessage =
+                    OrbitNormalProtocolId +
+                    "|" +
+                    nowUtc.Ticks.ToString(
+                        CultureInfo.InvariantCulture) +
+                    "|" +
+                    Uri.EscapeDataString(
+                        vessel.vesselName ??
+                        string.Empty) +
+                    "|" +
+                    Format(normal.Right) +
+                    "|" +
+                    Format(normal.Nose) +
+                    "|" +
+                    Format(normal.ReferenceForward);
+
+                Send(
+                    normalMessage,
+                    _orbitNormalEndpoint);
             }
             catch (Exception ex)
             {
                 Debug.LogError(
-                    "[KMC] Velocity-vector send failed: " +
+                    "[KMC] Velocity/orbit-normal send failed: " +
                     ex);
             }
         }
 
-        private static VectorComponents ResolveVelocity(
-            Vector3d velocity,
+        private void Send(
+            string message,
+            IPEndPoint endpoint)
+        {
+            if (_udpClient == null ||
+                endpoint == null ||
+                string.IsNullOrEmpty(
+                    message))
+            {
+                return;
+            }
+
+            byte[] payload =
+                Encoding.UTF8.GetBytes(
+                    message);
+
+            _udpClient.Send(
+                payload,
+                payload.Length,
+                endpoint);
+        }
+
+        private static VectorComponents ResolveVector(
+            Vector3d vector,
             Vessel vessel)
         {
             VectorComponents result =
@@ -155,17 +240,17 @@ namespace KMC.Plugin
 
             result.Right =
                 Vector3d.Dot(
-                    velocity,
+                    vector,
                     vesselRight);
 
             result.Nose =
                 Vector3d.Dot(
-                    velocity,
+                    vector,
                     vesselNose);
 
             result.ReferenceForward =
                 Vector3d.Dot(
-                    velocity,
+                    vector,
                     vesselReferenceForward);
 
             return result;
@@ -207,7 +292,7 @@ namespace KMC.Plugin
             }
 
             Debug.Log(
-                "[KMC] Velocity-vector telemetry sender stopped.");
+                "[KMC] Velocity/orbit-normal telemetry sender stopped.");
         }
 
         private sealed class VectorComponents

@@ -123,8 +123,10 @@ namespace KMC.Engine.Maneuver
 
                 bool manualEpochAnchored =
                     request != null &&
-                    request.Type ==
-                        ManeuverRequestType.ManualProgradeRetrograde &&
+                    (request.Type ==
+                         ManeuverRequestType.ManualProgradeRetrograde ||
+                     request.Type ==
+                         ManeuverRequestType.ManualNormalAntiNormal) &&
                     IsFinite(
                         _activeNodeUtAnchor);
 
