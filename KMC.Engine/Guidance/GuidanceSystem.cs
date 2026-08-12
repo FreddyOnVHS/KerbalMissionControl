@@ -713,15 +713,117 @@ namespace KMC.Engine.Guidance
             if (nodeState == null ||
                 !nodeState.Available)
             {
+                solution.NodeVerificationAvailable =
+                    false;
+
                 solution.NodeState =
                     "NOT LOADED";
 
                 solution.NodeDetail =
                     "NO KSP NODE VERIFICATION TELEMETRY";
 
+                solution.NodeExists =
+                    false;
+
+                solution.NodeVerified =
+                    false;
+
+                solution.ExecutionAuthorized =
+                    false;
+
                 return;
             }
 
+            bool planMatches =
+                string.Equals(
+                    nodeState.PlanId ?? string.Empty,
+                    planId ?? string.Empty,
+                    StringComparison.Ordinal);
+
+            /*
+             * Build 13.5.4:
+             * Node verification state belongs to a specific immutable PlanId.
+             *
+             * Do not copy state/detail/node-exists/Delta-V from the latest
+             * node-state sample into a different active maneuver. The latest
+             * store entry may legitimately describe cleanup or verification
+             * of an older/newer plan.
+             */
+            if (!planMatches)
+            {
+                solution.NodeVerificationAvailable =
+                    false;
+
+                solution.NodeState =
+                    "NOT LOADED";
+
+                solution.NodeDetail =
+                    "LATEST KSP NODE STATE BELONGS TO PLAN " +
+                    (string.IsNullOrWhiteSpace(
+                        nodeState.PlanId)
+                        ? "---"
+                        : nodeState.PlanId.Trim()) +
+                    "; ACTIVE PLAN IS " +
+                    (string.IsNullOrWhiteSpace(
+                        planId)
+                        ? "---"
+                        : planId.Trim());
+
+                solution.NodeExists =
+                    false;
+
+                solution.NodeVerified =
+                    false;
+
+                solution.ExecutionAuthorized =
+                    false;
+
+                return;
+            }
+
+            bool fresh =
+                nodeState.ReceivedUtc !=
+                    DateTime.MinValue &&
+                receivedUtc -
+                    nodeState.ReceivedUtc <=
+                TimeSpan.FromSeconds(
+                    NodeStateFreshnessSeconds);
+
+            /*
+             * A stale NODE VERIFIED label is also unsafe/confusing. Once the
+             * sample is outside the verification freshness window, expose
+             * that explicitly instead of retaining a verified-looking state
+             * while the authorization boolean has already gone false.
+             */
+            if (!fresh)
+            {
+                solution.NodeVerificationAvailable =
+                    false;
+
+                solution.NodeState =
+                    "NODE STATE STALE";
+
+                solution.NodeDetail =
+                    "KSP NODE VERIFICATION TELEMETRY EXCEEDED " +
+                    NodeStateFreshnessSeconds.ToString("0.0") +
+                    " S FRESHNESS LIMIT";
+
+                solution.NodeExists =
+                    false;
+
+                solution.NodeVerified =
+                    false;
+
+                solution.ExecutionAuthorized =
+                    false;
+
+                return;
+            }
+
+            /*
+             * Only a fresh sample owned by the active PlanId is allowed to
+             * populate crew-visible node state and measured node Delta-V.
+             */
             solution.NodeVerificationAvailable =
                 true;
 
@@ -756,23 +858,7 @@ namespace KMC.Engine.Guidance
                         nodeState.RadialDeltaVMetersPerSecond);
             }
 
-            bool planMatches =
-                string.Equals(
-                    nodeState.PlanId ?? string.Empty,
-                    planId ?? string.Empty,
-                    StringComparison.Ordinal);
-
-            bool fresh =
-                nodeState.ReceivedUtc !=
-                    DateTime.MinValue &&
-                receivedUtc -
-                    nodeState.ReceivedUtc <=
-                TimeSpan.FromSeconds(
-                    NodeStateFreshnessSeconds);
-
             solution.NodeVerified =
-                planMatches &&
-                fresh &&
                 nodeState.NodeExists &&
                 string.Equals(
                     solution.NodeState,
@@ -820,6 +906,50 @@ namespace KMC.Engine.Guidance
             double forward;
 
             if (attitudeMode ==
+                    ManeuverAttitudeMode.RadialOut ||
+                attitudeMode ==
+                    ManeuverAttitudeMode.RadialIn)
+            {
+                OrbitNormalTelemetryModel normal =
+                    OrbitNormalTelemetryStore.GetLatest();
+
+                normal.EvaluateAgainstVelocity(
+                    orbit.VelocityVector,
+                    receivedUtc);
+
+                RadialTelemetryModel radial =
+                    RadialTelemetryStore.GetLatest();
+
+                radial.EvaluateAgainstNormal(
+                    normal,
+                    receivedUtc);
+
+                if (!normal.Available ||
+                    !radial.Available)
+                {
+                    solution.Evidence =
+                        "True radial vector unavailable: " +
+                        radial.Status;
+
+                    return;
+                }
+
+                double direction =
+                    attitudeMode ==
+                    ManeuverAttitudeMode.RadialIn
+                        ? -1.0
+                        : 1.0;
+
+                right = direction * radial.RightComponent / radial.Magnitude;
+                nose = direction * radial.NoseComponent / radial.Magnitude;
+                forward = direction * radial.ReferenceForwardComponent / radial.Magnitude;
+
+                solution.Evidence =
+                    attitudeMode == ManeuverAttitudeMode.RadialIn
+                        ? "True orbital radial-in attitude reference from inverted verified KMC-RAD1 radial-out vector; maneuver execution remains crew advisory."
+                        : "True orbital radial-out attitude reference from verified KMC-RAD1 radial-out vector; maneuver execution remains crew advisory.";
+            }
+            else if (attitudeMode ==
                     ManeuverAttitudeMode.Normal ||
                 attitudeMode ==
                     ManeuverAttitudeMode.AntiNormal)
@@ -960,6 +1090,29 @@ namespace KMC.Engine.Guidance
         {
             if (plan != null &&
                 IsFinite(
+                    plan.RadialDeltaVMetersPerSecond) &&
+                Math.Abs(
+                    plan.RadialDeltaVMetersPerSecond) >
+                    NodeDeltaVToleranceMetersPerSecond &&
+                IsFinite(
+                    plan.ProgradeDeltaVMetersPerSecond) &&
+                Math.Abs(
+                    plan.ProgradeDeltaVMetersPerSecond) <=
+                    NodeDeltaVToleranceMetersPerSecond &&
+                IsFinite(
+                    plan.NormalDeltaVMetersPerSecond) &&
+                Math.Abs(
+                    plan.NormalDeltaVMetersPerSecond) <=
+                    NodeDeltaVToleranceMetersPerSecond)
+            {
+                return
+                    plan.RadialDeltaVMetersPerSecond < 0.0
+                        ? ManeuverAttitudeMode.RadialIn
+                        : ManeuverAttitudeMode.RadialOut;
+            }
+
+            if (plan != null &&
+                IsFinite(
                     plan.NormalDeltaVMetersPerSecond) &&
                 Math.Abs(
                     plan.NormalDeltaVMetersPerSecond) >
@@ -1010,6 +1163,14 @@ namespace KMC.Engine.Guidance
                 case ManeuverAttitudeMode.AntiNormal:
                     return
                         "TRUE ORBITAL ANTI-NORMAL";
+
+                case ManeuverAttitudeMode.RadialOut:
+                    return
+                        "TRUE ORBITAL RADIAL OUT";
+
+                case ManeuverAttitudeMode.RadialIn:
+                    return
+                        "TRUE ORBITAL RADIAL IN";
 
                 default:
                     return
@@ -2035,7 +2196,9 @@ namespace KMC.Engine.Guidance
             Prograde = 0,
             Retrograde = 1,
             Normal = 2,
-            AntiNormal = 3
+            AntiNormal = 3,
+            RadialOut = 4,
+            RadialIn = 5
         }
 
         private static bool IsFinite(

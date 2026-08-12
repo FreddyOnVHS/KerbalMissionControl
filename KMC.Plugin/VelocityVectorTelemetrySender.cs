@@ -27,11 +27,17 @@ namespace KMC.Plugin
         private const int OrbitNormalTelemetryPort =
             5098;
 
+        private const int RadialTelemetryPort =
+            5099;
+
         private const string VelocityProtocolId =
             "KMC-VEL1";
 
         private const string OrbitNormalProtocolId =
             "KMC-NORM1";
+
+        private const string RadialProtocolId =
+            "KMC-RAD1";
 
         private const float SendIntervalSeconds =
             0.1f;
@@ -39,6 +45,7 @@ namespace KMC.Plugin
         private UdpClient _udpClient;
         private IPEndPoint _velocityEndpoint;
         private IPEndPoint _orbitNormalEndpoint;
+        private IPEndPoint _radialEndpoint;
         private float _nextSendTime;
 
         public void Start()
@@ -57,6 +64,11 @@ namespace KMC.Plugin
                     new IPEndPoint(
                         IPAddress.Loopback,
                         OrbitNormalTelemetryPort);
+
+                _radialEndpoint =
+                    new IPEndPoint(
+                        IPAddress.Loopback,
+                        RadialTelemetryPort);
 
                 Debug.Log(
                     "[KMC] Velocity/orbit-normal telemetry sender started.");
@@ -188,6 +200,50 @@ namespace KMC.Plugin
                 Send(
                     normalMessage,
                     _orbitNormalEndpoint);
+
+                /*
+                 * Build 13.5 true radial-out reference. vessel.upAxis is
+                 * KSP's local radial-out direction from the central body.
+                 */
+                Vector3d radialOut =
+                    vessel.upAxis;
+
+                double radialMagnitude =
+                    radialOut.magnitude;
+
+                if (radialMagnitude > 1.0e-9)
+                {
+                    radialOut = radialOut / radialMagnitude;
+                }
+                else
+                {
+                    radialOut = Vector3d.zero;
+                }
+
+                VectorComponents radial =
+                    ResolveVector(
+                        radialOut,
+                        vessel);
+
+                string radialMessage =
+                    RadialProtocolId +
+                    "|" +
+                    nowUtc.Ticks.ToString(
+                        CultureInfo.InvariantCulture) +
+                    "|" +
+                    Uri.EscapeDataString(
+                        vessel.vesselName ??
+                        string.Empty) +
+                    "|" +
+                    Format(radial.Right) +
+                    "|" +
+                    Format(radial.Nose) +
+                    "|" +
+                    Format(radial.ReferenceForward);
+
+                Send(
+                    radialMessage,
+                    _radialEndpoint);
             }
             catch (Exception ex)
             {

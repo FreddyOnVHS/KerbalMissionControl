@@ -37,6 +37,7 @@ namespace KMC.MissionControl
         private readonly TableLayoutPanel _rootLayout;
         private readonly MissionControlReceiver _receiver;
         private readonly OrbitNormalTelemetryReceiver _orbitNormalReceiver;
+        private readonly RadialTelemetryReceiver _radialReceiver;
         private readonly LatestTelemetryBuffer _telemetryBuffer;
         private readonly FormsTimer _connectionTimer;
         private readonly FormsTimer _displayRefreshTimer;
@@ -46,6 +47,8 @@ namespace KMC.MissionControl
         private readonly ComboBox _maneuverTypeSelector;
         private readonly NumericUpDown _maneuverTargetKm;
         private readonly NumericUpDown _maneuverNodeDelaySeconds;
+        private readonly Label _maneuverValueHeader;
+        private readonly Label _maneuverNodeDelayHeader;
         private readonly Button _maneuverComputeButton;
         private readonly Button _maneuverUploadButton;
         private readonly TrackBar _displayRefreshSlider;
@@ -84,6 +87,8 @@ namespace KMC.MissionControl
             _maneuverTypeSelector = CreateManeuverTypeSelector();
             _maneuverTargetKm = CreateManeuverTargetControl();
             _maneuverNodeDelaySeconds = CreateManeuverNodeDelayControl();
+            _maneuverValueHeader = CreateManeuverFieldHeader("TARGET ALT (KM)");
+            _maneuverNodeDelayHeader = CreateManeuverFieldHeader("NODE T+ (SEC)");
             _maneuverComputeButton = CreateManeuverComputeButton();
             _maneuverUploadButton = CreateManeuverUploadButton();
             _displayRefreshSlider = CreateDisplayRefreshSlider();
@@ -162,8 +167,14 @@ namespace KMC.MissionControl
             _orbitNormalReceiver =
                 new OrbitNormalTelemetryReceiver();
 
+            _radialReceiver =
+                new RadialTelemetryReceiver();
+
             _orbitNormalReceiver.SampleReceived +=
                 OnOrbitNormalTelemetryReceived;
+
+            _radialReceiver.SampleReceived +=
+                OnRadialTelemetryReceived;
 
             _receiver.TelemetryReceived += OnTelemetryReceived;
             _receiver.ManeuverAcknowledgmentReceived += OnManeuverAcknowledgmentReceived;
@@ -260,7 +271,7 @@ namespace KMC.MissionControl
                     Margin = Padding.Empty,
                     Padding = Padding.Empty,
                     ColumnCount = 9,
-                    RowCount = 1
+                    RowCount = 2
                 };
 
             headerLayout.ColumnStyles.Add(
@@ -310,6 +321,11 @@ namespace KMC.MissionControl
 
             headerLayout.RowStyles.Add(
                 new RowStyle(
+                    SizeType.Absolute,
+                    17.0f));
+
+            headerLayout.RowStyles.Add(
+                new RowStyle(
                     SizeType.Percent,
                     100.0f));
 
@@ -326,14 +342,26 @@ namespace KMC.MissionControl
                 };
 
             headerLayout.Controls.Add(titleLabel, 0, 0);
+            headerLayout.SetRowSpan(titleLabel, 2);
+
             headerLayout.Controls.Add(_maneuverTypeSelector, 1, 0);
-            headerLayout.Controls.Add(_maneuverTargetKm, 2, 0);
-            headerLayout.Controls.Add(_maneuverNodeDelaySeconds, 3, 0);
+            headerLayout.SetRowSpan(_maneuverTypeSelector, 2);
+
+            headerLayout.Controls.Add(_maneuverValueHeader, 2, 0);
+            headerLayout.Controls.Add(_maneuverTargetKm, 2, 1);
+            headerLayout.Controls.Add(_maneuverNodeDelayHeader, 3, 0);
+            headerLayout.Controls.Add(_maneuverNodeDelaySeconds, 3, 1);
+
             headerLayout.Controls.Add(_maneuverComputeButton, 4, 0);
+            headerLayout.SetRowSpan(_maneuverComputeButton, 2);
             headerLayout.Controls.Add(_maneuverUploadButton, 5, 0);
+            headerLayout.SetRowSpan(_maneuverUploadButton, 2);
             headerLayout.Controls.Add(_displayRefreshLabel, 6, 0);
+            headerLayout.SetRowSpan(_displayRefreshLabel, 2);
             headerLayout.Controls.Add(_displayRefreshSlider, 7, 0);
+            headerLayout.SetRowSpan(_displayRefreshSlider, 2);
             headerLayout.Controls.Add(_connectionLabel, 8, 0);
+            headerLayout.SetRowSpan(_connectionLabel, 2);
 
             return headerLayout;
         }
@@ -366,13 +394,29 @@ namespace KMC.MissionControl
                 };
         }
 
+        private static Label CreateManeuverFieldHeader(string text)
+        {
+            return
+                new Label
+                {
+                    Text = text,
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(6, 0, 6, 0),
+                    TextAlign = ContentAlignment.BottomLeft,
+                    ForeColor = Color.FromArgb(150, 220, 255),
+                    Font = new Font("Consolas", 7.5f, FontStyle.Bold),
+                    Visible = false,
+                    AutoEllipsis = true
+                };
+        }
+
         private ComboBox CreateManeuverTypeSelector()
         {
             ComboBox selector =
                 new ComboBox
                 {
                     Dock = DockStyle.Fill,
-                    Margin = new Padding(6, 9, 6, 9),
+                    Margin = new Padding(6, 1, 6, 3),
                     DropDownStyle = ComboBoxStyle.DropDownList,
                     BackColor = Color.FromArgb(35, 45, 40),
                     ForeColor = Color.FromArgb(190, 255, 190),
@@ -386,6 +430,7 @@ namespace KMC.MissionControl
             selector.Items.Add("SET AP @ PE");
             selector.Items.Add("MANUAL PRO/RETRO");
             selector.Items.Add("MANUAL NORM/ANTI");
+            selector.Items.Add("MANUAL RADIAL IN/OUT");
             selector.SelectedIndex = 0;
 
             selector.SelectedIndexChanged +=
@@ -400,7 +445,7 @@ namespace KMC.MissionControl
                 new NumericUpDown
                 {
                     Dock = DockStyle.Fill,
-                    Margin = new Padding(6, 9, 6, 9),
+                    Margin = new Padding(6, 1, 6, 3),
                     DecimalPlaces = 1,
                     Increment = 5.0M,
                     Minimum = 0.0M,
@@ -421,7 +466,7 @@ namespace KMC.MissionControl
                 new NumericUpDown
                 {
                     Dock = DockStyle.Fill,
-                    Margin = new Padding(6, 9, 6, 9),
+                    Margin = new Padding(6, 1, 6, 3),
                     DecimalPlaces = 0,
                     Increment = 10.0M,
                     Minimum = 10.0M,
@@ -585,6 +630,12 @@ namespace KMC.MissionControl
             _maneuverNodeDelaySeconds.Visible =
                 maneuverPage;
 
+            _maneuverValueHeader.Visible =
+                maneuverPage;
+
+            _maneuverNodeDelayHeader.Visible =
+                maneuverPage;
+
             _maneuverComputeButton.Visible =
                 maneuverPage;
 
@@ -618,7 +669,13 @@ namespace KMC.MissionControl
 
             bool manual =
                 _maneuverTypeSelector.SelectedIndex == 3 ||
-                _maneuverTypeSelector.SelectedIndex == 4;
+                _maneuverTypeSelector.SelectedIndex == 4 ||
+                _maneuverTypeSelector.SelectedIndex == 5;
+
+            _maneuverValueHeader.Text =
+                manual
+                    ? "DELTA-V (M/S)"
+                    : "TARGET ALT (KM)";
 
             _maneuverTargetKm.Enabled =
                 apsisTargetRequired ||
@@ -693,6 +750,11 @@ namespace KMC.MissionControl
                         ManeuverRequestType.ManualNormalAntiNormal;
                     break;
 
+                case 5:
+                    type =
+                        ManeuverRequestType.ManualRadialInOut;
+                    break;
+
                 default:
                     type =
                         ManeuverRequestType.CircularizeAtApoapsis;
@@ -724,11 +786,19 @@ namespace KMC.MissionControl
                             ? (double)_maneuverTargetKm.Value
                             : double.NaN,
 
+                    ManualRadialDeltaVMetersPerSecond =
+                        type ==
+                        ManeuverRequestType.ManualRadialInOut
+                            ? (double)_maneuverTargetKm.Value
+                            : double.NaN,
+
                     NodeDelaySeconds =
                         type ==
                             ManeuverRequestType.ManualProgradeRetrograde ||
                         type ==
-                            ManeuverRequestType.ManualNormalAntiNormal
+                            ManeuverRequestType.ManualNormalAntiNormal ||
+                        type ==
+                            ManeuverRequestType.ManualRadialInOut
                             ? (double)_maneuverNodeDelaySeconds.Value
                             : double.NaN,
 
@@ -899,7 +969,9 @@ namespace KMC.MissionControl
             {
                 ManeuverRequestStore.Reset();
                 OrbitNormalTelemetryStore.Clear();
+                RadialTelemetryStore.Clear();
                 _orbitNormalReceiver.Start();
+                _radialReceiver.Start();
                 _receiver.Start();
                 _displayRefreshTimer.Start();
                 _connectionTimer.Start();
@@ -915,6 +987,27 @@ namespace KMC.MissionControl
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
+        }
+
+        private void OnRadialTelemetryReceived(
+            RadialTelemetrySample sample)
+        {
+            if (sample == null)
+            {
+                return;
+            }
+
+            RadialTelemetryStore.Publish(
+                new RadialTelemetryModel
+                {
+                    TelemetryAvailable = true,
+                    SourceTimestampUtc = sample.SourceTimestampUtc,
+                    ReceivedUtc = sample.ReceivedUtc,
+                    VesselName = sample.VesselName ?? string.Empty,
+                    RightComponent = sample.RightComponent,
+                    NoseComponent = sample.NoseComponent,
+                    ReferenceForwardComponent = sample.ReferenceForwardComponent
+                });
         }
 
         private void OnOrbitNormalTelemetryReceived(
@@ -1236,8 +1329,13 @@ namespace KMC.MissionControl
             _orbitNormalReceiver.SampleReceived -=
                 OnOrbitNormalTelemetryReceived;
 
+            _radialReceiver.SampleReceived -=
+                OnRadialTelemetryReceived;
+
             _orbitNormalReceiver.Dispose();
+            _radialReceiver.Dispose();
             OrbitNormalTelemetryStore.Clear();
+            RadialTelemetryStore.Clear();
 
             _receiver.Dispose();
         }

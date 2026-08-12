@@ -504,33 +504,10 @@ namespace KMC.MissionControl.Pages
             }
             else
             {
-                DrawCompactGroup(
+                DrawTimingGroup(
                     context,
                     timingBox,
-                    "TIMING",
-                    new[]
-                    {
-                        new FieldPair(
-                            "NODE",
-                            guidance != null
-                                ? FormatDuration(
-                                    guidance.TimeToNodeSeconds)
-                                : "---"),
-
-                        new FieldPair(
-                            "IGNITION",
-                            guidance != null
-                                ? FormatDuration(
-                                    guidance.TimeToIgnitionSeconds)
-                                : "---"),
-
-                        new FieldPair(
-                            "BURN EST",
-                            guidance != null
-                                ? FormatSeconds(
-                                    guidance.BurnDurationSeconds)
-                                : "---")
-                    });
+                    guidance);
             }
 
             DrawBurnPerformanceGroup(
@@ -627,6 +604,132 @@ namespace KMC.MissionControl.Pages
 
                 y += 32;
             }
+        }
+
+        /*
+         * Build 13.5.2:
+         * Timing is one of the primary crew-action references on GUID.
+         * Give the three live timing rows a dedicated, larger renderer
+         * without changing the typography of the other engineering cards.
+         */
+        private static void DrawTimingGroup(
+            MissionRenderContext context,
+            Rectangle bounds,
+            GuidanceSolutionModel guidance)
+        {
+            DrawSubPanel(
+                context,
+                bounds,
+                "TIMING");
+
+            int y =
+                bounds.Top +
+                PanelTitleHeight +
+                8;
+
+            int labelX =
+                bounds.Left + 12;
+
+            int valueX =
+                bounds.Left +
+                Math.Max(
+                    112,
+                    (int)(bounds.Width * 0.43));
+
+            using (SolidBrush labelBrush =
+                new SolidBrush(
+                    context.DimPhosphorColor))
+            using (SolidBrush valueBrush =
+                new SolidBrush(
+                    context.PhosphorColor))
+            using (Font labelFont =
+                new Font(
+                    "Consolas",
+                    16.0f,
+                    FontStyle.Bold))
+            using (Font valueFont =
+                new Font(
+                    "Consolas",
+                    22.0f,
+                    FontStyle.Bold))
+            {
+                DrawTimingField(
+                    context,
+                    "NODE",
+                    guidance != null
+                        ? FormatDuration(
+                            guidance.TimeToNodeSeconds)
+                        : "---",
+                    labelX,
+                    valueX,
+                    y,
+                    labelFont,
+                    valueFont,
+                    labelBrush,
+                    valueBrush);
+
+                y += 48;
+
+                DrawTimingField(
+                    context,
+                    "IGNITION",
+                    guidance != null
+                        ? FormatDuration(
+                            guidance.TimeToIgnitionSeconds)
+                        : "---",
+                    labelX,
+                    valueX,
+                    y,
+                    labelFont,
+                    valueFont,
+                    labelBrush,
+                    valueBrush);
+
+                y += 48;
+
+                DrawTimingField(
+                    context,
+                    "BURN EST",
+                    guidance != null
+                        ? FormatSeconds(
+                            guidance.BurnDurationSeconds)
+                        : "---",
+                    labelX,
+                    valueX,
+                    y,
+                    labelFont,
+                    valueFont,
+                    labelBrush,
+                    valueBrush);
+            }
+        }
+
+        private static void DrawTimingField(
+            MissionRenderContext context,
+            string label,
+            string value,
+            int labelX,
+            int valueX,
+            int y,
+            Font labelFont,
+            Font valueFont,
+            Brush labelBrush,
+            Brush valueBrush)
+        {
+            context.Graphics.DrawString(
+                label,
+                labelFont,
+                labelBrush,
+                labelX,
+                y + 4);
+
+            context.Graphics.DrawString(
+                Safe(
+                    value),
+                valueFont,
+                valueBrush,
+                valueX,
+                y);
         }
 
         private static void DrawBurnPerformanceGroup(
@@ -854,6 +957,26 @@ namespace KMC.MissionControl.Pages
                 GetCrewCommandColor(
                     guidance);
 
+            string command =
+                guidance != null
+                    ? Safe(
+                        guidance.Command)
+                    : "AWAIT GUIDANCE";
+
+            bool ignitionStandby =
+                string.Equals(
+                    command,
+                    "IGNITION STANDBY",
+                    StringComparison.OrdinalIgnoreCase);
+
+            /*
+             * Render-time blink only. GUID is already continuously redrawn;
+             * no UI timer or Engine state is introduced.
+             */
+            bool showStandbyBox =
+                ignitionStandby &&
+                DateTime.UtcNow.Millisecond < 500;
+
             using (SolidBrush brush =
                 new SolidBrush(
                     color))
@@ -863,7 +986,9 @@ namespace KMC.MissionControl.Pages
             using (Font commandFont =
                 new Font(
                     "Consolas",
-                    14.0f,
+                    ignitionStandby
+                        ? 30.0f
+                        : 22.0f,
                     FontStyle.Bold))
             using (StringFormat centered =
                 new StringFormat())
@@ -886,11 +1011,27 @@ namespace KMC.MissionControl.Pages
                         inner.Width,
                         commandHeight);
 
+                if (showStandbyBox)
+                {
+                    Rectangle alertRect =
+                        Rectangle.Inflate(
+                            commandRect,
+                            -10,
+                            -10);
+
+                    using (Pen alertPen =
+                        new Pen(
+                            color,
+                            2.0f))
+                    {
+                        context.Graphics.DrawRectangle(
+                            alertPen,
+                            alertRect);
+                    }
+                }
+
                 context.Graphics.DrawString(
-                    guidance != null
-                        ? Safe(
-                            guidance.Command)
-                        : "AWAIT GUIDANCE",
+                    command,
                     commandFont,
                     brush,
                     commandRect,

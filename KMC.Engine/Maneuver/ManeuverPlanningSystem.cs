@@ -24,6 +24,22 @@ namespace KMC.Engine.Maneuver
         private const double DeltaVIdentityToleranceMetersPerSecond =
             0.25;
 
+        /*
+         * Build 13.5.5:
+         * Plan sequence numbers restart when Mission Control restarts.
+         * Add a process-session token so a new maneuver cannot reuse the
+         * exact PlanId of stale KSP maneuver-node history from an earlier
+         * Mission Control session.
+         *
+         * Example:
+         *   MNV-13.0-A7C2F914D31B-0001
+         *
+         * The sequence remains human-readable while the session token keeps
+         * identity ownership distinct across process restarts.
+         */
+        private static readonly string PlanSessionId =
+            CreatePlanSessionId();
+
         private readonly object _syncRoot =
             new object();
 
@@ -126,7 +142,9 @@ namespace KMC.Engine.Maneuver
                     (request.Type ==
                          ManeuverRequestType.ManualProgradeRetrograde ||
                      request.Type ==
-                         ManeuverRequestType.ManualNormalAntiNormal) &&
+                         ManeuverRequestType.ManualNormalAntiNormal ||
+                     request.Type ==
+                         ManeuverRequestType.ManualRadialInOut) &&
                     IsFinite(
                         _activeNodeUtAnchor);
 
@@ -662,6 +680,8 @@ namespace KMC.Engine.Maneuver
 
                 _activePlanId =
                     "MNV-13.0-" +
+                    PlanSessionId +
+                    "-" +
                     _planSequence.ToString(
                         "D4");
 
@@ -725,6 +745,21 @@ namespace KMC.Engine.Maneuver
 
             plan.PlanId =
                 _activePlanId;
+        }
+
+        private static string CreatePlanSessionId()
+        {
+            /*
+             * Twelve hexadecimal characters provide a compact 48-bit
+             * process-session identity. This is generated once per Mission
+             * Control process and shared by every ManeuverPlanningSystem
+             * instance in that process.
+             */
+            return
+                Guid.NewGuid()
+                    .ToString("N")
+                    .Substring(0, 12)
+                    .ToUpperInvariant();
         }
 
         private static bool IsWithin(

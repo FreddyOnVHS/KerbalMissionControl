@@ -25,6 +25,9 @@ namespace KMC.Engine.Maneuver
             ManualNormalDeltaVMetersPerSecond =
                 double.NaN;
 
+            ManualRadialDeltaVMetersPerSecond =
+                double.NaN;
+
             NodeDelaySeconds =
                 double.NaN;
 
@@ -55,6 +58,13 @@ namespace KMC.Engine.Maneuver
         public double ManualNormalDeltaVMetersPerSecond { get; set; }
 
         /// <summary>
+        /// Crew-entered signed radial-axis Delta-V.
+        /// Positive = orbital radial-out. Negative = orbital radial-in.
+        /// Used only by ManualRadialInOut.
+        /// </summary>
+        public double ManualRadialDeltaVMetersPerSecond { get; set; }
+
+        /// <summary>
         /// Relative maneuver-node delay from the current verified KSP epoch.
         /// Used only by ManualProgradeRetrograde.
         /// </summary>
@@ -77,6 +87,9 @@ namespace KMC.Engine.Maneuver
                         double.NaN,
 
                     ManualNormalDeltaVMetersPerSecond =
+                        double.NaN,
+
+                    ManualRadialDeltaVMetersPerSecond =
                         double.NaN,
 
                     NodeDelaySeconds =
@@ -109,6 +122,9 @@ namespace KMC.Engine.Maneuver
 
                     ManualNormalDeltaVMetersPerSecond =
                         source.ManualNormalDeltaVMetersPerSecond,
+
+                    ManualRadialDeltaVMetersPerSecond =
+                        source.ManualRadialDeltaVMetersPerSecond,
 
                     NodeDelaySeconds =
                         source.NodeDelaySeconds,
@@ -169,6 +185,7 @@ namespace KMC.Engine.Maneuver
         SetPeriapsisAtApoapsis = 1,
         SetApoapsisAtPeriapsis = 2,
         ManualProgradeRetrograde = 3,
-        ManualNormalAntiNormal = 4
+        ManualNormalAntiNormal = 4,
+        ManualRadialInOut = 5
     }
 }

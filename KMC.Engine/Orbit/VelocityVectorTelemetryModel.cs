@@ -481,6 +481,112 @@ namespace KMC.Engine.Orbit
     /// Process-local MissionControl-to-Engine bridge for KMC-NORM1.
     /// Socket ownership remains in MissionControl.
     /// </summary>
+    /// <summary>
+    /// Build 13.5 true radial-out direction resolved into the vessel
+    /// ReferenceTransform frame. Components are a unit vector.
+    /// </summary>
+    public sealed class RadialTelemetryModel
+    {
+        public bool TelemetryAvailable { get; set; }
+        public DateTime SourceTimestampUtc { get; set; }
+        public DateTime ReceivedUtc { get; set; }
+        public string VesselName { get; set; } = string.Empty;
+        public double RightComponent { get; set; }
+        public double NoseComponent { get; set; }
+        public double ReferenceForwardComponent { get; set; }
+        public double Magnitude { get; internal set; }
+        public double NormalOrthogonalityDot { get; internal set; }
+        public bool Fresh { get; internal set; }
+        public bool VesselMatchesNormal { get; internal set; }
+        public bool Available { get; internal set; }
+        public string Status { get; internal set; } = "NO RADIAL TELEMETRY";
+
+        internal void EvaluateAgainstNormal(
+            OrbitNormalTelemetryModel normal,
+            DateTime analysisUtc)
+        {
+            Magnitude = Math.Sqrt(
+                RightComponent * RightComponent +
+                NoseComponent * NoseComponent +
+                ReferenceForwardComponent * ReferenceForwardComponent);
+
+            Fresh = TelemetryAvailable &&
+                Math.Abs((analysisUtc - ReceivedUtc).TotalSeconds) <= 0.75;
+
+            VesselMatchesNormal = normal != null &&
+                (string.IsNullOrEmpty(VesselName) ||
+                 string.IsNullOrEmpty(normal.VesselName) ||
+                 string.Equals(VesselName, normal.VesselName, StringComparison.Ordinal));
+
+            NormalOrthogonalityDot = double.NaN;
+            if (normal != null && normal.Magnitude > 0.5 && Magnitude > 0.5)
+            {
+                NormalOrthogonalityDot =
+                    (RightComponent * normal.RightComponent +
+                     NoseComponent * normal.NoseComponent +
+                     ReferenceForwardComponent * normal.ReferenceForwardComponent) /
+                    (Magnitude * normal.Magnitude);
+            }
+
+            bool magnitudeValid = Magnitude >= 0.95 && Magnitude <= 1.05;
+            bool orthogonal = !double.IsNaN(NormalOrthogonalityDot) &&
+                !double.IsInfinity(NormalOrthogonalityDot) &&
+                Math.Abs(NormalOrthogonalityDot) <= 0.02;
+
+            Available = TelemetryAvailable && Fresh && VesselMatchesNormal &&
+                magnitudeValid && orthogonal;
+
+            if (!TelemetryAvailable) Status = "NO RADIAL TELEMETRY";
+            else if (!Fresh) Status = "RADIAL TELEMETRY STALE";
+            else if (!VesselMatchesNormal) Status = "RADIAL VESSEL MISMATCH";
+            else if (!magnitudeValid) Status = "RADIAL MAGNITUDE INVALID";
+            else if (!orthogonal) Status = "RADIAL NOT ORTHOGONAL";
+            else Status = "RADIAL VERIFIED";
+        }
+
+        internal static RadialTelemetryModel Clone(RadialTelemetryModel source)
+        {
+            if (source == null) return new RadialTelemetryModel();
+            return new RadialTelemetryModel
+            {
+                TelemetryAvailable = source.TelemetryAvailable,
+                SourceTimestampUtc = source.SourceTimestampUtc,
+                ReceivedUtc = source.ReceivedUtc,
+                VesselName = source.VesselName,
+                RightComponent = source.RightComponent,
+                NoseComponent = source.NoseComponent,
+                ReferenceForwardComponent = source.ReferenceForwardComponent,
+                Magnitude = source.Magnitude,
+                NormalOrthogonalityDot = source.NormalOrthogonalityDot,
+                Fresh = source.Fresh,
+                VesselMatchesNormal = source.VesselMatchesNormal,
+                Available = source.Available,
+                Status = source.Status
+            };
+        }
+    }
+
+    public static class RadialTelemetryStore
+    {
+        private static readonly object SyncRoot = new object();
+        private static RadialTelemetryModel _latest = new RadialTelemetryModel();
+
+        public static void Publish(RadialTelemetryModel sample)
+        {
+            lock (SyncRoot) _latest = RadialTelemetryModel.Clone(sample);
+        }
+
+        public static RadialTelemetryModel GetLatest()
+        {
+            lock (SyncRoot) return RadialTelemetryModel.Clone(_latest);
+        }
+
+        public static void Clear()
+        {
+            lock (SyncRoot) _latest = new RadialTelemetryModel();
+        }
+    }
+
     public static class OrbitNormalTelemetryStore
     {
         private static readonly object SyncRoot =
