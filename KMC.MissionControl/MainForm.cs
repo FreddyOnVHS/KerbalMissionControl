@@ -2165,6 +2165,21 @@ namespace KMC.MissionControl
 
             TerminalUtc =
                 DateTime.MinValue;
+
+            DeliveredDeltaVMetersPerSecond =
+                double.NaN;
+
+            BurnProgressPercent =
+                double.NaN;
+
+            ActualNodeDeltaVMetersPerSecond =
+                double.NaN;
+
+            PostBurnResult =
+                string.Empty;
+
+            ResultCapturedUtc =
+                DateTime.MinValue;
         }
 
         public bool Available { get; set; }
@@ -2197,6 +2212,18 @@ namespace KMC.MissionControl
         public DateTime TerminalUtc { get; set; }
         public bool RemovalRequested { get; set; }
         public bool RemovalRequestedAfterBurnComplete { get; set; }
+
+        /*
+         * Build 13.12 — immutable-ish flight result snapshot.
+         * These values are captured while GUID still owns this exact PlanId
+         * so the flight-plan log can retain actual burn performance after
+         * Mission Control moves on to another maneuver.
+         */
+        public double DeliveredDeltaVMetersPerSecond { get; set; }
+        public double BurnProgressPercent { get; set; }
+        public double ActualNodeDeltaVMetersPerSecond { get; set; }
+        public string PostBurnResult { get; set; }
+        public DateTime ResultCapturedUtc { get; set; }
 
         public ManeuverPlanPromotionRequest CreatePromotionRequest()
         {
@@ -2451,13 +2478,23 @@ namespace KMC.MissionControl
                      * correct history if completion is finalized after the
                      * node has crossed/left its planned UT.
                      */
-                    bool burnComplete =
+                    bool sameGuidancePlan =
                         guidance != null &&
-                        guidance.BurnComplete &&
                         string.Equals(
                             guidance.PlanId,
                             plan.PlanId,
-                            StringComparison.Ordinal) &&
+                            StringComparison.Ordinal);
+
+                    if (sameGuidancePlan)
+                    {
+                        CaptureGuidanceResult(
+                            plan,
+                            guidance);
+                    }
+
+                    bool burnComplete =
+                        sameGuidancePlan &&
+                        guidance.BurnComplete &&
                         string.Equals(
                             guidance.PostBurnResult,
                             "DV COMPLETE",
@@ -2609,6 +2646,102 @@ namespace KMC.MissionControl
                     }
                 }
             }
+        }
+
+        private static void CaptureGuidanceResult(
+            KmcQueuedManeuverPlan plan,
+            GuidanceSolutionModel guidance)
+        {
+            if (plan == null ||
+                guidance == null ||
+                !string.Equals(
+                    guidance.PlanId,
+                    plan.PlanId,
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            bool captured = false;
+
+            if (IsFinite(
+                    guidance.DeliveredDeltaVMetersPerSecond))
+            {
+                plan.DeliveredDeltaVMetersPerSecond =
+                    guidance.DeliveredDeltaVMetersPerSecond;
+
+                captured = true;
+            }
+
+            if (IsFinite(
+                    guidance.BurnProgressPercent))
+            {
+                plan.BurnProgressPercent =
+                    guidance.BurnProgressPercent;
+
+                captured = true;
+            }
+
+            if (IsFinite(
+                    guidance.ActualNodeDeltaVMetersPerSecond))
+            {
+                plan.ActualNodeDeltaVMetersPerSecond =
+                    guidance.ActualNodeDeltaVMetersPerSecond;
+
+                captured = true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(
+                    guidance.PostBurnResult) &&
+                !string.Equals(
+                    guidance.PostBurnResult,
+                    "NOT AVAILABLE",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                plan.PostBurnResult =
+                    guidance.PostBurnResult.Trim();
+
+                captured = true;
+            }
+
+            if (captured)
+            {
+                plan.ResultCapturedUtc =
+                    DateTime.UtcNow;
+            }
+        }
+
+        public static string DescribeFlightPlanOutcome(
+            KmcQueuedManeuverPlan plan)
+        {
+            if (plan == null)
+            {
+                return "---";
+            }
+
+            if (plan.LifecycleState ==
+                    KmcManeuverLifecycleState.Complete)
+            {
+                return
+                    !string.IsNullOrWhiteSpace(
+                        plan.PostBurnResult)
+                        ? plan.PostBurnResult
+                        : "COMPLETE";
+            }
+
+            return
+                DescribeLifecycle(
+                    plan.LifecycleState);
+        }
+
+        private static bool IsFinite(
+            double value)
+        {
+            return
+                !double.IsNaN(
+                    value) &&
+                !double.IsInfinity(
+                    value);
         }
 
         public static string DescribeLifecycle(
@@ -2964,7 +3097,17 @@ namespace KMC.MissionControl
                     RemovalRequested =
                         source.RemovalRequested,
                     RemovalRequestedAfterBurnComplete =
-                        source.RemovalRequestedAfterBurnComplete
+                        source.RemovalRequestedAfterBurnComplete,
+                    DeliveredDeltaVMetersPerSecond =
+                        source.DeliveredDeltaVMetersPerSecond,
+                    BurnProgressPercent =
+                        source.BurnProgressPercent,
+                    ActualNodeDeltaVMetersPerSecond =
+                        source.ActualNodeDeltaVMetersPerSecond,
+                    PostBurnResult =
+                        source.PostBurnResult ?? string.Empty,
+                    ResultCapturedUtc =
+                        source.ResultCapturedUtc
                 };
 
             for (int index = 0;

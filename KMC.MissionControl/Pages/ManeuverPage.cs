@@ -434,11 +434,32 @@ namespace KMC.MissionControl.Pages
          * presented as available for crew activation, but is never promoted,
          * authorized, uploaded, or executed automatically.
          */
+        private static string FormatFlightPlanDeltaV(
+            double value)
+        {
+            if (double.IsNaN(
+                    value) ||
+                double.IsInfinity(
+                    value))
+            {
+                return "---";
+            }
+
+            return
+                value.ToString(
+                    "0.00") +
+                " M/S";
+        }
+
         /*
          * Build 13.11:
          * Retained KMC plans remain visible after their stock maneuver nodes
-         * leave the live queue. This compact block is operational history
-         * only and cannot authorize guidance or execution.
+         * leave the live queue.
+         *
+         * Build 13.12 expands this into the Flight Plan Log: immutable plan
+         * identity + planned DV + captured delivered DV + final outcome.
+         * This remains operational history only and cannot authorize guidance
+         * or execution.
          */
         private static void DrawKmcPlanLifecycle(
             MissionRenderContext context,
@@ -482,7 +503,7 @@ namespace KMC.MissionControl.Pages
                     bounds.Top + 7;
 
                 context.Graphics.DrawString(
-                    "KMC PLAN LIFECYCLE",
+                    "KMC FLIGHT PLAN LOG",
                     context.SmallFont,
                     labelBrush,
                     bounds.Left,
@@ -499,30 +520,31 @@ namespace KMC.MissionControl.Pages
                 int xPlan =
                     bounds.Left;
 
+                int xNodeUt =
+                    bounds.Left +
+                    (int)(width * 0.10);
+
                 int xObjective =
                     bounds.Left +
-                    (int)(width * 0.14);
+                    (int)(width * 0.22);
 
-                int xNodeUt =
+                int xPlannedDv =
                     bounds.Left +
                     (int)(width * 0.58);
 
-                int xState =
+                int xDeliveredDv =
                     bounds.Left +
-                    (int)(width * 0.78);
+                    (int)(width * 0.70);
+
+                int xOutcome =
+                    bounds.Left +
+                    (int)(width * 0.83);
 
                 context.Graphics.DrawString(
                     "PLAN",
                     context.SmallFont,
                     labelBrush,
                     xPlan,
-                    headerY);
-
-                context.Graphics.DrawString(
-                    "OBJECTIVE",
-                    context.SmallFont,
-                    labelBrush,
-                    xObjective,
                     headerY);
 
                 context.Graphics.DrawString(
@@ -533,10 +555,31 @@ namespace KMC.MissionControl.Pages
                     headerY);
 
                 context.Graphics.DrawString(
-                    "LIFECYCLE",
+                    "OBJECTIVE",
                     context.SmallFont,
                     labelBrush,
-                    xState,
+                    xObjective,
+                    headerY);
+
+                context.Graphics.DrawString(
+                    "PLAN DV",
+                    context.SmallFont,
+                    labelBrush,
+                    xPlannedDv,
+                    headerY);
+
+                context.Graphics.DrawString(
+                    "DELIVERED",
+                    context.SmallFont,
+                    labelBrush,
+                    xDeliveredDv,
+                    headerY);
+
+                context.Graphics.DrawString(
+                    "OUTCOME",
+                    context.SmallFont,
+                    labelBrush,
+                    xOutcome,
                     headerY);
 
                 int dividerY =
@@ -577,9 +620,9 @@ namespace KMC.MissionControl.Pages
                         continue;
                     }
 
-                    string lifecycle =
-                        KmcManeuverPlanStore.DescribeLifecycle(
-                            plan.LifecycleState);
+                    string outcome =
+                        KmcManeuverPlanStore.DescribeFlightPlanOutcome(
+                            plan);
 
                     Brush brush =
                         plan.LifecycleState ==
@@ -603,14 +646,6 @@ namespace KMC.MissionControl.Pages
                         y);
 
                     context.Graphics.DrawString(
-                        Safe(
-                            plan.Objective),
-                        context.SmallFont,
-                        brush,
-                        xObjective,
-                        y);
-
-                    context.Graphics.DrawString(
                         FormatDuration(
                             plan.NodeUniversalTimeSeconds),
                         context.SmallFont,
@@ -619,10 +654,34 @@ namespace KMC.MissionControl.Pages
                         y);
 
                     context.Graphics.DrawString(
-                        lifecycle,
+                        Safe(
+                            plan.Objective),
                         context.SmallFont,
                         brush,
-                        xState,
+                        xObjective,
+                        y);
+
+                    context.Graphics.DrawString(
+                        FormatFlightPlanDeltaV(
+                            plan.TotalDeltaVMetersPerSecond),
+                        context.SmallFont,
+                        brush,
+                        xPlannedDv,
+                        y);
+
+                    context.Graphics.DrawString(
+                        FormatFlightPlanDeltaV(
+                            plan.DeliveredDeltaVMetersPerSecond),
+                        context.SmallFont,
+                        brush,
+                        xDeliveredDv,
+                        y);
+
+                    context.Graphics.DrawString(
+                        outcome,
+                        context.SmallFont,
+                        brush,
+                        xOutcome,
                         y);
 
                     y += 25;
