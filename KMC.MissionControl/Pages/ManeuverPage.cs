@@ -42,6 +42,8 @@ namespace KMC.MissionControl.Pages
                 return;
             }
 
+            KmcManeuverPlanStore.Capture(plan);
+
             ManeuverUplinkStatusSnapshot uplink = ManeuverUplinkStatusStore.GetLatest();
             bool samePlan = !string.IsNullOrWhiteSpace(plan.PlanId) &&
                 string.Equals(uplink.PlanId, plan.PlanId, StringComparison.Ordinal);
@@ -112,6 +114,8 @@ namespace KMC.MissionControl.Pages
 
             ManeuverInventorySnapshot inventory = ManeuverInventoryStore.GetLatest();
             ManeuverUplinkStatusSnapshot uplink = ManeuverUplinkStatusStore.GetLatest();
+            System.Collections.Generic.List<KmcQueuedManeuverPlan> retainedPlans =
+                KmcManeuverPlanStore.GetAll();
             int left = bounds.Left + 10;
             int right = bounds.Right - 10;
             int top = bounds.Top + 8;
@@ -134,7 +138,8 @@ namespace KMC.MissionControl.Pages
                         ? BuildQueueDirectorSummary(
                             inventory,
                             plan,
-                            uplink)
+                            uplink,
+                            retainedPlans)
                         : "KSP NODE INVENTORY WAITING";
 
                 /*
@@ -212,21 +217,48 @@ namespace KMC.MissionControl.Pages
                                 plan,
                                 uplink);
 
+                        KmcQueuedManeuverPlan retainedMatch =
+                            FindRetainedPlanForNode(
+                                node,
+                                inventory,
+                                retainedPlans);
+
+                        bool kmcOwned =
+                            currentMatch ||
+                            retainedMatch != null;
+
+                        string matchedPlanId =
+                            currentMatch &&
+                            plan != null
+                                ? plan.PlanId
+                                : retainedMatch != null
+                                    ? retainedMatch.PlanId
+                                    : string.Empty;
+
+                        int kmcSequence =
+                            FindKmcPlanSequence(
+                                matchedPlanId,
+                                retainedPlans);
+
                         string state =
                             DescribeQueueState(
                                 index,
                                 currentMatch,
+                                kmcOwned,
+                                kmcSequence,
                                 uplink);
 
                         string planText =
-                            currentMatch &&
-                            plan != null
-                                ? ShortPlanId(plan.PlanId)
+                            kmcOwned
+                                ? "KMC #" +
+                                  Math.Max(
+                                      1,
+                                      kmcSequence).ToString()
                                 : "MANUAL";
 
                         Brush rowBrush =
                             index == 0 ||
-                            currentMatch
+                            kmcOwned
                                 ? nextBrush
                                 : valueBrush;
 
@@ -272,7 +304,8 @@ namespace KMC.MissionControl.Pages
         private static string BuildQueueDirectorSummary(
             ManeuverInventorySnapshot inventory,
             ManeuverPlanModel plan,
-            ManeuverUplinkStatusSnapshot uplink)
+            ManeuverUplinkStatusSnapshot uplink,
+            System.Collections.Generic.List<KmcQueuedManeuverPlan> retainedPlans)
         {
             if (inventory == null ||
                 inventory.Nodes == null)
@@ -290,46 +323,79 @@ namespace KMC.MissionControl.Pages
                     Safe(inventory.VesselName);
             }
 
-            int kmcIndex =
-                FindCurrentPlanNodeIndex(
-                    inventory,
-                    plan,
-                    uplink);
-
             string nextVector =
                 ManeuverInventoryFormatting.DescribeVector(
                     inventory.Nodes[0]);
 
-            if (kmcIndex < 0)
-            {
-                return
-                    "QUEUE DIRECTOR: NEXT #1 " +
-                    Safe(nextVector) +
-                    " / MANUAL KSP / " +
-                    count.ToString() +
-                    " TOTAL";
-            }
+            KmcQueuedManeuverPlan nextPlan =
+                FindRetainedPlanForNode(
+                    inventory.Nodes[0],
+                    inventory,
+                    retainedPlans);
 
-            if (kmcIndex == 0)
+            bool nextIsCurrent =
+                IsCurrentPlanNode(
+                    inventory.Nodes[0],
+                    plan,
+                    uplink);
+
+            if (nextPlan != null ||
+                nextIsCurrent)
             {
+                string nextPlanId =
+                    nextIsCurrent &&
+                    plan != null
+                        ? plan.PlanId
+                        : nextPlan != null
+                            ? nextPlan.PlanId
+                            : string.Empty;
+
+                int sequence =
+                    FindKmcPlanSequence(
+                        nextPlanId,
+                        retainedPlans);
+
                 return
-                    "QUEUE DIRECTOR: NEXT #1 KMC / " +
+                    "QUEUE DIRECTOR: NEXT #1 KMC #" +
+                    Math.Max(
+                        1,
+                        sequence).ToString() +
+                    " / " +
                     Safe(nextVector) +
                     " / " +
                     count.ToString() +
                     " TOTAL";
             }
 
+            int firstKmcNodeIndex =
+                FindFirstRetainedKmcNodeIndex(
+                    inventory,
+                    retainedPlans,
+                    plan,
+                    uplink);
+
+            if (firstKmcNodeIndex >= 0)
+            {
+                return
+                    "QUEUE DIRECTOR: NEXT #1 MANUAL / FIRST KMC NODE #" +
+                    (firstKmcNodeIndex + 1).ToString() +
+                    " OF " +
+                    count.ToString();
+            }
+
             return
-                "QUEUE DIRECTOR: NEXT #1 MANUAL / KMC #" +
-                (kmcIndex + 1).ToString() +
-                " OF " +
-                count.ToString();
+                "QUEUE DIRECTOR: NEXT #1 " +
+                Safe(nextVector) +
+                " / MANUAL KSP / " +
+                count.ToString() +
+                " TOTAL";
         }
 
         private static string DescribeQueueState(
             int index,
             bool currentMatch,
+            bool kmcOwned,
+            int kmcSequence,
             ManeuverUplinkStatusSnapshot uplink)
         {
             if (currentMatch)
@@ -376,10 +442,129 @@ namespace KMC.MissionControl.Pages
                 return "FUTURE / UNVERIFIED";
             }
 
+            if (kmcOwned)
+            {
+                return
+                    index == 0
+                        ? "NEXT KMC"
+                        : "KMC QUEUED";
+            }
+
             return
                 index == 0
                     ? "NEXT / MANUAL"
                     : "MANUAL KSP";
+        }
+
+        private static KmcQueuedManeuverPlan FindRetainedPlanForNode(
+            ManeuverInventoryNode node,
+            ManeuverInventorySnapshot inventory,
+            System.Collections.Generic.List<KmcQueuedManeuverPlan> plans)
+        {
+            if (node == null ||
+                inventory == null ||
+                plans == null)
+            {
+                return null;
+            }
+
+            for (int index = 0;
+                 index < plans.Count;
+                 index++)
+            {
+                KmcQueuedManeuverPlan plan =
+                    plans[index];
+
+                if (plan == null ||
+                    !string.Equals(
+                        plan.VesselId ?? string.Empty,
+                        inventory.VesselId ?? string.Empty,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (Math.Abs(
+                        node.NodeUniversalTimeSeconds -
+                        plan.NodeUniversalTimeSeconds) <= 0.25 &&
+                    Math.Abs(
+                        node.ProgradeDeltaVMetersPerSecond -
+                        plan.ProgradeDeltaVMetersPerSecond) <= 0.05 &&
+                    Math.Abs(
+                        node.NormalDeltaVMetersPerSecond -
+                        plan.NormalDeltaVMetersPerSecond) <= 0.05 &&
+                    Math.Abs(
+                        node.RadialDeltaVMetersPerSecond -
+                        plan.RadialDeltaVMetersPerSecond) <= 0.05)
+                {
+                    return plan;
+                }
+            }
+
+            return null;
+        }
+
+        private static int FindKmcPlanSequence(
+            string planId,
+            System.Collections.Generic.List<KmcQueuedManeuverPlan> plans)
+        {
+            if (string.IsNullOrWhiteSpace(
+                    planId) ||
+                plans == null)
+            {
+                return -1;
+            }
+
+            for (int index = 0;
+                 index < plans.Count;
+                 index++)
+            {
+                if (plans[index] != null &&
+                    string.Equals(
+                        plans[index].PlanId,
+                        planId,
+                        StringComparison.Ordinal))
+                {
+                    return index + 1;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int FindFirstRetainedKmcNodeIndex(
+            ManeuverInventorySnapshot inventory,
+            System.Collections.Generic.List<KmcQueuedManeuverPlan> plans,
+            ManeuverPlanModel currentPlan,
+            ManeuverUplinkStatusSnapshot uplink)
+        {
+            if (inventory == null ||
+                inventory.Nodes == null)
+            {
+                return -1;
+            }
+
+            for (int index = 0;
+                 index < inventory.Nodes.Count;
+                 index++)
+            {
+                ManeuverInventoryNode node =
+                    inventory.Nodes[index];
+
+                if (IsCurrentPlanNode(
+                        node,
+                        currentPlan,
+                        uplink) ||
+                    FindRetainedPlanForNode(
+                        node,
+                        inventory,
+                        plans) != null)
+                {
+                    return index;
+                }
+            }
+
+            return -1;
         }
 
         private static int FindCurrentPlanNodeIndex(

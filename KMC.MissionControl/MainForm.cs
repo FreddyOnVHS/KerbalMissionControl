@@ -1,7 +1,9 @@
+using KMC.Engine.Analysis;
 using KMC.Engine.Maneuver;
 using KMC.Engine.Orbit;
 using KMC.MissionControl.Controls;
 using KMC.MissionControl.Diagnostics;
+using KMC.MissionControl.Engineering;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Pages;
 using KMC.MissionControl.Rendering.Propulsion;
@@ -802,6 +804,15 @@ namespace KMC.MissionControl
             object sender,
             EventArgs e)
         {
+            /*
+             * Build 13.8:
+             * COMPUTE advances the Engine's single active planning identity.
+             * Preserve the currently reviewed plan first so Mission Control
+             * retains a multi-plan planning history even after Engine moves
+             * on to the next request.
+             */
+            CaptureCurrentKmcPlan();
+
             ManeuverRequestType type;
 
             switch (_maneuverTypeSelector.SelectedIndex)
@@ -894,12 +905,52 @@ namespace KMC.MissionControl
                 return;
             }
 
+            /*
+             * Build 13.8:
+             * Any reviewed plan that is sent to KSP becomes part of the
+             * Mission Control retained KMC plan set.
+             */
+            CaptureCurrentKmcPlan();
+
             string resultText;
 
             _receiver.UploadLatestManeuver(
                 out resultText);
 
             _missionDisplay.RequestRender();
+        }
+
+        private static void CaptureCurrentKmcPlan()
+        {
+            AnalysisPipelineResult result;
+
+            if (!EngineeringSnapshotStore.TryGetLatest(
+                    out result) ||
+                result == null ||
+                result.Snapshot == null ||
+                result.Snapshot.ManeuverPlan == null)
+            {
+                return;
+            }
+
+            ManeuverPlanModel plan =
+                result.Snapshot.ManeuverPlan;
+
+            if (string.IsNullOrWhiteSpace(
+                    plan.PlanId) ||
+                string.IsNullOrWhiteSpace(
+                    plan.VesselId) ||
+                !plan.NodeUniversalTimeAvailable ||
+                double.IsNaN(
+                    plan.NodeUniversalTimeSeconds) ||
+                double.IsInfinity(
+                    plan.NodeUniversalTimeSeconds))
+            {
+                return;
+            }
+
+            KmcManeuverPlanStore.Capture(
+                plan);
         }
 
         private void OnManeuverInventoryReceived(
@@ -1178,6 +1229,7 @@ namespace KMC.MissionControl
             try
             {
                 ManeuverRequestStore.Reset();
+                KmcManeuverPlanStore.Clear();
                 OrbitNormalTelemetryStore.Clear();
                 RadialTelemetryStore.Clear();
                 _orbitNormalReceiver.Start();
@@ -1557,6 +1609,15 @@ namespace KMC.MissionControl
         }
 
 
+        /*
+         * Build 13.8 — Multi-Maneuver Planning Foundation
+         *
+         * Engine intentionally remains the owner of ONE current maneuver plan.
+         * Mission Control retains immutable snapshots of reviewed plans before
+         * Engine advances to another request. This gives the queue persistent
+         * KMC ownership for more than one stock maneuver node without changing
+         * GuidanceSystem authorization or plugin protocols.
+         */
         private sealed class ManeuverNodeSelectorItem
         {
             public ManeuverNodeSelectorItem(
@@ -1593,6 +1654,148 @@ namespace KMC.MissionControl
             public override string ToString()
             {
                 return Text;
+            }
+        }
+    }
+
+    internal sealed class KmcQueuedManeuverPlan
+    {
+        public string PlanId { get; set; }
+        public string VesselId { get; set; }
+        public string Objective { get; set; }
+        public double NodeUniversalTimeSeconds { get; set; }
+        public double ProgradeDeltaVMetersPerSecond { get; set; }
+        public double NormalDeltaVMetersPerSecond { get; set; }
+        public double RadialDeltaVMetersPerSecond { get; set; }
+        public DateTime CapturedUtc { get; set; }
+    }
+
+    internal static class KmcManeuverPlanStore
+    {
+        private static readonly object SyncRoot =
+            new object();
+
+        private static readonly
+            System.Collections.Generic.List<KmcQueuedManeuverPlan>
+            Plans =
+                new System.Collections.Generic.List<KmcQueuedManeuverPlan>();
+
+        public static void Capture(
+            ManeuverPlanModel plan)
+        {
+            if (plan == null ||
+                string.IsNullOrWhiteSpace(
+                    plan.PlanId) ||
+                string.IsNullOrWhiteSpace(
+                    plan.VesselId) ||
+                !plan.NodeUniversalTimeAvailable ||
+                double.IsNaN(
+                    plan.NodeUniversalTimeSeconds) ||
+                double.IsInfinity(
+                    plan.NodeUniversalTimeSeconds))
+            {
+                return;
+            }
+
+            lock (SyncRoot)
+            {
+                for (int index = 0;
+                     index < Plans.Count;
+                     index++)
+                {
+                    if (string.Equals(
+                            Plans[index].PlanId,
+                            plan.PlanId,
+                            StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+                }
+
+                Plans.Add(
+                    new KmcQueuedManeuverPlan
+                    {
+                        PlanId =
+                            plan.PlanId ?? string.Empty,
+
+                        VesselId =
+                            plan.VesselId ?? string.Empty,
+
+                        Objective =
+                            plan.Objective ?? string.Empty,
+
+                        NodeUniversalTimeSeconds =
+                            plan.NodeUniversalTimeSeconds,
+
+                        ProgradeDeltaVMetersPerSecond =
+                            plan.ProgradeDeltaVMetersPerSecond,
+
+                        NormalDeltaVMetersPerSecond =
+                            plan.NormalDeltaVMetersPerSecond,
+
+                        RadialDeltaVMetersPerSecond =
+                            plan.RadialDeltaVMetersPerSecond,
+
+                        CapturedUtc =
+                            DateTime.UtcNow
+                    });
+
+                Plans.Sort(
+                    delegate(
+                        KmcQueuedManeuverPlan left,
+                        KmcQueuedManeuverPlan right)
+                    {
+                        return
+                            left.NodeUniversalTimeSeconds.CompareTo(
+                                right.NodeUniversalTimeSeconds);
+                    });
+            }
+        }
+
+        public static
+            System.Collections.Generic.List<KmcQueuedManeuverPlan>
+            GetAll()
+        {
+            lock (SyncRoot)
+            {
+                System.Collections.Generic.List<KmcQueuedManeuverPlan>
+                    copy =
+                        new System.Collections.Generic.List<KmcQueuedManeuverPlan>();
+
+                for (int index = 0;
+                     index < Plans.Count;
+                     index++)
+                {
+                    KmcQueuedManeuverPlan source =
+                        Plans[index];
+
+                    copy.Add(
+                        new KmcQueuedManeuverPlan
+                        {
+                            PlanId = source.PlanId,
+                            VesselId = source.VesselId,
+                            Objective = source.Objective,
+                            NodeUniversalTimeSeconds =
+                                source.NodeUniversalTimeSeconds,
+                            ProgradeDeltaVMetersPerSecond =
+                                source.ProgradeDeltaVMetersPerSecond,
+                            NormalDeltaVMetersPerSecond =
+                                source.NormalDeltaVMetersPerSecond,
+                            RadialDeltaVMetersPerSecond =
+                                source.RadialDeltaVMetersPerSecond,
+                            CapturedUtc = source.CapturedUtc
+                        });
+                }
+
+                return copy;
+            }
+        }
+
+        public static void Clear()
+        {
+            lock (SyncRoot)
+            {
+                Plans.Clear();
             }
         }
     }
