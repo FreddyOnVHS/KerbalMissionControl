@@ -72,6 +72,11 @@ namespace KMC.MissionControl.Pages
                     plan,
                     guidance);
 
+            QueueDirectorState queue =
+                BuildQueueDirectorState(
+                    plan,
+                    guidance);
+
             Rectangle content =
                 context.ContentBounds;
 
@@ -116,7 +121,8 @@ namespace KMC.MissionControl.Pages
                 context,
                 directorBounds,
                 guidance,
-                activeManeuverNode);
+                activeManeuverNode,
+                queue);
         }
 
         private static void GetLatestGuidanceState(
@@ -228,6 +234,126 @@ namespace KMC.MissionControl.Pages
             }
 
             return false;
+        }
+
+        /*
+         * Build 13.7:
+         * Adds queue awareness to GUID without changing Engine authority.
+         * Inventory order is chronological stock-KSP order. The current KMC
+         * plan is associated only by the same UT / DV match already used by
+         * 13.6 active-node ownership.
+         */
+        private static QueueDirectorState BuildQueueDirectorState(
+            ManeuverPlanModel plan,
+            GuidanceSolutionModel guidance)
+        {
+            QueueDirectorState state =
+                new QueueDirectorState();
+
+            KMC.MissionControl.ManeuverInventorySnapshot inventory =
+                KMC.MissionControl.ManeuverInventoryStore.GetLatest();
+
+            if (inventory == null ||
+                inventory.Nodes == null ||
+                inventory.ReceivedUtc == DateTime.MinValue ||
+                DateTime.UtcNow - inventory.ReceivedUtc >
+                    TimeSpan.FromSeconds(
+                        ActiveNodeInventoryFreshnessSeconds))
+            {
+                state.Summary = "QUEUE WAITING";
+                return state;
+            }
+
+            state.InventoryAvailable = true;
+            state.TotalNodes = inventory.Nodes.Count;
+
+            if (inventory.Nodes.Count == 0)
+            {
+                state.Summary = "0 KSP NODES";
+                return state;
+            }
+
+            KMC.MissionControl.ManeuverInventoryNode next =
+                inventory.Nodes[0];
+
+            state.NextNodeVector =
+                KMC.MissionControl.ManeuverInventoryFormatting
+                    .DescribeVector(next);
+
+            state.NextTimeToNodeSeconds =
+                next.NodeUniversalTimeSeconds -
+                inventory.UniversalTimeSeconds;
+
+            if (plan != null &&
+                guidance != null &&
+                !string.IsNullOrWhiteSpace(plan.VesselId) &&
+                string.Equals(
+                    inventory.VesselId ?? string.Empty,
+                    plan.VesselId ?? string.Empty,
+                    StringComparison.Ordinal))
+            {
+                for (int index = 0;
+                     index < inventory.Nodes.Count;
+                     index++)
+                {
+                    KMC.MissionControl.ManeuverInventoryNode node =
+                        inventory.Nodes[index];
+
+                    if (node == null)
+                    {
+                        continue;
+                    }
+
+                    if (IsWithin(
+                            node.NodeUniversalTimeSeconds,
+                            plan.NodeUniversalTimeSeconds,
+                            ActiveNodeUtToleranceSeconds) &&
+                        IsWithin(
+                            node.ProgradeDeltaVMetersPerSecond,
+                            plan.ProgradeDeltaVMetersPerSecond,
+                            ActiveNodeDeltaVToleranceMetersPerSecond) &&
+                        IsWithin(
+                            node.NormalDeltaVMetersPerSecond,
+                            plan.NormalDeltaVMetersPerSecond,
+                            ActiveNodeDeltaVToleranceMetersPerSecond) &&
+                        IsWithin(
+                            node.RadialDeltaVMetersPerSecond,
+                            plan.RadialDeltaVMetersPerSecond,
+                            ActiveNodeDeltaVToleranceMetersPerSecond))
+                    {
+                        state.KmcNodeIndex = index;
+                        state.KmcNodeFound = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!state.KmcNodeFound)
+            {
+                state.Summary =
+                    "NEXT #1 MANUAL KSP";
+
+                return state;
+            }
+
+            if (state.KmcNodeIndex == 0)
+            {
+                state.Summary =
+                    "#1 OF " +
+                    state.TotalNodes.ToString() +
+                    " / NEXT KMC";
+            }
+            else
+            {
+                state.Summary =
+                    "#" +
+                    (state.KmcNodeIndex + 1).ToString() +
+                    " OF " +
+                    state.TotalNodes.ToString() +
+                    " / MANUAL AHEAD";
+            }
+
+            return state;
         }
 
         private static void DrawGuidanceSphere(
@@ -467,7 +593,8 @@ namespace KMC.MissionControl.Pages
             MissionRenderContext context,
             Rectangle bounds,
             GuidanceSolutionModel guidance,
-            bool activeManeuverNode)
+            bool activeManeuverNode,
+            QueueDirectorState queue)
         {
             DrawPanelFrame(
                 context,
@@ -580,7 +707,13 @@ namespace KMC.MissionControl.Pages
                             ? "AWAIT NODE UPLOAD"
                             : guidance != null
                                 ? guidance.AttitudeReference
-                                : "---")
+                                : "---"),
+
+                    new FieldPair(
+                        "QUEUE",
+                        queue != null
+                            ? queue.Summary
+                            : "QUEUE WAITING")
                 });
 
             DrawCompactGroup(
@@ -749,7 +882,7 @@ namespace KMC.MissionControl.Pages
                     valueRight,
                     y);
 
-                y += 32;
+                y += 29;
             }
         }
 
@@ -1757,6 +1890,25 @@ namespace KMC.MissionControl.Pages
                     value) &&
                 !double.IsInfinity(
                     value);
+        }
+
+        private sealed class QueueDirectorState
+        {
+            public bool InventoryAvailable { get; set; }
+            public int TotalNodes { get; set; }
+            public bool KmcNodeFound { get; set; }
+            public int KmcNodeIndex { get; set; }
+            public string NextNodeVector { get; set; }
+            public double NextTimeToNodeSeconds { get; set; }
+            public string Summary { get; set; }
+
+            public QueueDirectorState()
+            {
+                KmcNodeIndex = -1;
+                NextNodeVector = "---";
+                NextTimeToNodeSeconds = double.NaN;
+                Summary = "QUEUE WAITING";
+            }
         }
 
         private sealed class FieldPair

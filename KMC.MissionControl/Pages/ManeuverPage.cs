@@ -129,11 +129,47 @@ namespace KMC.MissionControl.Pages
                 bool fresh = inventory != null && inventory.ReceivedUtc != DateTime.MinValue &&
                     now - inventory.ReceivedUtc <= TimeSpan.FromSeconds(2.0);
 
-                string summary = fresh
-                    ? inventory.Nodes.Count.ToString() + " KSP NODE(S) / " + Safe(inventory.VesselName)
-                    : "KSP NODE INVENTORY WAITING";
-                context.Graphics.DrawString(summary, context.SmallFont, labelBrush,
-                    Math.Max(left + 260, right - 420), top);
+                string summary =
+                    fresh
+                        ? BuildQueueDirectorSummary(
+                            inventory,
+                            plan,
+                            uplink)
+                        : "KSP NODE INVENTORY WAITING";
+
+                /*
+                 * Build 13.7.1:
+                 * Right-align the Queue Director summary inside a bounded
+                 * rectangle instead of drawing from a fixed X origin. This
+                 * keeps the complete "#x OF y" suffix visible at normal
+                 * widescreen resolutions without changing queue semantics.
+                 */
+                using (StringFormat summaryFormat =
+                    new StringFormat())
+                {
+                    summaryFormat.Alignment =
+                        StringAlignment.Far;
+
+                    summaryFormat.LineAlignment =
+                        StringAlignment.Near;
+
+                    RectangleF summaryBounds =
+                        new RectangleF(
+                            left + 300,
+                            top,
+                            Math.Max(
+                                1,
+                                right -
+                                (left + 300)),
+                            24);
+
+                    context.Graphics.DrawString(
+                        summary,
+                        context.SmallFont,
+                        labelBrush,
+                        summaryBounds,
+                        summaryFormat);
+                }
 
                 int headerY = top + 30;
                 int width = Math.Max(1, right - left);
@@ -142,8 +178,8 @@ namespace KMC.MissionControl.Pages
                 int xUt = left + (int)(width * 0.20);
                 int xVector = left + (int)(width * 0.35);
                 int xDv = left + (int)(width * 0.57);
-                int xState = left + (int)(width * 0.72);
-                int xPlan = left + (int)(width * 0.84);
+                int xState = left + (int)(width * 0.70);
+                int xPlan = left + (int)(width * 0.87);
 
                 context.Graphics.DrawString("#", context.SmallFont, labelBrush, xNum, headerY);
                 context.Graphics.DrawString("TIME TO NODE", context.SmallFont, labelBrush, xTime, headerY);
@@ -170,10 +206,29 @@ namespace KMC.MissionControl.Pages
                     {
                         ManeuverInventoryNode node = inventory.Nodes[index];
                         double tNode = node.NodeUniversalTimeSeconds - inventory.UniversalTimeSeconds;
-                        bool currentMatch = IsCurrentPlanNode(node, plan, uplink);
-                        string state = currentMatch ? Safe(uplink.State) : index == 0 ? "NEXT" : "PLANNED";
-                        string planText = currentMatch && plan != null ? ShortPlanId(plan.PlanId) : "---";
-                        Brush rowBrush = index == 0 ? nextBrush : valueBrush;
+                        bool currentMatch =
+                            IsCurrentPlanNode(
+                                node,
+                                plan,
+                                uplink);
+
+                        string state =
+                            DescribeQueueState(
+                                index,
+                                currentMatch,
+                                uplink);
+
+                        string planText =
+                            currentMatch &&
+                            plan != null
+                                ? ShortPlanId(plan.PlanId)
+                                : "MANUAL";
+
+                        Brush rowBrush =
+                            index == 0 ||
+                            currentMatch
+                                ? nextBrush
+                                : valueBrush;
 
                         context.Graphics.DrawString((index + 1).ToString(), context.SmallFont, rowBrush, xNum, y);
                         context.Graphics.DrawString(FormatCountdown(tNode), context.SmallFont, rowBrush, xTime, y);
@@ -202,6 +257,156 @@ namespace KMC.MissionControl.Pages
                 context.Graphics.DrawString(evidence, context.SmallFont, labelBrush,
                     new RectangleF(left, evidenceY, Math.Max(1, right - left), 24));
             }
+        }
+
+        /*
+         * Build 13.7 Maneuver Queue Director.
+         *
+         * KSP inventory owns chronological node order. Only the one stock
+         * node that matches the current KMC plan/uplink may be described as
+         * KMC-owned. Every other stock node is explicitly crew/manual.
+         *
+         * This is advisory display classification only. It does not promote,
+         * authorize, upload, or execute any node.
+         */
+        private static string BuildQueueDirectorSummary(
+            ManeuverInventorySnapshot inventory,
+            ManeuverPlanModel plan,
+            ManeuverUplinkStatusSnapshot uplink)
+        {
+            if (inventory == null ||
+                inventory.Nodes == null)
+            {
+                return "QUEUE DIRECTOR: WAITING";
+            }
+
+            int count =
+                inventory.Nodes.Count;
+
+            if (count == 0)
+            {
+                return
+                    "QUEUE DIRECTOR: 0 KSP NODES / " +
+                    Safe(inventory.VesselName);
+            }
+
+            int kmcIndex =
+                FindCurrentPlanNodeIndex(
+                    inventory,
+                    plan,
+                    uplink);
+
+            string nextVector =
+                ManeuverInventoryFormatting.DescribeVector(
+                    inventory.Nodes[0]);
+
+            if (kmcIndex < 0)
+            {
+                return
+                    "QUEUE DIRECTOR: NEXT #1 " +
+                    Safe(nextVector) +
+                    " / MANUAL KSP / " +
+                    count.ToString() +
+                    " TOTAL";
+            }
+
+            if (kmcIndex == 0)
+            {
+                return
+                    "QUEUE DIRECTOR: NEXT #1 KMC / " +
+                    Safe(nextVector) +
+                    " / " +
+                    count.ToString() +
+                    " TOTAL";
+            }
+
+            return
+                "QUEUE DIRECTOR: NEXT #1 MANUAL / KMC #" +
+                (kmcIndex + 1).ToString() +
+                " OF " +
+                count.ToString();
+        }
+
+        private static string DescribeQueueState(
+            int index,
+            bool currentMatch,
+            ManeuverUplinkStatusSnapshot uplink)
+        {
+            if (currentMatch)
+            {
+                bool verified =
+                    uplink != null &&
+                    string.Equals(
+                        uplink.State,
+                        "NODE VERIFIED",
+                        StringComparison.OrdinalIgnoreCase);
+
+                bool modified =
+                    uplink != null &&
+                    string.Equals(
+                        uplink.State,
+                        "CREW MODIFIED",
+                        StringComparison.OrdinalIgnoreCase);
+
+                if (index == 0)
+                {
+                    if (verified)
+                    {
+                        return "NEXT KMC";
+                    }
+
+                    if (modified)
+                    {
+                        return "NEXT / MODIFIED";
+                    }
+
+                    return "NEXT / UNVERIFIED";
+                }
+
+                if (verified)
+                {
+                    return "FUTURE KMC";
+                }
+
+                if (modified)
+                {
+                    return "FUTURE / MODIFIED";
+                }
+
+                return "FUTURE / UNVERIFIED";
+            }
+
+            return
+                index == 0
+                    ? "NEXT / MANUAL"
+                    : "MANUAL KSP";
+        }
+
+        private static int FindCurrentPlanNodeIndex(
+            ManeuverInventorySnapshot inventory,
+            ManeuverPlanModel plan,
+            ManeuverUplinkStatusSnapshot uplink)
+        {
+            if (inventory == null ||
+                inventory.Nodes == null)
+            {
+                return -1;
+            }
+
+            for (int index = 0;
+                 index < inventory.Nodes.Count;
+                 index++)
+            {
+                if (IsCurrentPlanNode(
+                        inventory.Nodes[index],
+                        plan,
+                        uplink))
+                {
+                    return index;
+                }
+            }
+
+            return -1;
         }
 
         private static bool IsCurrentPlanNode(ManeuverInventoryNode node, ManeuverPlanModel plan, ManeuverUplinkStatusSnapshot uplink)
