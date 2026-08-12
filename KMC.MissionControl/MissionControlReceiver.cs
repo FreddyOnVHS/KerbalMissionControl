@@ -29,6 +29,7 @@ namespace KMC.MissionControl
         private readonly TelemetryTransport _transport;
         private readonly ManeuverLinkTransport _maneuverLink;
         private readonly PowerFailureIntegrationController _powerFailureIntegration;
+        private readonly PropulsionFailureIntegrationController _propulsionFailureIntegration;
         private readonly TelemetryCache _cache;
         private readonly object _engineeringSyncRoot;
 
@@ -36,6 +37,10 @@ namespace KMC.MissionControl
         private long _engineeringSequence;
         private string _powerTrainingFailureId;
         private string _powerTrainingVesselId;
+        private string _propDerateTrainingFailureId;
+        private string _propDerateTrainingVesselId;
+        private string _propShutdownTrainingFailureId;
+        private string _propShutdownTrainingVesselId;
 
         public MissionControlReceiver()
         {
@@ -50,6 +55,9 @@ namespace KMC.MissionControl
 
             _powerFailureIntegration =
                 new PowerFailureIntegrationController();
+
+            _propulsionFailureIntegration =
+                new PropulsionFailureIntegrationController();
 
             _cache =
                 new TelemetryCache();
@@ -109,6 +117,10 @@ namespace KMC.MissionControl
                 _engineeringSequence = 0;
                 _powerTrainingFailureId = string.Empty;
                 _powerTrainingVesselId = string.Empty;
+                _propDerateTrainingFailureId = string.Empty;
+                _propDerateTrainingVesselId = string.Empty;
+                _propShutdownTrainingFailureId = string.Empty;
+                _propShutdownTrainingVesselId = string.Empty;
             }
 
             _maneuverLink.Start();
@@ -242,6 +254,291 @@ namespace KMC.MissionControl
                 " / " +
                 SyntheticFailureTargets.ElectricChargeLeak +
                 " / 8.00 EC/S";
+
+            return true;
+        }
+
+        /// <summary>
+        /// Build 14.6 explicit training toggle for a 50% derate on one exact
+        /// currently observed non-SRB engine. The chosen PartId is embedded
+        /// into failure truth and remains immutable for that failure.
+        /// </summary>
+        public bool TogglePropulsionDerateTrainingFailure(
+            out string resultText)
+        {
+            if (!string.IsNullOrWhiteSpace(
+                    _propDerateTrainingFailureId))
+            {
+                return
+                    ClearPropulsionTrainingFailure(
+                        ref _propDerateTrainingFailureId,
+                        ref _propDerateTrainingVesselId,
+                        out resultText);
+            }
+
+            uint partId;
+
+            if (!TrySelectPropulsionTrainingEngine(
+                    out partId,
+                    out resultText))
+            {
+                return false;
+            }
+
+            return
+                InjectPropulsionTrainingFailure(
+                    partId,
+                    false,
+                    0.50,
+                    ref _propDerateTrainingFailureId,
+                    ref _propDerateTrainingVesselId,
+                    out resultText);
+        }
+
+        /// <summary>
+        /// Build 14.6 explicit training toggle for shutdown of one exact
+        /// currently observed non-SRB engine. Use only during a controlled
+        /// ground/flight test.
+        /// </summary>
+        public bool TogglePropulsionShutdownTrainingFailure(
+            out string resultText)
+        {
+            if (!string.IsNullOrWhiteSpace(
+                    _propShutdownTrainingFailureId))
+            {
+                return
+                    ClearPropulsionTrainingFailure(
+                        ref _propShutdownTrainingFailureId,
+                        ref _propShutdownTrainingVesselId,
+                        out resultText);
+            }
+
+            uint partId;
+
+            if (!TrySelectPropulsionTrainingEngine(
+                    out partId,
+                    out resultText))
+            {
+                return false;
+            }
+
+            return
+                InjectPropulsionTrainingFailure(
+                    partId,
+                    true,
+                    1.0,
+                    ref _propShutdownTrainingFailureId,
+                    ref _propShutdownTrainingVesselId,
+                    out resultText);
+        }
+
+        private bool InjectPropulsionTrainingFailure(
+            uint partId,
+            bool shutdown,
+            double magnitude,
+            ref string failureIdStore,
+            ref string vesselIdStore,
+            out string resultText)
+        {
+            resultText = string.Empty;
+
+            AnalysisPipelineResult latest;
+
+            if (!EngineeringSnapshotStore.TryGetLatest(
+                    out latest) ||
+                latest == null ||
+                latest.Snapshot == null ||
+                latest.Snapshot.Vessel == null ||
+                string.IsNullOrWhiteSpace(
+                    latest.Snapshot.Vessel.VesselId))
+            {
+                resultText =
+                    "NO ACTIVE ENGINEERING VESSEL";
+
+                return false;
+            }
+
+            string vesselId =
+                latest.Snapshot.Vessel.VesselId;
+
+            FailureSimulationSnapshot current =
+                latest.Snapshot.SpacecraftSystems != null
+                    ? latest.Snapshot.SpacecraftSystems.FailureSimulation
+                    : null;
+
+            if (current == null ||
+                current.Mode ==
+                    FailureSimulationMode.Nominal)
+            {
+                string modeResult;
+
+                if (!_engineeringEngine.SetFailureSimulationMode(
+                        vesselId,
+                        FailureSimulationMode.Training,
+                        out modeResult))
+                {
+                    resultText = modeResult;
+                    return false;
+                }
+            }
+
+            string targetId =
+                shutdown
+                    ? SyntheticFailureTargets.CreateEngineShutdownTarget(
+                        partId)
+                    : SyntheticFailureTargets.CreateEngineDerateTarget(
+                        partId);
+
+            string failureId;
+            string injectResult;
+
+            bool injected =
+                _engineeringEngine.InjectSyntheticFailure(
+                    new SyntheticFailureRequest
+                    {
+                        VesselId = vesselId,
+                        TargetId = targetId,
+                        TargetKind =
+                            SyntheticFailureTargetKind.PropulsionEffect,
+                        Kind =
+                            SyntheticFailureKind.Sudden,
+                        Severity =
+                            shutdown
+                                ? SyntheticFailureSeverity.Critical
+                                : SyntheticFailureSeverity.Caution,
+                        ComponentHealth =
+                            shutdown
+                                ? SpacecraftSystemHealth.Failed
+                                : SpacecraftSystemHealth.Degraded,
+                        EffectMagnitude = magnitude,
+                        ActivateUtc = DateTime.UtcNow,
+                        Detail =
+                            shutdown
+                                ? "BUILD 14.6 EXPLICIT ENGINE SHUTDOWN TEST"
+                                : "BUILD 14.6 EXPLICIT ENGINE DERATE TEST"
+                    },
+                    out failureId,
+                    out injectResult);
+
+            if (!injected)
+            {
+                resultText = injectResult;
+                return false;
+            }
+
+            failureIdStore =
+                failureId;
+            vesselIdStore =
+                vesselId;
+
+            resultText =
+                "INJECTED " +
+                failureId +
+                " / " +
+                targetId +
+                (shutdown
+                    ? " / SHUTDOWN"
+                    : " / 50% DERATE");
+
+            return true;
+        }
+
+        private bool ClearPropulsionTrainingFailure(
+            ref string failureIdStore,
+            ref string vesselIdStore,
+            out string resultText)
+        {
+            string failureId =
+                failureIdStore;
+            string vesselId =
+                vesselIdStore;
+
+            string clearResult;
+
+            bool cleared =
+                _engineeringEngine.ClearSyntheticFailure(
+                    vesselId,
+                    failureId,
+                    out clearResult);
+
+            if (cleared)
+            {
+                resultText =
+                    "CLEARED " +
+                    failureId;
+
+                failureIdStore =
+                    string.Empty;
+                vesselIdStore =
+                    string.Empty;
+            }
+            else
+            {
+                resultText =
+                    clearResult;
+            }
+
+            return cleared;
+        }
+
+        private static bool TrySelectPropulsionTrainingEngine(
+            out uint partId,
+            out string resultText)
+        {
+            partId = 0;
+            resultText = string.Empty;
+
+            Dictionary<uint, EngineStateTelemetry> engines =
+                EngineStateTelemetryStore.GetSnapshot();
+
+            double bestMaximumThrust =
+                double.NegativeInfinity;
+
+            foreach (
+                KeyValuePair<uint, EngineStateTelemetry> pair
+                in engines)
+            {
+                EngineStateTelemetry engine =
+                    pair.Value;
+
+                if (engine == null ||
+                    engine.PartId == 0 ||
+                    engine.IsSolidBooster)
+                {
+                    continue;
+                }
+
+                double maximumThrust =
+                    engine.MaximumThrust;
+
+                if (partId == 0 ||
+                    maximumThrust >
+                        bestMaximumThrust ||
+                    (Math.Abs(
+                         maximumThrust -
+                         bestMaximumThrust) <
+                     0.0001 &&
+                     engine.PartId <
+                         partId))
+                {
+                    partId =
+                        engine.PartId;
+                    bestMaximumThrust =
+                        maximumThrust;
+                }
+            }
+
+            if (partId == 0)
+            {
+                resultText =
+                    "NO LIVE NON-SRB ENGINE TELEMETRY";
+
+                return false;
+            }
+
+            resultText =
+                "SELECTED ENGINE PART " +
+                partId.ToString();
 
             return true;
         }
@@ -605,6 +902,9 @@ namespace KMC.MissionControl
 
                 _powerFailureIntegration.Evaluate(
                     result);
+
+                _propulsionFailureIntegration.Evaluate(
+                    result);
             }
             catch (Exception ex)
             {
@@ -650,6 +950,7 @@ namespace KMC.MissionControl
         public void Stop()
         {
             _powerFailureIntegration.RestoreAll();
+            _propulsionFailureIntegration.RestoreAll();
 
             if (!_running)
             {
@@ -708,6 +1009,7 @@ namespace KMC.MissionControl
             _transport.Dispose();
             _maneuverLink.Dispose();
             _powerFailureIntegration.Dispose();
+            _propulsionFailureIntegration.Dispose();
         }
     }
 }

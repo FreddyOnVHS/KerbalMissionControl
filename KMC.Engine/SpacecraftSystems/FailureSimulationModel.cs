@@ -31,7 +31,8 @@ namespace KMC.Engine.SpacecraftSystems
         Component = 0,
         ElectricalSource = 1,
         Instrumentation = 2,
-        PowerEffect = 3
+        PowerEffect = 3,
+        PropulsionEffect = 4
     }
 
     /// <summary>
@@ -42,6 +43,72 @@ namespace KMC.Engine.SpacecraftSystems
     {
         public const string ElectricChargeLeak =
             "PWR_EC_LEAK";
+
+        public const string EngineDeratePrefix =
+            "PROP_ENGINE_DERATE:";
+
+        public const string EngineShutdownPrefix =
+            "PROP_ENGINE_SHUTDOWN:";
+
+        public static string CreateEngineDerateTarget(
+            uint partPersistentId)
+        {
+            return
+                EngineDeratePrefix +
+                partPersistentId.ToString();
+        }
+
+        public static string CreateEngineShutdownTarget(
+            uint partPersistentId)
+        {
+            return
+                EngineShutdownPrefix +
+                partPersistentId.ToString();
+        }
+
+        public static bool TryParsePropulsionTarget(
+            string targetId,
+            out uint partPersistentId,
+            out bool shutdown)
+        {
+            partPersistentId = 0;
+            shutdown = false;
+
+            if (string.IsNullOrWhiteSpace(targetId))
+            {
+                return false;
+            }
+
+            string value;
+
+            if (targetId.StartsWith(
+                    EngineDeratePrefix,
+                    StringComparison.Ordinal))
+            {
+                value =
+                    targetId.Substring(
+                        EngineDeratePrefix.Length);
+            }
+            else if (targetId.StartsWith(
+                         EngineShutdownPrefix,
+                         StringComparison.Ordinal))
+            {
+                shutdown = true;
+                value =
+                    targetId.Substring(
+                        EngineShutdownPrefix.Length);
+            }
+            else
+            {
+                return false;
+            }
+
+            return
+                uint.TryParse(
+                    value,
+                    out partPersistentId) &&
+                partPersistentId != 0;
+        }
     }
 
     public enum SyntheticFailureCondition

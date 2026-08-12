@@ -32,6 +32,7 @@ namespace KMC.Plugin
         private const double MaximumEcLeakRate = 10.00;
         private const float EcLeakApplyIntervalSeconds = 0.20f;
         private const float EcLeakLeaseSeconds = 2.50f;
+        private const float PropulsionEffectLeaseSeconds = 2.50f;
 
         private readonly object _syncRoot =
             new object();
@@ -49,6 +50,11 @@ namespace KMC.Plugin
 
         private readonly Queue<string> _completedOrder =
             new Queue<string>();
+
+        private readonly Dictionary<string, PropulsionEffectLeaseState>
+            _propulsionEffectLeases =
+                new Dictionary<string, PropulsionEffectLeaseState>(
+                    StringComparer.Ordinal);
 
         private readonly Dictionary<string, ContinuousEcLeakState>
             _ecLeaks =
@@ -154,6 +160,7 @@ namespace KMC.Plugin
             }
 
             ApplyContinuousEcLeaks();
+            ExpirePropulsionEffectLeases();
         }
 
         public void OnGUI()
@@ -517,7 +524,7 @@ namespace KMC.Plugin
                         packet,
                         "REJECTED",
                         double.NaN,
-                        "EXACT PART ID NOT FOUND ON ACTIVE VESSEL");
+                        "EXACT PART ID NOT FOUND OR IDENTITY AMBIGUOUS ON ACTIVE VESSEL");
 
                     return;
                 }
@@ -639,6 +646,9 @@ namespace KMC.Plugin
                 _restore.Remove(
                     key);
 
+                _propulsionEffectLeases.Remove(
+                    key);
+
                 Complete(
                     packet,
                     "RESTORED",
@@ -696,6 +706,11 @@ namespace KMC.Plugin
                 GetNumericMember(
                     engine,
                     "thrustPercentage");
+
+            RefreshPropulsionEffectLease(
+                packet,
+                FailureEffectType.EngineDerate,
+                key);
 
             Complete(
                 packet,
@@ -761,6 +776,9 @@ namespace KMC.Plugin
                 _restore.Remove(
                     key);
 
+                _propulsionEffectLeases.Remove(
+                    key);
+
                 bool ignited =
                     GetBooleanMember(
                         engine,
@@ -816,11 +834,186 @@ namespace KMC.Plugin
                     "EngineIgnited",
                     false);
 
+            RefreshPropulsionEffectLease(
+                packet,
+                FailureEffectType.EngineShutdown,
+                key);
+
             Complete(
                 packet,
                 "APPLIED",
                 after ? 1.0 : 0.0,
                 "ENGINE SHUTDOWN COMMAND EXECUTED");
+        }
+
+        private void RefreshPropulsionEffectLease(
+            FailureEffectPacket packet,
+            FailureEffectType effectType,
+            string restoreKey)
+        {
+            if (packet == null ||
+                string.IsNullOrWhiteSpace(restoreKey) ||
+                string.IsNullOrWhiteSpace(packet.CommandId) ||
+                !packet.CommandId.StartsWith(
+                    "PROP14.6-",
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _propulsionEffectLeases[restoreKey] =
+                new PropulsionEffectLeaseState
+                {
+                    VesselId =
+                        packet.VesselId ?? string.Empty,
+                    PartPersistentId =
+                        packet.PartPersistentId,
+                    EffectType =
+                        effectType,
+                    RestoreKey =
+                        restoreKey,
+                    LastRefreshRealtime =
+                        Time.realtimeSinceStartup
+                };
+        }
+
+        private void ExpirePropulsionEffectLeases()
+        {
+            if (_propulsionEffectLeases.Count == 0)
+            {
+                return;
+            }
+
+            float now =
+                Time.realtimeSinceStartup;
+
+            Vessel vessel =
+                FlightGlobals.ActiveVessel;
+
+            List<string> expired =
+                null;
+
+            foreach (
+                KeyValuePair<string, PropulsionEffectLeaseState> pair
+                in _propulsionEffectLeases)
+            {
+                PropulsionEffectLeaseState lease =
+                    pair.Value;
+
+                if (lease == null ||
+                    now -
+                        lease.LastRefreshRealtime <=
+                    PropulsionEffectLeaseSeconds)
+                {
+                    continue;
+                }
+
+                /*
+                 * KSP mutation remains tied to the exact active vessel. If the
+                 * crew switched away, keep the expired lease pending and
+                 * restore it the next time that exact vessel is active.
+                 */
+                if (vessel == null ||
+                    !string.Equals(
+                        vessel.id.ToString(),
+                        lease.VesselId,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                Part part =
+                    FindPartByPersistentId(
+                        vessel,
+                        lease.PartPersistentId);
+
+                EffectRestoreState restore;
+
+                if (part != null &&
+                    _restore.TryGetValue(
+                        lease.RestoreKey,
+                        out restore))
+                {
+                    try
+                    {
+                        PartModule engine =
+                            FindModule(
+                                part,
+                                "ModuleEngines",
+                                "ModuleEnginesFX");
+
+                        if (engine != null)
+                        {
+                            if (lease.EffectType ==
+                                    FailureEffectType.EngineDerate &&
+                                restore.Primary.HasValue)
+                            {
+                                SetNumericMember(
+                                    engine,
+                                    "thrustPercentage",
+                                    restore.Primary.Value);
+                            }
+                            else if (lease.EffectType ==
+                                         FailureEffectType.EngineShutdown &&
+                                     restore.Flag.HasValue &&
+                                     restore.Flag.Value)
+                            {
+                                InvokeParameterless(
+                                    engine,
+                                    "Activate");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError(
+                            "[KMC] PROP FAILURE EFFECT FAILSAFE RESTORE ERROR" +
+                            " | VesselId=" +
+                            lease.VesselId +
+                            " | Part=" +
+                            lease.PartPersistentId.ToString() +
+                            " | Effect=" +
+                            lease.EffectType +
+                            " | Error=" +
+                            ex.GetType().Name);
+                    }
+                }
+
+                _restore.Remove(
+                    lease.RestoreKey);
+
+                if (expired == null)
+                {
+                    expired =
+                        new List<string>();
+                }
+
+                expired.Add(
+                    pair.Key);
+
+                Debug.Log(
+                    "[KMC] PROP FAILURE EFFECT FAILSAFE" +
+                    " | VesselId=" +
+                    lease.VesselId +
+                    " | Part=" +
+                    lease.PartPersistentId.ToString() +
+                    " | Effect=" +
+                    lease.EffectType +
+                    " | Action=LEASE EXPIRED / EFFECT RESTORED");
+            }
+
+            if (expired == null)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < expired.Count;
+                 index++)
+            {
+                _propulsionEffectLeases.Remove(
+                    expired[index]);
+            }
         }
 
         private void ApplyReactionWheelAuthority(
@@ -1382,13 +1575,16 @@ namespace KMC.Plugin
 
         private static Part FindPartByPersistentId(
             Vessel vessel,
-            uint persistentId)
+            uint commandPartId)
         {
             if (vessel == null ||
-                vessel.parts == null)
+                vessel.parts == null ||
+                commandPartId == 0)
             {
                 return null;
             }
+
+            Part matchedPart = null;
 
             for (int index = 0;
                  index < vessel.parts.Count;
@@ -1397,15 +1593,46 @@ namespace KMC.Plugin
                 Part part =
                     vessel.parts[index];
 
-                if (part != null &&
-                    GetPersistentId(part) ==
-                        persistentId)
+                if (part == null)
                 {
-                    return part;
+                    continue;
                 }
+
+                /*
+                 * KMC topology and propulsion telemetry use Part.flightID as
+                 * their canonical live-vessel identity. The original 14.4
+                 * F9 test panel sends Part.persistentId.
+                 *
+                 * Accept either exact identity so existing 14.4 tests remain
+                 * compatible while 14.6 can target the same PartId seen by
+                 * PROP/topology. If two different parts somehow collide across
+                 * these identity domains, reject by returning null rather than
+                 * mutating an ambiguous target.
+                 */
+                bool matches =
+                    part.flightID ==
+                        commandPartId ||
+                    GetPersistentId(part) ==
+                        commandPartId;
+
+                if (!matches)
+                {
+                    continue;
+                }
+
+                if (matchedPart != null &&
+                    !object.ReferenceEquals(
+                        matchedPart,
+                        part))
+                {
+                    return null;
+                }
+
+                matchedPart =
+                    part;
             }
 
-            return null;
+            return matchedPart;
         }
 
         private static PartModule FindModule(
@@ -1829,6 +2056,15 @@ namespace KMC.Plugin
         {
             public string VesselId;
             public double RateEcPerSecond;
+            public float LastRefreshRealtime;
+        }
+
+        private sealed class PropulsionEffectLeaseState
+        {
+            public string VesselId = string.Empty;
+            public uint PartPersistentId;
+            public FailureEffectType EffectType;
+            public string RestoreKey = string.Empty;
             public float LastRefreshRealtime;
         }
 

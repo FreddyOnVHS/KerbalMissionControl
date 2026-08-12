@@ -30,6 +30,7 @@ namespace KMC.MissionControl.Engineering
         private readonly UdpClient _client;
         private readonly IPEndPoint _endpoint;
         private readonly Dictionary<string, VesselBridgeState> _states;
+        private readonly string _commandSessionId;
         private long _commandSequence;
 
         public PowerFailureIntegrationController()
@@ -43,6 +44,9 @@ namespace KMC.MissionControl.Engineering
             _states =
                 new Dictionary<string, VesselBridgeState>(
                     StringComparer.Ordinal);
+
+            _commandSessionId =
+                Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant();
         }
 
         public void Evaluate(
@@ -245,6 +249,8 @@ namespace KMC.MissionControl.Engineering
                     VesselId = vesselId,
                     CommandId =
                         "PWR14.5-" +
+                        _commandSessionId +
+                        "-" +
                         _commandSequence.ToString("000000"),
                     PartPersistentId = 0,
                     EffectType =
@@ -266,6 +272,7 @@ namespace KMC.MissionControl.Engineering
 
                 Debug.WriteLine(
                     "KMC.MissionControl POWER FAILURE INTEGRATION" +
+                    " | CommandId=" + packet.CommandId +
                     " | VesselId=" + vesselId +
                     " | Target=" +
                     SyntheticFailureTargets.ElectricChargeLeak +

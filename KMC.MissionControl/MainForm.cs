@@ -1951,6 +1951,48 @@ namespace KMC.MissionControl
                 e.Handled = true;
                 e.SuppressKeyPress = true;
             }
+            
+            if (e.Control &&
+                e.Shift &&
+                e.KeyCode == Keys.P)
+            {
+                string resultText;
+
+                bool success =
+                    _receiver.TogglePropulsionDerateTrainingFailure(
+                        out resultText);
+
+                Debug.WriteLine(
+                    "KMC.MissionControl PROP DERATE TEST" +
+                    " | Success=" +
+                    success +
+                    " | Result=" +
+                    resultText);
+
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+
+            if (e.Control &&
+                e.Shift &&
+                e.KeyCode == Keys.K)
+            {
+                string resultText;
+
+                bool success =
+                    _receiver.TogglePropulsionShutdownTrainingFailure(
+                        out resultText);
+
+                Debug.WriteLine(
+                    "KMC.MissionControl PROP SHUTDOWN TEST" +
+                    " | Success=" +
+                    success +
+                    " | Result=" +
+                    resultText);
+
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
         }
 
         private void OnPerformanceOverlayTimerTick(

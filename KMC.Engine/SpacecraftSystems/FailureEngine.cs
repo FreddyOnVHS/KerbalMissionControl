@@ -197,6 +197,58 @@ namespace KMC.Engine.SpacecraftSystems
                     }
                 }
 
+                if (request.TargetKind ==
+                        SyntheticFailureTargetKind.PropulsionEffect)
+                {
+                    uint enginePartId;
+                    bool shutdown;
+
+                    if (!SyntheticFailureTargets.TryParsePropulsionTarget(
+                            request.TargetId,
+                            out enginePartId,
+                            out shutdown))
+                    {
+                        resultText =
+                            "REJECTED - INVALID PROPULSION FAILURE TARGET";
+
+                        AddRejectedEvent(
+                            state,
+                            request,
+                            resultText);
+
+                        WriteAck(
+                            request.VesselId,
+                            string.Empty,
+                            request.TargetId,
+                            resultText);
+
+                        return false;
+                    }
+
+                    if (!shutdown &&
+                        (double.IsNaN(request.EffectMagnitude) ||
+                         double.IsInfinity(request.EffectMagnitude) ||
+                         request.EffectMagnitude < 0.10 ||
+                         request.EffectMagnitude > 1.00))
+                    {
+                        resultText =
+                            "REJECTED - ENGINE DERATE MAGNITUDE MUST BE 0.10..1.00";
+
+                        AddRejectedEvent(
+                            state,
+                            request,
+                            resultText);
+
+                        WriteAck(
+                            request.VesselId,
+                            string.Empty,
+                            request.TargetId,
+                            resultText);
+
+                        return false;
+                    }
+                }
+
                 DateTime activateUtc =
                     request.ActivateUtc == DateTime.MinValue
                         ? DateTime.UtcNow
