@@ -4,6 +4,7 @@ using KMC.Engine.Ascent;
 using KMC.Engine.Maneuver;
 using KMC.Engine.Orbit;
 using KMC.Engine.Guidance;
+using KMC.Engine.SpacecraftSystems;
 
 namespace KMC.Engine.Models
 {
@@ -28,6 +29,7 @@ namespace KMC.Engine.Models
             Orbit = new OrbitModel();
             ManeuverPlan = new ManeuverPlanModel();
             Guidance = new GuidanceSolutionModel();
+            SpacecraftSystems = new SpacecraftSystemsModel();
             Diagnostics = diagnostics;
         }
 
@@ -58,6 +60,13 @@ namespace KMC.Engine.Models
         public ManeuverPlanModel ManeuverPlan { get; internal set; }
 
         public GuidanceSolutionModel Guidance { get; internal set; }
+
+        /// <summary>
+        /// Build 14.0 Engine-owned synthetic spacecraft systems graph.
+        /// This contains modeled components and dependencies only; it does not
+        /// mutate KSP or claim stock KSP models electrical buses.
+        /// </summary>
+        public SpacecraftSystemsModel SpacecraftSystems { get; internal set; }
 
         public IReadOnlyList<string> Diagnostics { get; private set; }
     }

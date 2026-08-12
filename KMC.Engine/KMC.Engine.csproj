@@ -117,6 +117,9 @@
     <Compile Include="Systems\CapabilitySystem.cs" />
     <Compile Include="Systems\PartCapabilityClassifier.cs" />
     <Compile Include="Systems\ResourceClassifier.cs" />
+    <Compile Include="SpacecraftSystems\SpacecraftSystemEnums.cs" />
+    <Compile Include="SpacecraftSystems\SpacecraftSystemsModel.cs" />
+    <Compile Include="SpacecraftSystems\SpacecraftSystemsFoundationSystem.cs" />
     <Compile Include="Systems\VesselCapabilityBuilder.cs" />
     <Compile Include="Systems\PowerSystem.cs" />
     <Compile Include="Systems\PropulsionSystem.cs" />
