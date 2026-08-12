@@ -44,10 +44,15 @@ namespace KMC.Engine.SpacecraftSystems
 
             if (vessel != null)
             {
+                ElectricalControlSnapshot controls =
+                    ElectricalControlCommandStore.GetSnapshot(
+                        vessel.VesselId);
+
                 model.ElectricalDistribution =
                     _electrical.BuildAndApply(
                         model,
-                        generatedUtc);
+                        generatedUtc,
+                        controls);
             }
 
             lock (_syncRoot)
@@ -68,4 +73,128 @@ namespace KMC.Engine.SpacecraftSystems
             }
         }
     }
+
+    public sealed class ElectricalControlSnapshot
+    {
+        private readonly System.Collections.Generic.Dictionary<string, bool>
+            _states;
+
+        internal ElectricalControlSnapshot(
+            System.Collections.Generic.Dictionary<string, bool> states)
+        {
+            _states =
+                states ??
+                new System.Collections.Generic.Dictionary<string, bool>(
+                    StringComparer.Ordinal);
+        }
+
+        public bool TryGet(
+            string controlId,
+            out bool commandedOn)
+        {
+            commandedOn = true;
+
+            if (string.IsNullOrWhiteSpace(controlId))
+            {
+                return false;
+            }
+
+            return _states.TryGetValue(
+                controlId,
+                out commandedOn);
+        }
+    }
+
+    public static class ElectricalControlCommandStore
+    {
+        private static readonly object SyncRoot =
+            new object();
+
+        private static readonly
+            System.Collections.Generic.Dictionary<
+                string,
+                System.Collections.Generic.Dictionary<string, bool>>
+            ByVessel =
+                new System.Collections.Generic.Dictionary<
+                    string,
+                    System.Collections.Generic.Dictionary<string, bool>>(
+                        StringComparer.Ordinal);
+
+        public static void Publish(
+            string vesselId,
+            string controlId,
+            bool commandedOn)
+        {
+            if (string.IsNullOrWhiteSpace(vesselId) ||
+                string.IsNullOrWhiteSpace(controlId))
+            {
+                return;
+            }
+
+            lock (SyncRoot)
+            {
+                System.Collections.Generic.Dictionary<string, bool> states;
+
+                if (!ByVessel.TryGetValue(vesselId, out states))
+                {
+                    states =
+                        new System.Collections.Generic.Dictionary<string, bool>(
+                            StringComparer.Ordinal);
+
+                    ByVessel[vesselId] = states;
+                }
+
+                states[controlId] = commandedOn;
+            }
+        }
+
+        public static void Reset(
+            string vesselId)
+        {
+            if (string.IsNullOrWhiteSpace(vesselId))
+            {
+                return;
+            }
+
+            lock (SyncRoot)
+            {
+                ByVessel.Remove(vesselId);
+            }
+        }
+
+        public static ElectricalControlSnapshot GetSnapshot(
+            string vesselId)
+        {
+            lock (SyncRoot)
+            {
+                System.Collections.Generic.Dictionary<string, bool> copy =
+                    new System.Collections.Generic.Dictionary<string, bool>(
+                        StringComparer.Ordinal);
+
+                System.Collections.Generic.Dictionary<string, bool> states;
+
+                if (!string.IsNullOrWhiteSpace(vesselId) &&
+                    ByVessel.TryGetValue(vesselId, out states))
+                {
+                    foreach (
+                        System.Collections.Generic.KeyValuePair<string, bool>
+                            entry in states)
+                    {
+                        copy[entry.Key] = entry.Value;
+                    }
+                }
+
+                return new ElectricalControlSnapshot(copy);
+            }
+        }
+
+        public static void Clear()
+        {
+            lock (SyncRoot)
+            {
+                ByVessel.Clear();
+            }
+        }
+    }
+
 }

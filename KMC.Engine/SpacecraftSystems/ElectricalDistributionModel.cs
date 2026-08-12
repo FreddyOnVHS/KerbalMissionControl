@@ -99,12 +99,14 @@ namespace KMC.Engine.SpacecraftSystems
             BusId = string.Empty;
             DemandAmps = 0.0;
             Priority = 2;
+            CommandedOn = true;
         }
 
         public string EquipmentId { get; set; }
         public string DisplayName { get; set; }
         public string BusId { get; set; }
         public double DemandAmps { get; set; }
+        public bool CommandedOn { get; set; }
 
         /// <summary>
         /// 1 = essential/protected, 2 = normal, 3 = shed-first.
@@ -121,7 +123,8 @@ namespace KMC.Engine.SpacecraftSystems
                     DisplayName = DisplayName ?? string.Empty,
                     BusId = BusId ?? string.Empty,
                     DemandAmps = DemandAmps,
-                    Priority = Priority
+                    Priority = Priority,
+                    CommandedOn = CommandedOn
                 };
         }
     }

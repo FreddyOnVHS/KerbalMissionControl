@@ -223,18 +223,26 @@ namespace KMC.Engine.SpacecraftSystems
                         continue;
                     }
 
-                    if (IsAvailable(
-                            source.State))
+                    SpacecraftSystemState? dependencyState =
+                        ResolveDependencyState(
+                            dependency.Kind,
+                            source.State);
+
+                    if (!dependencyState.HasValue)
                     {
                         continue;
                     }
 
                     SpacecraftSystemState next =
-                        dependency.Kind ==
-                            SpacecraftDependencyKind.Power
-                            ? SpacecraftSystemState.Unpowered
-                            : SpacecraftSystemState.Degraded;
+                        dependencyState.Value;
 
+                    /*
+                     * Never let a dependency overwrite a more severe intrinsic
+                     * target state. In Build 14.2 the important case is a
+                     * degraded electrical provider: the powered equipment must
+                     * become DEGRADED, while a dead provider must make it
+                     * UNPOWERED.
+                     */
                     if (target.State != next)
                     {
                         target.State = next;
@@ -333,12 +341,44 @@ namespace KMC.Engine.SpacecraftSystems
                 SpacecraftSystemState.Online;
         }
 
-        private static bool IsAvailable(
-            SpacecraftSystemState state)
+        private static SpacecraftSystemState?
+            ResolveDependencyState(
+                SpacecraftDependencyKind kind,
+                SpacecraftSystemState sourceState)
         {
+            if (kind ==
+                    SpacecraftDependencyKind.Power)
+            {
+                switch (sourceState)
+                {
+                    case SpacecraftSystemState.Online:
+                        return null;
+
+                    case SpacecraftSystemState.Degraded:
+                        return
+                            SpacecraftSystemState.Degraded;
+
+                    default:
+                        return
+                            SpacecraftSystemState.Unpowered;
+                }
+            }
+
+            /*
+             * Functional/data dependencies preserve the original 14.0
+             * behavior: ONLINE and DEGRADED providers remain usable, while
+             * an unavailable provider degrades the dependent system.
+             */
+            if (sourceState ==
+                    SpacecraftSystemState.Online ||
+                sourceState ==
+                    SpacecraftSystemState.Degraded)
+            {
+                return null;
+            }
+
             return
-                state == SpacecraftSystemState.Online ||
-                state == SpacecraftSystemState.Degraded;
+                SpacecraftSystemState.Degraded;
         }
     }
 }

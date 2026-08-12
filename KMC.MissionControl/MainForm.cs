@@ -2,6 +2,7 @@ using KMC.Engine.Analysis;
 using KMC.Engine.Guidance;
 using KMC.Engine.Maneuver;
 using KMC.Engine.Orbit;
+using KMC.Engine.SpacecraftSystems;
 using KMC.MissionControl.Controls;
 using KMC.MissionControl.Diagnostics;
 using KMC.MissionControl.Engineering;
@@ -59,6 +60,7 @@ namespace KMC.MissionControl
         private readonly Button _maneuverDeleteButton;
         private readonly TableLayoutPanel _maneuverNodeActions;
         private readonly ManeuverQueueTransport _maneuverQueueTransport;
+        private readonly ElectricalControlReceiver _electricalControlReceiver;
         private readonly TrackBar _displayRefreshSlider;
         private readonly ConsolePanel _displayPanel;
         private readonly MissionDisplay _missionDisplay;
@@ -178,6 +180,9 @@ namespace KMC.MissionControl
 
             _maneuverQueueTransport =
                 new ManeuverQueueTransport();
+
+            _electricalControlReceiver =
+                new ElectricalControlReceiver();
 
             _maneuverQueueTransport.InventoryReceived +=
                 OnManeuverInventoryReceived;
@@ -1634,6 +1639,7 @@ namespace KMC.MissionControl
                     visible: false,
                     height: 0);
             }
+
             else if (availableHeight <
                      CompactHeightBreakpoint)
             {
@@ -1688,6 +1694,7 @@ namespace KMC.MissionControl
                 _orbitNormalReceiver.Start();
                 _radialReceiver.Start();
                 _maneuverQueueTransport.Start();
+                _electricalControlReceiver.Start();
                 _receiver.Start();
                 _displayRefreshTimer.Start();
                 _connectionTimer.Start();
@@ -2060,6 +2067,8 @@ namespace KMC.MissionControl
             ManeuverPlanPromotionStore.Clear();
 
             _maneuverQueueTransport.Dispose();
+            _electricalControlReceiver.Dispose();
+            ElectricalControlCommandStore.Clear();
             _receiver.Dispose();
         }
 
@@ -3492,4 +3501,190 @@ namespace KMC.MissionControl
             Stop();
         }
     }
+
+    internal sealed class ElectricalControlReceiver :
+        IDisposable
+    {
+        private const int Port = 5102;
+        private const string ProtocolId = "KMC-ELEC1";
+
+        private System.Net.Sockets.UdpClient _client;
+        private System.Threading.Thread _thread;
+        private volatile bool _running;
+
+        public void Start()
+        {
+            if (_running)
+            {
+                return;
+            }
+
+            _client =
+                new System.Net.Sockets.UdpClient(
+                    new System.Net.IPEndPoint(
+                        System.Net.IPAddress.Any,
+                        Port));
+
+            _running =
+                true;
+
+            _thread =
+                new System.Threading.Thread(
+                    ReceiveLoop);
+
+            _thread.IsBackground =
+                true;
+
+            _thread.Name =
+                "KMC Electrical Control";
+
+            _thread.Start();
+
+            Debug.WriteLine(
+                "KMC.Transport BOUND | UDP " +
+                Port);
+        }
+
+        private void ReceiveLoop()
+        {
+            while (_running)
+            {
+                try
+                {
+                    System.Net.IPEndPoint sender =
+                        new System.Net.IPEndPoint(
+                            System.Net.IPAddress.Any,
+                            0);
+
+                    byte[] payload =
+                        _client.Receive(
+                            ref sender);
+
+                    Handle(
+                        System.Text.Encoding.UTF8.GetString(
+                            payload));
+                }
+                catch (ObjectDisposedException)
+                {
+                    return;
+                }
+                catch (System.Net.Sockets.SocketException)
+                {
+                    if (!_running)
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+
+        private static void Handle(
+            string message)
+        {
+            if (string.IsNullOrWhiteSpace(
+                    message))
+            {
+                return;
+            }
+
+            string[] fields =
+                message.Split('|');
+
+            if (fields.Length < 4 ||
+                !string.Equals(
+                    fields[0],
+                    ProtocolId,
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            string vesselId =
+                Uri.UnescapeDataString(
+                    fields[1]);
+
+            string controlId =
+                Uri.UnescapeDataString(
+                    fields[2]);
+
+            if (string.IsNullOrWhiteSpace(
+                    vesselId))
+            {
+                return;
+            }
+
+            if (string.Equals(
+                    controlId,
+                    "RESET",
+                    StringComparison.Ordinal))
+            {
+                ElectricalControlCommandStore.Reset(
+                    vesselId);
+
+                Debug.WriteLine(
+                    "KMC.MissionControl ELECTRICAL CONTROL" +
+                    " | VesselId=" +
+                    vesselId +
+                    " | RESET NOMINAL");
+
+                return;
+            }
+
+            bool commandedOn =
+                fields[3] == "1";
+
+            ElectricalControlCommandStore.Publish(
+                vesselId,
+                controlId,
+                commandedOn);
+
+            Debug.WriteLine(
+                "KMC.MissionControl ELECTRICAL CONTROL" +
+                " | VesselId=" +
+                vesselId +
+                " | Control=" +
+                controlId +
+                " | Command=" +
+                (commandedOn
+                    ? "ON/CLOSED"
+                    : "OFF/OPEN"));
+        }
+
+        public void Dispose()
+        {
+            _running =
+                false;
+
+            System.Net.Sockets.UdpClient client =
+                _client;
+
+            _client =
+                null;
+
+            if (client != null)
+            {
+                try
+                {
+                    client.Close();
+                }
+                catch
+                {
+                }
+            }
+
+            System.Threading.Thread thread =
+                _thread;
+
+            _thread =
+                null;
+
+            if (thread != null &&
+                thread.IsAlive)
+            {
+                thread.Join(
+                    250);
+            }
+        }
+    }
+
 }

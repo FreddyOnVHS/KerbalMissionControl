@@ -53,6 +53,14 @@
       <HintPath>$(KspManagedPath)\UnityEngine.CoreModule.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(KspManagedPath)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(KspManagedPath)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -139,6 +147,8 @@
 
   <Target Name="ValidateKspManagedPath" BeforeTargets="ResolveAssemblyReferences">
     <Error Condition="'$(KspManagedPath)' == '' or !Exists('$(KspManagedPath)\Assembly-CSharp.dll')" Text="KSP managed assemblies were not found. Set KSP_DIR and reload Visual Studio." />
+    <Error Condition="!Exists('$(KspManagedPath)\UnityEngine.IMGUIModule.dll')" Text="KSP Unity IMGUI module was not found at $(KspManagedPath)\UnityEngine.IMGUIModule.dll." />
+    <Error Condition="!Exists('$(KspManagedPath)\UnityEngine.InputLegacyModule.dll')" Text="KSP Unity Input Legacy module was not found at $(KspManagedPath)\UnityEngine.InputLegacyModule.dll." />
   </Target>
 
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

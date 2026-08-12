@@ -29,11 +29,17 @@ namespace KMC.Engine.SpacecraftSystems
 
         public SyntheticElectricalDistributionModel BuildAndApply(
             SpacecraftSystemsModel systems,
-            DateTime generatedUtc)
+            DateTime generatedUtc,
+            ElectricalControlSnapshot controls)
         {
             SyntheticElectricalDistributionModel distribution =
                 BuildNominalDistribution(
                     generatedUtc);
+
+            ApplyCrewControls(
+                distribution,
+                systems,
+                controls);
 
             Recalculate(
                 distribution);
@@ -359,6 +365,79 @@ namespace KMC.Engine.SpacecraftSystems
             return distribution;
         }
 
+        private static void ApplyCrewControls(
+            SyntheticElectricalDistributionModel distribution,
+            SpacecraftSystemsModel systems,
+            ElectricalControlSnapshot controls)
+        {
+            if (distribution == null ||
+                controls == null)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < distribution.Sources.Count;
+                 index++)
+            {
+                SyntheticElectricalSource source =
+                    distribution.Sources[index];
+
+                if (source == null)
+                {
+                    continue;
+                }
+
+                bool commanded;
+
+                if (controls.TryGet(
+                        source.Id,
+                        out commanded))
+                {
+                    source.CommandedAvailable =
+                        commanded;
+                }
+            }
+
+            for (int index = 0;
+                 index < distribution.Loads.Count;
+                 index++)
+            {
+                SyntheticElectricalLoad load =
+                    distribution.Loads[index];
+
+                if (load == null)
+                {
+                    continue;
+                }
+
+                bool commanded;
+
+                if (!controls.TryGet(
+                        load.EquipmentId,
+                        out commanded))
+                {
+                    continue;
+                }
+
+                load.CommandedOn =
+                    commanded;
+
+                if (systems != null)
+                {
+                    SpacecraftSystemComponent component =
+                        systems.FindComponent(
+                            load.EquipmentId);
+
+                    if (component != null)
+                    {
+                        component.CommandedOn =
+                            commanded;
+                    }
+                }
+            }
+        }
+
         private static void ApplyBusStatesToSystems(
             SpacecraftSystemsModel systems,
             SyntheticElectricalDistributionModel distribution)
@@ -488,6 +567,7 @@ namespace KMC.Engine.SpacecraftSystems
                     distribution.Loads[index];
 
                 if (load != null &&
+                    load.CommandedOn &&
                     string.Equals(
                         load.BusId,
                         busId,
@@ -619,7 +699,8 @@ namespace KMC.Engine.SpacecraftSystems
                     DisplayName = displayName,
                     BusId = busId,
                     DemandAmps = demandAmps,
-                    Priority = priority
+                    Priority = priority,
+                    CommandedOn = true
                 });
         }
 
@@ -638,7 +719,44 @@ namespace KMC.Engine.SpacecraftSystems
                 "|" +
                 systems.TopologyRevision.ToString() +
                 "|" +
-                (distribution.TemplateId ?? string.Empty);
+                (distribution.TemplateId ?? string.Empty) +
+                FormatBusDiagnostic(
+                    distribution.FindBus("BUS_MAIN_A"),
+                    "MAIN_A") +
+                FormatBusDiagnostic(
+                    distribution.FindBus("BUS_MAIN_B"),
+                    "MAIN_B") +
+                FormatBusDiagnostic(
+                    distribution.FindBus("BUS_ESS"),
+                    "ESS") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "GUID_A") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "GUID_B") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "COMM_A") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "COMM_B") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "PUMP_A") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "PUMP_B") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "FLIGHT_COMPUTER");
 
             if (string.Equals(
                     key,
@@ -673,7 +791,51 @@ namespace KMC.Engine.SpacecraftSystems
                     "MAIN_B") +
                 FormatBusDiagnostic(
                     distribution.FindBus("BUS_ESS"),
-                    "ESS"));
+                    "ESS") +
+                " | GUID_A=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "GUID_A") +
+                " | GUID_B=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "GUID_B") +
+                " | COMM_A=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "COMM_A") +
+                " | COMM_B=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "COMM_B") +
+                " | PUMP_A=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "PUMP_A") +
+                " | PUMP_B=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "PUMP_B") +
+                " | FLIGHT_COMPUTER=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "FLIGHT_COMPUTER"));
+        }
+
+        private static string DescribeLiveSystemState(
+            SpacecraftSystemsModel systems,
+            string componentId)
+        {
+            SpacecraftSystemComponent component =
+                systems != null
+                    ? systems.FindComponent(
+                        componentId)
+                    : null;
+
+            return
+                component != null
+                    ? component.State.ToString()
+                    : "MISSING";
         }
 
         private static string FormatBusDiagnostic(
