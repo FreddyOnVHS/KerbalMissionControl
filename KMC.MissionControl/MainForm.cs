@@ -1122,6 +1122,9 @@ namespace KMC.MissionControl
                 _maneuverNodeSelector.EndUpdate();
             }
 
+            RefreshKmcManeuverLifecycle(
+                snapshot);
+
             UpdateManeuverNodeActionState();
 
             _missionDisplay.RequestRender();
@@ -1264,6 +1267,73 @@ namespace KMC.MissionControl
             }
 
             return false;
+        }
+
+        /*
+         * Build 13.11 — retained maneuver lifecycle.
+         *
+         * Live stock KSP nodes remain authoritative. The retained store adds
+         * Mission Control operational history so completed/removed plans do
+         * not disappear merely because their stock node left the inventory.
+         */
+        private static void RefreshKmcManeuverLifecycle(
+            ManeuverInventorySnapshot inventory)
+        {
+            AnalysisPipelineResult result;
+            ManeuverPlanModel currentPlan = null;
+            GuidanceSolutionModel guidance = null;
+
+            if (EngineeringSnapshotStore.TryGetLatest(
+                    out result) &&
+                result != null &&
+                result.Snapshot != null)
+            {
+                currentPlan =
+                    result.Snapshot.ManeuverPlan;
+
+                guidance =
+                    result.Snapshot.Guidance;
+            }
+
+            KmcManeuverPlanStore.RefreshLifecycle(
+                inventory,
+                currentPlan,
+                guidance);
+        }
+
+        private static bool IsManeuverBurnComplete(
+            string planId)
+        {
+            if (string.IsNullOrWhiteSpace(
+                    planId))
+            {
+                return false;
+            }
+
+            AnalysisPipelineResult result;
+
+            if (!EngineeringSnapshotStore.TryGetLatest(
+                    out result) ||
+                result == null ||
+                result.Snapshot == null ||
+                result.Snapshot.Guidance == null)
+            {
+                return false;
+            }
+
+            GuidanceSolutionModel guidance =
+                result.Snapshot.Guidance;
+
+            return
+                guidance.BurnComplete &&
+                string.Equals(
+                    guidance.PlanId,
+                    planId,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    guidance.PostBurnResult,
+                    "DV COMPLETE",
+                    StringComparison.OrdinalIgnoreCase);
         }
 
         private bool CanPromoteManeuverNow()
@@ -1438,6 +1508,18 @@ namespace KMC.MissionControl
             if (confirm != DialogResult.Yes)
             {
                 return;
+            }
+
+            KmcQueuedManeuverPlan retainedPlan =
+                ResolveSelectedRetainedPlan(
+                    selected);
+
+            if (retainedPlan != null)
+            {
+                KmcManeuverPlanStore.MarkRemovalRequested(
+                    retainedPlan.PlanId,
+                    IsManeuverBurnComplete(
+                        retainedPlan.PlanId));
             }
 
             try
@@ -2031,6 +2113,23 @@ namespace KMC.MissionControl
         }
     }
 
+    /*
+     * Build 13.11:
+     * Operational lifecycle for retained KMC-authored maneuver plans.
+     * This is history/awareness only; Engine and GUID remain authoritative
+     * for maneuver safety and execution.
+     */
+    internal enum KmcManeuverLifecycleState
+    {
+        Planned = 0,
+        Verified = 1,
+        Active = 2,
+        Complete = 3,
+        Removed = 4,
+        Missed = 5,
+        Modified = 6
+    }
+
     internal sealed class KmcQueuedManeuverPlan
     {
         public KmcQueuedManeuverPlan()
@@ -2057,6 +2156,15 @@ namespace KMC.MissionControl
             PredictedInclinationDegrees = double.NaN;
             PredictedEccentricity = double.NaN;
             PredictedPeriodSeconds = double.NaN;
+
+            LifecycleState =
+                KmcManeuverLifecycleState.Planned;
+
+            LifecycleUpdatedUtc =
+                DateTime.UtcNow;
+
+            TerminalUtc =
+                DateTime.MinValue;
         }
 
         public bool Available { get; set; }
@@ -2083,6 +2191,12 @@ namespace KMC.MissionControl
         public string Status { get; set; }
         public DateTime CapturedUtc { get; set; }
         public System.Collections.Generic.List<string> Evidence { get; private set; }
+
+        public KmcManeuverLifecycleState LifecycleState { get; set; }
+        public DateTime LifecycleUpdatedUtc { get; set; }
+        public DateTime TerminalUtc { get; set; }
+        public bool RemovalRequested { get; set; }
+        public bool RemovalRequestedAfterBurnComplete { get; set; }
 
         public ManeuverPlanPromotionRequest CreatePromotionRequest()
         {
@@ -2268,6 +2382,352 @@ namespace KMC.MissionControl
                     _selectedPlanId =
                         plan.PlanId;
                 }
+            }
+        }
+
+        public static void MarkRemovalRequested(
+            string planId,
+            bool burnComplete)
+        {
+            if (string.IsNullOrWhiteSpace(
+                    planId))
+            {
+                return;
+            }
+
+            lock (SyncRoot)
+            {
+                for (int index = 0;
+                     index < Plans.Count;
+                     index++)
+                {
+                    KmcQueuedManeuverPlan plan =
+                        Plans[index];
+
+                    if (!string.Equals(
+                            plan.PlanId,
+                            planId,
+                            StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    plan.RemovalRequested = true;
+                    plan.RemovalRequestedAfterBurnComplete =
+                        burnComplete;
+
+                    return;
+                }
+            }
+        }
+
+        public static void RefreshLifecycle(
+            ManeuverInventorySnapshot inventory,
+            ManeuverPlanModel currentPlan,
+            GuidanceSolutionModel guidance)
+        {
+            lock (SyncRoot)
+            {
+                string activePlanId =
+                    ManeuverPlanPromotionStore.GetActivePlanId();
+
+                for (int index = 0;
+                     index < Plans.Count;
+                     index++)
+                {
+                    KmcQueuedManeuverPlan plan =
+                        Plans[index];
+
+                    if (plan == null)
+                    {
+                        continue;
+                    }
+
+                    /*
+                     * Build 13.11.1:
+                     * Exact GUID DV COMPLETE evidence outranks every previous
+                     * lifecycle classification, including a stale MISSED or
+                     * REMOVED terminal state. This lets completed-burn truth
+                     * correct history if completion is finalized after the
+                     * node has crossed/left its planned UT.
+                     */
+                    bool burnComplete =
+                        guidance != null &&
+                        guidance.BurnComplete &&
+                        string.Equals(
+                            guidance.PlanId,
+                            plan.PlanId,
+                            StringComparison.Ordinal) &&
+                        string.Equals(
+                            guidance.PostBurnResult,
+                            "DV COMPLETE",
+                            StringComparison.OrdinalIgnoreCase);
+
+                    if (burnComplete)
+                    {
+                        SetLifecycle(
+                            plan,
+                            KmcManeuverLifecycleState.Complete,
+                            true,
+                            true);
+
+                        continue;
+                    }
+
+                    if (IsTerminal(
+                            plan.LifecycleState))
+                    {
+                        continue;
+                    }
+
+                    ManeuverInventoryNode liveNode =
+                        FindLiveNode(
+                            plan,
+                            inventory);
+
+                    ManeuverUplinkStatusSnapshot uplink =
+                        ManeuverUplinkStatusStore.GetForPlan(
+                            plan.PlanId);
+
+                    bool sameActivePlan =
+                        !string.IsNullOrWhiteSpace(
+                            activePlanId) &&
+                        string.Equals(
+                            activePlanId,
+                            plan.PlanId,
+                            StringComparison.Ordinal);
+
+                    /*
+                     * A maneuver is MISSED only when the Engine explicitly
+                     * declares MANEUVER WINDOW MISSED for this exact PlanId.
+                     * Do not infer MISSED from elapsed UT alone: a legitimate
+                     * burn/post-burn verification can extend beyond node UT.
+                     */
+                    bool maneuverMissed =
+                        currentPlan != null &&
+                        string.Equals(
+                            currentPlan.PlanId,
+                            plan.PlanId,
+                            StringComparison.Ordinal) &&
+                        string.Equals(
+                            currentPlan.Status,
+                            "MANEUVER WINDOW MISSED",
+                            StringComparison.OrdinalIgnoreCase);
+
+                    if (plan.RemovalRequestedAfterBurnComplete &&
+                        string.Equals(
+                            uplink.State,
+                            "NODE REMOVED",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        SetLifecycle(
+                            plan,
+                            KmcManeuverLifecycleState.Complete,
+                            true,
+                            true);
+
+                        continue;
+                    }
+
+                    if (maneuverMissed)
+                    {
+                        SetLifecycle(
+                            plan,
+                            KmcManeuverLifecycleState.Missed,
+                            true);
+
+                        continue;
+                    }
+
+                    bool nodeRemoved =
+                        string.Equals(
+                            uplink.State,
+                            "NODE REMOVED",
+                            StringComparison.OrdinalIgnoreCase);
+
+                    if (nodeRemoved &&
+                        liveNode == null)
+                    {
+                        SetLifecycle(
+                            plan,
+                            KmcManeuverLifecycleState.Removed,
+                            true);
+
+                        continue;
+                    }
+
+                    bool crewModified =
+                        string.Equals(
+                            uplink.State,
+                            "CREW MODIFIED",
+                            StringComparison.OrdinalIgnoreCase);
+
+                    if (crewModified)
+                    {
+                        SetLifecycle(
+                            plan,
+                            KmcManeuverLifecycleState.Modified,
+                            false);
+
+                        continue;
+                    }
+
+                    if (sameActivePlan &&
+                        liveNode != null)
+                    {
+                        SetLifecycle(
+                            plan,
+                            KmcManeuverLifecycleState.Active,
+                            false);
+
+                        continue;
+                    }
+
+                    bool nodeVerified =
+                        liveNode != null &&
+                        string.Equals(
+                            uplink.State,
+                            "NODE VERIFIED",
+                            StringComparison.OrdinalIgnoreCase);
+
+                    if (nodeVerified)
+                    {
+                        SetLifecycle(
+                            plan,
+                            KmcManeuverLifecycleState.Verified,
+                            false);
+
+                        continue;
+                    }
+
+                    if (liveNode != null)
+                    {
+                        SetLifecycle(
+                            plan,
+                            KmcManeuverLifecycleState.Planned,
+                            false);
+                    }
+                }
+            }
+        }
+
+        public static string DescribeLifecycle(
+            KmcManeuverLifecycleState state)
+        {
+            switch (state)
+            {
+                case KmcManeuverLifecycleState.Verified:
+                    return "VERIFIED";
+
+                case KmcManeuverLifecycleState.Active:
+                    return "ACTIVE";
+
+                case KmcManeuverLifecycleState.Complete:
+                    return "COMPLETE";
+
+                case KmcManeuverLifecycleState.Removed:
+                    return "REMOVED";
+
+                case KmcManeuverLifecycleState.Missed:
+                    return "MISSED";
+
+                case KmcManeuverLifecycleState.Modified:
+                    return "MODIFIED";
+
+                default:
+                    return "PLANNED";
+            }
+        }
+
+        private static ManeuverInventoryNode FindLiveNode(
+            KmcQueuedManeuverPlan plan,
+            ManeuverInventorySnapshot inventory)
+        {
+            if (plan == null ||
+                inventory == null ||
+                inventory.Nodes == null ||
+                !string.Equals(
+                    plan.VesselId ?? string.Empty,
+                    inventory.VesselId ?? string.Empty,
+                    StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            for (int index = 0;
+                 index < inventory.Nodes.Count;
+                 index++)
+            {
+                ManeuverInventoryNode node =
+                    inventory.Nodes[index];
+
+                if (node == null)
+                {
+                    continue;
+                }
+
+                if (Math.Abs(
+                        node.NodeUniversalTimeSeconds -
+                        plan.NodeUniversalTimeSeconds) <=
+                        NodeUtToleranceSeconds &&
+                    Math.Abs(
+                        node.ProgradeDeltaVMetersPerSecond -
+                        plan.ProgradeDeltaVMetersPerSecond) <=
+                        DeltaVToleranceMetersPerSecond &&
+                    Math.Abs(
+                        node.NormalDeltaVMetersPerSecond -
+                        plan.NormalDeltaVMetersPerSecond) <=
+                        DeltaVToleranceMetersPerSecond &&
+                    Math.Abs(
+                        node.RadialDeltaVMetersPerSecond -
+                        plan.RadialDeltaVMetersPerSecond) <=
+                        DeltaVToleranceMetersPerSecond)
+                {
+                    return node;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsTerminal(
+            KmcManeuverLifecycleState state)
+        {
+            return
+                state == KmcManeuverLifecycleState.Complete ||
+                state == KmcManeuverLifecycleState.Removed ||
+                state == KmcManeuverLifecycleState.Missed;
+        }
+
+        private static void SetLifecycle(
+            KmcQueuedManeuverPlan plan,
+            KmcManeuverLifecycleState state,
+            bool terminal,
+            bool authoritativeOverride = false)
+        {
+            if (plan == null ||
+                plan.LifecycleState == state)
+            {
+                return;
+            }
+
+            if (IsTerminal(
+                    plan.LifecycleState) &&
+                !authoritativeOverride)
+            {
+                return;
+            }
+
+            plan.LifecycleState =
+                state;
+
+            plan.LifecycleUpdatedUtc =
+                DateTime.UtcNow;
+
+            if (terminal)
+            {
+                plan.TerminalUtc =
+                    DateTime.UtcNow;
             }
         }
 
@@ -2494,7 +2954,17 @@ namespace KMC.MissionControl
                     PredictedPeriodSeconds =
                         source.PredictedPeriodSeconds,
                     Status = source.Status,
-                    CapturedUtc = source.CapturedUtc
+                    CapturedUtc = source.CapturedUtc,
+                    LifecycleState =
+                        source.LifecycleState,
+                    LifecycleUpdatedUtc =
+                        source.LifecycleUpdatedUtc,
+                    TerminalUtc =
+                        source.TerminalUtc,
+                    RemovalRequested =
+                        source.RemovalRequested,
+                    RemovalRequestedAfterBurnComplete =
+                        source.RemovalRequestedAfterBurnComplete
                 };
 
             for (int index = 0;

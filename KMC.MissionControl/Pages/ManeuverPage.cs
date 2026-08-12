@@ -44,6 +44,11 @@ namespace KMC.MissionControl.Pages
 
             KmcManeuverPlanStore.Capture(plan);
 
+            KmcManeuverPlanStore.RefreshLifecycle(
+                ManeuverInventoryStore.GetLatest(),
+                plan,
+                guidance);
+
             ManeuverUplinkStatusSnapshot uplink =
                 plan != null &&
                 !string.IsNullOrWhiteSpace(plan.PlanId)
@@ -272,7 +277,29 @@ namespace KMC.MissionControl.Pages
 
                 int y = headerDividerY + 8;
                 int evidenceReserve = 34;
-                int maxRows = Math.Max(1, (bounds.Bottom - evidenceReserve - y - 4) / 28);
+
+                int lifecycleHeight =
+                    retainedPlans.Count > 0 &&
+                    bounds.Height >= 340
+                        ? Math.Min(
+                            170,
+                            Math.Max(
+                                118,
+                                bounds.Height / 3))
+                        : 0;
+
+                int lifecycleTop =
+                    lifecycleHeight > 0
+                        ? bounds.Bottom -
+                          evidenceReserve -
+                          lifecycleHeight
+                        : bounds.Bottom -
+                          evidenceReserve;
+
+                int maxRows =
+                    Math.Max(
+                        1,
+                        (lifecycleTop - y - 8) / 28);
 
                 if (!fresh || inventory.Nodes.Count == 0)
                 {
@@ -369,6 +396,20 @@ namespace KMC.MissionControl.Pages
                     }
                 }
 
+                if (lifecycleHeight > 0)
+                {
+                    DrawKmcPlanLifecycle(
+                        context,
+                        new Rectangle(
+                            left,
+                            lifecycleTop,
+                            Math.Max(
+                                1,
+                                right - left),
+                            lifecycleHeight),
+                        retainedPlans);
+                }
+
                 int evidenceY = bounds.Bottom - 27;
                 context.Graphics.DrawLine(border, left, evidenceY - 9, right, evidenceY - 9);
                 string evidence = "EVIDENCE: ---";
@@ -393,6 +434,202 @@ namespace KMC.MissionControl.Pages
          * presented as available for crew activation, but is never promoted,
          * authorized, uploaded, or executed automatically.
          */
+        /*
+         * Build 13.11:
+         * Retained KMC plans remain visible after their stock maneuver nodes
+         * leave the live queue. This compact block is operational history
+         * only and cannot authorize guidance or execution.
+         */
+        private static void DrawKmcPlanLifecycle(
+            MissionRenderContext context,
+            Rectangle bounds,
+            System.Collections.Generic.List<KmcQueuedManeuverPlan> plans)
+        {
+            if (context == null ||
+                plans == null ||
+                plans.Count == 0 ||
+                bounds.Width <= 0 ||
+                bounds.Height <= 0)
+            {
+                return;
+            }
+
+            using (Pen divider =
+                new Pen(
+                    context.DimPhosphorColor,
+                    1.0f))
+            using (SolidBrush labelBrush =
+                new SolidBrush(
+                    context.DimPhosphorColor))
+            using (SolidBrush valueBrush =
+                new SolidBrush(
+                    context.PhosphorColor))
+            using (SolidBrush completeBrush =
+                new SolidBrush(
+                    Color.LimeGreen))
+            using (SolidBrush cautionBrush =
+                new SolidBrush(
+                    Color.Orange))
+            {
+                context.Graphics.DrawLine(
+                    divider,
+                    bounds.Left,
+                    bounds.Top,
+                    bounds.Right,
+                    bounds.Top);
+
+                int titleY =
+                    bounds.Top + 7;
+
+                context.Graphics.DrawString(
+                    "KMC PLAN LIFECYCLE",
+                    context.SmallFont,
+                    labelBrush,
+                    bounds.Left,
+                    titleY);
+
+                int headerY =
+                    titleY + 27;
+
+                int width =
+                    Math.Max(
+                        1,
+                        bounds.Width);
+
+                int xPlan =
+                    bounds.Left;
+
+                int xObjective =
+                    bounds.Left +
+                    (int)(width * 0.14);
+
+                int xNodeUt =
+                    bounds.Left +
+                    (int)(width * 0.58);
+
+                int xState =
+                    bounds.Left +
+                    (int)(width * 0.78);
+
+                context.Graphics.DrawString(
+                    "PLAN",
+                    context.SmallFont,
+                    labelBrush,
+                    xPlan,
+                    headerY);
+
+                context.Graphics.DrawString(
+                    "OBJECTIVE",
+                    context.SmallFont,
+                    labelBrush,
+                    xObjective,
+                    headerY);
+
+                context.Graphics.DrawString(
+                    "NODE UT",
+                    context.SmallFont,
+                    labelBrush,
+                    xNodeUt,
+                    headerY);
+
+                context.Graphics.DrawString(
+                    "LIFECYCLE",
+                    context.SmallFont,
+                    labelBrush,
+                    xState,
+                    headerY);
+
+                int dividerY =
+                    headerY + 25;
+
+                context.Graphics.DrawLine(
+                    divider,
+                    bounds.Left,
+                    dividerY,
+                    bounds.Right,
+                    dividerY);
+
+                int availableRows =
+                    Math.Max(
+                        1,
+                        (bounds.Bottom -
+                         dividerY -
+                         4) / 25);
+
+                int firstIndex =
+                    Math.Max(
+                        0,
+                        plans.Count -
+                        availableRows);
+
+                int y =
+                    dividerY + 5;
+
+                for (int index = firstIndex;
+                     index < plans.Count;
+                     index++)
+                {
+                    KmcQueuedManeuverPlan plan =
+                        plans[index];
+
+                    if (plan == null)
+                    {
+                        continue;
+                    }
+
+                    string lifecycle =
+                        KmcManeuverPlanStore.DescribeLifecycle(
+                            plan.LifecycleState);
+
+                    Brush brush =
+                        plan.LifecycleState ==
+                            KmcManeuverLifecycleState.Complete
+                            ? completeBrush
+                            : plan.LifecycleState ==
+                                  KmcManeuverLifecycleState.Removed ||
+                              plan.LifecycleState ==
+                                  KmcManeuverLifecycleState.Missed ||
+                              plan.LifecycleState ==
+                                  KmcManeuverLifecycleState.Modified
+                                ? cautionBrush
+                                : valueBrush;
+
+                    context.Graphics.DrawString(
+                        "KMC #" +
+                        (index + 1).ToString(),
+                        context.SmallFont,
+                        brush,
+                        xPlan,
+                        y);
+
+                    context.Graphics.DrawString(
+                        Safe(
+                            plan.Objective),
+                        context.SmallFont,
+                        brush,
+                        xObjective,
+                        y);
+
+                    context.Graphics.DrawString(
+                        FormatDuration(
+                            plan.NodeUniversalTimeSeconds),
+                        context.SmallFont,
+                        brush,
+                        xNodeUt,
+                        y);
+
+                    context.Graphics.DrawString(
+                        lifecycle,
+                        context.SmallFont,
+                        brush,
+                        xState,
+                        y);
+
+                    y += 25;
+                }
+            }
+        }
+
         private static string BuildQueueDirectorSummary(
             ManeuverInventorySnapshot inventory,
             ManeuverPlanModel plan,
