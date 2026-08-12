@@ -1930,6 +1930,27 @@ namespace KMC.MissionControl
                 e.Handled = true;
                 e.SuppressKeyPress = true;
             }
+
+            if (e.Control &&
+                e.Shift &&
+                e.KeyCode == Keys.E)
+            {
+                string resultText;
+
+                bool success =
+                    _receiver.TogglePowerFailureTrainingLeak(
+                        out resultText);
+
+                Debug.WriteLine(
+                    "KMC.MissionControl POWER FAILURE TEST" +
+                    " | Success=" +
+                    success +
+                    " | Result=" +
+                    resultText);
+
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
         }
 
         private void OnPerformanceOverlayTimerTick(

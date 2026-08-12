@@ -8,7 +8,8 @@ namespace KMC.Shared
         EngineDerate = 0,
         EngineShutdown = 1,
         ReactionWheelAuthority = 2,
-        ElectricChargeDrain = 3
+        ElectricChargeDrain = 3,
+        ElectricChargeLeak = 4
     }
 
     public enum FailureEffectOperation

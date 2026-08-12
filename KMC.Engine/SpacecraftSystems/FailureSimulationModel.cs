@@ -30,7 +30,18 @@ namespace KMC.Engine.SpacecraftSystems
     {
         Component = 0,
         ElectricalSource = 1,
-        Instrumentation = 2
+        Instrumentation = 2,
+        PowerEffect = 3
+    }
+
+    /// <summary>
+    /// Explicit integration targets whose meaning is vehicle-wide rather than
+    /// a claim about stock KSP wiring.
+    /// </summary>
+    public static class SyntheticFailureTargets
+    {
+        public const string ElectricChargeLeak =
+            "PWR_EC_LEAK";
     }
 
     public enum SyntheticFailureCondition
@@ -66,6 +77,7 @@ namespace KMC.Engine.SpacecraftSystems
             IntermittentDutyCycle = 0.50;
             ParentFailureId = string.Empty;
             Detail = string.Empty;
+            EffectMagnitude = double.NaN;
         }
 
         public string VesselId { get; set; }
@@ -80,6 +92,12 @@ namespace KMC.Engine.SpacecraftSystems
         public double IntermittentDutyCycle { get; set; }
         public string ParentFailureId { get; set; }
         public string Detail { get; set; }
+
+        /// <summary>
+        /// Optional magnitude for an explicit real-effect integration target.
+        /// Build 14.5 uses EC/s for PWR_EC_LEAK.
+        /// </summary>
+        public double EffectMagnitude { get; set; }
     }
 
     public sealed class SyntheticFailureRecord
@@ -91,6 +109,7 @@ namespace KMC.Engine.SpacecraftSystems
             TargetId = string.Empty;
             ParentFailureId = string.Empty;
             Detail = string.Empty;
+            EffectMagnitude = double.NaN;
             CreatedUtc = DateTime.MinValue;
             ActivateUtc = DateTime.MinValue;
             ClearUtc = DateTime.MinValue;
@@ -112,6 +131,7 @@ namespace KMC.Engine.SpacecraftSystems
         public double IntermittentDutyCycle { get; internal set; }
         public string ParentFailureId { get; internal set; }
         public string Detail { get; internal set; }
+        public double EffectMagnitude { get; internal set; }
         public SyntheticFailureCondition Condition { get; internal set; }
         public DateTime LastTransitionUtc { get; internal set; }
         public bool EffectiveNow { get; internal set; }
@@ -135,6 +155,7 @@ namespace KMC.Engine.SpacecraftSystems
                     IntermittentDutyCycle = IntermittentDutyCycle,
                     ParentFailureId = ParentFailureId ?? string.Empty,
                     Detail = Detail ?? string.Empty,
+                    EffectMagnitude = EffectMagnitude,
                     Condition = Condition,
                     LastTransitionUtc = LastTransitionUtc,
                     EffectiveNow = EffectiveNow

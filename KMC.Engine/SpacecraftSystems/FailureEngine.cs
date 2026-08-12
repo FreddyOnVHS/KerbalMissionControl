@@ -149,6 +149,54 @@ namespace KMC.Engine.SpacecraftSystems
                     return false;
                 }
 
+                if (request.TargetKind ==
+                        SyntheticFailureTargetKind.PowerEffect)
+                {
+                    if (!string.Equals(
+                            request.TargetId,
+                            SyntheticFailureTargets.ElectricChargeLeak,
+                            StringComparison.Ordinal))
+                    {
+                        resultText =
+                            "REJECTED - UNSUPPORTED POWER FAILURE TARGET";
+
+                        AddRejectedEvent(
+                            state,
+                            request,
+                            resultText);
+
+                        WriteAck(
+                            request.VesselId,
+                            string.Empty,
+                            request.TargetId,
+                            resultText);
+
+                        return false;
+                    }
+
+                    if (double.IsNaN(request.EffectMagnitude) ||
+                        double.IsInfinity(request.EffectMagnitude) ||
+                        request.EffectMagnitude < 0.10 ||
+                        request.EffectMagnitude > 10.0)
+                    {
+                        resultText =
+                            "REJECTED - POWER EFFECT MAGNITUDE MUST BE 0.10..10.00 EC/S";
+
+                        AddRejectedEvent(
+                            state,
+                            request,
+                            resultText);
+
+                        WriteAck(
+                            request.VesselId,
+                            string.Empty,
+                            request.TargetId,
+                            resultText);
+
+                        return false;
+                    }
+                }
+
                 DateTime activateUtc =
                     request.ActivateUtc == DateTime.MinValue
                         ? DateTime.UtcNow
@@ -206,6 +254,8 @@ namespace KMC.Engine.SpacecraftSystems
                             request.ParentFailureId ?? string.Empty,
                         Detail =
                             request.Detail ?? string.Empty,
+                        EffectMagnitude =
+                            request.EffectMagnitude,
                         Condition =
                             SyntheticFailureCondition.Armed,
                         LastTransitionUtc =
@@ -801,6 +851,16 @@ namespace KMC.Engine.SpacecraftSystems
                 return string.Empty;
             }
 
+            string magnitude =
+                record.TargetKind ==
+                    SyntheticFailureTargetKind.PowerEffect &&
+                !double.IsNaN(record.EffectMagnitude) &&
+                !double.IsInfinity(record.EffectMagnitude)
+                    ? " " +
+                      record.EffectMagnitude.ToString("0.00") +
+                      "EC/S"
+                    : string.Empty;
+
             return
                 record.Kind.ToString().ToUpperInvariant() +
                 " " +
@@ -808,7 +868,8 @@ namespace KMC.Engine.SpacecraftSystems
                 " " +
                 record.TargetId +
                 " " +
-                record.ComponentHealth.ToString().ToUpperInvariant();
+                record.ComponentHealth.ToString().ToUpperInvariant() +
+                magnitude;
         }
 
         private static void WriteAck(

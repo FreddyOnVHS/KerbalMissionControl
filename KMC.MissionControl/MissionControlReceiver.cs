@@ -6,6 +6,7 @@ using KMC.Engine.Electrical;
 using KMC.Engine.Maneuver;
 using KMC.Engine.Orbit;
 using KMC.Engine.Propulsion;
+using KMC.Engine.SpacecraftSystems;
 using KMC.MissionControl.Debugging;
 using KMC.MissionControl.Diagnostics;
 using KMC.MissionControl.Engineering;
@@ -27,11 +28,14 @@ namespace KMC.MissionControl
         private readonly EngineeringEngine _engineeringEngine;
         private readonly TelemetryTransport _transport;
         private readonly ManeuverLinkTransport _maneuverLink;
+        private readonly PowerFailureIntegrationController _powerFailureIntegration;
         private readonly TelemetryCache _cache;
         private readonly object _engineeringSyncRoot;
 
         private bool _running;
         private long _engineeringSequence;
+        private string _powerTrainingFailureId;
+        private string _powerTrainingVesselId;
 
         public MissionControlReceiver()
         {
@@ -43,6 +47,9 @@ namespace KMC.MissionControl
 
             _maneuverLink =
                 new ManeuverLinkTransport();
+
+            _powerFailureIntegration =
+                new PowerFailureIntegrationController();
 
             _cache =
                 new TelemetryCache();
@@ -100,12 +107,143 @@ namespace KMC.MissionControl
             lock (_engineeringSyncRoot)
             {
                 _engineeringSequence = 0;
+                _powerTrainingFailureId = string.Empty;
+                _powerTrainingVesselId = string.Empty;
             }
 
             _maneuverLink.Start();
             _transport.Start();
 
             _running = true;
+        }
+
+        /// <summary>
+        /// Build 14.5 explicit developer/training toggle used to prove the
+        /// complete 14.3 -> 14.4 POWER integration path. No automatic failure
+        /// generation is enabled by this method.
+        /// </summary>
+        public bool TogglePowerFailureTrainingLeak(
+            out string resultText)
+        {
+            resultText = string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(
+                    _powerTrainingFailureId))
+            {
+                string clearResult;
+
+                bool cleared =
+                    _engineeringEngine.ClearSyntheticFailure(
+                        _powerTrainingVesselId,
+                        _powerTrainingFailureId,
+                        out clearResult);
+
+                if (cleared)
+                {
+                    resultText =
+                        "CLEARED " +
+                        _powerTrainingFailureId +
+                        " / " +
+                        SyntheticFailureTargets.ElectricChargeLeak;
+
+                    _powerTrainingFailureId =
+                        string.Empty;
+                    _powerTrainingVesselId =
+                        string.Empty;
+                }
+                else
+                {
+                    resultText = clearResult;
+                }
+
+                return cleared;
+            }
+
+            AnalysisPipelineResult latest;
+
+            if (!EngineeringSnapshotStore.TryGetLatest(
+                    out latest) ||
+                latest == null ||
+                latest.Snapshot == null ||
+                latest.Snapshot.Vessel == null ||
+                string.IsNullOrWhiteSpace(
+                    latest.Snapshot.Vessel.VesselId))
+            {
+                resultText =
+                    "NO ACTIVE ENGINEERING VESSEL";
+
+                return false;
+            }
+
+            string vesselId =
+                latest.Snapshot.Vessel.VesselId;
+
+            FailureSimulationSnapshot current =
+                latest.Snapshot.SpacecraftSystems != null
+                    ? latest.Snapshot.SpacecraftSystems.FailureSimulation
+                    : null;
+
+            if (current == null ||
+                current.Mode ==
+                    FailureSimulationMode.Nominal)
+            {
+                string modeResult;
+
+                if (!_engineeringEngine.SetFailureSimulationMode(
+                        vesselId,
+                        FailureSimulationMode.Training,
+                        out modeResult))
+                {
+                    resultText = modeResult;
+                    return false;
+                }
+            }
+
+            string failureId;
+            string injectResult;
+
+            bool injected =
+                _engineeringEngine.InjectSyntheticFailure(
+                    new SyntheticFailureRequest
+                    {
+                        VesselId = vesselId,
+                        TargetId =
+                            SyntheticFailureTargets.ElectricChargeLeak,
+                        TargetKind =
+                            SyntheticFailureTargetKind.PowerEffect,
+                        Kind =
+                            SyntheticFailureKind.Sudden,
+                        Severity =
+                            SyntheticFailureSeverity.Caution,
+                        ComponentHealth =
+                            SpacecraftSystemHealth.Degraded,
+                        EffectMagnitude = 8.0,
+                        ActivateUtc = DateTime.UtcNow,
+                        Detail =
+                            "BUILD 14.5 EXPLICIT POWER INTEGRATION TEST"
+                    },
+                    out failureId,
+                    out injectResult);
+
+            if (!injected)
+            {
+                resultText = injectResult;
+                return false;
+            }
+
+            _powerTrainingFailureId =
+                failureId;
+            _powerTrainingVesselId =
+                vesselId;
+
+            resultText =
+                "INJECTED " +
+                failureId +
+                " / " +
+                SyntheticFailureTargets.ElectricChargeLeak +
+                " / 8.00 EC/S";
+
+            return true;
         }
 
         public bool UploadLatestManeuver(
@@ -464,6 +602,9 @@ namespace KMC.MissionControl
 
                 EngineeringSnapshotStore.Publish(
                     result);
+
+                _powerFailureIntegration.Evaluate(
+                    result);
             }
             catch (Exception ex)
             {
@@ -508,6 +649,8 @@ namespace KMC.MissionControl
 
         public void Stop()
         {
+            _powerFailureIntegration.RestoreAll();
+
             if (!_running)
             {
                 _transport.Stop();
@@ -564,6 +707,7 @@ namespace KMC.MissionControl
 
             _transport.Dispose();
             _maneuverLink.Dispose();
+            _powerFailureIntegration.Dispose();
         }
     }
 }

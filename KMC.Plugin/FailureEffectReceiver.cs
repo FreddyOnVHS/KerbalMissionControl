@@ -28,6 +28,10 @@ namespace KMC.Plugin
         private const double MaximumWheelFactor = 1.00;
         private const double MinimumEcPulse = 0.10;
         private const double MaximumEcPulse = 25.00;
+        private const double MinimumEcLeakRate = 0.10;
+        private const double MaximumEcLeakRate = 10.00;
+        private const float EcLeakApplyIntervalSeconds = 0.20f;
+        private const float EcLeakLeaseSeconds = 2.50f;
 
         private readonly object _syncRoot =
             new object();
@@ -46,6 +50,11 @@ namespace KMC.Plugin
         private readonly Queue<string> _completedOrder =
             new Queue<string>();
 
+        private readonly Dictionary<string, ContinuousEcLeakState>
+            _ecLeaks =
+                new Dictionary<string, ContinuousEcLeakState>(
+                    StringComparer.Ordinal);
+
         private UdpClient _receiveClient;
         private UdpClient _ackClient;
         private UdpClient _testSendClient;
@@ -60,6 +69,8 @@ namespace KMC.Plugin
 
         private string _lastStatus =
             "NO COMMAND SENT";
+
+        private float _lastEcLeakApplyTime;
 
         public void Start()
         {
@@ -141,6 +152,8 @@ namespace KMC.Plugin
                 ApplyCommand(
                     packet);
             }
+
+            ApplyContinuousEcLeaks();
         }
 
         public void OnGUI()
@@ -478,7 +491,9 @@ namespace KMC.Plugin
             Part part = null;
 
             if (packet.EffectType !=
-                    FailureEffectType.ElectricChargeDrain)
+                    FailureEffectType.ElectricChargeDrain &&
+                packet.EffectType !=
+                    FailureEffectType.ElectricChargeLeak)
             {
                 if (packet.PartPersistentId == 0)
                 {
@@ -532,6 +547,12 @@ namespace KMC.Plugin
 
                     case FailureEffectType.ElectricChargeDrain:
                         ApplyEcDrain(
+                            packet,
+                            vessel);
+                        return;
+
+                    case FailureEffectType.ElectricChargeLeak:
+                        ApplyEcLeakCommand(
                             packet,
                             vessel);
                         return;
@@ -1022,6 +1043,203 @@ namespace KMC.Plugin
                 "ELECTRICCHARGE DRAIN PULSE REQUESTED " +
                 packet.Magnitude.ToString("0.00") +
                 " EC");
+        }
+
+        private void ApplyEcLeakCommand(
+            FailureEffectPacket packet,
+            Vessel vessel)
+        {
+            if (packet.Operation ==
+                    FailureEffectOperation.Restore)
+            {
+                _ecLeaks.Remove(
+                    packet.VesselId ?? string.Empty);
+
+                Complete(
+                    packet,
+                    "RESTORED",
+                    0.0,
+                    "CONTINUOUS ELECTRICCHARGE LOAD REMOVED");
+
+                return;
+            }
+
+            if (packet.Operation !=
+                    FailureEffectOperation.Apply ||
+                packet.Magnitude <
+                    MinimumEcLeakRate ||
+                packet.Magnitude >
+                    MaximumEcLeakRate)
+            {
+                Complete(
+                    packet,
+                    "REJECTED",
+                    double.NaN,
+                    "EC LEAK RATE MUST BE 0.10..10.00 EC/S");
+
+                return;
+            }
+
+            if (vessel == null ||
+                vessel.rootPart == null)
+            {
+                Complete(
+                    packet,
+                    "REJECTED",
+                    double.NaN,
+                    "VESSEL ROOT PART UNAVAILABLE");
+
+                return;
+            }
+
+            string vesselId =
+                packet.VesselId ?? string.Empty;
+
+            _ecLeaks[vesselId] =
+                new ContinuousEcLeakState
+                {
+                    VesselId = vesselId,
+                    RateEcPerSecond = packet.Magnitude,
+                    LastRefreshRealtime =
+                        Time.realtimeSinceStartup
+                };
+
+            Complete(
+                packet,
+                "APPLIED",
+                packet.Magnitude,
+                "CONTINUOUS ELECTRICCHARGE LOAD LEASED AT " +
+                packet.Magnitude.ToString("0.00") +
+                " EC/S");
+        }
+
+        private void ApplyContinuousEcLeaks()
+        {
+            float now =
+                Time.realtimeSinceStartup;
+
+            float elapsed =
+                now -
+                _lastEcLeakApplyTime;
+
+            if (_lastEcLeakApplyTime <= 0f)
+            {
+                _lastEcLeakApplyTime = now;
+                return;
+            }
+
+            if (elapsed <
+                EcLeakApplyIntervalSeconds)
+            {
+                return;
+            }
+
+            _lastEcLeakApplyTime = now;
+
+            elapsed =
+                Math.Min(
+                    0.50f,
+                    Math.Max(
+                        0f,
+                        elapsed));
+
+            Vessel vessel =
+                FlightGlobals.ActiveVessel;
+
+            List<string> expired =
+                null;
+
+            foreach (
+                KeyValuePair<string, ContinuousEcLeakState> pair
+                in _ecLeaks)
+            {
+                ContinuousEcLeakState state =
+                    pair.Value;
+
+                if (state == null)
+                {
+                    continue;
+                }
+
+                if (now -
+                    state.LastRefreshRealtime >
+                    EcLeakLeaseSeconds)
+                {
+                    if (expired == null)
+                    {
+                        expired =
+                            new List<string>();
+                    }
+
+                    expired.Add(
+                        pair.Key);
+
+                    Debug.Log(
+                        "[KMC] POWER FAILURE EFFECT FAILSAFE" +
+                        " | VesselId=" +
+                        state.VesselId +
+                        " | Effect=ElectricChargeLeak" +
+                        " | Action=LEASE EXPIRED / LOAD REMOVED");
+
+                    continue;
+                }
+
+                if (vessel == null ||
+                    vessel.rootPart == null ||
+                    !string.Equals(
+                        vessel.id.ToString(),
+                        state.VesselId,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                MethodInfo requestResource =
+                    FindRequestResourceMethod(
+                        vessel.rootPart.GetType());
+
+                if (requestResource == null)
+                {
+                    continue;
+                }
+
+                double request =
+                    state.RateEcPerSecond *
+                    elapsed;
+
+                if (request <= 0.0)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    requestResource.Invoke(
+                        vessel.rootPart,
+                        new object[]
+                        {
+                            "ElectricCharge",
+                            request
+                        });
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError(
+                        "[KMC] Continuous EC failure load failed: " +
+                        ex.GetType().Name);
+                }
+            }
+
+            if (expired != null)
+            {
+                for (int index = 0;
+                     index < expired.Count;
+                     index++)
+                {
+                    _ecLeaks.Remove(
+                        expired[index]);
+                }
+            }
         }
 
         private void Complete(
@@ -1578,6 +1796,7 @@ namespace KMC.Plugin
         public void OnDestroy()
         {
             _running = false;
+            _ecLeaks.Clear();
 
             if (_receiveClient != null)
             {
@@ -1604,6 +1823,13 @@ namespace KMC.Plugin
             }
 
             _receiveThread = null;
+        }
+
+        private sealed class ContinuousEcLeakState
+        {
+            public string VesselId;
+            public double RateEcPerSecond;
+            public float LastRefreshRealtime;
         }
 
         private sealed class EffectRestoreState
