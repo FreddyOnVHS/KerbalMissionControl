@@ -246,6 +246,10 @@ namespace KMC.MissionControl.Pages
          * Build 13.9.1 also classifies nodes ahead of the active plan using
          * the retained KMC plan store, so another KMC-owned node is never
          * mislabeled as MANUAL AHEAD.
+         *
+         * Build 13.10 recognizes a confirmed NODE REMOVED active PlanId and
+         * presents the first remaining retained KMC node as the next plan
+         * available for explicit crew selection. No promotion occurs here.
          */
         private static QueueDirectorState BuildQueueDirectorState(
             ManeuverPlanModel plan,
@@ -334,6 +338,14 @@ namespace KMC.MissionControl.Pages
 
             if (!state.KmcNodeFound)
             {
+                if (TrySetNextKmcPlanAvailable(
+                        state,
+                        inventory,
+                        plan))
+                {
+                    return state;
+                }
+
                 state.Summary =
                     "NEXT #1 MANUAL KSP";
 
@@ -428,6 +440,74 @@ namespace KMC.MissionControl.Pages
             }
 
             return state;
+        }
+
+        private static bool TrySetNextKmcPlanAvailable(
+            QueueDirectorState state,
+            KMC.MissionControl.ManeuverInventorySnapshot inventory,
+            ManeuverPlanModel plan)
+        {
+            if (state == null ||
+                inventory == null ||
+                inventory.Nodes == null ||
+                plan == null ||
+                string.IsNullOrWhiteSpace(
+                    plan.PlanId))
+            {
+                return false;
+            }
+
+            ManeuverUplinkStatusSnapshot activeStatus =
+                ManeuverUplinkStatusStore.GetForPlan(
+                    plan.PlanId);
+
+            if (activeStatus == null ||
+                !string.Equals(
+                    activeStatus.State,
+                    "NODE REMOVED",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            for (int index = 0;
+                 index < inventory.Nodes.Count;
+                 index++)
+            {
+                KMC.MissionControl.KmcQueuedManeuverPlan retained =
+                    KMC.MissionControl.KmcManeuverPlanStore.FindForNode(
+                        inventory.Nodes[index],
+                        inventory.VesselId);
+
+                if (retained == null)
+                {
+                    continue;
+                }
+
+                int sequence =
+                    KMC.MissionControl.KmcManeuverPlanStore.GetSequence(
+                        retained.PlanId);
+
+                state.NextKmcPlanAvailable = true;
+                state.NextKmcSequence =
+                    Math.Max(
+                        1,
+                        sequence);
+                state.NextKmcNodeIndex =
+                    index;
+
+                state.Summary =
+                    "NEXT KMC #" +
+                    state.NextKmcSequence.ToString() +
+                    " AVAILABLE / NODE #" +
+                    (index + 1).ToString() +
+                    " OF " +
+                    state.TotalNodes.ToString();
+
+                return true;
+            }
+
+            return false;
         }
 
         private static void DrawGuidanceSphere(
@@ -778,7 +858,10 @@ namespace KMC.MissionControl.Pages
                         guidance != null &&
                         !activeManeuverNode &&
                         !guidance.BurnComplete
-                            ? "AWAIT NODE UPLOAD"
+                            ? queue != null &&
+                              queue.NextKmcPlanAvailable
+                                ? "AWAIT PLAN SELECTION"
+                                : "AWAIT NODE UPLOAD"
                             : guidance != null
                                 ? guidance.AttitudeReference
                                 : "---"),
@@ -912,7 +995,8 @@ namespace KMC.MissionControl.Pages
                 context,
                 commandBox,
                 guidance,
-                activeManeuverNode);
+                activeManeuverNode,
+                queue);
         }
 
         private static void DrawCompactGroup(
@@ -1294,7 +1378,8 @@ namespace KMC.MissionControl.Pages
             MissionRenderContext context,
             Rectangle bounds,
             GuidanceSolutionModel guidance,
-            bool activeManeuverNode)
+            bool activeManeuverNode,
+            QueueDirectorState queue)
         {
             DrawSubPanel(
                 context,
@@ -1321,7 +1406,10 @@ namespace KMC.MissionControl.Pages
 
             string command =
                 planningOnly
-                    ? "UPLOAD MANEUVER NODE"
+                    ? queue != null &&
+                      queue.NextKmcPlanAvailable
+                        ? "SELECT NEXT KMC PLAN"
+                        : "UPLOAD MANEUVER NODE"
                     : guidance != null
                         ? Safe(
                             guidance.Command)
@@ -1972,6 +2060,9 @@ namespace KMC.MissionControl.Pages
             public int TotalNodes { get; set; }
             public bool KmcNodeFound { get; set; }
             public int KmcNodeIndex { get; set; }
+            public bool NextKmcPlanAvailable { get; set; }
+            public int NextKmcSequence { get; set; }
+            public int NextKmcNodeIndex { get; set; }
             public string NextNodeVector { get; set; }
             public double NextTimeToNodeSeconds { get; set; }
             public string Summary { get; set; }
@@ -1979,6 +2070,8 @@ namespace KMC.MissionControl.Pages
             public QueueDirectorState()
             {
                 KmcNodeIndex = -1;
+                NextKmcSequence = -1;
+                NextKmcNodeIndex = -1;
                 NextNodeVector = "---";
                 NextTimeToNodeSeconds = double.NaN;
                 Summary = "QUEUE WAITING";

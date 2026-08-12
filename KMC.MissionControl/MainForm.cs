@@ -1172,12 +1172,98 @@ namespace KMC.MissionControl
             _maneuverActivatePlanButton.Enabled =
                 promotionAllowed;
 
+            bool nextKmcPlanAvailable =
+                plan != null &&
+                !alreadyActive &&
+                IsNextKmcPlanAvailable(
+                    plan);
+
             _maneuverActivatePlanButton.Text =
                 alreadyActive
                     ? "ACTIVE"
                     : plan != null
-                        ? "ACTIVATE"
+                        ? nextKmcPlanAvailable
+                            ? "ACTIVATE NEXT"
+                            : "ACTIVATE"
                         : "MANUAL";
+        }
+
+        /*
+         * Build 13.10:
+         * Queue progression remains crew-controlled. When the previously
+         * active KMC node has been confirmed NODE REMOVED, identify the first
+         * remaining retained KMC node as the next plan available for explicit
+         * crew activation. This never promotes or uploads a plan by itself.
+         */
+        private static bool IsNextKmcPlanAvailable(
+            KmcQueuedManeuverPlan candidate)
+        {
+            if (candidate == null ||
+                string.IsNullOrWhiteSpace(
+                    candidate.PlanId))
+            {
+                return false;
+            }
+
+            string activePlanId =
+                ManeuverPlanPromotionStore.GetActivePlanId();
+
+            if (string.IsNullOrWhiteSpace(
+                    activePlanId) ||
+                string.Equals(
+                    activePlanId,
+                    candidate.PlanId,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            ManeuverUplinkStatusSnapshot activeStatus =
+                ManeuverUplinkStatusStore.GetForPlan(
+                    activePlanId);
+
+            if (activeStatus == null ||
+                !string.Equals(
+                    activeStatus.State,
+                    "NODE REMOVED",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            ManeuverInventorySnapshot inventory =
+                ManeuverInventoryStore.GetLatest();
+
+            if (inventory == null ||
+                inventory.Nodes == null ||
+                string.IsNullOrWhiteSpace(
+                    inventory.VesselId))
+            {
+                return false;
+            }
+
+            for (int index = 0;
+                 index < inventory.Nodes.Count;
+                 index++)
+            {
+                KmcQueuedManeuverPlan retained =
+                    KmcManeuverPlanStore.FindForNode(
+                        inventory.Nodes[index],
+                        inventory.VesselId);
+
+                if (retained == null)
+                {
+                    continue;
+                }
+
+                return
+                    string.Equals(
+                        retained.PlanId,
+                        candidate.PlanId,
+                        StringComparison.Ordinal);
+            }
+
+            return false;
         }
 
         private bool CanPromoteManeuverNow()

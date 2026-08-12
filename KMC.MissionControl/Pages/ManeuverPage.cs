@@ -94,6 +94,11 @@ namespace KMC.MissionControl.Pages
             bool missed = string.Equals(plan.Status, "MANEUVER WINDOW MISSED", StringComparison.OrdinalIgnoreCase);
             bool retroPending = string.Equals(plan.Status, "RETROGRADE GUIDANCE PENDING", StringComparison.OrdinalIgnoreCase);
 
+            int nextAvailableKmcSequence =
+                nodeRemoved
+                    ? GetNextAvailableKmcSequence()
+                    : -1;
+
             string footer;
             if (manualComplete) footer = nodeRemoved ? "MANUAL MANEUVER COMPLETE - NODE REMOVED" : "MANUAL MANEUVER COMPLETE - REMOVE NODE";
             else if (missed) footer = "MANEUVER WINDOW MISSED - CLICK COMPUTE TO REPLAN";
@@ -101,6 +106,11 @@ namespace KMC.MissionControl.Pages
             else if (!plan.Available) footer = "PLAN NOT AVAILABLE - REVIEW ENGINE EVIDENCE";
             else if (nodeVerified) footer = "NODE VERIFIED - KSP MATCHES " + Safe(plan.PlanId);
             else if (crewModified) footer = "CREW MODIFIED NODE - KSP STATE DIFFERS FROM PLAN";
+            else if (nodeRemoved && nextAvailableKmcSequence > 0)
+                footer =
+                    "NEXT KMC #" +
+                    nextAvailableKmcSequence.ToString() +
+                    " AVAILABLE - ACTIVATE NEXT";
             else if (nodeRemoved) footer = "NODE REMOVED - UPLOAD REQUIRED";
             else if (vesselNotActive) footer = "TRACKED NODE VESSEL NOT ACTIVE";
             else if (nodeLoaded) footer = "NODE LOADED - VERIFYING KSP NODE";
@@ -110,6 +120,55 @@ namespace KMC.MissionControl.Pages
 
             bool healthy = manualComplete || (plan.Available && plan.NodeUniversalTimeAvailable && !crewModified && !nodeRemoved && !vesselNotActive);
             DrawReviewBand(context, footer, healthy);
+        }
+
+        /*
+         * Build 13.10.1:
+         * Presentation-only queue handoff helper. If the current active plan
+         * has been removed, find the first remaining stock node that still
+         * matches a retained KMC plan and return its permanent KMC sequence.
+         */
+        private static int GetNextAvailableKmcSequence()
+        {
+            ManeuverInventorySnapshot inventory =
+                ManeuverInventoryStore.GetLatest();
+
+            if (inventory == null ||
+                inventory.Nodes == null ||
+                inventory.Nodes.Count == 0 ||
+                string.IsNullOrWhiteSpace(
+                    inventory.VesselId))
+            {
+                return -1;
+            }
+
+            System.Collections.Generic.List<KmcQueuedManeuverPlan> retainedPlans =
+                KmcManeuverPlanStore.GetAll();
+
+            for (int index = 0;
+                 index < inventory.Nodes.Count;
+                 index++)
+            {
+                KmcQueuedManeuverPlan retained =
+                    FindRetainedPlanForNode(
+                        inventory.Nodes[index],
+                        inventory,
+                        retainedPlans);
+
+                if (retained == null)
+                {
+                    continue;
+                }
+
+                return
+                    Math.Max(
+                        1,
+                        FindKmcPlanSequence(
+                            retained.PlanId,
+                            retainedPlans));
+            }
+
+            return -1;
         }
 
         private static void DrawActiveManeuvers(MissionRenderContext context, Rectangle bounds, ManeuverPlanModel plan)
@@ -329,8 +388,10 @@ namespace KMC.MissionControl.Pages
          * node that matches the current KMC plan/uplink may be described as
          * KMC-owned. Every other stock node is explicitly crew/manual.
          *
-         * This is advisory display classification only. It does not promote,
-         * authorize, upload, or execute any node.
+         * Build 13.10 adds explicit queue handoff awareness after the active
+         * PlanId is confirmed NODE REMOVED. The next retained KMC node is
+         * presented as available for crew activation, but is never promoted,
+         * authorized, uploaded, or executed automatically.
          */
         private static string BuildQueueDirectorSummary(
             ManeuverInventorySnapshot inventory,
@@ -382,6 +443,60 @@ namespace KMC.MissionControl.Pages
                     " OF " +
                     count.ToString() +
                     " / NEXT #1";
+            }
+
+            ManeuverUplinkStatusSnapshot activePlanStatus =
+                ManeuverUplinkStatusStore.GetForPlan(
+                    activePlanId);
+
+            bool activeNodeRemoved =
+                activeNodeIndex < 0 &&
+                activeSequence > 0 &&
+                activePlanStatus != null &&
+                string.Equals(
+                    activePlanStatus.State,
+                    "NODE REMOVED",
+                    StringComparison.OrdinalIgnoreCase);
+
+            if (activeNodeRemoved)
+            {
+                int nextKmcNodeIndex =
+                    FindFirstRetainedKmcNodeIndex(
+                        inventory,
+                        retainedPlans,
+                        plan,
+                        uplink);
+
+                if (nextKmcNodeIndex >= 0)
+                {
+                    KmcQueuedManeuverPlan nextKmcPlan =
+                        FindRetainedPlanForNode(
+                            inventory.Nodes[nextKmcNodeIndex],
+                            inventory,
+                            retainedPlans);
+
+                    int nextKmcSequence =
+                        nextKmcPlan != null
+                            ? FindKmcPlanSequence(
+                                nextKmcPlan.PlanId,
+                                retainedPlans)
+                            : -1;
+
+                    return
+                        "QUEUE DIRECTOR: NEXT KMC #" +
+                        Math.Max(
+                            1,
+                            nextKmcSequence).ToString() +
+                        " AVAILABLE / NODE #" +
+                        (nextKmcNodeIndex + 1).ToString() +
+                        " OF " +
+                        count.ToString();
+                }
+
+                return
+                    "QUEUE DIRECTOR: ACTIVE KMC #" +
+                    activeSequence.ToString() +
+                    " REMOVED / NO KMC PLAN AVAILABLE";
             }
 
             int selectedNodeIndex =
