@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using KMC.Engine.Guidance;
+using KMC.Engine.Maneuver;
 using KMC.Shared;
 
 namespace KMC.MissionControl.Engineering
@@ -38,12 +40,25 @@ namespace KMC.MissionControl.Engineering
         private static ManeuverUplinkStatusSnapshot _latest =
             new ManeuverUplinkStatusSnapshot();
 
+        /*
+         * Build 13.9:
+         * Multiple KSP nodes now report state concurrently. Preserve one
+         * immutable status per PlanId so MNV/GUID review never depends on
+         * whichever tracked-node packet happened to arrive last.
+         */
+        private static readonly Dictionary<string, ManeuverUplinkStatusSnapshot>
+            ByPlan =
+                new Dictionary<string, ManeuverUplinkStatusSnapshot>(
+                    StringComparer.Ordinal);
+
         public static void Clear()
         {
             lock (SyncRoot)
             {
                 _latest =
                     new ManeuverUplinkStatusSnapshot();
+
+                ByPlan.Clear();
             }
 
             GuidanceNodeStateStore.Clear();
@@ -174,6 +189,52 @@ namespace KMC.MissionControl.Engineering
             }
         }
 
+        public static ManeuverUplinkStatusSnapshot GetForPlan(
+            string planId)
+        {
+            lock (SyncRoot)
+            {
+                ManeuverUplinkStatusSnapshot snapshot;
+
+                if (!string.IsNullOrWhiteSpace(planId) &&
+                    ByPlan.TryGetValue(
+                        planId,
+                        out snapshot))
+                {
+                    return
+                        Clone(snapshot);
+                }
+
+                ManeuverUplinkStatusSnapshot empty =
+                    new ManeuverUplinkStatusSnapshot();
+
+                empty.PlanId =
+                    planId ?? string.Empty;
+
+                return empty;
+            }
+        }
+
+        public static void RepublishGuidanceForPlan(
+            string planId)
+        {
+            ManeuverUplinkStatusSnapshot snapshot =
+                GetForPlan(
+                    planId);
+
+            if (snapshot == null ||
+                string.IsNullOrWhiteSpace(
+                    snapshot.PlanId) ||
+                snapshot.UpdatedUtc == DateTime.MinValue)
+            {
+                return;
+            }
+
+            PublishGuidanceState(
+                snapshot,
+                true);
+        }
+
         private static void PublishSnapshot(
             ManeuverUplinkStatusSnapshot snapshot)
         {
@@ -181,6 +242,14 @@ namespace KMC.MissionControl.Engineering
             {
                 _latest =
                     Clone(snapshot);
+
+                if (snapshot != null &&
+                    !string.IsNullOrWhiteSpace(
+                        snapshot.PlanId))
+                {
+                    ByPlan[snapshot.PlanId] =
+                        Clone(snapshot);
+                }
             }
         }
 
@@ -189,6 +258,25 @@ namespace KMC.MissionControl.Engineering
             bool available)
         {
             if (snapshot == null)
+            {
+                return;
+            }
+
+            /*
+             * Build 13.9 selection safety:
+             * Once Engine has an active PlanId, unrelated tracked-node packets
+             * are retained in ByPlan but may not replace Guidance's active
+             * node-verification state.
+             */
+            string activePlanId =
+                ManeuverPlanPromotionStore.GetActivePlanId();
+
+            if (!string.IsNullOrWhiteSpace(
+                    activePlanId) &&
+                !string.Equals(
+                    activePlanId,
+                    snapshot.PlanId ?? string.Empty,
+                    StringComparison.Ordinal))
             {
                 return;
             }

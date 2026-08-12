@@ -1,4 +1,5 @@
 using KMC.Engine.Analysis;
+using KMC.Engine.Guidance;
 using KMC.Engine.Maneuver;
 using KMC.Engine.Orbit;
 using KMC.MissionControl.Controls;
@@ -54,7 +55,9 @@ namespace KMC.MissionControl
         private readonly Button _maneuverComputeButton;
         private readonly Button _maneuverUploadButton;
         private readonly ComboBox _maneuverNodeSelector;
+        private readonly Button _maneuverActivatePlanButton;
         private readonly Button _maneuverDeleteButton;
+        private readonly TableLayoutPanel _maneuverNodeActions;
         private readonly ManeuverQueueTransport _maneuverQueueTransport;
         private readonly TrackBar _displayRefreshSlider;
         private readonly ConsolePanel _displayPanel;
@@ -97,7 +100,9 @@ namespace KMC.MissionControl
             _maneuverComputeButton = CreateManeuverComputeButton();
             _maneuverUploadButton = CreateManeuverUploadButton();
             _maneuverNodeSelector = CreateManeuverNodeSelector();
+            _maneuverActivatePlanButton = CreateManeuverActivatePlanButton();
             _maneuverDeleteButton = CreateManeuverDeleteButton();
+            _maneuverNodeActions = CreateManeuverNodeActions();
             _displayRefreshSlider = CreateDisplayRefreshSlider();
 
             UpdateManeuverTargetControlState();
@@ -377,8 +382,8 @@ namespace KMC.MissionControl
             // Build 13.6 reuses the display-refresh cells on MNV only.
             headerLayout.Controls.Add(_maneuverNodeSelector, 6, 0);
             headerLayout.SetRowSpan(_maneuverNodeSelector, 2);
-            headerLayout.Controls.Add(_maneuverDeleteButton, 7, 0);
-            headerLayout.SetRowSpan(_maneuverDeleteButton, 2);
+            headerLayout.Controls.Add(_maneuverNodeActions, 7, 0);
+            headerLayout.SetRowSpan(_maneuverNodeActions, 2);
 
             headerLayout.Controls.Add(_connectionLabel, 8, 0);
             headerLayout.SetRowSpan(_connectionLabel, 2);
@@ -495,7 +500,7 @@ namespace KMC.MissionControl
                     ThousandsSeparator = true,
                     BackColor = Color.FromArgb(35, 45, 40),
                     ForeColor = Color.FromArgb(190, 255, 190),
-                    Font = new Font("Consolas", 9.0f, FontStyle.Bold),
+                    Font = new Font("Consolas", 8.0f, FontStyle.Bold),
                     Visible = false,
                     Enabled = false,
                     TabStop = false
@@ -560,7 +565,7 @@ namespace KMC.MissionControl
 
         private ComboBox CreateManeuverNodeSelector()
         {
-            return
+            ComboBox selector =
                 new ComboBox
                 {
                     Dock = DockStyle.Fill,
@@ -572,6 +577,82 @@ namespace KMC.MissionControl
                     Visible = false,
                     TabStop = false
                 };
+
+            selector.SelectedIndexChanged +=
+                OnManeuverNodeSelectionChanged;
+
+            return selector;
+        }
+
+        private Button CreateManeuverActivatePlanButton()
+        {
+            Button button =
+                new Button
+                {
+                    Text = "ACTIVATE",
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(2, 8, 2, 8),
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.FromArgb(43, 56, 48),
+                    ForeColor = Color.FromArgb(190, 255, 190),
+                    Font = new Font("Consolas", 8.0f, FontStyle.Bold),
+                    Visible = false,
+                    Enabled = false,
+                    TabStop = false
+                };
+
+            button.FlatAppearance.BorderColor =
+                Color.FromArgb(100, 170, 115);
+
+            button.FlatAppearance.MouseOverBackColor =
+                Color.FromArgb(55, 72, 60);
+
+            button.Click +=
+                OnManeuverActivatePlanClick;
+
+            return button;
+        }
+
+        private TableLayoutPanel CreateManeuverNodeActions()
+        {
+            TableLayoutPanel panel =
+                new TableLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    Margin = Padding.Empty,
+                    Padding = Padding.Empty,
+                    ColumnCount = 2,
+                    RowCount = 1,
+                    Visible = false,
+                    BackColor = ApolloTheme.WindowBackground
+                };
+
+            panel.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Percent,
+                    50.0f));
+
+            panel.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Percent,
+                    50.0f));
+
+            panel.RowStyles.Add(
+                new RowStyle(
+                    SizeType.Percent,
+                    100.0f));
+
+            panel.Controls.Add(
+                _maneuverActivatePlanButton,
+                0,
+                0);
+
+            panel.Controls.Add(
+                _maneuverDeleteButton,
+                1,
+                0);
+
+            return panel;
         }
 
         private Button CreateManeuverDeleteButton()
@@ -579,7 +660,7 @@ namespace KMC.MissionControl
             Button button =
                 new Button
                 {
-                    Text = "DELETE NODE",
+                    Text = "DELETE",
                     Dock = DockStyle.Fill,
                     Margin = new Padding(6, 8, 6, 8),
                     FlatStyle = FlatStyle.Flat,
@@ -710,6 +791,12 @@ namespace KMC.MissionControl
             _maneuverNodeSelector.Visible =
                 maneuverPage;
 
+            _maneuverNodeActions.Visible =
+                maneuverPage;
+
+            _maneuverActivatePlanButton.Visible =
+                maneuverPage;
+
             _maneuverDeleteButton.Visible =
                 maneuverPage;
 
@@ -812,6 +899,9 @@ namespace KMC.MissionControl
              * on to the next request.
              */
             CaptureCurrentKmcPlan();
+
+            KmcManeuverPlanStore.ClearSelection();
+            ManeuverPlanPromotionStore.CancelPending();
 
             ManeuverRequestType type;
 
@@ -1032,9 +1122,203 @@ namespace KMC.MissionControl
                 _maneuverNodeSelector.EndUpdate();
             }
 
-            _maneuverDeleteButton.Enabled =
-                _maneuverNodeSelector.SelectedItem != null;
+            UpdateManeuverNodeActionState();
 
+            _missionDisplay.RequestRender();
+        }
+
+        private void OnManeuverNodeSelectionChanged(
+            object sender,
+            EventArgs e)
+        {
+            UpdateManeuverNodeActionState();
+
+            if (_missionDisplay != null)
+            {
+                _missionDisplay.RequestRender();
+            }
+        }
+
+        private void UpdateManeuverNodeActionState()
+        {
+            ManeuverNodeSelectorItem selected =
+                _maneuverNodeSelector != null
+                    ? _maneuverNodeSelector.SelectedItem as
+                      ManeuverNodeSelectorItem
+                    : null;
+
+            _maneuverDeleteButton.Enabled =
+                selected != null;
+
+            KmcQueuedManeuverPlan plan =
+                ResolveSelectedRetainedPlan(
+                    selected);
+
+            string activePlanId =
+                ManeuverPlanPromotionStore.GetActivePlanId();
+
+            bool alreadyActive =
+                plan != null &&
+                string.Equals(
+                    plan.PlanId,
+                    activePlanId,
+                    StringComparison.Ordinal);
+
+            bool promotionAllowed =
+                plan != null &&
+                !alreadyActive &&
+                CanPromoteManeuverNow();
+
+            _maneuverActivatePlanButton.Enabled =
+                promotionAllowed;
+
+            _maneuverActivatePlanButton.Text =
+                alreadyActive
+                    ? "ACTIVE"
+                    : plan != null
+                        ? "ACTIVATE"
+                        : "MANUAL";
+        }
+
+        private bool CanPromoteManeuverNow()
+        {
+            AnalysisPipelineResult result;
+
+            if (!EngineeringSnapshotStore.TryGetLatest(
+                    out result) ||
+                result == null ||
+                result.Snapshot == null ||
+                result.Snapshot.Guidance == null)
+            {
+                return true;
+            }
+
+            GuidanceSolutionModel guidance =
+                result.Snapshot.Guidance;
+
+            if (guidance.BurnActive)
+            {
+                return false;
+            }
+
+            if (guidance.BurnComplete &&
+                !guidance.ReacquisitionReady)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static KmcQueuedManeuverPlan ResolveSelectedRetainedPlan(
+            ManeuverNodeSelectorItem selected)
+        {
+            if (selected == null)
+            {
+                return null;
+            }
+
+            ManeuverInventorySnapshot inventory =
+                ManeuverInventoryStore.GetLatest();
+
+            if (inventory == null ||
+                inventory.Nodes == null ||
+                string.IsNullOrWhiteSpace(
+                    inventory.VesselId))
+            {
+                return null;
+            }
+
+            for (int index = 0;
+                 index < inventory.Nodes.Count;
+                 index++)
+            {
+                ManeuverInventoryNode node =
+                    inventory.Nodes[index];
+
+                if (node != null &&
+                    string.Equals(
+                        node.NodeId ?? string.Empty,
+                        selected.NodeId ?? string.Empty,
+                        StringComparison.Ordinal))
+                {
+                    return
+                        KmcManeuverPlanStore.FindForNode(
+                            node,
+                            inventory.VesselId);
+                }
+            }
+
+            return null;
+        }
+
+        private void OnManeuverActivatePlanClick(
+            object sender,
+            EventArgs e)
+        {
+            ManeuverNodeSelectorItem selected =
+                _maneuverNodeSelector.SelectedItem as
+                ManeuverNodeSelectorItem;
+
+            KmcQueuedManeuverPlan plan =
+                ResolveSelectedRetainedPlan(
+                    selected);
+
+            if (plan == null)
+            {
+                return;
+            }
+
+            if (!CanPromoteManeuverNow())
+            {
+                MessageBox.Show(
+                    "KMC cannot activate another retained plan while the current maneuver is executing or awaiting completed-node cleanup.",
+                    "Maneuver Plan Interlock",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+
+                return;
+            }
+
+            int sequence =
+                KmcManeuverPlanStore.GetSequence(
+                    plan.PlanId);
+
+            DialogResult confirm =
+                MessageBox.Show(
+                    "Activate KMC #" +
+                    Math.Max(
+                        1,
+                        sequence).ToString() +
+                    " for maneuver review and GUID guidance?\n\n" +
+                    "The existing KSP node will not be changed. " +
+                    "Execution remains inhibited unless that exact PlanId/node is verified.",
+                    "Activate Retained Maneuver Plan",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question,
+                    MessageBoxDefaultButton.Button2);
+
+            if (confirm != DialogResult.Yes)
+            {
+                return;
+            }
+
+            KmcManeuverPlanStore.Select(
+                plan.PlanId);
+
+            ManeuverPlanPromotionStore.Publish(
+                plan.CreatePromotionRequest());
+
+            /*
+             * If this PlanId already has fresh node verification in the
+             * Mission Control history, republish it to the active Guidance
+             * state. The Engine PlanId change still occurs on the next normal
+             * analysis update, so the existing PlanId interlock remains intact.
+             */
+            ManeuverUplinkStatusStore.RepublishGuidanceForPlan(
+                plan.PlanId);
+
+            UpdateManeuverNodeActionState();
             _missionDisplay.RequestRender();
         }
 
@@ -1230,6 +1514,7 @@ namespace KMC.MissionControl
             {
                 ManeuverRequestStore.Reset();
                 KmcManeuverPlanStore.Clear();
+                ManeuverPlanPromotionStore.Clear();
                 OrbitNormalTelemetryStore.Clear();
                 RadialTelemetryStore.Clear();
                 _orbitNormalReceiver.Start();
@@ -1603,6 +1888,8 @@ namespace KMC.MissionControl
             OrbitNormalTelemetryStore.Clear();
             RadialTelemetryStore.Clear();
             ManeuverInventoryStore.Clear();
+            KmcManeuverPlanStore.Clear();
+            ManeuverPlanPromotionStore.Clear();
 
             _maneuverQueueTransport.Dispose();
             _receiver.Dispose();
@@ -1660,18 +1947,123 @@ namespace KMC.MissionControl
 
     internal sealed class KmcQueuedManeuverPlan
     {
+        public KmcQueuedManeuverPlan()
+        {
+            PlanId = string.Empty;
+            VesselId = string.Empty;
+            Objective = string.Empty;
+            Status = "PLAN VALID";
+            Evidence =
+                new System.Collections.Generic.List<string>();
+
+            NodeUniversalTimeSeconds = double.NaN;
+            NodeMissionTimeSeconds = double.NaN;
+            TimeToNodeSeconds = double.NaN;
+            ProgradeDeltaVMetersPerSecond = double.NaN;
+            NormalDeltaVMetersPerSecond = double.NaN;
+            RadialDeltaVMetersPerSecond = double.NaN;
+            TotalDeltaVMetersPerSecond = double.NaN;
+            EstimatedBurnDurationSeconds = double.NaN;
+            IgnitionLeadSeconds = double.NaN;
+            IgnitionMissionTimeSeconds = double.NaN;
+            PredictedApoapsisMeters = double.NaN;
+            PredictedPeriapsisMeters = double.NaN;
+            PredictedInclinationDegrees = double.NaN;
+            PredictedEccentricity = double.NaN;
+            PredictedPeriodSeconds = double.NaN;
+        }
+
+        public bool Available { get; set; }
+        public bool OrbitTargetVerificationRequired { get; set; }
         public string PlanId { get; set; }
         public string VesselId { get; set; }
         public string Objective { get; set; }
+        public bool NodeUniversalTimeAvailable { get; set; }
         public double NodeUniversalTimeSeconds { get; set; }
+        public double NodeMissionTimeSeconds { get; set; }
+        public double TimeToNodeSeconds { get; set; }
         public double ProgradeDeltaVMetersPerSecond { get; set; }
         public double NormalDeltaVMetersPerSecond { get; set; }
         public double RadialDeltaVMetersPerSecond { get; set; }
+        public double TotalDeltaVMetersPerSecond { get; set; }
+        public double EstimatedBurnDurationSeconds { get; set; }
+        public double IgnitionLeadSeconds { get; set; }
+        public double IgnitionMissionTimeSeconds { get; set; }
+        public double PredictedApoapsisMeters { get; set; }
+        public double PredictedPeriapsisMeters { get; set; }
+        public double PredictedInclinationDegrees { get; set; }
+        public double PredictedEccentricity { get; set; }
+        public double PredictedPeriodSeconds { get; set; }
+        public string Status { get; set; }
         public DateTime CapturedUtc { get; set; }
+        public System.Collections.Generic.List<string> Evidence { get; private set; }
+
+        public ManeuverPlanPromotionRequest CreatePromotionRequest()
+        {
+            ManeuverPlanPromotionRequest request =
+                new ManeuverPlanPromotionRequest
+                {
+                    Available = Available,
+                    OrbitTargetVerificationRequired =
+                        OrbitTargetVerificationRequired,
+                    PlanId = PlanId ?? string.Empty,
+                    VesselId = VesselId ?? string.Empty,
+                    Objective = Objective ?? string.Empty,
+                    NodeUniversalTimeAvailable =
+                        NodeUniversalTimeAvailable,
+                    NodeUniversalTimeSeconds =
+                        NodeUniversalTimeSeconds,
+                    NodeMissionTimeSeconds =
+                        NodeMissionTimeSeconds,
+                    TimeToNodeSeconds =
+                        TimeToNodeSeconds,
+                    ProgradeDeltaVMetersPerSecond =
+                        ProgradeDeltaVMetersPerSecond,
+                    NormalDeltaVMetersPerSecond =
+                        NormalDeltaVMetersPerSecond,
+                    RadialDeltaVMetersPerSecond =
+                        RadialDeltaVMetersPerSecond,
+                    TotalDeltaVMetersPerSecond =
+                        TotalDeltaVMetersPerSecond,
+                    EstimatedBurnDurationSeconds =
+                        EstimatedBurnDurationSeconds,
+                    IgnitionLeadSeconds =
+                        IgnitionLeadSeconds,
+                    IgnitionMissionTimeSeconds =
+                        IgnitionMissionTimeSeconds,
+                    PredictedApoapsisMeters =
+                        PredictedApoapsisMeters,
+                    PredictedPeriapsisMeters =
+                        PredictedPeriapsisMeters,
+                    PredictedInclinationDegrees =
+                        PredictedInclinationDegrees,
+                    PredictedEccentricity =
+                        PredictedEccentricity,
+                    PredictedPeriodSeconds =
+                        PredictedPeriodSeconds,
+                    Status = Status ?? string.Empty
+                };
+
+            for (int index = 0;
+                 index < Evidence.Count;
+                 index++)
+            {
+                request.Evidence.Add(
+                    Evidence[index]);
+            }
+
+            return request;
+        }
     }
 
     internal static class KmcManeuverPlanStore
     {
+        private const double NodeUtToleranceSeconds =
+            0.25;
+
+        private const double DeltaVToleranceMetersPerSecond =
+            0.05;
+
         private static readonly object SyncRoot =
             new object();
 
@@ -1679,6 +2071,9 @@ namespace KMC.MissionControl
             System.Collections.Generic.List<KmcQueuedManeuverPlan>
             Plans =
                 new System.Collections.Generic.List<KmcQueuedManeuverPlan>();
+
+        private static string _selectedPlanId =
+            string.Empty;
 
         public static void Capture(
             ManeuverPlanModel plan)
@@ -1712,33 +2107,64 @@ namespace KMC.MissionControl
                     }
                 }
 
-                Plans.Add(
+                KmcQueuedManeuverPlan captured =
                     new KmcQueuedManeuverPlan
                     {
-                        PlanId =
-                            plan.PlanId ?? string.Empty,
-
-                        VesselId =
-                            plan.VesselId ?? string.Empty,
-
-                        Objective =
-                            plan.Objective ?? string.Empty,
-
+                        Available = plan.Available,
+                        OrbitTargetVerificationRequired =
+                            plan.OrbitTargetVerificationRequired,
+                        PlanId = plan.PlanId ?? string.Empty,
+                        VesselId = plan.VesselId ?? string.Empty,
+                        Objective = plan.Objective ?? string.Empty,
+                        NodeUniversalTimeAvailable =
+                            plan.NodeUniversalTimeAvailable,
                         NodeUniversalTimeSeconds =
                             plan.NodeUniversalTimeSeconds,
-
+                        NodeMissionTimeSeconds =
+                            plan.NodeMissionTimeSeconds,
+                        TimeToNodeSeconds =
+                            plan.TimeToNodeSeconds,
                         ProgradeDeltaVMetersPerSecond =
                             plan.ProgradeDeltaVMetersPerSecond,
-
                         NormalDeltaVMetersPerSecond =
                             plan.NormalDeltaVMetersPerSecond,
-
                         RadialDeltaVMetersPerSecond =
                             plan.RadialDeltaVMetersPerSecond,
+                        TotalDeltaVMetersPerSecond =
+                            plan.TotalDeltaVMetersPerSecond,
+                        EstimatedBurnDurationSeconds =
+                            plan.EstimatedBurnDurationSeconds,
+                        IgnitionLeadSeconds =
+                            plan.IgnitionLeadSeconds,
+                        IgnitionMissionTimeSeconds =
+                            plan.IgnitionMissionTimeSeconds,
+                        PredictedApoapsisMeters =
+                            plan.PredictedApoapsisMeters,
+                        PredictedPeriapsisMeters =
+                            plan.PredictedPeriapsisMeters,
+                        PredictedInclinationDegrees =
+                            plan.PredictedInclinationDegrees,
+                        PredictedEccentricity =
+                            plan.PredictedEccentricity,
+                        PredictedPeriodSeconds =
+                            plan.PredictedPeriodSeconds,
+                        Status = plan.Status ?? string.Empty,
+                        CapturedUtc = DateTime.UtcNow
+                    };
 
-                        CapturedUtc =
-                            DateTime.UtcNow
-                    });
+                if (plan.Evidence != null)
+                {
+                    for (int index = 0;
+                         index < plan.Evidence.Count;
+                         index++)
+                    {
+                        captured.Evidence.Add(
+                            plan.Evidence[index]);
+                    }
+                }
+
+                Plans.Add(
+                    captured);
 
                 Plans.Sort(
                     delegate(
@@ -1749,6 +2175,13 @@ namespace KMC.MissionControl
                             left.NodeUniversalTimeSeconds.CompareTo(
                                 right.NodeUniversalTimeSeconds);
                     });
+
+                if (string.IsNullOrWhiteSpace(
+                        _selectedPlanId))
+                {
+                    _selectedPlanId =
+                        plan.PlanId;
+                }
             }
         }
 
@@ -1766,28 +2199,152 @@ namespace KMC.MissionControl
                      index < Plans.Count;
                      index++)
                 {
-                    KmcQueuedManeuverPlan source =
-                        Plans[index];
-
                     copy.Add(
-                        new KmcQueuedManeuverPlan
-                        {
-                            PlanId = source.PlanId,
-                            VesselId = source.VesselId,
-                            Objective = source.Objective,
-                            NodeUniversalTimeSeconds =
-                                source.NodeUniversalTimeSeconds,
-                            ProgradeDeltaVMetersPerSecond =
-                                source.ProgradeDeltaVMetersPerSecond,
-                            NormalDeltaVMetersPerSecond =
-                                source.NormalDeltaVMetersPerSecond,
-                            RadialDeltaVMetersPerSecond =
-                                source.RadialDeltaVMetersPerSecond,
-                            CapturedUtc = source.CapturedUtc
-                        });
+                        Clone(
+                            Plans[index]));
                 }
 
                 return copy;
+            }
+        }
+
+        public static KmcQueuedManeuverPlan GetByPlanId(
+            string planId)
+        {
+            lock (SyncRoot)
+            {
+                for (int index = 0;
+                     index < Plans.Count;
+                     index++)
+                {
+                    if (string.Equals(
+                            Plans[index].PlanId,
+                            planId ?? string.Empty,
+                            StringComparison.Ordinal))
+                    {
+                        return
+                            Clone(
+                                Plans[index]);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        public static KmcQueuedManeuverPlan FindForNode(
+            ManeuverInventoryNode node,
+            string vesselId)
+        {
+            if (node == null)
+            {
+                return null;
+            }
+
+            lock (SyncRoot)
+            {
+                for (int index = 0;
+                     index < Plans.Count;
+                     index++)
+                {
+                    KmcQueuedManeuverPlan plan =
+                        Plans[index];
+
+                    if (!string.Equals(
+                            plan.VesselId ?? string.Empty,
+                            vesselId ?? string.Empty,
+                            StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    if (Math.Abs(
+                            node.NodeUniversalTimeSeconds -
+                            plan.NodeUniversalTimeSeconds) <=
+                            NodeUtToleranceSeconds &&
+                        Math.Abs(
+                            node.ProgradeDeltaVMetersPerSecond -
+                            plan.ProgradeDeltaVMetersPerSecond) <=
+                            DeltaVToleranceMetersPerSecond &&
+                        Math.Abs(
+                            node.NormalDeltaVMetersPerSecond -
+                            plan.NormalDeltaVMetersPerSecond) <=
+                            DeltaVToleranceMetersPerSecond &&
+                        Math.Abs(
+                            node.RadialDeltaVMetersPerSecond -
+                            plan.RadialDeltaVMetersPerSecond) <=
+                            DeltaVToleranceMetersPerSecond)
+                    {
+                        return
+                            Clone(
+                                plan);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        public static int GetSequence(
+            string planId)
+        {
+            lock (SyncRoot)
+            {
+                for (int index = 0;
+                     index < Plans.Count;
+                     index++)
+                {
+                    if (string.Equals(
+                            Plans[index].PlanId,
+                            planId ?? string.Empty,
+                            StringComparison.Ordinal))
+                    {
+                        return index + 1;
+                    }
+                }
+            }
+
+            return -1;
+        }
+
+        public static void Select(
+            string planId)
+        {
+            lock (SyncRoot)
+            {
+                for (int index = 0;
+                     index < Plans.Count;
+                     index++)
+                {
+                    if (string.Equals(
+                            Plans[index].PlanId,
+                            planId ?? string.Empty,
+                            StringComparison.Ordinal))
+                    {
+                        _selectedPlanId =
+                            planId ?? string.Empty;
+
+                        return;
+                    }
+                }
+            }
+        }
+
+        public static string GetSelectedPlanId()
+        {
+            lock (SyncRoot)
+            {
+                return
+                    _selectedPlanId ?? string.Empty;
+            }
+        }
+
+        public static void ClearSelection()
+        {
+            lock (SyncRoot)
+            {
+                _selectedPlanId =
+                    string.Empty;
             }
         }
 
@@ -1796,7 +2353,73 @@ namespace KMC.MissionControl
             lock (SyncRoot)
             {
                 Plans.Clear();
+                _selectedPlanId =
+                    string.Empty;
             }
+        }
+
+        private static KmcQueuedManeuverPlan Clone(
+            KmcQueuedManeuverPlan source)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            KmcQueuedManeuverPlan copy =
+                new KmcQueuedManeuverPlan
+                {
+                    Available = source.Available,
+                    OrbitTargetVerificationRequired =
+                        source.OrbitTargetVerificationRequired,
+                    PlanId = source.PlanId,
+                    VesselId = source.VesselId,
+                    Objective = source.Objective,
+                    NodeUniversalTimeAvailable =
+                        source.NodeUniversalTimeAvailable,
+                    NodeUniversalTimeSeconds =
+                        source.NodeUniversalTimeSeconds,
+                    NodeMissionTimeSeconds =
+                        source.NodeMissionTimeSeconds,
+                    TimeToNodeSeconds =
+                        source.TimeToNodeSeconds,
+                    ProgradeDeltaVMetersPerSecond =
+                        source.ProgradeDeltaVMetersPerSecond,
+                    NormalDeltaVMetersPerSecond =
+                        source.NormalDeltaVMetersPerSecond,
+                    RadialDeltaVMetersPerSecond =
+                        source.RadialDeltaVMetersPerSecond,
+                    TotalDeltaVMetersPerSecond =
+                        source.TotalDeltaVMetersPerSecond,
+                    EstimatedBurnDurationSeconds =
+                        source.EstimatedBurnDurationSeconds,
+                    IgnitionLeadSeconds =
+                        source.IgnitionLeadSeconds,
+                    IgnitionMissionTimeSeconds =
+                        source.IgnitionMissionTimeSeconds,
+                    PredictedApoapsisMeters =
+                        source.PredictedApoapsisMeters,
+                    PredictedPeriapsisMeters =
+                        source.PredictedPeriapsisMeters,
+                    PredictedInclinationDegrees =
+                        source.PredictedInclinationDegrees,
+                    PredictedEccentricity =
+                        source.PredictedEccentricity,
+                    PredictedPeriodSeconds =
+                        source.PredictedPeriodSeconds,
+                    Status = source.Status,
+                    CapturedUtc = source.CapturedUtc
+                };
+
+            for (int index = 0;
+                 index < source.Evidence.Count;
+                 index++)
+            {
+                copy.Evidence.Add(
+                    source.Evidence[index]);
+            }
+
+            return copy;
         }
     }
 

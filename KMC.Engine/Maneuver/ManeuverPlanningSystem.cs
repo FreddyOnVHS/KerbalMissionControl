@@ -107,6 +107,52 @@ namespace KMC.Engine.Maneuver
             ManeuverRequestModel request =
                 ManeuverRequestStore.Get();
 
+            /*
+             * Build 13.9 — explicit retained-plan promotion.
+             *
+             * A promotion never creates a new PlanId and never changes KSP.
+             * It restores a previously reviewed immutable plan as the Engine
+             * active plan. Normal node verification remains responsible for
+             * execution authorization.
+             */
+            ManeuverPlanPromotionRequest promotion;
+
+            if (ManeuverPlanPromotionStore.TryTake(
+                    out promotion))
+            {
+                ApplyPromotedPlan(
+                    promotion,
+                    orbit);
+
+                _activeRequestUtc =
+                    request != null
+                        ? request.RequestedUtc
+                        : DateTime.MinValue;
+
+                ManeuverPlanModel promoted =
+                    BuildHeldActivePlan(
+                        orbit,
+                        epoch);
+
+                lock (_syncRoot)
+                {
+                    _latest =
+                        promoted;
+                }
+
+                ManeuverPlanPromotionStore.SetActivePlanId(
+                    promoted != null
+                        ? promoted.PlanId
+                        : string.Empty);
+
+                WriteDiagnosticIfDue(
+                    promoted,
+                    request,
+                    receivedUtc);
+
+                return;
+            }
+
             bool requestChanged =
                 HasRequestChanged(
                     request);
@@ -216,6 +262,11 @@ namespace KMC.Engine.Maneuver
                     next;
             }
 
+            ManeuverPlanPromotionStore.SetActivePlanId(
+                next != null
+                    ? next.PlanId
+                    : string.Empty);
+
             WriteDiagnosticIfDue(
                 next,
                 request,
@@ -230,6 +281,155 @@ namespace KMC.Engine.Maneuver
                     ManeuverPlanModel.Clone(
                         _latest);
             }
+        }
+
+        private void ApplyPromotedPlan(
+            ManeuverPlanPromotionRequest promotion,
+            OrbitModel orbit)
+        {
+            if (promotion == null)
+            {
+                return;
+            }
+
+            ManeuverPlanModel plan =
+                new ManeuverPlanModel();
+
+            plan.Available =
+                promotion.Available;
+
+            plan.OrbitTargetVerificationRequired =
+                promotion.OrbitTargetVerificationRequired;
+
+            plan.PlanId =
+                promotion.PlanId ?? string.Empty;
+
+            plan.VesselId =
+                promotion.VesselId ?? string.Empty;
+
+            plan.Objective =
+                promotion.Objective ?? string.Empty;
+
+            plan.NodeUniversalTimeAvailable =
+                promotion.NodeUniversalTimeAvailable;
+
+            plan.NodeUniversalTimeSeconds =
+                promotion.NodeUniversalTimeSeconds;
+
+            plan.NodeMissionTimeSeconds =
+                promotion.NodeMissionTimeSeconds;
+
+            plan.TimeToNodeSeconds =
+                promotion.TimeToNodeSeconds;
+
+            plan.ProgradeDeltaVMetersPerSecond =
+                promotion.ProgradeDeltaVMetersPerSecond;
+
+            plan.NormalDeltaVMetersPerSecond =
+                promotion.NormalDeltaVMetersPerSecond;
+
+            plan.RadialDeltaVMetersPerSecond =
+                promotion.RadialDeltaVMetersPerSecond;
+
+            plan.TotalDeltaVMetersPerSecond =
+                promotion.TotalDeltaVMetersPerSecond;
+
+            plan.EstimatedBurnDurationSeconds =
+                promotion.EstimatedBurnDurationSeconds;
+
+            plan.IgnitionLeadSeconds =
+                promotion.IgnitionLeadSeconds;
+
+            plan.IgnitionMissionTimeSeconds =
+                promotion.IgnitionMissionTimeSeconds;
+
+            plan.PredictedApoapsisMeters =
+                promotion.PredictedApoapsisMeters;
+
+            plan.PredictedPeriapsisMeters =
+                promotion.PredictedPeriapsisMeters;
+
+            plan.PredictedInclinationDegrees =
+                promotion.PredictedInclinationDegrees;
+
+            plan.PredictedEccentricity =
+                promotion.PredictedEccentricity;
+
+            plan.PredictedPeriodSeconds =
+                promotion.PredictedPeriodSeconds;
+
+            plan.Status =
+                string.IsNullOrWhiteSpace(
+                    promotion.Status)
+                    ? "PLAN VALID"
+                    : promotion.Status;
+
+            if (promotion.Evidence != null)
+            {
+                for (int index = 0;
+                     index < promotion.Evidence.Count;
+                     index++)
+                {
+                    string evidence =
+                        promotion.Evidence[index];
+
+                    if (!string.IsNullOrWhiteSpace(
+                            evidence))
+                    {
+                        plan.Evidence.Add(
+                            evidence);
+                    }
+                }
+            }
+
+            _activePlanId =
+                plan.PlanId;
+
+            _activeVesselId =
+                plan.VesselId;
+
+            _activeVesselName =
+                orbit != null &&
+                orbit.Current != null
+                    ? orbit.Current.VesselName ??
+                      string.Empty
+                    : string.Empty;
+
+            _activeObjective =
+                plan.Objective;
+
+            _activeNodeUtAnchor =
+                plan.NodeUniversalTimeAvailable
+                    ? plan.NodeUniversalTimeSeconds
+                    : double.NaN;
+
+            _activeNodeMissionTimeAnchor =
+                plan.NodeMissionTimeSeconds;
+
+            _activeProgradeDeltaV =
+                plan.ProgradeDeltaVMetersPerSecond;
+
+            _activeNormalDeltaV =
+                plan.NormalDeltaVMetersPerSecond;
+
+            _activeRadialDeltaV =
+                plan.RadialDeltaVMetersPerSecond;
+
+            _activePlanSnapshot =
+                ManeuverPlanModel.Clone(
+                    plan);
+
+            Debug.WriteLine(
+                "KMC.Engine MANEUVER PROMOTED" +
+                " | PlanId=" +
+                plan.PlanId +
+                " | VesselId=" +
+                plan.VesselId +
+                " | NodeUT=" +
+                Format(
+                    plan.NodeUniversalTimeSeconds,
+                    "0.0") +
+                "s");
         }
 
         private bool HasRequestChanged(
@@ -895,4 +1095,212 @@ namespace KMC.Engine.Maneuver
                     value);
         }
     }
+    /// <summary>
+    /// Build 13.9 public immutable-value request used by Mission Control to
+    /// restore a retained reviewed maneuver as the Engine active plan.
+    /// </summary>
+    public sealed class ManeuverPlanPromotionRequest
+    {
+        public ManeuverPlanPromotionRequest()
+        {
+            PlanId = string.Empty;
+            VesselId = string.Empty;
+            Objective = string.Empty;
+            Status = "PLAN VALID";
+            Evidence =
+                new System.Collections.Generic.List<string>();
+
+            NodeUniversalTimeSeconds = double.NaN;
+            NodeMissionTimeSeconds = double.NaN;
+            TimeToNodeSeconds = double.NaN;
+            ProgradeDeltaVMetersPerSecond = double.NaN;
+            NormalDeltaVMetersPerSecond = double.NaN;
+            RadialDeltaVMetersPerSecond = double.NaN;
+            TotalDeltaVMetersPerSecond = double.NaN;
+            EstimatedBurnDurationSeconds = double.NaN;
+            IgnitionLeadSeconds = double.NaN;
+            IgnitionMissionTimeSeconds = double.NaN;
+            PredictedApoapsisMeters = double.NaN;
+            PredictedPeriapsisMeters = double.NaN;
+            PredictedInclinationDegrees = double.NaN;
+            PredictedEccentricity = double.NaN;
+            PredictedPeriodSeconds = double.NaN;
+        }
+
+        public bool Available { get; set; }
+        public bool OrbitTargetVerificationRequired { get; set; }
+        public string PlanId { get; set; }
+        public string VesselId { get; set; }
+        public string Objective { get; set; }
+        public bool NodeUniversalTimeAvailable { get; set; }
+        public double NodeUniversalTimeSeconds { get; set; }
+        public double NodeMissionTimeSeconds { get; set; }
+        public double TimeToNodeSeconds { get; set; }
+        public double ProgradeDeltaVMetersPerSecond { get; set; }
+        public double NormalDeltaVMetersPerSecond { get; set; }
+        public double RadialDeltaVMetersPerSecond { get; set; }
+        public double TotalDeltaVMetersPerSecond { get; set; }
+        public double EstimatedBurnDurationSeconds { get; set; }
+        public double IgnitionLeadSeconds { get; set; }
+        public double IgnitionMissionTimeSeconds { get; set; }
+        public double PredictedApoapsisMeters { get; set; }
+        public double PredictedPeriapsisMeters { get; set; }
+        public double PredictedInclinationDegrees { get; set; }
+        public double PredictedEccentricity { get; set; }
+        public double PredictedPeriodSeconds { get; set; }
+        public string Status { get; set; }
+        public System.Collections.Generic.List<string> Evidence { get; private set; }
+
+        internal ManeuverPlanPromotionRequest Clone()
+        {
+            ManeuverPlanPromotionRequest copy =
+                new ManeuverPlanPromotionRequest
+                {
+                    Available = Available,
+                    OrbitTargetVerificationRequired =
+                        OrbitTargetVerificationRequired,
+                    PlanId = PlanId ?? string.Empty,
+                    VesselId = VesselId ?? string.Empty,
+                    Objective = Objective ?? string.Empty,
+                    NodeUniversalTimeAvailable =
+                        NodeUniversalTimeAvailable,
+                    NodeUniversalTimeSeconds =
+                        NodeUniversalTimeSeconds,
+                    NodeMissionTimeSeconds =
+                        NodeMissionTimeSeconds,
+                    TimeToNodeSeconds =
+                        TimeToNodeSeconds,
+                    ProgradeDeltaVMetersPerSecond =
+                        ProgradeDeltaVMetersPerSecond,
+                    NormalDeltaVMetersPerSecond =
+                        NormalDeltaVMetersPerSecond,
+                    RadialDeltaVMetersPerSecond =
+                        RadialDeltaVMetersPerSecond,
+                    TotalDeltaVMetersPerSecond =
+                        TotalDeltaVMetersPerSecond,
+                    EstimatedBurnDurationSeconds =
+                        EstimatedBurnDurationSeconds,
+                    IgnitionLeadSeconds =
+                        IgnitionLeadSeconds,
+                    IgnitionMissionTimeSeconds =
+                        IgnitionMissionTimeSeconds,
+                    PredictedApoapsisMeters =
+                        PredictedApoapsisMeters,
+                    PredictedPeriapsisMeters =
+                        PredictedPeriapsisMeters,
+                    PredictedInclinationDegrees =
+                        PredictedInclinationDegrees,
+                    PredictedEccentricity =
+                        PredictedEccentricity,
+                    PredictedPeriodSeconds =
+                        PredictedPeriodSeconds,
+                    Status = Status ?? string.Empty
+                };
+
+            for (int index = 0;
+                 index < Evidence.Count;
+                 index++)
+            {
+                copy.Evidence.Add(
+                    Evidence[index]);
+            }
+
+            return copy;
+        }
+    }
+
+    /// <summary>
+    /// Process-local handoff between the Mission Control review UI and the
+    /// Engine maneuver owner. This is not spacecraft control and is not sent
+    /// over UDP.
+    /// </summary>
+    public static class ManeuverPlanPromotionStore
+    {
+        private static readonly object SyncRoot =
+            new object();
+
+        private static ManeuverPlanPromotionRequest _pending;
+        private static string _activePlanId =
+            string.Empty;
+
+        public static void Publish(
+            ManeuverPlanPromotionRequest request)
+        {
+            if (request == null ||
+                string.IsNullOrWhiteSpace(
+                    request.PlanId))
+            {
+                return;
+            }
+
+            lock (SyncRoot)
+            {
+                _pending =
+                    request.Clone();
+            }
+        }
+
+        internal static bool TryTake(
+            out ManeuverPlanPromotionRequest request)
+        {
+            lock (SyncRoot)
+            {
+                if (_pending == null)
+                {
+                    request = null;
+                    return false;
+                }
+
+                request =
+                    _pending.Clone();
+
+                _pending =
+                    null;
+
+                return true;
+            }
+        }
+
+        public static void CancelPending()
+        {
+            lock (SyncRoot)
+            {
+                _pending =
+                    null;
+            }
+        }
+
+        public static void SetActivePlanId(
+            string planId)
+        {
+            lock (SyncRoot)
+            {
+                _activePlanId =
+                    planId ?? string.Empty;
+            }
+        }
+
+        public static string GetActivePlanId()
+        {
+            lock (SyncRoot)
+            {
+                return
+                    _activePlanId ?? string.Empty;
+            }
+        }
+
+        public static void Clear()
+        {
+            lock (SyncRoot)
+            {
+                _pending =
+                    null;
+
+                _activePlanId =
+                    string.Empty;
+            }
+        }
+    }
+
+
 }

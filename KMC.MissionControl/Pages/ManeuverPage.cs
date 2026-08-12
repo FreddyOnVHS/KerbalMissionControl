@@ -44,7 +44,11 @@ namespace KMC.MissionControl.Pages
 
             KmcManeuverPlanStore.Capture(plan);
 
-            ManeuverUplinkStatusSnapshot uplink = ManeuverUplinkStatusStore.GetLatest();
+            ManeuverUplinkStatusSnapshot uplink =
+                plan != null &&
+                !string.IsNullOrWhiteSpace(plan.PlanId)
+                    ? ManeuverUplinkStatusStore.GetForPlan(plan.PlanId)
+                    : ManeuverUplinkStatusStore.GetLatest();
             bool samePlan = !string.IsNullOrWhiteSpace(plan.PlanId) &&
                 string.Equals(uplink.PlanId, plan.PlanId, StringComparison.Ordinal);
             bool manualComplete = guidance != null && guidance.BurnComplete &&
@@ -113,9 +117,20 @@ namespace KMC.MissionControl.Pages
             if (bounds.Width <= 0 || bounds.Height <= 0) return;
 
             ManeuverInventorySnapshot inventory = ManeuverInventoryStore.GetLatest();
-            ManeuverUplinkStatusSnapshot uplink = ManeuverUplinkStatusStore.GetLatest();
+            ManeuverUplinkStatusSnapshot uplink =
+                plan != null &&
+                !string.IsNullOrWhiteSpace(plan.PlanId)
+                    ? ManeuverUplinkStatusStore.GetForPlan(plan.PlanId)
+                    : ManeuverUplinkStatusStore.GetLatest();
             System.Collections.Generic.List<KmcQueuedManeuverPlan> retainedPlans =
                 KmcManeuverPlanStore.GetAll();
+
+            string selectedPlanId =
+                KmcManeuverPlanStore.GetSelectedPlanId();
+
+            string activePlanId =
+                ManeuverPlanPromotionStore.GetActivePlanId();
+
             int left = bounds.Left + 10;
             int right = bounds.Right - 10;
             int top = bounds.Top + 8;
@@ -240,11 +255,27 @@ namespace KMC.MissionControl.Pages
                                 matchedPlanId,
                                 retainedPlans);
 
+                        bool activeKmc =
+                            kmcOwned &&
+                            string.Equals(
+                                matchedPlanId,
+                                activePlanId,
+                                StringComparison.Ordinal);
+
+                        bool selectedKmc =
+                            kmcOwned &&
+                            string.Equals(
+                                matchedPlanId,
+                                selectedPlanId,
+                                StringComparison.Ordinal);
+
                         string state =
                             DescribeQueueState(
                                 index,
                                 currentMatch,
                                 kmcOwned,
+                                activeKmc,
+                                selectedKmc,
                                 kmcSequence,
                                 uplink);
 
@@ -323,6 +354,59 @@ namespace KMC.MissionControl.Pages
                     Safe(inventory.VesselName);
             }
 
+            string selectedPlanId =
+                KmcManeuverPlanStore.GetSelectedPlanId();
+
+            string activePlanId =
+                ManeuverPlanPromotionStore.GetActivePlanId();
+
+            int activeNodeIndex =
+                FindNodeIndexForRetainedPlanId(
+                    inventory,
+                    retainedPlans,
+                    activePlanId);
+
+            int activeSequence =
+                FindKmcPlanSequence(
+                    activePlanId,
+                    retainedPlans);
+
+            if (activeNodeIndex >= 0 &&
+                activeSequence > 0)
+            {
+                return
+                    "QUEUE DIRECTOR: ACTIVE KMC #" +
+                    activeSequence.ToString() +
+                    " / NODE #" +
+                    (activeNodeIndex + 1).ToString() +
+                    " OF " +
+                    count.ToString() +
+                    " / NEXT #1";
+            }
+
+            int selectedNodeIndex =
+                FindNodeIndexForRetainedPlanId(
+                    inventory,
+                    retainedPlans,
+                    selectedPlanId);
+
+            int selectedSequence =
+                FindKmcPlanSequence(
+                    selectedPlanId,
+                    retainedPlans);
+
+            if (selectedNodeIndex >= 0 &&
+                selectedSequence > 0)
+            {
+                return
+                    "QUEUE DIRECTOR: SELECTING KMC #" +
+                    selectedSequence.ToString() +
+                    " / NODE #" +
+                    (selectedNodeIndex + 1).ToString() +
+                    " OF " +
+                    count.ToString();
+            }
+
             string nextVector =
                 ManeuverInventoryFormatting.DescribeVector(
                     inventory.Nodes[0]);
@@ -395,10 +479,12 @@ namespace KMC.MissionControl.Pages
             int index,
             bool currentMatch,
             bool kmcOwned,
+            bool activeKmc,
+            bool selectedKmc,
             int kmcSequence,
             ManeuverUplinkStatusSnapshot uplink)
         {
-            if (currentMatch)
+            if (activeKmc)
             {
                 bool verified =
                     uplink != null &&
@@ -414,32 +500,22 @@ namespace KMC.MissionControl.Pages
                         "CREW MODIFIED",
                         StringComparison.OrdinalIgnoreCase);
 
-                if (index == 0)
+                if (modified)
                 {
-                    if (verified)
-                    {
-                        return "NEXT KMC";
-                    }
-
-                    if (modified)
-                    {
-                        return "NEXT / MODIFIED";
-                    }
-
-                    return "NEXT / UNVERIFIED";
+                    return "ACTIVE / MODIFIED";
                 }
 
                 if (verified)
                 {
-                    return "FUTURE KMC";
+                    return "ACTIVE KMC";
                 }
 
-                if (modified)
-                {
-                    return "FUTURE / MODIFIED";
-                }
+                return "ACTIVE / VERIFY";
+            }
 
-                return "FUTURE / UNVERIFIED";
+            if (selectedKmc)
+            {
+                return "SELECTED KMC";
             }
 
             if (kmcOwned)
@@ -559,6 +635,77 @@ namespace KMC.MissionControl.Pages
                         node,
                         inventory,
                         plans) != null)
+                {
+                    return index;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int FindNodeIndexForRetainedPlanId(
+            ManeuverInventorySnapshot inventory,
+            System.Collections.Generic.List<KmcQueuedManeuverPlan> plans,
+            string planId)
+        {
+            if (inventory == null ||
+                inventory.Nodes == null ||
+                plans == null ||
+                string.IsNullOrWhiteSpace(
+                    planId))
+            {
+                return -1;
+            }
+
+            KmcQueuedManeuverPlan plan =
+                null;
+
+            for (int index = 0;
+                 index < plans.Count;
+                 index++)
+            {
+                if (plans[index] != null &&
+                    string.Equals(
+                        plans[index].PlanId,
+                        planId,
+                        StringComparison.Ordinal))
+                {
+                    plan =
+                        plans[index];
+
+                    break;
+                }
+            }
+
+            if (plan == null)
+            {
+                return -1;
+            }
+
+            for (int index = 0;
+                 index < inventory.Nodes.Count;
+                 index++)
+            {
+                ManeuverInventoryNode node =
+                    inventory.Nodes[index];
+
+                if (node == null)
+                {
+                    continue;
+                }
+
+                if (Math.Abs(
+                        node.NodeUniversalTimeSeconds -
+                        plan.NodeUniversalTimeSeconds) <= 0.25 &&
+                    Math.Abs(
+                        node.ProgradeDeltaVMetersPerSecond -
+                        plan.ProgradeDeltaVMetersPerSecond) <= 0.05 &&
+                    Math.Abs(
+                        node.NormalDeltaVMetersPerSecond -
+                        plan.NormalDeltaVMetersPerSecond) <= 0.05 &&
+                    Math.Abs(
+                        node.RadialDeltaVMetersPerSecond -
+                        plan.RadialDeltaVMetersPerSecond) <= 0.05)
                 {
                     return index;
                 }

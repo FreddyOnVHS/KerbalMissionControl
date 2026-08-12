@@ -237,11 +237,15 @@ namespace KMC.MissionControl.Pages
         }
 
         /*
-         * Build 13.7:
+         * Build 13.7 / 13.9.1:
          * Adds queue awareness to GUID without changing Engine authority.
          * Inventory order is chronological stock-KSP order. The current KMC
          * plan is associated only by the same UT / DV match already used by
          * 13.6 active-node ownership.
+         *
+         * Build 13.9.1 also classifies nodes ahead of the active plan using
+         * the retained KMC plan store, so another KMC-owned node is never
+         * mislabeled as MANUAL AHEAD.
          */
         private static QueueDirectorState BuildQueueDirectorState(
             ManeuverPlanModel plan,
@@ -336,21 +340,91 @@ namespace KMC.MissionControl.Pages
                 return state;
             }
 
+            int activeKmcSequence =
+                plan != null
+                    ? KMC.MissionControl.KmcManeuverPlanStore.GetSequence(
+                        plan.PlanId)
+                    : -1;
+
+            string activePrefix =
+                activeKmcSequence > 0
+                    ? "KMC #" +
+                      activeKmcSequence.ToString() +
+                      " / "
+                    : string.Empty;
+
             if (state.KmcNodeIndex == 0)
             {
                 state.Summary =
-                    "#1 OF " +
+                    activePrefix +
+                    "NODE #1 OF " +
                     state.TotalNodes.ToString() +
-                    " / NEXT KMC";
+                    " / NEXT";
             }
             else
             {
+                bool kmcAhead =
+                    false;
+
+                bool manualAhead =
+                    false;
+
+                for (int index = 0;
+                     index < state.KmcNodeIndex;
+                     index++)
+                {
+                    KMC.MissionControl.ManeuverInventoryNode ahead =
+                        inventory.Nodes[index];
+
+                    if (ahead == null)
+                    {
+                        continue;
+                    }
+
+                    KMC.MissionControl.KmcQueuedManeuverPlan retainedAhead =
+                        KMC.MissionControl.KmcManeuverPlanStore.FindForNode(
+                            ahead,
+                            inventory.VesselId);
+
+                    if (retainedAhead != null)
+                    {
+                        kmcAhead =
+                            true;
+                    }
+                    else
+                    {
+                        manualAhead =
+                            true;
+                    }
+                }
+
+                string aheadClassification;
+
+                if (kmcAhead &&
+                    manualAhead)
+                {
+                    aheadClassification =
+                        "MIXED AHEAD";
+                }
+                else if (kmcAhead)
+                {
+                    aheadClassification =
+                        "KMC AHEAD";
+                }
+                else
+                {
+                    aheadClassification =
+                        "MANUAL AHEAD";
+                }
+
                 state.Summary =
-                    "#" +
+                    activePrefix +
+                    "NODE #" +
                     (state.KmcNodeIndex + 1).ToString() +
                     " OF " +
                     state.TotalNodes.ToString() +
-                    " / MANUAL AHEAD";
+                    " / " +
+                    aheadClassification;
             }
 
             return state;
