@@ -15,6 +15,10 @@ using KMC.MissionControl.Themes;
 using KMC.Shared;
 using System;
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading;
 using System.Drawing;
 using System.Windows.Forms;
 using FormsTimer = System.Windows.Forms.Timer;
@@ -61,6 +65,7 @@ namespace KMC.MissionControl
         private readonly TableLayoutPanel _maneuverNodeActions;
         private readonly ManeuverQueueTransport _maneuverQueueTransport;
         private readonly ElectricalControlReceiver _electricalControlReceiver;
+        private readonly FailureEffectAckReceiver _failureEffectAckReceiver;
         private readonly TrackBar _displayRefreshSlider;
         private readonly ConsolePanel _displayPanel;
         private readonly MissionDisplay _missionDisplay;
@@ -183,6 +188,9 @@ namespace KMC.MissionControl
 
             _electricalControlReceiver =
                 new ElectricalControlReceiver();
+
+            _failureEffectAckReceiver =
+                new FailureEffectAckReceiver();
 
             _maneuverQueueTransport.InventoryReceived +=
                 OnManeuverInventoryReceived;
@@ -1639,7 +1647,6 @@ namespace KMC.MissionControl
                     visible: false,
                     height: 0);
             }
-
             else if (availableHeight <
                      CompactHeightBreakpoint)
             {
@@ -1695,6 +1702,7 @@ namespace KMC.MissionControl
                 _radialReceiver.Start();
                 _maneuverQueueTransport.Start();
                 _electricalControlReceiver.Start();
+                _failureEffectAckReceiver.Start();
                 _receiver.Start();
                 _displayRefreshTimer.Start();
                 _connectionTimer.Start();
@@ -2068,6 +2076,7 @@ namespace KMC.MissionControl
 
             _maneuverQueueTransport.Dispose();
             _electricalControlReceiver.Dispose();
+            _failureEffectAckReceiver.Dispose();
             ElectricalControlCommandStore.Clear();
             _receiver.Dispose();
         }
@@ -2082,6 +2091,146 @@ namespace KMC.MissionControl
          * KMC ownership for more than one stock maneuver node without changing
          * GuidanceSystem authorization or plugin protocols.
          */
+        /// <summary>
+        /// Build 14.4 KSP real-effect acknowledgment receiver.
+        /// This is diagnostic/transport foundation only; later Build 14
+        /// milestones will connect Engine failure truth to outgoing commands.
+        /// </summary>
+        private sealed class FailureEffectAckReceiver :
+            IDisposable
+        {
+            private UdpClient _client;
+            private Thread _thread;
+            private volatile bool _running;
+
+            public void Start()
+            {
+                if (_running)
+                {
+                    return;
+                }
+
+                _client =
+                    new UdpClient(
+                        new IPEndPoint(
+                            IPAddress.Loopback,
+                            FailureEffectPacket.AckPort));
+
+                _running = true;
+
+                _thread =
+                    new Thread(
+                        ReceiveLoop)
+                    {
+                        IsBackground = true,
+                        Name = "KMC Failure Effect ACK"
+                    };
+
+                _thread.Start();
+
+                Debug.WriteLine(
+                    "KMC.Transport BOUND | UDP " +
+                    FailureEffectPacket.AckPort.ToString());
+            }
+
+            private void ReceiveLoop()
+            {
+                while (_running)
+                {
+                    try
+                    {
+                        IPEndPoint sender =
+                            new IPEndPoint(
+                                IPAddress.Any,
+                                0);
+
+                        byte[] data =
+                            _client.Receive(
+                                ref sender);
+
+                        string text =
+                            Encoding.UTF8.GetString(
+                                data);
+
+                        FailureEffectAck ack;
+
+                        if (!FailureEffectAck.TryParse(
+                                text,
+                                out ack))
+                        {
+                            continue;
+                        }
+
+                        Debug.WriteLine(
+                            "KMC.MissionControl FAILURE EFFECT ACK" +
+                            " | VesselId=" +
+                            ack.VesselId +
+                            " | CommandId=" +
+                            ack.CommandId +
+                            " | Effect=" +
+                            ack.EffectType +
+                            " | Status=" +
+                            ack.Status +
+                            " | Part=" +
+                            ack.PartPersistentId.ToString() +
+                            " | Observed=" +
+                            FormatObserved(
+                                ack.ObservedValue) +
+                            " | Detail=" +
+                            ack.Detail);
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        return;
+                    }
+                    catch (SocketException)
+                    {
+                        if (!_running)
+                        {
+                            return;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine(
+                            "KMC.MissionControl FAILURE EFFECT ACK ERROR | " +
+                            ex.GetType().Name +
+                            " | " +
+                            ex.Message);
+                    }
+                }
+            }
+
+            private static string FormatObserved(
+                double value)
+            {
+                return
+                    double.IsNaN(value) ||
+                    double.IsInfinity(value)
+                        ? "---"
+                        : value.ToString("0.###");
+            }
+
+            public void Dispose()
+            {
+                _running = false;
+
+                if (_client != null)
+                {
+                    _client.Close();
+                    _client = null;
+                }
+
+                if (_thread != null &&
+                    _thread.IsAlive)
+                {
+                    _thread.Join(250);
+                }
+
+                _thread = null;
+            }
+        }
+
         private sealed class ManeuverNodeSelectorItem
         {
             public ManeuverNodeSelectorItem(

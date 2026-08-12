@@ -90,6 +90,7 @@
     <Compile Include="ElectricalAttributionTelemetry.cs" />
     <Compile Include="ManeuverEpochTelemetrySender.cs" />
     <Compile Include="ManeuverUplinkReceiver.cs" />
+    <Compile Include="FailureEffectReceiver.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
 
     <Compile Include="Topology\ActivePropellantAnalyzer.cs" />
@@ -112,6 +113,9 @@
     </Compile>
     <Compile Include="..\KMC.shared\ManeuverUplinkPacket.cs">
       <Link>Shared\ManeuverUplinkPacket.cs</Link>
+    </Compile>
+    <Compile Include="..\KMC.shared\FailureEffectPacket.cs">
+      <Link>Shared\FailureEffectPacket.cs</Link>
     </Compile>
     <Compile Include="..\KMC.shared\Topology\VesselAttachmentType.cs">
       <Link>Shared\Topology\VesselAttachmentType.cs</Link>
