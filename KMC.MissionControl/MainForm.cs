@@ -51,6 +51,9 @@ namespace KMC.MissionControl
         private readonly Label _maneuverNodeDelayHeader;
         private readonly Button _maneuverComputeButton;
         private readonly Button _maneuverUploadButton;
+        private readonly ComboBox _maneuverNodeSelector;
+        private readonly Button _maneuverDeleteButton;
+        private readonly ManeuverQueueTransport _maneuverQueueTransport;
         private readonly TrackBar _displayRefreshSlider;
         private readonly ConsolePanel _displayPanel;
         private readonly MissionDisplay _missionDisplay;
@@ -91,6 +94,8 @@ namespace KMC.MissionControl
             _maneuverNodeDelayHeader = CreateManeuverFieldHeader("NODE T+ (SEC)");
             _maneuverComputeButton = CreateManeuverComputeButton();
             _maneuverUploadButton = CreateManeuverUploadButton();
+            _maneuverNodeSelector = CreateManeuverNodeSelector();
+            _maneuverDeleteButton = CreateManeuverDeleteButton();
             _displayRefreshSlider = CreateDisplayRefreshSlider();
 
             UpdateManeuverTargetControlState();
@@ -163,6 +168,12 @@ namespace KMC.MissionControl
             _telemetryBuffer = new LatestTelemetryBuffer();
 
             _receiver = new MissionControlReceiver();
+
+            _maneuverQueueTransport =
+                new ManeuverQueueTransport();
+
+            _maneuverQueueTransport.InventoryReceived +=
+                OnManeuverInventoryReceived;
 
             _orbitNormalReceiver =
                 new OrbitNormalTelemetryReceiver();
@@ -360,6 +371,13 @@ namespace KMC.MissionControl
             headerLayout.SetRowSpan(_displayRefreshLabel, 2);
             headerLayout.Controls.Add(_displayRefreshSlider, 7, 0);
             headerLayout.SetRowSpan(_displayRefreshSlider, 2);
+
+            // Build 13.6 reuses the display-refresh cells on MNV only.
+            headerLayout.Controls.Add(_maneuverNodeSelector, 6, 0);
+            headerLayout.SetRowSpan(_maneuverNodeSelector, 2);
+            headerLayout.Controls.Add(_maneuverDeleteButton, 7, 0);
+            headerLayout.SetRowSpan(_maneuverDeleteButton, 2);
+
             headerLayout.Controls.Add(_connectionLabel, 8, 0);
             headerLayout.SetRowSpan(_connectionLabel, 2);
 
@@ -538,6 +556,51 @@ namespace KMC.MissionControl
             return button;
         }
 
+        private ComboBox CreateManeuverNodeSelector()
+        {
+            return
+                new ComboBox
+                {
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(6, 7, 6, 7),
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                    BackColor = Color.FromArgb(35, 45, 40),
+                    ForeColor = Color.FromArgb(190, 255, 190),
+                    Font = new Font("Consolas", 8.0f, FontStyle.Bold),
+                    Visible = false,
+                    TabStop = false
+                };
+        }
+
+        private Button CreateManeuverDeleteButton()
+        {
+            Button button =
+                new Button
+                {
+                    Text = "DELETE NODE",
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(6, 8, 6, 8),
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Color.FromArgb(62, 43, 43),
+                    ForeColor = Color.FromArgb(255, 190, 170),
+                    Font = new Font("Consolas", 9.0f, FontStyle.Bold),
+                    Visible = false,
+                    Enabled = false,
+                    TabStop = false
+                };
+
+            button.FlatAppearance.BorderColor =
+                Color.FromArgb(170, 105, 90);
+
+            button.FlatAppearance.MouseOverBackColor =
+                Color.FromArgb(82, 53, 50);
+
+            button.Click +=
+                OnManeuverDeleteNodeClick;
+
+            return button;
+        }
+
         private TrackBar CreateDisplayRefreshSlider()
         {
             TrackBar slider =
@@ -641,6 +704,19 @@ namespace KMC.MissionControl
 
             _maneuverUploadButton.Visible =
                 maneuverPage;
+
+            _maneuverNodeSelector.Visible =
+                maneuverPage;
+
+            _maneuverDeleteButton.Visible =
+                maneuverPage;
+
+            // The two cells are shared with the normal display-rate controls.
+            _displayRefreshLabel.Visible =
+                !maneuverPage;
+
+            _displayRefreshSlider.Visible =
+                !maneuverPage;
 
             if (maneuverPage)
             {
@@ -826,6 +902,140 @@ namespace KMC.MissionControl
             _missionDisplay.RequestRender();
         }
 
+        private void OnManeuverInventoryReceived(
+            ManeuverInventorySnapshot snapshot)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke(
+                    new Action<ManeuverInventorySnapshot>(
+                        OnManeuverInventoryReceived),
+                    snapshot);
+
+                return;
+            }
+
+            string selectedNodeId = string.Empty;
+
+            ManeuverNodeSelectorItem selected =
+                _maneuverNodeSelector.SelectedItem as
+                ManeuverNodeSelectorItem;
+
+            if (selected != null)
+            {
+                selectedNodeId =
+                    selected.NodeId;
+            }
+
+            _maneuverNodeSelector.BeginUpdate();
+
+            try
+            {
+                _maneuverNodeSelector.Items.Clear();
+
+                if (snapshot != null)
+                {
+                    for (int index = 0;
+                         index < snapshot.Nodes.Count;
+                         index++)
+                    {
+                        ManeuverInventoryNode node =
+                            snapshot.Nodes[index];
+
+                        ManeuverNodeSelectorItem item =
+                            new ManeuverNodeSelectorItem(
+                                node,
+                                snapshot.UniversalTimeSeconds,
+                                index + 1);
+
+                        int itemIndex =
+                            _maneuverNodeSelector.Items.Add(
+                                item);
+
+                        if (!string.IsNullOrWhiteSpace(
+                                selectedNodeId) &&
+                            string.Equals(
+                                selectedNodeId,
+                                node.NodeId,
+                                StringComparison.Ordinal))
+                        {
+                            _maneuverNodeSelector.SelectedIndex =
+                                itemIndex;
+                        }
+                    }
+                }
+
+                if (_maneuverNodeSelector.SelectedIndex < 0 &&
+                    _maneuverNodeSelector.Items.Count > 0)
+                {
+                    _maneuverNodeSelector.SelectedIndex = 0;
+                }
+            }
+            finally
+            {
+                _maneuverNodeSelector.EndUpdate();
+            }
+
+            _maneuverDeleteButton.Enabled =
+                _maneuverNodeSelector.SelectedItem != null;
+
+            _missionDisplay.RequestRender();
+        }
+
+        private void OnManeuverDeleteNodeClick(
+            object sender,
+            EventArgs e)
+        {
+            ManeuverNodeSelectorItem selected =
+                _maneuverNodeSelector.SelectedItem as
+                ManeuverNodeSelectorItem;
+
+            ManeuverInventorySnapshot snapshot =
+                ManeuverInventoryStore.GetLatest();
+
+            if (selected == null ||
+                snapshot == null ||
+                string.IsNullOrWhiteSpace(snapshot.VesselId))
+            {
+                return;
+            }
+
+            DialogResult confirm =
+                MessageBox.Show(
+                    "Delete " + selected.Text +
+                    " from the active KSP vessel?",
+                    "Delete Maneuver Node",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2);
+
+            if (confirm != DialogResult.Yes)
+            {
+                return;
+            }
+
+            try
+            {
+                _maneuverQueueTransport.SendDelete(
+                    snapshot.VesselId,
+                    selected.NodeId);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "KMC could not send the node delete command.\n\n" +
+                    ex.Message,
+                    "Maneuver Node Delete",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
         private void OnManeuverAcknowledgmentReceived(
             ManeuverUplinkAck ack)
         {
@@ -972,6 +1182,7 @@ namespace KMC.MissionControl
                 RadialTelemetryStore.Clear();
                 _orbitNormalReceiver.Start();
                 _radialReceiver.Start();
+                _maneuverQueueTransport.Start();
                 _receiver.Start();
                 _displayRefreshTimer.Start();
                 _connectionTimer.Start();
@@ -1326,6 +1537,9 @@ namespace KMC.MissionControl
             _receiver.ManeuverAcknowledgmentReceived -=
                 OnManeuverAcknowledgmentReceived;
 
+            _maneuverQueueTransport.InventoryReceived -=
+                OnManeuverInventoryReceived;
+
             _orbitNormalReceiver.SampleReceived -=
                 OnOrbitNormalTelemetryReceived;
 
@@ -1336,8 +1550,421 @@ namespace KMC.MissionControl
             _radialReceiver.Dispose();
             OrbitNormalTelemetryStore.Clear();
             RadialTelemetryStore.Clear();
+            ManeuverInventoryStore.Clear();
 
+            _maneuverQueueTransport.Dispose();
             _receiver.Dispose();
+        }
+
+
+        private sealed class ManeuverNodeSelectorItem
+        {
+            public ManeuverNodeSelectorItem(
+                ManeuverInventoryNode node,
+                double currentUt,
+                int sequence)
+            {
+                NodeId =
+                    node != null
+                        ? node.NodeId ?? string.Empty
+                        : string.Empty;
+
+                double tNode =
+                    node != null
+                        ? node.NodeUniversalTimeSeconds - currentUt
+                        : double.NaN;
+
+                string time =
+                    double.IsNaN(tNode) ||
+                    double.IsInfinity(tNode)
+                        ? "---"
+                        : Math.Max(0.0, tNode).ToString("0") + "S";
+
+                Text =
+                    "#" + sequence.ToString() +
+                    " T+" + time +
+                    " " +
+                    ManeuverInventoryFormatting.DescribeVector(node);
+            }
+
+            public string NodeId { get; private set; }
+            public string Text { get; private set; }
+
+            public override string ToString()
+            {
+                return Text;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Build 13.6 immutable Mission Control view of the complete stock KSP
+    /// maneuver-node inventory for the active vessel.
+    /// </summary>
+    internal sealed class ManeuverInventoryNode
+    {
+        public string NodeId { get; set; }
+        public double NodeUniversalTimeSeconds { get; set; }
+        public double ProgradeDeltaVMetersPerSecond { get; set; }
+        public double NormalDeltaVMetersPerSecond { get; set; }
+        public double RadialDeltaVMetersPerSecond { get; set; }
+    }
+
+    internal sealed class ManeuverInventorySnapshot
+    {
+        public string VesselId { get; set; }
+        public string VesselName { get; set; }
+        public double UniversalTimeSeconds { get; set; }
+        public DateTime ReceivedUtc { get; set; }
+        public System.Collections.Generic.List<ManeuverInventoryNode> Nodes { get; private set; }
+
+        public ManeuverInventorySnapshot()
+        {
+            VesselId = string.Empty;
+            VesselName = string.Empty;
+            UniversalTimeSeconds = double.NaN;
+            ReceivedUtc = DateTime.MinValue;
+            Nodes = new System.Collections.Generic.List<ManeuverInventoryNode>();
+        }
+    }
+
+    internal static class ManeuverInventoryStore
+    {
+        private static readonly object SyncRoot = new object();
+        private static ManeuverInventorySnapshot _latest = new ManeuverInventorySnapshot();
+
+        public static void Publish(ManeuverInventorySnapshot snapshot)
+        {
+            lock (SyncRoot)
+            {
+                _latest = Clone(snapshot);
+            }
+        }
+
+        public static ManeuverInventorySnapshot GetLatest()
+        {
+            lock (SyncRoot)
+            {
+                return Clone(_latest);
+            }
+        }
+
+        public static void Clear()
+        {
+            lock (SyncRoot)
+            {
+                _latest = new ManeuverInventorySnapshot();
+            }
+        }
+
+        private static ManeuverInventorySnapshot Clone(ManeuverInventorySnapshot source)
+        {
+            ManeuverInventorySnapshot copy = new ManeuverInventorySnapshot();
+
+            if (source == null)
+            {
+                return copy;
+            }
+
+            copy.VesselId = source.VesselId ?? string.Empty;
+            copy.VesselName = source.VesselName ?? string.Empty;
+            copy.UniversalTimeSeconds = source.UniversalTimeSeconds;
+            copy.ReceivedUtc = source.ReceivedUtc;
+
+            for (int index = 0; index < source.Nodes.Count; index++)
+            {
+                ManeuverInventoryNode node = source.Nodes[index];
+
+                if (node == null)
+                {
+                    continue;
+                }
+
+                copy.Nodes.Add(
+                    new ManeuverInventoryNode
+                    {
+                        NodeId = node.NodeId ?? string.Empty,
+                        NodeUniversalTimeSeconds = node.NodeUniversalTimeSeconds,
+                        ProgradeDeltaVMetersPerSecond = node.ProgradeDeltaVMetersPerSecond,
+                        NormalDeltaVMetersPerSecond = node.NormalDeltaVMetersPerSecond,
+                        RadialDeltaVMetersPerSecond = node.RadialDeltaVMetersPerSecond
+                    });
+            }
+
+            return copy;
+        }
+    }
+
+    internal static class ManeuverInventoryFormatting
+    {
+        private const double AxisTolerance = 0.05;
+
+        public static string DescribeVector(ManeuverInventoryNode node)
+        {
+            if (node == null)
+            {
+                return "---";
+            }
+
+            double p = node.ProgradeDeltaVMetersPerSecond;
+            double n = node.NormalDeltaVMetersPerSecond;
+            double r = node.RadialDeltaVMetersPerSecond;
+
+            bool hasP = Math.Abs(p) > AxisTolerance;
+            bool hasN = Math.Abs(n) > AxisTolerance;
+            bool hasR = Math.Abs(r) > AxisTolerance;
+            int axes = (hasP ? 1 : 0) + (hasN ? 1 : 0) + (hasR ? 1 : 0);
+
+            if (axes == 0) return "ZERO DV";
+            if (axes > 1) return "MIXED";
+            if (hasP) return p >= 0.0 ? "PROGRADE" : "RETROGRADE";
+            if (hasN) return n >= 0.0 ? "NORMAL" : "ANTI-NORMAL";
+            return r >= 0.0 ? "RADIAL OUT" : "RADIAL IN";
+        }
+
+        public static double TotalDeltaV(ManeuverInventoryNode node)
+        {
+            if (node == null) return double.NaN;
+
+            double p = node.ProgradeDeltaVMetersPerSecond;
+            double n = node.NormalDeltaVMetersPerSecond;
+            double r = node.RadialDeltaVMetersPerSecond;
+            return Math.Sqrt(p * p + n * n + r * r);
+        }
+    }
+
+    /// <summary>
+    /// Build 13.6 dedicated node-inventory/delete link.
+    /// KMC-MNVI1: KSP -> Mission Control UDP 5100.
+    /// KMC-MNVD1: Mission Control -> KSP UDP 5101.
+    /// </summary>
+    internal sealed class ManeuverQueueTransport : IDisposable
+    {
+        private const int InventoryPort = 5100;
+        private const int DeletePort = 5101;
+        private const string InventoryProtocol = "KMC-MNVI1";
+        private const string DeleteProtocol = "KMC-MNVD1";
+
+        private System.Net.Sockets.UdpClient _inventoryClient;
+        private System.Net.Sockets.UdpClient _commandClient;
+        private System.Threading.Thread _thread;
+        private volatile bool _running;
+
+        public event Action<ManeuverInventorySnapshot> InventoryReceived;
+
+        public void Start()
+        {
+            if (_running) return;
+
+            _inventoryClient =
+                new System.Net.Sockets.UdpClient(
+                    new System.Net.IPEndPoint(
+                        System.Net.IPAddress.Any,
+                        InventoryPort));
+
+            _commandClient = new System.Net.Sockets.UdpClient();
+            _running = true;
+
+            _thread = new System.Threading.Thread(ReceiveLoop);
+            _thread.IsBackground = true;
+            _thread.Name = "KMC Maneuver Inventory";
+            _thread.Start();
+
+            Debug.WriteLine("KMC.Transport BOUND | UDP " + InventoryPort);
+        }
+
+        public void SendDelete(string vesselId, string nodeId)
+        {
+            if (!_running || _commandClient == null)
+            {
+                throw new InvalidOperationException("Maneuver inventory link is not running.");
+            }
+
+            if (string.IsNullOrWhiteSpace(vesselId) ||
+                string.IsNullOrWhiteSpace(nodeId))
+            {
+                throw new ArgumentException("Vessel and node identity are required.");
+            }
+
+            string message =
+                DeleteProtocol + "|" +
+                Uri.EscapeDataString(vesselId) + "|" +
+                Uri.EscapeDataString(nodeId);
+
+            byte[] data = System.Text.Encoding.UTF8.GetBytes(message);
+
+            _commandClient.Send(
+                data,
+                data.Length,
+                new System.Net.IPEndPoint(
+                    System.Net.IPAddress.Loopback,
+                    DeletePort));
+
+            Debug.WriteLine(
+                "KMC.MissionControl MANEUVER DELETE SENT" +
+                " | VesselId=" + vesselId +
+                " | NodeId=" + nodeId);
+        }
+
+        private void ReceiveLoop()
+        {
+            while (_running)
+            {
+                try
+                {
+                    System.Net.IPEndPoint sender =
+                        new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0);
+
+                    byte[] data = _inventoryClient.Receive(ref sender);
+                    ManeuverInventorySnapshot snapshot;
+
+                    if (!TryParseInventory(
+                            System.Text.Encoding.UTF8.GetString(data),
+                            out snapshot))
+                    {
+                        continue;
+                    }
+
+                    ManeuverInventoryStore.Publish(snapshot);
+
+                    Action<ManeuverInventorySnapshot> handler = InventoryReceived;
+                    if (handler != null) handler(snapshot);
+                }
+                catch (ObjectDisposedException)
+                {
+                    return;
+                }
+                catch (System.Net.Sockets.SocketException)
+                {
+                    if (!_running) return;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine(
+                        "KMC.MissionControl MANEUVER INVENTORY ERROR | " +
+                        ex.Message);
+                }
+            }
+        }
+
+        private static bool TryParseInventory(
+            string message,
+            out ManeuverInventorySnapshot snapshot)
+        {
+            snapshot = null;
+
+            if (string.IsNullOrWhiteSpace(message)) return false;
+            string[] fields = message.Split('|');
+
+            if (fields.Length < 6 ||
+                !string.Equals(fields[0], InventoryProtocol, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            double currentUt;
+            int count;
+
+            if (!double.TryParse(
+                    fields[4],
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out currentUt) ||
+                !int.TryParse(fields[5], out count) ||
+                count < 0 ||
+                fields.Length != 6 + count)
+            {
+                return false;
+            }
+
+            ManeuverInventorySnapshot result =
+                new ManeuverInventorySnapshot
+                {
+                    VesselId = Uri.UnescapeDataString(fields[2]),
+                    VesselName = Uri.UnescapeDataString(fields[3]),
+                    UniversalTimeSeconds = currentUt,
+                    ReceivedUtc = DateTime.UtcNow
+                };
+
+            for (int index = 0; index < count; index++)
+            {
+                string[] nodeFields = fields[6 + index].Split('~');
+                if (nodeFields.Length != 5) return false;
+
+                double ut;
+                double prograde;
+                double normal;
+                double radial;
+
+                if (!TryDouble(nodeFields[1], out ut) ||
+                    !TryDouble(nodeFields[2], out prograde) ||
+                    !TryDouble(nodeFields[3], out normal) ||
+                    !TryDouble(nodeFields[4], out radial))
+                {
+                    return false;
+                }
+
+                result.Nodes.Add(
+                    new ManeuverInventoryNode
+                    {
+                        NodeId = Uri.UnescapeDataString(nodeFields[0]),
+                        NodeUniversalTimeSeconds = ut,
+                        ProgradeDeltaVMetersPerSecond = prograde,
+                        NormalDeltaVMetersPerSecond = normal,
+                        RadialDeltaVMetersPerSecond = radial
+                    });
+            }
+
+            result.Nodes.Sort(
+                delegate(ManeuverInventoryNode a, ManeuverInventoryNode b)
+                {
+                    return a.NodeUniversalTimeSeconds.CompareTo(
+                        b.NodeUniversalTimeSeconds);
+                });
+
+            snapshot = result;
+            return !string.IsNullOrWhiteSpace(result.VesselId);
+        }
+
+        private static bool TryDouble(string text, out double value)
+        {
+            return double.TryParse(
+                       text,
+                       System.Globalization.NumberStyles.Float,
+                       System.Globalization.CultureInfo.InvariantCulture,
+                       out value) &&
+                   !double.IsNaN(value) &&
+                   !double.IsInfinity(value);
+        }
+
+        public void Stop()
+        {
+            _running = false;
+
+            if (_inventoryClient != null)
+            {
+                _inventoryClient.Close();
+                _inventoryClient = null;
+            }
+
+            if (_commandClient != null)
+            {
+                _commandClient.Close();
+                _commandClient = null;
+            }
+
+            if (_thread != null && _thread.IsAlive)
+            {
+                _thread.Join(250);
+            }
+
+            _thread = null;
+            ManeuverInventoryStore.Clear();
+        }
+
+        public void Dispose()
+        {
+            Stop();
         }
     }
 }

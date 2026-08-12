@@ -1,5 +1,7 @@
 using System;
 using System.Globalization;
+using System.Collections.Generic;
+using System.Threading;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -361,4 +363,267 @@ namespace KMC.Plugin
             public double ReferenceForward;
         }
     }
+
+    /// <summary>
+    /// Build 13.6 complete stock maneuver-node inventory and exact-node delete
+    /// service. All stock KSP reads/mutations happen on Unity Update().
+    /// </summary>
+    [KSPAddon(
+        KSPAddon.Startup.Flight,
+        false)]
+    public sealed class ManeuverInventoryTelemetryService :
+        MonoBehaviour
+    {
+        private const int InventoryPort = 5100;
+        private const int DeletePort = 5101;
+        private const string InventoryProtocol = "KMC-MNVI1";
+        private const string DeleteProtocol = "KMC-MNVD1";
+        private const float SendIntervalSeconds = 0.50f;
+
+        private readonly object _syncRoot = new object();
+        private readonly Queue<DeleteRequest> _pendingDeletes = new Queue<DeleteRequest>();
+        private readonly Dictionary<ManeuverNode, string> _nodeIds = new Dictionary<ManeuverNode, string>();
+        private UdpClient _inventoryClient;
+        private UdpClient _deleteClient;
+        private IPEndPoint _inventoryEndpoint;
+        private Thread _deleteThread;
+        private volatile bool _running;
+        private float _nextSendTime;
+        private int _nodeSequence;
+
+        public void Start()
+        {
+            try
+            {
+                _inventoryClient = new UdpClient();
+                _inventoryEndpoint = new IPEndPoint(IPAddress.Loopback, InventoryPort);
+                _deleteClient = new UdpClient(new IPEndPoint(IPAddress.Loopback, DeletePort));
+                _running = true;
+                _deleteThread = new Thread(DeleteReceiveLoop);
+                _deleteThread.IsBackground = true;
+                _deleteThread.Name = "KMC Maneuver Delete";
+                _deleteThread.Start();
+                Debug.Log("[KMC] Maneuver inventory/delete service started. UDP 5100/5101.");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("[KMC] Maneuver inventory service start failed: " + ex);
+            }
+        }
+
+        public void Update()
+        {
+            ProcessPendingDeletes();
+
+            if (Time.realtimeSinceStartup >= _nextSendTime)
+            {
+                _nextSendTime = Time.realtimeSinceStartup + SendIntervalSeconds;
+                PublishInventory();
+            }
+        }
+
+        private void DeleteReceiveLoop()
+        {
+            while (_running)
+            {
+                try
+                {
+                    IPEndPoint sender = new IPEndPoint(IPAddress.Any, 0);
+                    byte[] data = _deleteClient.Receive(ref sender);
+                    string text = Encoding.UTF8.GetString(data);
+                    string[] fields = text.Split('|');
+
+                    if (fields.Length != 3 ||
+                        !string.Equals(fields[0], DeleteProtocol, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    DeleteRequest request = new DeleteRequest
+                    {
+                        VesselId = Uri.UnescapeDataString(fields[1]),
+                        NodeId = Uri.UnescapeDataString(fields[2])
+                    };
+
+                    if (string.IsNullOrWhiteSpace(request.VesselId) ||
+                        string.IsNullOrWhiteSpace(request.NodeId))
+                    {
+                        continue;
+                    }
+
+                    lock (_syncRoot)
+                    {
+                        _pendingDeletes.Enqueue(request);
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    return;
+                }
+                catch (SocketException)
+                {
+                    if (!_running) return;
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError("[KMC] Maneuver delete receive failed: " + ex);
+                }
+            }
+        }
+
+        private void ProcessPendingDeletes()
+        {
+            while (true)
+            {
+                DeleteRequest request = null;
+                lock (_syncRoot)
+                {
+                    if (_pendingDeletes.Count > 0)
+                    {
+                        request = _pendingDeletes.Dequeue();
+                    }
+                }
+
+                if (request == null) return;
+                ApplyDelete(request);
+            }
+        }
+
+        private void ApplyDelete(DeleteRequest request)
+        {
+            Vessel vessel = FlightGlobals.ActiveVessel;
+
+            if (vessel == null ||
+                !string.Equals(vessel.id.ToString(), request.VesselId, StringComparison.Ordinal) ||
+                vessel.patchedConicSolver == null ||
+                vessel.patchedConicSolver.maneuverNodes == null)
+            {
+                Debug.Log("[KMC] MANEUVER DELETE REJECTED | NodeId=" + request.NodeId + " | Reason=VESSEL/SOLVER UNAVAILABLE");
+                return;
+            }
+
+            ManeuverNode target = null;
+            foreach (KeyValuePair<ManeuverNode, string> pair in _nodeIds)
+            {
+                if (string.Equals(pair.Value, request.NodeId, StringComparison.Ordinal))
+                {
+                    target = pair.Key;
+                    break;
+                }
+            }
+
+            if (target == null || !vessel.patchedConicSolver.maneuverNodes.Contains(target))
+            {
+                Debug.Log("[KMC] MANEUVER DELETE REJECTED | NodeId=" + request.NodeId + " | Reason=NODE NOT FOUND");
+                return;
+            }
+
+            try
+            {
+                double nodeUt = target.UT;
+                target.RemoveSelf();
+                vessel.patchedConicSolver.UpdateFlightPlan();
+                _nodeIds.Remove(target);
+
+                Debug.Log("[KMC] MANEUVER NODE DELETED | NodeId=" + request.NodeId + " | NodeUT=" + nodeUt.ToString("0.0"));
+                ScreenMessages.PostScreenMessage("KMC maneuver node deleted", 3f, ScreenMessageStyle.UPPER_CENTER);
+                PublishInventory();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("[KMC] Maneuver node delete failed: " + ex);
+            }
+        }
+
+        private void PublishInventory()
+        {
+            if (_inventoryClient == null || _inventoryEndpoint == null) return;
+
+            Vessel vessel = FlightGlobals.ActiveVessel;
+            if (vessel == null) return;
+
+            double currentUt = Planetarium.GetUniversalTime();
+            List<ManeuverNode> nodes = new List<ManeuverNode>();
+
+            if (vessel.patchedConicSolver != null &&
+                vessel.patchedConicSolver.maneuverNodes != null)
+            {
+                nodes.AddRange(vessel.patchedConicSolver.maneuverNodes);
+            }
+
+            nodes.Sort(delegate(ManeuverNode a, ManeuverNode b) { return a.UT.CompareTo(b.UT); });
+            PruneNodeIds(nodes);
+
+            List<string> fields = new List<string>();
+            fields.Add(InventoryProtocol);
+            fields.Add(DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture));
+            fields.Add(Uri.EscapeDataString(vessel.id.ToString()));
+            fields.Add(Uri.EscapeDataString(vessel.vesselName ?? string.Empty));
+            fields.Add(currentUt.ToString("R", CultureInfo.InvariantCulture));
+            fields.Add(nodes.Count.ToString(CultureInfo.InvariantCulture));
+
+            for (int index = 0; index < nodes.Count; index++)
+            {
+                ManeuverNode node = nodes[index];
+                string nodeId = GetNodeId(node);
+                Vector3d dv = node.DeltaV;
+                string entry =
+                    Uri.EscapeDataString(nodeId) + "~" +
+                    node.UT.ToString("R", CultureInfo.InvariantCulture) + "~" +
+                    dv.z.ToString("R", CultureInfo.InvariantCulture) + "~" +
+                    dv.y.ToString("R", CultureInfo.InvariantCulture) + "~" +
+                    dv.x.ToString("R", CultureInfo.InvariantCulture);
+                fields.Add(entry);
+            }
+
+            try
+            {
+                byte[] data = Encoding.UTF8.GetBytes(string.Join("|", fields.ToArray()));
+                _inventoryClient.Send(data, data.Length, _inventoryEndpoint);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("[KMC] Maneuver inventory send failed: " + ex);
+            }
+        }
+
+        private string GetNodeId(ManeuverNode node)
+        {
+            string id;
+            if (_nodeIds.TryGetValue(node, out id)) return id;
+            _nodeSequence++;
+            id = "KSP-NODE-" + _nodeSequence.ToString("D4");
+            _nodeIds[node] = id;
+            return id;
+        }
+
+        private void PruneNodeIds(List<ManeuverNode> liveNodes)
+        {
+            List<ManeuverNode> remove = new List<ManeuverNode>();
+            foreach (KeyValuePair<ManeuverNode, string> pair in _nodeIds)
+            {
+                if (pair.Key == null || !liveNodes.Contains(pair.Key)) remove.Add(pair.Key);
+            }
+            for (int index = 0; index < remove.Count; index++) _nodeIds.Remove(remove[index]);
+        }
+
+        public void OnDestroy()
+        {
+            _running = false;
+            if (_deleteClient != null) { _deleteClient.Close(); _deleteClient = null; }
+            if (_inventoryClient != null) { _inventoryClient.Close(); _inventoryClient = null; }
+            if (_deleteThread != null && _deleteThread.IsAlive) _deleteThread.Join(250);
+            _deleteThread = null;
+            _nodeIds.Clear();
+            lock (_syncRoot) { _pendingDeletes.Clear(); }
+            Debug.Log("[KMC] Maneuver inventory/delete service stopped.");
+        }
+
+        private sealed class DeleteRequest
+        {
+            public string VesselId;
+            public string NodeId;
+        }
+    }
+
 }

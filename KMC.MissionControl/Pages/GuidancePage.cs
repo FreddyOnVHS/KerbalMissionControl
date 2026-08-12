@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using KMC.Engine.Analysis;
 using KMC.Engine.Guidance;
+using KMC.Engine.Maneuver;
 using KMC.MissionControl.Engineering;
 using KMC.MissionControl.Models;
 using KMC.MissionControl.Rendering;
@@ -24,6 +25,9 @@ namespace KMC.MissionControl.Pages
         private const int PanelTitleHeight = 38;
         private const int InnerGap = 10;
         private const double AlignmentDisplayToleranceDegrees = 2.0;
+        private const double ActiveNodeUtToleranceSeconds = 0.25;
+        private const double ActiveNodeDeltaVToleranceMetersPerSecond = 0.05;
+        private const double ActiveNodeInventoryFreshnessSeconds = 1.0;
 
         public string Name
         {
@@ -56,8 +60,17 @@ namespace KMC.MissionControl.Pages
                 Name,
                 "GNC / CREW ADVISORY");
 
-            GuidanceSolutionModel guidance =
-                GetLatestGuidance();
+            GuidanceSolutionModel guidance;
+            ManeuverPlanModel plan;
+
+            GetLatestGuidanceState(
+                out guidance,
+                out plan);
+
+            bool activeManeuverNode =
+                HasActiveManeuverNode(
+                    plan,
+                    guidance);
 
             Rectangle content =
                 context.ContentBounds;
@@ -96,33 +109,132 @@ namespace KMC.MissionControl.Pages
             DrawGuidanceSphere(
                 context,
                 fdaiBounds,
-                guidance);
+                guidance,
+                activeManeuverNode);
 
             DrawDirector(
                 context,
                 directorBounds,
-                guidance);
+                guidance,
+                activeManeuverNode);
         }
 
-        private static GuidanceSolutionModel GetLatestGuidance()
+        private static void GetLatestGuidanceState(
+            out GuidanceSolutionModel guidance,
+            out ManeuverPlanModel plan)
         {
+            guidance = null;
+            plan = null;
+
             AnalysisPipelineResult result;
 
             if (!EngineeringSnapshotStore.TryGetLatest(out result) ||
                 result == null ||
-                result.Snapshot == null ||
-                result.Snapshot.Guidance == null)
+                result.Snapshot == null)
             {
-                return null;
+                return;
             }
 
-            return result.Snapshot.Guidance;
+            guidance =
+                result.Snapshot.Guidance;
+
+            plan =
+                result.Snapshot.ManeuverPlan;
+        }
+
+        /*
+         * Build 13.6.2:
+         * A computed Engine plan is planning data. GUID should only present it
+         * as an active maneuver when KSP owns a live stock maneuver node that
+         * matches the current verified KMC plan.
+         *
+         * The 13.6 inventory packet does not carry a KMC PlanId for arbitrary
+         * stock nodes, so ownership is established by:
+         *   - same active vessel
+         *   - current guidance PlanId == current Engine plan PlanId
+         *   - current plan is NODE VERIFIED
+         *   - fresh stock maneuver inventory
+         *   - node UT and all three node Delta-V components match the plan
+         *
+         * This is display gating only. Engine interlocks remain authoritative.
+         */
+        private static bool HasActiveManeuverNode(
+            ManeuverPlanModel plan,
+            GuidanceSolutionModel guidance)
+        {
+            if (plan == null ||
+                guidance == null ||
+                !plan.Available ||
+                !plan.NodeUniversalTimeAvailable ||
+                !guidance.NodeVerified ||
+                string.IsNullOrWhiteSpace(plan.PlanId) ||
+                !string.Equals(
+                    plan.PlanId,
+                    guidance.PlanId,
+                    StringComparison.Ordinal) ||
+                string.IsNullOrWhiteSpace(plan.VesselId) ||
+                !IsFinite(plan.NodeUniversalTimeSeconds))
+            {
+                return false;
+            }
+
+            KMC.MissionControl.ManeuverInventorySnapshot inventory =
+                KMC.MissionControl.ManeuverInventoryStore.GetLatest();
+
+            if (inventory == null ||
+                inventory.ReceivedUtc == DateTime.MinValue ||
+                DateTime.UtcNow - inventory.ReceivedUtc >
+                    TimeSpan.FromSeconds(
+                        ActiveNodeInventoryFreshnessSeconds) ||
+                !string.Equals(
+                    inventory.VesselId ?? string.Empty,
+                    plan.VesselId ?? string.Empty,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            for (int index = 0;
+                 index < inventory.Nodes.Count;
+                 index++)
+            {
+                KMC.MissionControl.ManeuverInventoryNode node =
+                    inventory.Nodes[index];
+
+                if (node == null)
+                {
+                    continue;
+                }
+
+                if (IsWithin(
+                        node.NodeUniversalTimeSeconds,
+                        plan.NodeUniversalTimeSeconds,
+                        ActiveNodeUtToleranceSeconds) &&
+                    IsWithin(
+                        node.ProgradeDeltaVMetersPerSecond,
+                        plan.ProgradeDeltaVMetersPerSecond,
+                        ActiveNodeDeltaVToleranceMetersPerSecond) &&
+                    IsWithin(
+                        node.NormalDeltaVMetersPerSecond,
+                        plan.NormalDeltaVMetersPerSecond,
+                        ActiveNodeDeltaVToleranceMetersPerSecond) &&
+                    IsWithin(
+                        node.RadialDeltaVMetersPerSecond,
+                        plan.RadialDeltaVMetersPerSecond,
+                        ActiveNodeDeltaVToleranceMetersPerSecond))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void DrawGuidanceSphere(
             MissionRenderContext context,
             Rectangle bounds,
-            GuidanceSolutionModel guidance)
+            GuidanceSolutionModel guidance,
+            bool activeManeuverNode)
         {
             DrawPanelFrame(
                 context,
@@ -228,7 +340,8 @@ namespace KMC.MissionControl.Pages
                     16,
                     16);
 
-                if (guidance != null &&
+                if (activeManeuverNode &&
+                    guidance != null &&
                     guidance.ManeuverVectorAvailable)
                 {
                     double x =
@@ -279,13 +392,17 @@ namespace KMC.MissionControl.Pages
 
             DrawCentered(
                 context,
+                activeManeuverNode &&
                 guidance != null &&
                 guidance.ManeuverVectorAvailable
                     ? "GREEN CUE = COMMANDED MANEUVER VECTOR"
-                    : "MANEUVER VECTOR UNAVAILABLE",
+                    : guidance != null
+                        ? "NO ACTIVE MANEUVER NODE"
+                        : "MANEUVER VECTOR UNAVAILABLE",
                 inner.Left,
                 inner.Right,
                 textY,
+                activeManeuverNode &&
                 guidance != null &&
                 guidance.ManeuverVectorAvailable
                     ? context.PhosphorColor
@@ -295,6 +412,7 @@ namespace KMC.MissionControl.Pages
 
             DrawCentered(
                 context,
+                activeManeuverNode &&
                 guidance != null
                     ? "ALIGN ERROR " +
                       FormatAngle(
@@ -309,8 +427,10 @@ namespace KMC.MissionControl.Pages
                 inner.Left,
                 inner.Right,
                 textY,
-                GetAlignmentColor(
-                    guidance));
+                activeManeuverNode
+                    ? GetAlignmentColor(
+                        guidance)
+                    : Color.Orange);
 
             textY += 32;
 
@@ -339,13 +459,15 @@ namespace KMC.MissionControl.Pages
                     textY,
                     inner.Right - 30,
                     textY + 42),
-                guidance);
+                guidance,
+                activeManeuverNode);
         }
 
         private static void DrawDirector(
             MissionRenderContext context,
             Rectangle bounds,
-            GuidanceSolutionModel guidance)
+            GuidanceSolutionModel guidance,
+            bool activeManeuverNode)
         {
             DrawPanelFrame(
                 context,
@@ -368,11 +490,19 @@ namespace KMC.MissionControl.Pages
                     top,
                     right,
                     top + 36),
-                guidance != null
-                    ? guidance.Status
-                    : "GUIDANCE UNAVAILABLE",
-                GetStatusColor(
-                    guidance));
+                guidance != null &&
+                !activeManeuverNode &&
+                !guidance.BurnComplete
+                    ? "NO ACTIVE MANEUVER NODE"
+                    : guidance != null
+                        ? guidance.Status
+                        : "GUIDANCE UNAVAILABLE",
+                guidance != null &&
+                !activeManeuverNode &&
+                !guidance.BurnComplete
+                    ? Color.Orange
+                    : GetStatusColor(
+                        guidance));
 
             int cardsTop =
                 top + 46;
@@ -434,15 +564,23 @@ namespace KMC.MissionControl.Pages
 
                     new FieldPair(
                         "MODE",
-                        guidance != null
-                            ? guidance.Mode
-                            : "---"),
+                        guidance != null &&
+                        !activeManeuverNode &&
+                        !guidance.BurnComplete
+                            ? "PLAN REVIEW"
+                            : guidance != null
+                                ? guidance.Mode
+                                : "---"),
 
                     new FieldPair(
                         "ATTITUDE",
-                        guidance != null
-                            ? guidance.AttitudeReference
-                            : "---")
+                        guidance != null &&
+                        !activeManeuverNode &&
+                        !guidance.BurnComplete
+                            ? "AWAIT NODE UPLOAD"
+                            : guidance != null
+                                ? guidance.AttitudeReference
+                                : "---")
                 });
 
             DrawCompactGroup(
@@ -453,9 +591,13 @@ namespace KMC.MissionControl.Pages
                 {
                     new FieldPair(
                         "NODE",
-                        guidance != null
-                            ? guidance.NodeState
-                            : "---"),
+                        guidance != null &&
+                        !activeManeuverNode &&
+                        !guidance.BurnComplete
+                            ? "NOT LOADED"
+                            : guidance != null
+                                ? guidance.NodeState
+                                : "---"),
 
                     new FieldPair(
                         "INTERLOCK",
@@ -472,9 +614,13 @@ namespace KMC.MissionControl.Pages
                         guidance != null &&
                         guidance.PostBurnVerificationAvailable
                             ? guidance.PostBurnResult
-                            : guidance != null
-                                ? guidance.Status
-                                : "---")
+                            : guidance != null &&
+                              !activeManeuverNode &&
+                              !guidance.BurnComplete
+                                ? "PLAN NOT ACTIVE"
+                                : guidance != null
+                                    ? guidance.Status
+                                    : "---")
                 });
 
             if (guidance != null &&
@@ -558,7 +704,8 @@ namespace KMC.MissionControl.Pages
             DrawCrewCommandGroup(
                 context,
                 commandBox,
-                guidance);
+                guidance,
+                activeManeuverNode);
         }
 
         private static void DrawCompactGroup(
@@ -939,7 +1086,8 @@ namespace KMC.MissionControl.Pages
         private static void DrawCrewCommandGroup(
             MissionRenderContext context,
             Rectangle bounds,
-            GuidanceSolutionModel guidance)
+            GuidanceSolutionModel guidance,
+            bool activeManeuverNode)
         {
             DrawSubPanel(
                 context,
@@ -953,15 +1101,24 @@ namespace KMC.MissionControl.Pages
                     bounds.Right - 12,
                     bounds.Bottom - 12);
 
+            bool planningOnly =
+                guidance != null &&
+                !activeManeuverNode &&
+                !guidance.BurnComplete;
+
             Color color =
-                GetCrewCommandColor(
-                    guidance);
+                planningOnly
+                    ? Color.Orange
+                    : GetCrewCommandColor(
+                        guidance);
 
             string command =
-                guidance != null
-                    ? Safe(
-                        guidance.Command)
-                    : "AWAIT GUIDANCE";
+                planningOnly
+                    ? "UPLOAD MANEUVER NODE"
+                    : guidance != null
+                        ? Safe(
+                            guidance.Command)
+                        : "AWAIT GUIDANCE";
 
             bool ignitionStandby =
                 string.Equals(
@@ -1156,7 +1313,8 @@ namespace KMC.MissionControl.Pages
         private static void DrawBurnBar(
             MissionRenderContext context,
             Rectangle bounds,
-            GuidanceSolutionModel guidance)
+            GuidanceSolutionModel guidance,
+            bool activeManeuverNode)
         {
             double percent =
                 guidance != null &&
@@ -1229,7 +1387,9 @@ namespace KMC.MissionControl.Pages
                         : guidance != null &&
                           guidance.BurnComplete
                             ? "MANEUVER COMPLETE"
-                            : "BURN EXECUTION STANDBY";
+                            : !activeManeuverNode
+                                ? "NO ACTIVE MANEUVER NODE"
+                                : "BURN EXECUTION STANDBY";
 
                 context.Graphics.DrawString(
                     text,
@@ -1573,6 +1733,20 @@ namespace KMC.MissionControl.Pages
                     Math.Min(
                         max,
                         value));
+        }
+
+        private static bool IsWithin(
+            double actual,
+            double reference,
+            double tolerance)
+        {
+            return
+                IsFinite(actual) &&
+                IsFinite(reference) &&
+                Math.Abs(
+                    actual -
+                    reference) <=
+                tolerance;
         }
 
         private static bool IsFinite(
