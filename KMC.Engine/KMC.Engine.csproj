@@ -117,6 +117,8 @@
     <Compile Include="Systems\CapabilitySystem.cs" />
     <Compile Include="Systems\PartCapabilityClassifier.cs" />
     <Compile Include="Systems\ResourceClassifier.cs" />
+    <Compile Include="SpacecraftSystems\FailureSimulationModel.cs" />
+    <Compile Include="SpacecraftSystems\FailureEngine.cs" />
     <Compile Include="SpacecraftSystems\ElectricalDistributionModel.cs" />
     <Compile Include="SpacecraftSystems\ElectricalDistributionSystem.cs" />
     <Compile Include="SpacecraftSystems\SpacecraftSystemsSystem.cs" />

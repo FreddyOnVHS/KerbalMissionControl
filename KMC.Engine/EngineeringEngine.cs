@@ -299,6 +299,51 @@ namespace KMC.Engine
                 _spacecraftSystemsSystem.GetLatest();
         }
 
+        public bool SetFailureSimulationMode(
+            string vesselId,
+            FailureSimulationMode mode,
+            out string resultText)
+        {
+            return
+                _spacecraftSystemsSystem.SetFailureSimulationMode(
+                    vesselId,
+                    mode,
+                    out resultText);
+        }
+
+        public bool InjectSyntheticFailure(
+            SyntheticFailureRequest request,
+            out string failureId,
+            out string resultText)
+        {
+            return
+                _spacecraftSystemsSystem.InjectFailure(
+                    request,
+                    out failureId,
+                    out resultText);
+        }
+
+        public bool ClearSyntheticFailure(
+            string vesselId,
+            string failureId,
+            out string resultText)
+        {
+            return
+                _spacecraftSystemsSystem.ClearFailure(
+                    vesselId,
+                    failureId,
+                    out resultText);
+        }
+
+        public FailureSimulationSnapshot GetFailureSimulationSnapshot(
+            string vesselId)
+        {
+            return
+                _spacecraftSystemsSystem.GetFailureSimulationSnapshot(
+                    vesselId,
+                    DateTime.UtcNow);
+        }
+
         public AnalysisPipelineResult Analyze(
             long sequence,
             DateTime receivedUtc,

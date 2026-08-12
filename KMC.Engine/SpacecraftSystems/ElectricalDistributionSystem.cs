@@ -30,7 +30,8 @@ namespace KMC.Engine.SpacecraftSystems
         public SyntheticElectricalDistributionModel BuildAndApply(
             SpacecraftSystemsModel systems,
             DateTime generatedUtc,
-            ElectricalControlSnapshot controls)
+            ElectricalControlSnapshot controls,
+            FailureSimulationSnapshot failures)
         {
             SyntheticElectricalDistributionModel distribution =
                 BuildNominalDistribution(
@@ -40,6 +41,10 @@ namespace KMC.Engine.SpacecraftSystems
                 distribution,
                 systems,
                 controls);
+
+            SyntheticFailureEngine.ApplyElectricalSourceFailures(
+                distribution,
+                failures);
 
             Recalculate(
                 distribution);

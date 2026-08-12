@@ -14,6 +14,7 @@ namespace KMC.Engine.SpacecraftSystems
         private readonly object _syncRoot;
         private readonly SpacecraftSystemsFoundationSystem _foundation;
         private readonly SyntheticElectricalDistributionSystem _electrical;
+        private readonly SyntheticFailureEngine _failureEngine;
         private SpacecraftSystemsModel _latest;
 
         public SpacecraftSystemsSystem()
@@ -26,6 +27,9 @@ namespace KMC.Engine.SpacecraftSystems
 
             _electrical =
                 new SyntheticElectricalDistributionSystem();
+
+            _failureEngine =
+                new SyntheticFailureEngine();
 
             _latest =
                 new SpacecraftSystemsModel();
@@ -44,6 +48,18 @@ namespace KMC.Engine.SpacecraftSystems
 
             if (vessel != null)
             {
+                FailureSimulationSnapshot failures =
+                    _failureEngine.GetSnapshot(
+                        vessel.VesselId,
+                        generatedUtc);
+
+                model.FailureSimulation =
+                    failures;
+
+                SyntheticFailureEngine.ApplyComponentFailures(
+                    model,
+                    failures);
+
                 ElectricalControlSnapshot controls =
                     ElectricalControlCommandStore.GetSnapshot(
                         vessel.VesselId);
@@ -52,7 +68,8 @@ namespace KMC.Engine.SpacecraftSystems
                     _electrical.BuildAndApply(
                         model,
                         generatedUtc,
-                        controls);
+                        controls,
+                        failures);
             }
 
             lock (_syncRoot)
@@ -60,6 +77,52 @@ namespace KMC.Engine.SpacecraftSystems
                 _latest =
                     model;
             }
+        }
+
+        public bool SetFailureSimulationMode(
+            string vesselId,
+            FailureSimulationMode mode,
+            out string resultText)
+        {
+            return
+                _failureEngine.SetMode(
+                    vesselId,
+                    mode,
+                    out resultText);
+        }
+
+        public bool InjectFailure(
+            SyntheticFailureRequest request,
+            out string failureId,
+            out string resultText)
+        {
+            return
+                _failureEngine.Inject(
+                    request,
+                    out failureId,
+                    out resultText);
+        }
+
+        public bool ClearFailure(
+            string vesselId,
+            string failureId,
+            out string resultText)
+        {
+            return
+                _failureEngine.ClearFailure(
+                    vesselId,
+                    failureId,
+                    out resultText);
+        }
+
+        public FailureSimulationSnapshot GetFailureSimulationSnapshot(
+            string vesselId,
+            DateTime generatedUtc)
+        {
+            return
+                _failureEngine.GetSnapshot(
+                    vesselId,
+                    generatedUtc);
         }
 
         public SpacecraftSystemsModel GetLatest()

@@ -96,6 +96,9 @@ namespace KMC.Engine.SpacecraftSystems
             ElectricalDistribution =
                 new SyntheticElectricalDistributionModel();
 
+            FailureSimulation =
+                new FailureSimulationSnapshot();
+
             _components =
                 new List<SpacecraftSystemComponent>();
 
@@ -110,6 +113,12 @@ namespace KMC.Engine.SpacecraftSystems
         public DateTime GeneratedUtc { get; internal set; }
 
         public SyntheticElectricalDistributionModel ElectricalDistribution
+        {
+            get;
+            internal set;
+        }
+
+        public FailureSimulationSnapshot FailureSimulation
         {
             get;
             internal set;
@@ -270,7 +279,11 @@ namespace KMC.Engine.SpacecraftSystems
                     ElectricalDistribution =
                         ElectricalDistribution != null
                             ? ElectricalDistribution.Clone()
-                            : new SyntheticElectricalDistributionModel()
+                            : new SyntheticElectricalDistributionModel(),
+                    FailureSimulation =
+                        FailureSimulation != null
+                            ? FailureSimulation.Clone()
+                            : new FailureSimulationSnapshot()
                 };
 
             for (int index = 0;
