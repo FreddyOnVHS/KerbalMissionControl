@@ -50,6 +50,13 @@ namespace KMC.Engine.SpacecraftSystems
         public SpacecraftSystemHealth Health { get; set; }
         public SpacecraftSystemState State { get; internal set; }
 
+        /// <summary>
+        /// Optional state supplied by a lower-level provider such as the
+        /// synthetic electrical distribution. Intrinsic OFF/FAILED/DEGRADED
+        /// health still takes precedence.
+        /// </summary>
+        internal SpacecraftSystemState? ProviderStateOverride { get; set; }
+
         internal SpacecraftSystemComponent Clone()
         {
             return
@@ -60,7 +67,9 @@ namespace KMC.Engine.SpacecraftSystems
                     Category = Category,
                     CommandedOn = CommandedOn,
                     Health = Health,
-                    State = State
+                    State = State,
+                    ProviderStateOverride =
+                        ProviderStateOverride
                 };
         }
     }
@@ -84,6 +93,8 @@ namespace KMC.Engine.SpacecraftSystems
             VesselName = string.Empty;
             TemplateId = string.Empty;
             GeneratedUtc = DateTime.MinValue;
+            ElectricalDistribution =
+                new SyntheticElectricalDistributionModel();
 
             _components =
                 new List<SpacecraftSystemComponent>();
@@ -97,6 +108,12 @@ namespace KMC.Engine.SpacecraftSystems
         public long TopologyRevision { get; internal set; }
         public string TemplateId { get; internal set; }
         public DateTime GeneratedUtc { get; internal set; }
+
+        public SyntheticElectricalDistributionModel ElectricalDistribution
+        {
+            get;
+            internal set;
+        }
 
         public IList<SpacecraftSystemComponent> Components
         {
@@ -241,7 +258,11 @@ namespace KMC.Engine.SpacecraftSystems
                     VesselName = VesselName ?? string.Empty,
                     TopologyRevision = TopologyRevision,
                     TemplateId = TemplateId ?? string.Empty,
-                    GeneratedUtc = GeneratedUtc
+                    GeneratedUtc = GeneratedUtc,
+                    ElectricalDistribution =
+                        ElectricalDistribution != null
+                            ? ElectricalDistribution.Clone()
+                            : new SyntheticElectricalDistributionModel()
                 };
 
             for (int index = 0;
@@ -300,11 +321,16 @@ namespace KMC.Engine.SpacecraftSystems
                 case SpacecraftSystemHealth.Degraded:
                     return
                         SpacecraftSystemState.Degraded;
-
-                default:
-                    return
-                        SpacecraftSystemState.Online;
             }
+
+            if (component.ProviderStateOverride.HasValue)
+            {
+                return
+                    component.ProviderStateOverride.Value;
+            }
+
+            return
+                SpacecraftSystemState.Online;
         }
 
         private static bool IsAvailable(

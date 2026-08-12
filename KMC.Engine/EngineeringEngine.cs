@@ -20,7 +20,7 @@ namespace KMC.Engine
         private readonly OrbitFoundationSystem _orbitFoundationSystem;
         private readonly ManeuverPlanningSystem _maneuverPlanningSystem;
         private readonly GuidanceSystem _guidanceSystem;
-        private readonly SpacecraftSystemsFoundationSystem _spacecraftSystemsFoundationSystem;
+        private readonly SpacecraftSystemsSystem _spacecraftSystemsSystem;
         private readonly ElectricalFlowTracker _electricalFlowTracker;
         private readonly object _electricalAttributionSyncRoot;
         private ElectricalAttributionModel _latestElectricalAttribution;
@@ -55,8 +55,8 @@ namespace KMC.Engine
             _orbitFoundationSystem = new OrbitFoundationSystem();
             _maneuverPlanningSystem = new ManeuverPlanningSystem();
             _guidanceSystem = new GuidanceSystem();
-            _spacecraftSystemsFoundationSystem =
-                new SpacecraftSystemsFoundationSystem();
+            _spacecraftSystemsSystem =
+                new SpacecraftSystemsSystem();
             _electricalFlowTracker = new ElectricalFlowTracker();
             _electricalAttributionSyncRoot = new object();
             _latestElectricalAttribution = new ElectricalAttributionModel();
@@ -296,7 +296,7 @@ namespace KMC.Engine
         public SpacecraftSystemsModel GetLatestSpacecraftSystems()
         {
             return
-                _spacecraftSystemsFoundationSystem.GetLatest();
+                _spacecraftSystemsSystem.GetLatest();
         }
 
         public AnalysisPipelineResult Analyze(
@@ -317,12 +317,12 @@ namespace KMC.Engine
             VesselModel vessel = new VesselModel(topology);
             AnalysisPipelineResult result = _pipeline.Execute(telemetry, vessel);
 
-            _spacecraftSystemsFoundationSystem.Update(
+            _spacecraftSystemsSystem.Update(
                 vessel,
                 receivedUtc);
 
             result.Snapshot.SpacecraftSystems =
-                _spacecraftSystemsFoundationSystem.GetLatest();
+                _spacecraftSystemsSystem.GetLatest();
 
             _ascentFoundationSystem.Update(
                 telemetryPacket as KMC.Shared.TelemetryPacket,
