@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using KMC.Engine;
 using KMC.Engine.Analysis;
 using KMC.Engine.Electrical;
@@ -13,6 +14,7 @@ using KMC.MissionControl.Engineering;
 using KMC.MissionControl.Rendering.Propulsion;
 using KMC.MissionControl.Telemetry;
 using KMC.MissionControl.Transport;
+using KMC.MissionControl.Training;
 using KMC.Shared;
 using KMC.Shared.Topology;
 
@@ -764,6 +766,755 @@ namespace KMC.MissionControl
             }
             else resultText = clearResult;
             return cleared;
+        }
+
+
+        /// <summary>
+        /// Build 14.9 instructor console snapshot. This exposes only the
+        /// Engine-owned failure snapshot for the current engineering vessel.
+        /// </summary>
+        public bool TryGetInstructorFailureSnapshot(
+            out string vesselId,
+            out string vesselName,
+            out FailureSimulationSnapshot snapshot,
+            out string resultText)
+        {
+            vesselId = string.Empty;
+            vesselName = string.Empty;
+            snapshot = null;
+            resultText = string.Empty;
+
+            AnalysisPipelineResult latest;
+
+            if (!TryGetActiveEngineeringVessel(
+                    out latest,
+                    out resultText))
+            {
+                return false;
+            }
+
+            vesselId =
+                latest.Snapshot.Vessel.VesselId;
+
+            vesselName =
+                latest.Snapshot.Vessel.VesselName ??
+                string.Empty;
+
+            snapshot =
+                _engineeringEngine.GetFailureSimulationSnapshot(
+                    vesselId);
+
+            return snapshot != null;
+        }
+
+        /// <summary>
+        /// Build 14.9 explicit instructor mode selection.
+        /// NOMINAL uses the reset path so dormant uncleared failures cannot
+        /// unexpectedly reactivate if Training/Scenario is selected later.
+        /// </summary>
+        public bool SetInstructorFailureMode(
+            FailureSimulationMode mode,
+            out string resultText)
+        {
+            if (mode ==
+                FailureSimulationMode.Nominal)
+            {
+                return
+                    ResetInstructorNominal(
+                        out resultText);
+            }
+
+            AnalysisPipelineResult latest;
+
+            if (!TryGetActiveEngineeringVessel(
+                    out latest,
+                    out resultText))
+            {
+                return false;
+            }
+
+            return
+                _engineeringEngine.SetFailureSimulationMode(
+                    latest.Snapshot.Vessel.VesselId,
+                    mode,
+                    out resultText);
+        }
+
+        /// <summary>
+        /// Build 14.9 explicit instructor failure injection. Optional delay is
+        /// represented by ActivateUtc in Engine truth, not by a UI timer.
+        /// </summary>
+        public bool InjectInstructorFailure(
+            InstructorFailurePreset preset,
+            double delaySeconds,
+            out string failureId,
+            out string resultText)
+        {
+            failureId = string.Empty;
+            resultText = string.Empty;
+
+            AnalysisPipelineResult latest;
+
+            if (!TryGetActiveEngineeringVessel(
+                    out latest,
+                    out resultText))
+            {
+                return false;
+            }
+
+            string vesselId =
+                latest.Snapshot.Vessel.VesselId;
+
+            FailureSimulationSnapshot current =
+                latest.Snapshot.SpacecraftSystems != null
+                    ? latest.Snapshot.SpacecraftSystems.FailureSimulation
+                    : null;
+
+            if (current == null ||
+                current.Mode ==
+                    FailureSimulationMode.Nominal)
+            {
+                string modeResult;
+
+                if (!_engineeringEngine.SetFailureSimulationMode(
+                        vesselId,
+                        FailureSimulationMode.Training,
+                        out modeResult))
+                {
+                    resultText = modeResult;
+                    return false;
+                }
+            }
+
+            SyntheticFailureRequest request;
+
+            if (!TryBuildInstructorFailureRequest(
+                    preset,
+                    vesselId,
+                    Math.Max(
+                        0.0,
+                        Math.Min(
+                            300.0,
+                            delaySeconds)),
+                    out request,
+                    out resultText))
+            {
+                return false;
+            }
+
+            string injectResult;
+
+            bool injected =
+                _engineeringEngine.InjectSyntheticFailure(
+                    request,
+                    out failureId,
+                    out injectResult);
+
+            resultText =
+                injected
+                    ? "INJECTED " +
+                      failureId +
+                      " / " +
+                      request.TargetId +
+                      (request.ActivateUtc >
+                           DateTime.UtcNow.AddSeconds(0.25)
+                          ? " / SCHEDULED"
+                          : " / IMMEDIATE")
+                    : injectResult;
+
+            Debug.WriteLine(
+                "KMC.MissionControl INSTRUCTOR FAILURE" +
+                " | Success=" +
+                injected +
+                " | Preset=" +
+                preset.ToString() +
+                " | Result=" +
+                resultText);
+
+            return injected;
+        }
+
+        public bool ClearInstructorFailure(
+            string failureId,
+            out string resultText)
+        {
+            resultText = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(
+                    failureId))
+            {
+                resultText =
+                    "FAILURE ID REQUIRED";
+
+                return false;
+            }
+
+            AnalysisPipelineResult latest;
+
+            if (!TryGetActiveEngineeringVessel(
+                    out latest,
+                    out resultText))
+            {
+                return false;
+            }
+
+            return
+                _engineeringEngine.ClearSyntheticFailure(
+                    latest.Snapshot.Vessel.VesselId,
+                    failureId,
+                    out resultText);
+        }
+
+        public bool ClearAllInstructorFailures(
+            out string resultText)
+        {
+            resultText = string.Empty;
+
+            string vesselId;
+            string vesselName;
+            FailureSimulationSnapshot snapshot;
+
+            if (!TryGetInstructorFailureSnapshot(
+                    out vesselId,
+                    out vesselName,
+                    out snapshot,
+                    out resultText))
+            {
+                return false;
+            }
+
+            int cleared = 0;
+            int rejected = 0;
+
+            for (int index = 0;
+                 index < snapshot.Failures.Count;
+                 index++)
+            {
+                SyntheticFailureRecord failure =
+                    snapshot.Failures[index];
+
+                if (failure == null ||
+                    failure.Condition ==
+                        SyntheticFailureCondition.Cleared)
+                {
+                    continue;
+                }
+
+                string clearResult;
+
+                if (_engineeringEngine.ClearSyntheticFailure(
+                        vesselId,
+                        failure.FailureId,
+                        out clearResult))
+                {
+                    cleared++;
+                }
+                else
+                {
+                    rejected++;
+                }
+            }
+
+            resultText =
+                "CLEAR ALL / CLEARED " +
+                cleared.ToString() +
+                " / REJECTED " +
+                rejected.ToString();
+
+            return rejected == 0;
+        }
+
+        public bool ResetInstructorNominal(
+            out string resultText)
+        {
+            resultText = string.Empty;
+
+            AnalysisPipelineResult latest;
+
+            if (!TryGetActiveEngineeringVessel(
+                    out latest,
+                    out resultText))
+            {
+                return false;
+            }
+
+            string vesselId =
+                latest.Snapshot.Vessel.VesselId;
+
+            FailureSimulationSnapshot snapshot =
+                _engineeringEngine.GetFailureSimulationSnapshot(
+                    vesselId);
+
+            int cleared = 0;
+
+            if (snapshot != null)
+            {
+                for (int index = 0;
+                     index < snapshot.Failures.Count;
+                     index++)
+                {
+                    SyntheticFailureRecord failure =
+                        snapshot.Failures[index];
+
+                    if (failure == null ||
+                        failure.Condition ==
+                            SyntheticFailureCondition.Cleared)
+                    {
+                        continue;
+                    }
+
+                    string clearResult;
+
+                    if (_engineeringEngine.ClearSyntheticFailure(
+                            vesselId,
+                            failure.FailureId,
+                            out clearResult))
+                    {
+                        cleared++;
+                    }
+                }
+            }
+
+            string modeResult;
+
+            bool modeSet =
+                _engineeringEngine.SetFailureSimulationMode(
+                    vesselId,
+                    FailureSimulationMode.Nominal,
+                    out modeResult);
+
+            resultText =
+                modeSet
+                    ? "RESET NOMINAL / CLEARED " +
+                      cleared.ToString() +
+                      " / " +
+                      modeResult
+                    : modeResult;
+
+            return modeSet;
+        }
+
+        /// <summary>
+        /// Build 14.9 first predefined scenario. Scenario scheduling lives in
+        /// Engine failure records: COMM A immediate, GUID A after 10 seconds,
+        /// then PUMP A after 20 seconds as a chained cascade.
+        /// </summary>
+        public bool StartInstructorScenario(
+            InstructorScenarioPreset scenario,
+            out string resultText)
+        {
+            resultText = string.Empty;
+
+            AnalysisPipelineResult latest;
+
+            if (!TryGetActiveEngineeringVessel(
+                    out latest,
+                    out resultText))
+            {
+                return false;
+            }
+
+            string vesselId =
+                latest.Snapshot.Vessel.VesselId;
+
+            string modeResult;
+
+            if (!_engineeringEngine.SetFailureSimulationMode(
+                    vesselId,
+                    FailureSimulationMode.Scenario,
+                    out modeResult))
+            {
+                resultText = modeResult;
+                return false;
+            }
+
+            switch (scenario)
+            {
+                case InstructorScenarioPreset.ASideSystemsCascade:
+                    return
+                        StartASideSystemsScenario(
+                            vesselId,
+                            out resultText);
+
+                default:
+                    resultText =
+                        "UNSUPPORTED SCENARIO";
+
+                    return false;
+            }
+        }
+
+        private bool StartASideSystemsScenario(
+            string vesselId,
+            out string resultText)
+        {
+            resultText = string.Empty;
+
+            DateTime now =
+                DateTime.UtcNow;
+
+            string commFailureId;
+            string injectResult;
+
+            bool commInjected =
+                _engineeringEngine.InjectSyntheticFailure(
+                    new SyntheticFailureRequest
+                    {
+                        VesselId = vesselId,
+                        TargetId = "COMM_A",
+                        TargetKind =
+                            SyntheticFailureTargetKind.Component,
+                        Kind =
+                            SyntheticFailureKind.Sudden,
+                        Severity =
+                            SyntheticFailureSeverity.Caution,
+                        ComponentHealth =
+                            SpacecraftSystemHealth.Failed,
+                        ActivateUtc = now,
+                        Detail =
+                            "BUILD 14.9 A-SIDE SCENARIO / STEP 1 COMM A"
+                    },
+                    out commFailureId,
+                    out injectResult);
+
+            if (!commInjected)
+            {
+                resultText =
+                    "SCENARIO STEP 1 REJECTED / " +
+                    injectResult;
+
+                return false;
+            }
+
+            string guidFailureId;
+
+            bool guidInjected =
+                _engineeringEngine.InjectSyntheticFailure(
+                    new SyntheticFailureRequest
+                    {
+                        VesselId = vesselId,
+                        TargetId = "GUID_A",
+                        TargetKind =
+                            SyntheticFailureTargetKind.Component,
+                        Kind =
+                            SyntheticFailureKind.Cascade,
+                        Severity =
+                            SyntheticFailureSeverity.Caution,
+                        ComponentHealth =
+                            SpacecraftSystemHealth.Failed,
+                        ActivateUtc =
+                            now.AddSeconds(10.0),
+                        ParentFailureId =
+                            commFailureId,
+                        Detail =
+                            "BUILD 14.9 A-SIDE SCENARIO / STEP 2 GUID A"
+                    },
+                    out guidFailureId,
+                    out injectResult);
+
+            if (!guidInjected)
+            {
+                string ignored;
+                _engineeringEngine.ClearSyntheticFailure(
+                    vesselId,
+                    commFailureId,
+                    out ignored);
+
+                resultText =
+                    "SCENARIO STEP 2 REJECTED / " +
+                    injectResult;
+
+                return false;
+            }
+
+            string pumpFailureId;
+
+            bool pumpInjected =
+                _engineeringEngine.InjectSyntheticFailure(
+                    new SyntheticFailureRequest
+                    {
+                        VesselId = vesselId,
+                        TargetId = "PUMP_A",
+                        TargetKind =
+                            SyntheticFailureTargetKind.Component,
+                        Kind =
+                            SyntheticFailureKind.Cascade,
+                        Severity =
+                            SyntheticFailureSeverity.Caution,
+                        ComponentHealth =
+                            SpacecraftSystemHealth.Failed,
+                        ActivateUtc =
+                            now.AddSeconds(20.0),
+                        ParentFailureId =
+                            guidFailureId,
+                        Detail =
+                            "BUILD 14.9 A-SIDE SCENARIO / STEP 3 PUMP A"
+                    },
+                    out pumpFailureId,
+                    out injectResult);
+
+            if (!pumpInjected)
+            {
+                string ignored;
+                _engineeringEngine.ClearSyntheticFailure(
+                    vesselId,
+                    commFailureId,
+                    out ignored);
+                _engineeringEngine.ClearSyntheticFailure(
+                    vesselId,
+                    guidFailureId,
+                    out ignored);
+
+                resultText =
+                    "SCENARIO STEP 3 REJECTED / " +
+                    injectResult;
+
+                return false;
+            }
+
+            resultText =
+                "A-SIDE SYSTEMS CASCADE STARTED" +
+                " / COMM_A T+0 " +
+                commFailureId +
+                " / GUID_A T+10 " +
+                guidFailureId +
+                " / PUMP_A T+20 " +
+                pumpFailureId;
+
+            Debug.WriteLine(
+                "KMC.MissionControl INSTRUCTOR SCENARIO" +
+                " | VesselId=" +
+                vesselId +
+                " | Result=" +
+                resultText);
+
+            return true;
+        }
+
+        private bool TryBuildInstructorFailureRequest(
+            InstructorFailurePreset preset,
+            string vesselId,
+            double delaySeconds,
+            out SyntheticFailureRequest request,
+            out string resultText)
+        {
+            request = null;
+            resultText = string.Empty;
+
+            DateTime activateUtc =
+                DateTime.UtcNow.AddSeconds(
+                    delaySeconds);
+
+            switch (preset)
+            {
+                case InstructorFailurePreset.PowerEcLeak:
+                    request =
+                        new SyntheticFailureRequest
+                        {
+                            VesselId = vesselId,
+                            TargetId =
+                                SyntheticFailureTargets.ElectricChargeLeak,
+                            TargetKind =
+                                SyntheticFailureTargetKind.PowerEffect,
+                            Kind =
+                                SyntheticFailureKind.Sudden,
+                            Severity =
+                                SyntheticFailureSeverity.Caution,
+                            ComponentHealth =
+                                SpacecraftSystemHealth.Degraded,
+                            EffectMagnitude = 8.0,
+                            ActivateUtc = activateUtc,
+                            Detail =
+                                "BUILD 14.9 INSTRUCTOR / POWER EC LEAK"
+                        };
+                    return true;
+
+                case InstructorFailurePreset.CommA:
+                    request =
+                        BuildComponentInstructorFailure(
+                            vesselId,
+                            "COMM_A",
+                            activateUtc,
+                            "BUILD 14.9 INSTRUCTOR / COMM A");
+                    return true;
+
+                case InstructorFailurePreset.CommB:
+                    request =
+                        BuildComponentInstructorFailure(
+                            vesselId,
+                            "COMM_B",
+                            activateUtc,
+                            "BUILD 14.9 INSTRUCTOR / COMM B");
+                    return true;
+
+                case InstructorFailurePreset.GuidA:
+                    request =
+                        BuildComponentInstructorFailure(
+                            vesselId,
+                            "GUID_A",
+                            activateUtc,
+                            "BUILD 14.9 INSTRUCTOR / GUID A");
+                    return true;
+
+                case InstructorFailurePreset.GuidB:
+                    request =
+                        BuildComponentInstructorFailure(
+                            vesselId,
+                            "GUID_B",
+                            activateUtc,
+                            "BUILD 14.9 INSTRUCTOR / GUID B");
+                    return true;
+
+                case InstructorFailurePreset.PumpA:
+                    request =
+                        BuildComponentInstructorFailure(
+                            vesselId,
+                            "PUMP_A",
+                            activateUtc,
+                            "BUILD 14.9 INSTRUCTOR / PUMP A");
+                    return true;
+
+                case InstructorFailurePreset.PumpB:
+                    request =
+                        BuildComponentInstructorFailure(
+                            vesselId,
+                            "PUMP_B",
+                            activateUtc,
+                            "BUILD 14.9 INSTRUCTOR / PUMP B");
+                    return true;
+
+                case InstructorFailurePreset.EngineDerate50:
+                {
+                    uint partId;
+
+                    if (!TrySelectPropulsionTrainingEngine(
+                            out partId,
+                            out resultText))
+                    {
+                        return false;
+                    }
+
+                    request =
+                        new SyntheticFailureRequest
+                        {
+                            VesselId = vesselId,
+                            TargetId =
+                                SyntheticFailureTargets.CreateEngineDerateTarget(
+                                    partId),
+                            TargetKind =
+                                SyntheticFailureTargetKind.PropulsionEffect,
+                            Kind =
+                                SyntheticFailureKind.Sudden,
+                            Severity =
+                                SyntheticFailureSeverity.Caution,
+                            ComponentHealth =
+                                SpacecraftSystemHealth.Degraded,
+                            EffectMagnitude = 0.50,
+                            ActivateUtc = activateUtc,
+                            Detail =
+                                "BUILD 14.9 INSTRUCTOR / ENGINE DERATE"
+                        };
+                    return true;
+                }
+
+                case InstructorFailurePreset.EngineShutdown:
+                {
+                    uint partId;
+
+                    if (!TrySelectPropulsionTrainingEngine(
+                            out partId,
+                            out resultText))
+                    {
+                        return false;
+                    }
+
+                    request =
+                        new SyntheticFailureRequest
+                        {
+                            VesselId = vesselId,
+                            TargetId =
+                                SyntheticFailureTargets.CreateEngineShutdownTarget(
+                                    partId),
+                            TargetKind =
+                                SyntheticFailureTargetKind.PropulsionEffect,
+                            Kind =
+                                SyntheticFailureKind.Sudden,
+                            Severity =
+                                SyntheticFailureSeverity.Critical,
+                            ComponentHealth =
+                                SpacecraftSystemHealth.Failed,
+                            EffectMagnitude = 1.0,
+                            ActivateUtc = activateUtc,
+                            Detail =
+                                "BUILD 14.9 INSTRUCTOR / ENGINE SHUTDOWN"
+                        };
+                    return true;
+                }
+
+                case InstructorFailurePreset.ReactionWheel25:
+                {
+                    uint partId;
+
+                    if (!TrySelectReactionWheelPart(
+                            out partId,
+                            out resultText))
+                    {
+                        return false;
+                    }
+
+                    request =
+                        new SyntheticFailureRequest
+                        {
+                            VesselId = vesselId,
+                            TargetId =
+                                SyntheticFailureTargets.CreateReactionWheelAuthorityTarget(
+                                    partId),
+                            TargetKind =
+                                SyntheticFailureTargetKind.GuidanceEffect,
+                            Kind =
+                                SyntheticFailureKind.Sudden,
+                            Severity =
+                                SyntheticFailureSeverity.Caution,
+                            ComponentHealth =
+                                SpacecraftSystemHealth.Degraded,
+                            EffectMagnitude = 0.25,
+                            ActivateUtc = activateUtc,
+                            Detail =
+                                "BUILD 14.9 INSTRUCTOR / REACTION WHEEL"
+                        };
+                    return true;
+                }
+            }
+
+            resultText =
+                "UNSUPPORTED FAILURE PRESET";
+
+            return false;
+        }
+
+        private static SyntheticFailureRequest
+            BuildComponentInstructorFailure(
+                string vesselId,
+                string targetId,
+                DateTime activateUtc,
+                string detail)
+        {
+            return
+                new SyntheticFailureRequest
+                {
+                    VesselId = vesselId,
+                    TargetId = targetId,
+                    TargetKind =
+                        SyntheticFailureTargetKind.Component,
+                    Kind =
+                        SyntheticFailureKind.Sudden,
+                    Severity =
+                        SyntheticFailureSeverity.Caution,
+                    ComponentHealth =
+                        SpacecraftSystemHealth.Failed,
+                    ActivateUtc = activateUtc,
+                    Detail = detail
+                };
         }
 
         public bool UploadLatestManeuver(

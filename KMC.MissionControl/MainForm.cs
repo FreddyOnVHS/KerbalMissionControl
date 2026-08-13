@@ -12,6 +12,7 @@ using KMC.MissionControl.Rendering.Propulsion;
 using KMC.MissionControl.Telemetry;
 using KMC.MissionControl.Transport;
 using KMC.MissionControl.Themes;
+using KMC.MissionControl.Training;
 using KMC.Shared;
 using System;
 using System.Diagnostics;
@@ -72,6 +73,7 @@ namespace KMC.MissionControl
         private readonly NavigationBar _navigationBar;
         private readonly MissionSummary _missionSummary;
         private readonly PerformanceOverlay _performanceOverlay;
+        private InstructorConsoleForm _instructorConsole;
 
         private long _lastDisplayedPacketSequence;
         private long _displayedPacketCount;
@@ -1912,6 +1914,16 @@ namespace KMC.MissionControl
             object sender,
             KeyEventArgs e)
         {
+            if (e.KeyCode == Keys.F10)
+            {
+                ShowInstructorConsole();
+
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+
+                return;
+            }
+
             if (e.Control &&
                 e.Shift &&
                 e.KeyCode == Keys.D)
@@ -2027,6 +2039,39 @@ namespace KMC.MissionControl
                 e.Handled = true;
                 e.SuppressKeyPress = true;
             }
+        }
+
+        private void ShowInstructorConsole()
+        {
+            if (_instructorConsole == null ||
+                _instructorConsole.IsDisposed)
+            {
+                _instructorConsole =
+                    new InstructorConsoleForm(
+                        _receiver);
+
+                _instructorConsole.FormClosed +=
+                    delegate
+                    {
+                        _instructorConsole =
+                            null;
+                    };
+
+                _instructorConsole.Show(
+                    this);
+
+                return;
+            }
+
+            if (_instructorConsole.WindowState ==
+                FormWindowState.Minimized)
+            {
+                _instructorConsole.WindowState =
+                    FormWindowState.Normal;
+            }
+
+            _instructorConsole.BringToFront();
+            _instructorConsole.Activate();
         }
 
         private void OnPerformanceOverlayTimerTick(
@@ -2147,6 +2192,13 @@ namespace KMC.MissionControl
             _displayRefreshTimer.Stop();
             _connectionTimer.Stop();
             _performanceOverlayTimer.Stop();
+
+            if (_instructorConsole != null &&
+                !_instructorConsole.IsDisposed)
+            {
+                _instructorConsole.Close();
+                _instructorConsole = null;
+            }
 
             _receiver.TelemetryReceived -=
                 OnTelemetryReceived;
