@@ -26,6 +26,12 @@ namespace KMC.Engine.SpacecraftSystems
         Undervoltage = 4
     }
 
+    /// <summary>
+    /// Build 14.11.3 explicit electrical switching device.
+    ///
+    /// Command, actual position, indication and conduction are separate truth
+    /// so later hardware failures do not have to overload source/load state.
+    /// </summary>
     public enum SyntheticElectricalSwitchKind
     {
         SourceContactor = 0,
@@ -42,7 +48,8 @@ namespace KMC.Engine.SpacecraftSystems
             DisplayName = string.Empty;
             UpstreamId = string.Empty;
             DownstreamId = string.Empty;
-            Kind = SyntheticElectricalSwitchKind.SourceContactor;
+            Kind =
+                SyntheticElectricalSwitchKind.SourceContactor;
             CommandedClosed = true;
             ActualClosed = true;
             IndicatedClosed = true;
@@ -63,19 +70,20 @@ namespace KMC.Engine.SpacecraftSystems
 
         internal SyntheticElectricalSwitch Clone()
         {
-            return new SyntheticElectricalSwitch
-            {
-                Id = Id ?? string.Empty,
-                DisplayName = DisplayName ?? string.Empty,
-                UpstreamId = UpstreamId ?? string.Empty,
-                DownstreamId = DownstreamId ?? string.Empty,
-                Kind = Kind,
-                CommandedClosed = CommandedClosed,
-                ActualClosed = ActualClosed,
-                IndicatedClosed = IndicatedClosed,
-                Conducting = Conducting,
-                Automatic = Automatic
-            };
+            return
+                new SyntheticElectricalSwitch
+                {
+                    Id = Id ?? string.Empty,
+                    DisplayName = DisplayName ?? string.Empty,
+                    UpstreamId = UpstreamId ?? string.Empty,
+                    DownstreamId = DownstreamId ?? string.Empty,
+                    Kind = Kind,
+                    CommandedClosed = CommandedClosed,
+                    ActualClosed = ActualClosed,
+                    IndicatedClosed = IndicatedClosed,
+                    Conducting = Conducting,
+                    Automatic = Automatic
+                };
         }
     }
 
@@ -109,40 +117,65 @@ namespace KMC.Engine.SpacecraftSystems
         public bool SelectedForBus { get; internal set; }
         public bool Conducting { get; internal set; }
 
+        /// <summary>
+        /// Hardware/source capability before distribution switching is applied.
+        /// </summary>
         public double RatedAvailableCurrentAmps
         {
             get
             {
-                if (!CommandedAvailable || State == SyntheticElectricalSourceState.Offline)
+                if (!CommandedAvailable ||
+                    State ==
+                        SyntheticElectricalSourceState.Offline)
+                {
                     return 0.0;
+                }
 
-                double factor = State == SyntheticElectricalSourceState.Degraded ? 0.50 : 1.0;
-                return Math.Max(0.0, CapacityAmps * factor);
+                double factor =
+                    State ==
+                        SyntheticElectricalSourceState.Degraded
+                        ? 0.50
+                        : 1.0;
+
+                return
+                    Math.Max(
+                        0.0,
+                        CapacityAmps * factor);
             }
         }
 
+        /// <summary>
+        /// Current capability actually connected to the destination bus.
+        /// </summary>
         public double AvailableCurrentAmps
         {
-            get { return Conducting ? RatedAvailableCurrentAmps : 0.0; }
+            get
+            {
+                return
+                    Conducting
+                        ? RatedAvailableCurrentAmps
+                        : 0.0;
+            }
         }
 
         internal SyntheticElectricalSource Clone()
         {
-            return new SyntheticElectricalSource
-            {
-                Id = Id ?? string.Empty,
-                DisplayName = DisplayName ?? string.Empty,
-                BusId = BusId ?? string.Empty,
-                ParentBusId = ParentBusId ?? string.Empty,
-                ContactorId = ContactorId ?? string.Empty,
-                Kind = Kind,
-                CommandedAvailable = CommandedAvailable,
-                State = State,
-                NominalVoltage = NominalVoltage,
-                CapacityAmps = CapacityAmps,
-                SelectedForBus = SelectedForBus,
-                Conducting = Conducting
-            };
+            return
+                new SyntheticElectricalSource
+                {
+                    Id = Id ?? string.Empty,
+                    DisplayName = DisplayName ?? string.Empty,
+                    BusId = BusId ?? string.Empty,
+                    ParentBusId = ParentBusId ?? string.Empty,
+                    ContactorId = ContactorId ?? string.Empty,
+                    Kind = Kind,
+                    CommandedAvailable = CommandedAvailable,
+                    State = State,
+                    NominalVoltage = NominalVoltage,
+                    CapacityAmps = CapacityAmps,
+                    SelectedForBus = SelectedForBus,
+                    Conducting = Conducting
+                };
         }
     }
 
@@ -165,20 +198,26 @@ namespace KMC.Engine.SpacecraftSystems
         public string BreakerId { get; set; }
         public double DemandAmps { get; set; }
         public bool CommandedOn { get; set; }
+
+        /// <summary>
+        /// 1 = essential/protected, 2 = normal, 3 = shed-first.
+        /// Build 14.2 will use this when crew load-shed controls arrive.
+        /// </summary>
         public int Priority { get; set; }
 
         internal SyntheticElectricalLoad Clone()
         {
-            return new SyntheticElectricalLoad
-            {
-                EquipmentId = EquipmentId ?? string.Empty,
-                DisplayName = DisplayName ?? string.Empty,
-                BusId = BusId ?? string.Empty,
-                BreakerId = BreakerId ?? string.Empty,
-                DemandAmps = DemandAmps,
-                Priority = Priority,
-                CommandedOn = CommandedOn
-            };
+            return
+                new SyntheticElectricalLoad
+                {
+                    EquipmentId = EquipmentId ?? string.Empty,
+                    DisplayName = DisplayName ?? string.Empty,
+                    BusId = BusId ?? string.Empty,
+                    BreakerId = BreakerId ?? string.Empty,
+                    DemandAmps = DemandAmps,
+                    Priority = Priority,
+                    CommandedOn = CommandedOn
+                };
         }
     }
 
@@ -211,8 +250,16 @@ namespace KMC.Engine.SpacecraftSystems
             get
             {
                 if (AvailableCurrentAmps <= 0.000001)
-                    return DemandAmps > 0.000001 ? double.PositiveInfinity : 0.0;
-                return DemandAmps / AvailableCurrentAmps;
+                {
+                    return
+                        DemandAmps > 0.000001
+                            ? double.PositiveInfinity
+                            : 0.0;
+                }
+
+                return
+                    DemandAmps /
+                    AvailableCurrentAmps;
             }
         }
 
@@ -220,85 +267,250 @@ namespace KMC.Engine.SpacecraftSystems
         {
             get
             {
-                double value = LoadFraction;
-                if (double.IsInfinity(value)) return 999.0;
-                return Math.Max(0.0, value * 100.0);
+                double value =
+                    LoadFraction;
+
+                if (double.IsInfinity(value))
+                {
+                    return 999.0;
+                }
+
+                return
+                    Math.Max(
+                        0.0,
+                        value * 100.0);
             }
         }
 
         internal SyntheticElectricalBus Clone()
         {
-            return new SyntheticElectricalBus
-            {
-                Id = Id ?? string.Empty,
-                DisplayName = DisplayName ?? string.Empty,
-                ActiveSourceId = ActiveSourceId ?? string.Empty,
-                TransferSwitchId = TransferSwitchId ?? string.Empty,
-                NominalVoltage = NominalVoltage,
-                Voltage = Voltage,
-                AvailableCurrentAmps = AvailableCurrentAmps,
-                DemandAmps = DemandAmps,
-                ActiveSourceCount = ActiveSourceCount,
-                State = State
-            };
+            return
+                new SyntheticElectricalBus
+                {
+                    Id = Id ?? string.Empty,
+                    DisplayName = DisplayName ?? string.Empty,
+                    ActiveSourceId =
+                        ActiveSourceId ?? string.Empty,
+                    TransferSwitchId =
+                        TransferSwitchId ?? string.Empty,
+                    NominalVoltage = NominalVoltage,
+                    Voltage = Voltage,
+                    AvailableCurrentAmps =
+                        AvailableCurrentAmps,
+                    DemandAmps = DemandAmps,
+                    ActiveSourceCount = ActiveSourceCount,
+                    State = State
+                };
         }
     }
 
+    /// <summary>
+    /// Build 14.1 synthetic electrical-distribution result.
+    ///
+    /// Values are KMC spacecraft-design simulation values, not direct claims
+    /// about stock KSP electrical wiring. The existing POWER model continues
+    /// to own observed ElectricCharge storage/generation truth.
+    /// </summary>
     public sealed class SyntheticElectricalDistributionModel
     {
-        private readonly List<SyntheticElectricalSource> _sources = new List<SyntheticElectricalSource>();
-        private readonly List<SyntheticElectricalBus> _buses = new List<SyntheticElectricalBus>();
-        private readonly List<SyntheticElectricalLoad> _loads = new List<SyntheticElectricalLoad>();
-        private readonly List<SyntheticElectricalSwitch> _switches = new List<SyntheticElectricalSwitch>();
+        private readonly List<SyntheticElectricalSource> _sources;
+        private readonly List<SyntheticElectricalBus> _buses;
+        private readonly List<SyntheticElectricalLoad> _loads;
+        private readonly List<SyntheticElectricalSwitch> _switches;
 
         public SyntheticElectricalDistributionModel()
         {
             TemplateId = string.Empty;
             GeneratedUtc = DateTime.MinValue;
+
+            _sources =
+                new List<SyntheticElectricalSource>();
+
+            _buses =
+                new List<SyntheticElectricalBus>();
+
+            _loads =
+                new List<SyntheticElectricalLoad>();
+
+            _switches =
+                new List<SyntheticElectricalSwitch>();
         }
 
         public string TemplateId { get; internal set; }
         public DateTime GeneratedUtc { get; internal set; }
-        public IList<SyntheticElectricalSource> Sources { get { return _sources; } }
-        public IList<SyntheticElectricalBus> Buses { get { return _buses; } }
-        public IList<SyntheticElectricalLoad> Loads { get { return _loads; } }
-        public IList<SyntheticElectricalSwitch> Switches { get { return _switches; } }
 
-        public SyntheticElectricalSource FindSource(string id)
+        public IList<SyntheticElectricalSource> Sources
         {
-            if (string.IsNullOrWhiteSpace(id)) return null;
-            for (int i=0;i<_sources.Count;i++)
-                if (_sources[i] != null && string.Equals(_sources[i].Id,id,StringComparison.Ordinal)) return _sources[i];
+            get { return _sources; }
+        }
+
+        public IList<SyntheticElectricalBus> Buses
+        {
+            get { return _buses; }
+        }
+
+        public IList<SyntheticElectricalLoad> Loads
+        {
+            get { return _loads; }
+        }
+
+        public IList<SyntheticElectricalSwitch> Switches
+        {
+            get { return _switches; }
+        }
+
+        public SyntheticElectricalSource FindSource(
+            string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            for (int index = 0;
+                 index < _sources.Count;
+                 index++)
+            {
+                SyntheticElectricalSource source =
+                    _sources[index];
+
+                if (source != null &&
+                    string.Equals(
+                        source.Id,
+                        id,
+                        StringComparison.Ordinal))
+                {
+                    return source;
+                }
+            }
+
             return null;
         }
 
-        public SyntheticElectricalBus FindBus(string id)
+        public SyntheticElectricalBus FindBus(
+            string id)
         {
-            if (string.IsNullOrWhiteSpace(id)) return null;
-            for (int i=0;i<_buses.Count;i++)
-                if (_buses[i] != null && string.Equals(_buses[i].Id,id,StringComparison.Ordinal)) return _buses[i];
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            for (int index = 0;
+                 index < _buses.Count;
+                 index++)
+            {
+                SyntheticElectricalBus bus =
+                    _buses[index];
+
+                if (bus != null &&
+                    string.Equals(
+                        bus.Id,
+                        id,
+                        StringComparison.Ordinal))
+                {
+                    return bus;
+                }
+            }
+
             return null;
         }
 
-        public SyntheticElectricalSwitch FindSwitch(string id)
+        public SyntheticElectricalSwitch FindSwitch(
+            string id)
         {
-            if (string.IsNullOrWhiteSpace(id)) return null;
-            for (int i=0;i<_switches.Count;i++)
-                if (_switches[i] != null && string.Equals(_switches[i].Id,id,StringComparison.Ordinal)) return _switches[i];
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            for (int index = 0;
+                 index < _switches.Count;
+                 index++)
+            {
+                SyntheticElectricalSwitch item =
+                    _switches[index];
+
+                if (item != null &&
+                    string.Equals(
+                        item.Id,
+                        id,
+                        StringComparison.Ordinal))
+                {
+                    return item;
+                }
+            }
+
             return null;
         }
 
         public SyntheticElectricalDistributionModel Clone()
         {
-            SyntheticElectricalDistributionModel clone = new SyntheticElectricalDistributionModel
+            SyntheticElectricalDistributionModel clone =
+                new SyntheticElectricalDistributionModel
+                {
+                    TemplateId =
+                        TemplateId ?? string.Empty,
+
+                    GeneratedUtc =
+                        GeneratedUtc
+                };
+
+            for (int index = 0;
+                 index < _sources.Count;
+                 index++)
             {
-                TemplateId = TemplateId ?? string.Empty,
-                GeneratedUtc = GeneratedUtc
-            };
-            for (int i=0;i<_sources.Count;i++) if (_sources[i]!=null) clone.Sources.Add(_sources[i].Clone());
-            for (int i=0;i<_buses.Count;i++) if (_buses[i]!=null) clone.Buses.Add(_buses[i].Clone());
-            for (int i=0;i<_loads.Count;i++) if (_loads[i]!=null) clone.Loads.Add(_loads[i].Clone());
-            for (int i=0;i<_switches.Count;i++) if (_switches[i]!=null) clone.Switches.Add(_switches[i].Clone());
+                SyntheticElectricalSource source =
+                    _sources[index];
+
+                if (source != null)
+                {
+                    clone.Sources.Add(
+                        source.Clone());
+                }
+            }
+
+            for (int index = 0;
+                 index < _buses.Count;
+                 index++)
+            {
+                SyntheticElectricalBus bus =
+                    _buses[index];
+
+                if (bus != null)
+                {
+                    clone.Buses.Add(
+                        bus.Clone());
+                }
+            }
+
+            for (int index = 0;
+                 index < _loads.Count;
+                 index++)
+            {
+                SyntheticElectricalLoad load =
+                    _loads[index];
+
+                if (load != null)
+                {
+                    clone.Loads.Add(
+                        load.Clone());
+                }
+            }
+
+            for (int index = 0;
+                 index < _switches.Count;
+                 index++)
+            {
+                SyntheticElectricalSwitch item =
+                    _switches[index];
+
+                if (item != null)
+                {
+                    clone.Switches.Add(
+                        item.Clone());
+                }
+            }
+
             return clone;
         }
     }

@@ -4,14 +4,21 @@ using System.Diagnostics;
 namespace KMC.Engine.SpacecraftSystems
 {
     /// <summary>
-    /// Build 14.11.3 synthetic DC distribution with explicit switching truth.
-    /// Generator is primary, battery is standby/reserve, and automatic source
-    /// transfer selects the battery only when the primary generator cannot feed
-    /// the bus. KSP ElectricCharge remains separate observed physical truth.
+    /// Build 14.11.3 synthetic DC electrical distribution.
+    ///
+    /// KSP ElectricCharge remains observed physical resource truth. This layer
+    /// provides the KMC spacecraft-design source, switching, bus, load and
+    /// redundancy simulation.
+    ///
+    /// Generator A/B are the normal primary sources. Battery A/B are reserve
+    /// sources selected automatically if the associated generator cannot feed
+    /// its main bus.
     /// </summary>
     public sealed class SyntheticElectricalDistributionSystem
     {
-        private const string DistributionTemplateId = "KMC-14.11.3-28V-DC-SWITCHED";
+        private const string DistributionTemplateId =
+            "KMC-14.11.3-28V-DC-SWITCHED";
+
         private const double NominalVoltage = 28.0;
         private const double HighLoadThreshold = 0.80;
         private const double UndervoltageThreshold = 24.0;
@@ -30,11 +37,25 @@ namespace KMC.Engine.SpacecraftSystems
             ElectricalControlSnapshot controls,
             FailureSimulationSnapshot failures)
         {
-            SyntheticElectricalDistributionModel distribution = BuildNominalDistribution(generatedUtc);
-            ApplyCrewControls(distribution, systems, controls);
-            SyntheticFailureEngine.ApplyElectricalSourceFailures(distribution, failures);
-            ResolveSwitching(distribution);
-            Recalculate(distribution);
+            SyntheticElectricalDistributionModel distribution =
+                BuildNominalDistribution(
+                    generatedUtc);
+
+            ApplyCrewControls(
+                distribution,
+                systems,
+                controls);
+
+            SyntheticFailureEngine.ApplyElectricalSourceFailures(
+                distribution,
+                failures);
+
+            ResolveSwitching(
+                distribution);
+
+            Recalculate(
+                distribution);
+
             ApplyBusStatesToSystems(
                 systems,
                 distribution);
@@ -50,289 +71,1099 @@ namespace KMC.Engine.SpacecraftSystems
             return distribution;
         }
 
-        internal static void Recalculate(SyntheticElectricalDistributionModel distribution)
+        internal static void Recalculate(
+            SyntheticElectricalDistributionModel distribution)
         {
-            if (distribution == null) return;
-
-            for (int i=0;i<distribution.Buses.Count;i++)
+            if (distribution == null)
             {
-                SyntheticElectricalBus bus=distribution.Buses[i];
-                if (bus==null) continue;
-                bus.DemandAmps=SumDemand(distribution,bus.Id);
-                bus.AvailableCurrentAmps=0.0;
-                bus.ActiveSourceCount=0;
-                bus.Voltage=0.0;
-                bus.State=SyntheticElectricalBusState.Unpowered;
+                return;
             }
 
-            int maximumPasses=Math.Max(1,distribution.Buses.Count+1);
-            for (int pass=0;pass<maximumPasses;pass++)
+            /*
+             * Loads remain deterministic bus assignments. Switch conduction is
+             * resolved separately so source hardware truth and energy flow are
+             * not conflated with source health.
+             */
+            for (int index = 0;
+                 index < distribution.Buses.Count;
+                 index++)
             {
-                bool changed=false;
-                ResolveSwitching(distribution);
+                SyntheticElectricalBus bus =
+                    distribution.Buses[index];
 
-                for (int i=0;i<distribution.Buses.Count;i++)
+                if (bus == null)
                 {
-                    SyntheticElectricalBus bus=distribution.Buses[i];
-                    if (bus==null) continue;
-                    double available=0.0;
-                    double sourceVoltage=0.0;
-                    int sourceCount=0;
-                    string activeSourceId=string.Empty;
+                    continue;
+                }
 
-                    for (int s=0;s<distribution.Sources.Count;s++)
+                bus.DemandAmps =
+                    SumDemand(
+                        distribution,
+                        bus.Id);
+
+                bus.AvailableCurrentAmps =
+                    0.0;
+
+                bus.ActiveSourceCount =
+                    0;
+
+                bus.ActiveSourceId =
+                    string.Empty;
+
+                bus.Voltage =
+                    0.0;
+
+                bus.State =
+                    SyntheticElectricalBusState.Unpowered;
+            }
+
+            /*
+             * Bus-feed sources depend on the resolved state of their parent
+             * main bus, so bounded passes are retained from the 14.1 model.
+             */
+            int maximumPasses =
+                Math.Max(
+                    1,
+                    distribution.Buses.Count + 1);
+
+            for (int pass = 0;
+                 pass < maximumPasses;
+                 pass++)
+            {
+                bool changed = false;
+
+                ResolveSwitching(
+                    distribution);
+
+                for (int index = 0;
+                     index < distribution.Buses.Count;
+                     index++)
+                {
+                    SyntheticElectricalBus bus =
+                        distribution.Buses[index];
+
+                    if (bus == null)
                     {
-                        SyntheticElectricalSource source=distribution.Sources[s];
-                        if (source==null || !string.Equals(source.BusId,bus.Id,StringComparison.Ordinal) || !IsSourceUsable(distribution,source)) continue;
-                        double current=source.AvailableCurrentAmps;
-                        if (current<=0.000001) continue;
-                        available += current;
-                        sourceVoltage=Math.Max(sourceVoltage,source.NominalVoltage);
+                        continue;
+                    }
+
+                    double available = 0.0;
+                    double sourceVoltage = 0.0;
+                    int sourceCount = 0;
+                    string activeSourceId =
+                        string.Empty;
+
+                    for (int sourceIndex = 0;
+                         sourceIndex < distribution.Sources.Count;
+                         sourceIndex++)
+                    {
+                        SyntheticElectricalSource source =
+                            distribution.Sources[sourceIndex];
+
+                        if (source == null ||
+                            !string.Equals(
+                                source.BusId,
+                                bus.Id,
+                                StringComparison.Ordinal) ||
+                            !IsSourceUsable(
+                                distribution,
+                                source))
+                        {
+                            continue;
+                        }
+
+                        double current =
+                            source.AvailableCurrentAmps;
+
+                        if (current <= 0.000001)
+                        {
+                            continue;
+                        }
+
+                        available +=
+                            current;
+
+                        sourceVoltage =
+                            Math.Max(
+                                sourceVoltage,
+                                source.NominalVoltage);
+
                         sourceCount++;
-                        if (string.IsNullOrWhiteSpace(activeSourceId)) activeSourceId=source.Id;
+
+                        if (string.IsNullOrWhiteSpace(
+                                activeSourceId))
+                        {
+                            activeSourceId =
+                                source.Id;
+                        }
                     }
 
                     SyntheticElectricalBusState nextState;
                     double nextVoltage;
-                    CalculateBusState(bus.NominalVoltage,bus.DemandAmps,available,sourceVoltage,out nextState,out nextVoltage);
-                    if (Math.Abs(bus.AvailableCurrentAmps-available)>0.000001 || Math.Abs(bus.Voltage-nextVoltage)>0.000001 || bus.ActiveSourceCount!=sourceCount || bus.State!=nextState || !string.Equals(bus.ActiveSourceId,activeSourceId,StringComparison.Ordinal))
+
+                    CalculateBusState(
+                        bus.NominalVoltage,
+                        bus.DemandAmps,
+                        available,
+                        sourceVoltage,
+                        out nextState,
+                        out nextVoltage);
+
+                    if (Math.Abs(
+                            bus.AvailableCurrentAmps -
+                            available) >
+                            0.000001 ||
+                        Math.Abs(
+                            bus.Voltage -
+                            nextVoltage) >
+                            0.000001 ||
+                        bus.ActiveSourceCount !=
+                            sourceCount ||
+                        bus.State !=
+                            nextState ||
+                        !string.Equals(
+                            bus.ActiveSourceId,
+                            activeSourceId,
+                            StringComparison.Ordinal))
                     {
-                        bus.AvailableCurrentAmps=available;
-                        bus.ActiveSourceCount=sourceCount;
-                        bus.Voltage=nextVoltage;
-                        bus.State=nextState;
-                        bus.ActiveSourceId=activeSourceId;
-                        changed=true;
+                        bus.AvailableCurrentAmps =
+                            available;
+
+                        bus.ActiveSourceCount =
+                            sourceCount;
+
+                        bus.ActiveSourceId =
+                            activeSourceId;
+
+                        bus.Voltage =
+                            nextVoltage;
+
+                        bus.State =
+                            nextState;
+
+                        changed = true;
                     }
                 }
-                if (!changed) break;
-            }
-        }
 
-        private static void ResolveSwitching(SyntheticElectricalDistributionModel d)
-        {
-            if (d==null) return;
-            for (int i=0;i<d.Sources.Count;i++)
-            {
-                SyntheticElectricalSource s=d.Sources[i];
-                if (s!=null) { s.SelectedForBus=false; s.Conducting=false; }
-            }
-            for (int i=0;i<d.Switches.Count;i++)
-            {
-                SyntheticElectricalSwitch sw=d.Switches[i];
-                if (sw!=null) { sw.ActualClosed=sw.CommandedClosed; sw.IndicatedClosed=sw.ActualClosed; sw.Conducting=false; }
-            }
-
-            ResolveMainSourceTransfer(d,"BUS_MAIN_A","SRC_GEN_A","SRC_BAT_A","XFER_MAIN_A");
-            ResolveMainSourceTransfer(d,"BUS_MAIN_B","SRC_GEN_B","SRC_BAT_B","XFER_MAIN_B");
-
-            ResolveFeed(d,"FEED_ESS_A");
-            ResolveFeed(d,"FEED_ESS_B");
-
-            for (int i=0;i<d.Loads.Count;i++)
-            {
-                SyntheticElectricalLoad load=d.Loads[i];
-                if (load==null) continue;
-                SyntheticElectricalSwitch brk=d.FindSwitch(load.BreakerId);
-                if (brk!=null)
+                if (!changed)
                 {
-                    brk.CommandedClosed=load.CommandedOn;
-                    brk.ActualClosed=brk.CommandedClosed;
-                    brk.IndicatedClosed=brk.ActualClosed;
-                    brk.Conducting=brk.ActualClosed;
+                    break;
                 }
             }
         }
 
-        private static void ResolveMainSourceTransfer(SyntheticElectricalDistributionModel d,string busId,string genId,string batId,string xferId)
+        /// <summary>
+        /// Resolves the current no-fault hardware position and actual
+        /// conduction state. Later 14.11 builds will insert switch failure
+        /// effects between commanded and actual state.
+        /// </summary>
+        private static void ResolveSwitching(
+            SyntheticElectricalDistributionModel distribution)
         {
-            SyntheticElectricalSource gen=d.FindSource(genId);
-            SyntheticElectricalSource bat=d.FindSource(batId);
-            SyntheticElectricalSwitch genCont=gen!=null?d.FindSwitch(gen.ContactorId):null;
-            SyntheticElectricalSwitch batCont=bat!=null?d.FindSwitch(bat.ContactorId):null;
-            SyntheticElectricalSwitch xfer=d.FindSwitch(xferId);
-
-            bool genReady=SourceHardwareReady(gen,genCont);
-            bool batReady=SourceHardwareReady(bat,batCont);
-            SyntheticElectricalSource selected=genReady?gen:(batReady?bat:null);
-
-            if (xfer!=null)
+            if (distribution == null)
             {
-                xfer.CommandedClosed=selected!=null;
-                xfer.ActualClosed=xfer.CommandedClosed;
-                xfer.IndicatedClosed=xfer.ActualClosed;
-                xfer.Conducting=xfer.ActualClosed && selected!=null;
-                xfer.UpstreamId=selected!=null?selected.Id:string.Empty;
-                xfer.DownstreamId=busId;
+                return;
             }
 
-            if (selected!=null)
+            for (int index = 0;
+                 index < distribution.Sources.Count;
+                 index++)
             {
-                selected.SelectedForBus=true;
-                selected.Conducting=xfer==null || xfer.Conducting;
-                SyntheticElectricalSwitch cont=d.FindSwitch(selected.ContactorId);
-                if (cont!=null) cont.Conducting=selected.Conducting;
+                SyntheticElectricalSource source =
+                    distribution.Sources[index];
+
+                if (source == null)
+                {
+                    continue;
+                }
+
+                source.SelectedForBus =
+                    false;
+
+                source.Conducting =
+                    false;
+            }
+
+            for (int index = 0;
+                 index < distribution.Switches.Count;
+                 index++)
+            {
+                SyntheticElectricalSwitch item =
+                    distribution.Switches[index];
+
+                if (item == null)
+                {
+                    continue;
+                }
+
+                /*
+                 * 14.11.3 establishes separate truth fields. In this foundation
+                 * build no switch hardware failure exists yet, so actual and
+                 * indicated position follow command.
+                 */
+                item.ActualClosed =
+                    item.CommandedClosed;
+
+                item.IndicatedClosed =
+                    item.ActualClosed;
+
+                item.Conducting =
+                    false;
+            }
+
+            ResolveMainSourceTransfer(
+                distribution,
+                "BUS_MAIN_A",
+                "SRC_GEN_A",
+                "SRC_BAT_A",
+                "XFER_MAIN_A");
+
+            ResolveMainSourceTransfer(
+                distribution,
+                "BUS_MAIN_B",
+                "SRC_GEN_B",
+                "SRC_BAT_B",
+                "XFER_MAIN_B");
+
+            ResolveFeed(
+                distribution,
+                "FEED_ESS_A");
+
+            ResolveFeed(
+                distribution,
+                "FEED_ESS_B");
+
+            for (int index = 0;
+                 index < distribution.Loads.Count;
+                 index++)
+            {
+                SyntheticElectricalLoad load =
+                    distribution.Loads[index];
+
+                if (load == null)
+                {
+                    continue;
+                }
+
+                SyntheticElectricalSwitch breaker =
+                    distribution.FindSwitch(
+                        load.BreakerId);
+
+                if (breaker == null)
+                {
+                    continue;
+                }
+
+                breaker.CommandedClosed =
+                    load.CommandedOn;
+
+                breaker.ActualClosed =
+                    breaker.CommandedClosed;
+
+                breaker.IndicatedClosed =
+                    breaker.ActualClosed;
+
+                breaker.Conducting =
+                    breaker.ActualClosed;
             }
         }
 
-        private static bool SourceHardwareReady(SyntheticElectricalSource s,SyntheticElectricalSwitch cont)
+        private static void ResolveMainSourceTransfer(
+            SyntheticElectricalDistributionModel distribution,
+            string busId,
+            string generatorId,
+            string batteryId,
+            string transferId)
         {
-            if (s==null || !s.CommandedAvailable || s.State==SyntheticElectricalSourceState.Offline || s.RatedAvailableCurrentAmps<=0.000001) return false;
-            return cont==null || cont.ActualClosed;
-        }
+            SyntheticElectricalSource generator =
+                distribution.FindSource(
+                    generatorId);
 
-        private static void ResolveFeed(SyntheticElectricalDistributionModel d,string sourceId)
-        {
-            SyntheticElectricalSource feed=d.FindSource(sourceId);
-            if (feed==null) return;
-            SyntheticElectricalSwitch cont=d.FindSwitch(feed.ContactorId);
-            bool closed=cont==null || cont.ActualClosed;
-            SyntheticElectricalBus parent=d.FindBus(feed.ParentBusId);
-            bool parentUsable=parent!=null && (parent.State==SyntheticElectricalBusState.Nominal || parent.State==SyntheticElectricalBusState.HighLoad);
-            feed.SelectedForBus=closed && feed.CommandedAvailable && feed.State!=SyntheticElectricalSourceState.Offline && parentUsable;
-            feed.Conducting=feed.SelectedForBus;
-            if (cont!=null) cont.Conducting=feed.Conducting;
-        }
+            SyntheticElectricalSource battery =
+                distribution.FindSource(
+                    batteryId);
 
-        private static SyntheticElectricalDistributionModel BuildNominalDistribution(DateTime generatedUtc)
-        {
-            SyntheticElectricalDistributionModel d=new SyntheticElectricalDistributionModel { TemplateId=DistributionTemplateId, GeneratedUtc=generatedUtc };
-            AddBus(d,"BUS_MAIN_A","MAIN BUS A","XFER_MAIN_A");
-            AddBus(d,"BUS_MAIN_B","MAIN BUS B","XFER_MAIN_B");
-            AddBus(d,"BUS_ESS","ESSENTIAL BUS",string.Empty);
+            SyntheticElectricalSwitch generatorContactor =
+                generator != null
+                    ? distribution.FindSwitch(
+                        generator.ContactorId)
+                    : null;
 
-            AddSource(d,"SRC_GEN_A","GENERATOR A","BUS_MAIN_A",string.Empty,SyntheticElectricalSourceKind.Generator,12.0,"CONT_GEN_A");
-            AddSource(d,"SRC_BAT_A","BATTERY A","BUS_MAIN_A",string.Empty,SyntheticElectricalSourceKind.Battery,6.0,"CONT_BAT_A");
-            AddSource(d,"SRC_GEN_B","GENERATOR B","BUS_MAIN_B",string.Empty,SyntheticElectricalSourceKind.Generator,12.0,"CONT_GEN_B");
-            AddSource(d,"SRC_BAT_B","BATTERY B","BUS_MAIN_B",string.Empty,SyntheticElectricalSourceKind.Battery,6.0,"CONT_BAT_B");
-            AddSource(d,"FEED_ESS_A","ESS FEED A","BUS_ESS","BUS_MAIN_A",SyntheticElectricalSourceKind.BusFeed,6.0,"CONT_ESS_A");
-            AddSource(d,"FEED_ESS_B","ESS FEED B","BUS_ESS","BUS_MAIN_B",SyntheticElectricalSourceKind.BusFeed,6.0,"CONT_ESS_B");
+            SyntheticElectricalSwitch batteryContactor =
+                battery != null
+                    ? distribution.FindSwitch(
+                        battery.ContactorId)
+                    : null;
 
-            AddSwitch(d,"CONT_GEN_A","GEN A CONTACTOR","SRC_GEN_A","XFER_MAIN_A",SyntheticElectricalSwitchKind.SourceContactor,false);
-            AddSwitch(d,"CONT_BAT_A","BAT A CONTACTOR","SRC_BAT_A","XFER_MAIN_A",SyntheticElectricalSwitchKind.SourceContactor,false);
-            AddSwitch(d,"XFER_MAIN_A","MAIN A SOURCE TRANSFER","","BUS_MAIN_A",SyntheticElectricalSwitchKind.SourceTransfer,true);
-            AddSwitch(d,"CONT_GEN_B","GEN B CONTACTOR","SRC_GEN_B","XFER_MAIN_B",SyntheticElectricalSwitchKind.SourceContactor,false);
-            AddSwitch(d,"CONT_BAT_B","BAT B CONTACTOR","SRC_BAT_B","XFER_MAIN_B",SyntheticElectricalSwitchKind.SourceContactor,false);
-            AddSwitch(d,"XFER_MAIN_B","MAIN B SOURCE TRANSFER","","BUS_MAIN_B",SyntheticElectricalSwitchKind.SourceTransfer,true);
-            AddSwitch(d,"CONT_ESS_A","ESS FEED A CONTACTOR","BUS_MAIN_A","BUS_ESS",SyntheticElectricalSwitchKind.BusFeedContactor,false);
-            AddSwitch(d,"CONT_ESS_B","ESS FEED B CONTACTOR","BUS_MAIN_B","BUS_ESS",SyntheticElectricalSwitchKind.BusFeedContactor,false);
+            SyntheticElectricalSwitch transfer =
+                distribution.FindSwitch(
+                    transferId);
 
-            AddLoad(d,"GUID_A","GUID COMPUTER A","BUS_MAIN_A",2.0,1);
-            AddLoad(d,"COMM_A","COMM TRANSCEIVER A","BUS_MAIN_A",1.5,2);
-            AddLoad(d,"PUMP_A","PROP FEED PUMP A","BUS_MAIN_A",4.0,2);
-            AddLoad(d,"FLIGHT_COMPUTER","PRIMARY FLIGHT COMPUTER","BUS_ESS",3.0,1);
-            AddLoad(d,"GUID_B","GUID COMPUTER B","BUS_MAIN_B",2.0,1);
-            AddLoad(d,"COMM_B","COMM TRANSCEIVER B","BUS_MAIN_B",1.5,2);
-            AddLoad(d,"PUMP_B","PROP FEED PUMP B","BUS_MAIN_B",4.0,2);
-            return d;
-        }
+            bool generatorReady =
+                SourceHardwareReady(
+                    generator,
+                    generatorContactor);
 
-        private static void ApplyCrewControls(SyntheticElectricalDistributionModel d,SpacecraftSystemsModel systems,ElectricalControlSnapshot controls)
-        {
-            if (d==null || controls==null) return;
-            for (int i=0;i<d.Sources.Count;i++)
+            bool batteryReady =
+                SourceHardwareReady(
+                    battery,
+                    batteryContactor);
+
+            SyntheticElectricalSource selected =
+                generatorReady
+                    ? generator
+                    : batteryReady
+                        ? battery
+                        : null;
+
+            if (transfer != null)
             {
-                SyntheticElectricalSource s=d.Sources[i]; if (s==null) continue;
+                transfer.CommandedClosed =
+                    selected != null;
+
+                transfer.ActualClosed =
+                    transfer.CommandedClosed;
+
+                transfer.IndicatedClosed =
+                    transfer.ActualClosed;
+
+                transfer.Conducting =
+                    transfer.ActualClosed &&
+                    selected != null;
+
+                transfer.UpstreamId =
+                    selected != null
+                        ? selected.Id
+                        : string.Empty;
+
+                transfer.DownstreamId =
+                    busId;
+            }
+
+            if (selected == null)
+            {
+                return;
+            }
+
+            selected.SelectedForBus =
+                true;
+
+            selected.Conducting =
+                transfer == null ||
+                transfer.Conducting;
+
+            SyntheticElectricalSwitch selectedContactor =
+                distribution.FindSwitch(
+                    selected.ContactorId);
+
+            if (selectedContactor != null)
+            {
+                selectedContactor.Conducting =
+                    selected.Conducting;
+            }
+        }
+
+        private static bool SourceHardwareReady(
+            SyntheticElectricalSource source,
+            SyntheticElectricalSwitch contactor)
+        {
+            if (source == null ||
+                !source.CommandedAvailable ||
+                source.State ==
+                    SyntheticElectricalSourceState.Offline ||
+                source.RatedAvailableCurrentAmps <=
+                    0.000001)
+            {
+                return false;
+            }
+
+            return
+                contactor == null ||
+                contactor.ActualClosed;
+        }
+
+        private static void ResolveFeed(
+            SyntheticElectricalDistributionModel distribution,
+            string sourceId)
+        {
+            SyntheticElectricalSource feed =
+                distribution.FindSource(
+                    sourceId);
+
+            if (feed == null)
+            {
+                return;
+            }
+
+            SyntheticElectricalSwitch contactor =
+                distribution.FindSwitch(
+                    feed.ContactorId);
+
+            bool closed =
+                contactor == null ||
+                contactor.ActualClosed;
+
+            SyntheticElectricalBus parent =
+                distribution.FindBus(
+                    feed.ParentBusId);
+
+            bool parentUsable =
+                parent != null &&
+                (parent.State ==
+                    SyntheticElectricalBusState.Nominal ||
+                 parent.State ==
+                    SyntheticElectricalBusState.HighLoad);
+
+            feed.SelectedForBus =
+                closed &&
+                feed.CommandedAvailable &&
+                feed.State !=
+                    SyntheticElectricalSourceState.Offline &&
+                parentUsable;
+
+            feed.Conducting =
+                feed.SelectedForBus;
+
+            if (contactor != null)
+            {
+                contactor.Conducting =
+                    feed.Conducting;
+            }
+        }
+
+        private static SyntheticElectricalDistributionModel
+            BuildNominalDistribution(
+                DateTime generatedUtc)
+        {
+            SyntheticElectricalDistributionModel distribution =
+                new SyntheticElectricalDistributionModel
+                {
+                    TemplateId =
+                        DistributionTemplateId,
+
+                    GeneratedUtc =
+                        generatedUtc
+                };
+
+            AddBus(
+                distribution,
+                "BUS_MAIN_A",
+                "MAIN BUS A",
+                "XFER_MAIN_A");
+
+            AddBus(
+                distribution,
+                "BUS_MAIN_B",
+                "MAIN BUS B",
+                "XFER_MAIN_B");
+
+            AddBus(
+                distribution,
+                "BUS_ESS",
+                "ESSENTIAL BUS",
+                string.Empty);
+
+            /*
+             * Main generator is the normal source; battery is available reserve.
+             * Source transfer selects exactly one conducting source per main bus.
+             */
+            AddSource(
+                distribution,
+                "SRC_GEN_A",
+                "GENERATOR A",
+                "BUS_MAIN_A",
+                string.Empty,
+                SyntheticElectricalSourceKind.Generator,
+                12.0,
+                "CONT_GEN_A");
+
+            AddSource(
+                distribution,
+                "SRC_BAT_A",
+                "BATTERY A",
+                "BUS_MAIN_A",
+                string.Empty,
+                SyntheticElectricalSourceKind.Battery,
+                6.0,
+                "CONT_BAT_A");
+
+            AddSource(
+                distribution,
+                "SRC_GEN_B",
+                "GENERATOR B",
+                "BUS_MAIN_B",
+                string.Empty,
+                SyntheticElectricalSourceKind.Generator,
+                12.0,
+                "CONT_GEN_B");
+
+            AddSource(
+                distribution,
+                "SRC_BAT_B",
+                "BATTERY B",
+                "BUS_MAIN_B",
+                string.Empty,
+                SyntheticElectricalSourceKind.Battery,
+                6.0,
+                "CONT_BAT_B");
+
+            AddSource(
+                distribution,
+                "FEED_ESS_A",
+                "ESS FEED A",
+                "BUS_ESS",
+                "BUS_MAIN_A",
+                SyntheticElectricalSourceKind.BusFeed,
+                6.0,
+                "CONT_ESS_A");
+
+            AddSource(
+                distribution,
+                "FEED_ESS_B",
+                "ESS FEED B",
+                "BUS_ESS",
+                "BUS_MAIN_B",
+                SyntheticElectricalSourceKind.BusFeed,
+                6.0,
+                "CONT_ESS_B");
+
+            AddSwitch(
+                distribution,
+                "CONT_GEN_A",
+                "GEN A CONTACTOR",
+                "SRC_GEN_A",
+                "XFER_MAIN_A",
+                SyntheticElectricalSwitchKind.SourceContactor,
+                false);
+
+            AddSwitch(
+                distribution,
+                "CONT_BAT_A",
+                "BAT A CONTACTOR",
+                "SRC_BAT_A",
+                "XFER_MAIN_A",
+                SyntheticElectricalSwitchKind.SourceContactor,
+                false);
+
+            AddSwitch(
+                distribution,
+                "XFER_MAIN_A",
+                "MAIN A SOURCE TRANSFER",
+                string.Empty,
+                "BUS_MAIN_A",
+                SyntheticElectricalSwitchKind.SourceTransfer,
+                true);
+
+            AddSwitch(
+                distribution,
+                "CONT_GEN_B",
+                "GEN B CONTACTOR",
+                "SRC_GEN_B",
+                "XFER_MAIN_B",
+                SyntheticElectricalSwitchKind.SourceContactor,
+                false);
+
+            AddSwitch(
+                distribution,
+                "CONT_BAT_B",
+                "BAT B CONTACTOR",
+                "SRC_BAT_B",
+                "XFER_MAIN_B",
+                SyntheticElectricalSwitchKind.SourceContactor,
+                false);
+
+            AddSwitch(
+                distribution,
+                "XFER_MAIN_B",
+                "MAIN B SOURCE TRANSFER",
+                string.Empty,
+                "BUS_MAIN_B",
+                SyntheticElectricalSwitchKind.SourceTransfer,
+                true);
+
+            AddSwitch(
+                distribution,
+                "CONT_ESS_A",
+                "ESS FEED A CONTACTOR",
+                "BUS_MAIN_A",
+                "BUS_ESS",
+                SyntheticElectricalSwitchKind.BusFeedContactor,
+                false);
+
+            AddSwitch(
+                distribution,
+                "CONT_ESS_B",
+                "ESS FEED B CONTACTOR",
+                "BUS_MAIN_B",
+                "BUS_ESS",
+                SyntheticElectricalSwitchKind.BusFeedContactor,
+                false);
+
+            AddLoad(
+                distribution,
+                "GUID_A",
+                "GUID COMPUTER A",
+                "BUS_MAIN_A",
+                2.0,
+                1);
+
+            AddLoad(
+                distribution,
+                "COMM_A",
+                "COMM TRANSCEIVER A",
+                "BUS_MAIN_A",
+                1.5,
+                2);
+
+            AddLoad(
+                distribution,
+                "PUMP_A",
+                "PROP FEED PUMP A",
+                "BUS_MAIN_A",
+                4.0,
+                2);
+
+            AddLoad(
+                distribution,
+                "GUID_B",
+                "GUID COMPUTER B",
+                "BUS_MAIN_B",
+                2.0,
+                1);
+
+            AddLoad(
+                distribution,
+                "COMM_B",
+                "COMM TRANSCEIVER B",
+                "BUS_MAIN_B",
+                1.5,
+                2);
+
+            AddLoad(
+                distribution,
+                "PUMP_B",
+                "PROP FEED PUMP B",
+                "BUS_MAIN_B",
+                4.0,
+                2);
+
+            AddLoad(
+                distribution,
+                "FLIGHT_COMPUTER",
+                "PRIMARY FLIGHT COMPUTER",
+                "BUS_ESS",
+                3.0,
+                1);
+
+            return distribution;
+        }
+
+        private static void ApplyCrewControls(
+            SyntheticElectricalDistributionModel distribution,
+            SpacecraftSystemsModel systems,
+            ElectricalControlSnapshot controls)
+        {
+            if (distribution == null ||
+                controls == null)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < distribution.Sources.Count;
+                 index++)
+            {
+                SyntheticElectricalSource source =
+                    distribution.Sources[index];
+
+                if (source == null)
+                {
+                    continue;
+                }
+
                 bool commanded;
-                if (controls.TryGet(s.Id,out commanded))
+
+                if (controls.TryGet(
+                        source.Id,
+                        out commanded))
                 {
-                    s.CommandedAvailable=commanded;
-                    SyntheticElectricalSwitch cont=d.FindSwitch(s.ContactorId);
-                    if (cont!=null) cont.CommandedClosed=commanded;
+                    source.CommandedAvailable =
+                        commanded;
+
+                    SyntheticElectricalSwitch contactor =
+                        distribution.FindSwitch(
+                            source.ContactorId);
+
+                    if (contactor != null)
+                    {
+                        contactor.CommandedClosed =
+                            commanded;
+                    }
                 }
             }
-            for (int i=0;i<d.Loads.Count;i++)
+
+            for (int index = 0;
+                 index < distribution.Loads.Count;
+                 index++)
             {
-                SyntheticElectricalLoad load=d.Loads[i]; if (load==null) continue;
-                bool commanded;
-                if (!controls.TryGet(load.EquipmentId,out commanded)) continue;
-                load.CommandedOn=commanded;
-                SyntheticElectricalSwitch brk=d.FindSwitch(load.BreakerId);
-                if (brk!=null) brk.CommandedClosed=commanded;
-                if (systems!=null)
+                SyntheticElectricalLoad load =
+                    distribution.Loads[index];
+
+                if (load == null)
                 {
-                    SpacecraftSystemComponent c=systems.FindComponent(load.EquipmentId);
-                    if (c!=null) c.CommandedOn=commanded;
+                    continue;
+                }
+
+                bool commanded;
+
+                if (!controls.TryGet(
+                        load.EquipmentId,
+                        out commanded))
+                {
+                    continue;
+                }
+
+                load.CommandedOn =
+                    commanded;
+
+                SyntheticElectricalSwitch breaker =
+                    distribution.FindSwitch(
+                        load.BreakerId);
+
+                if (breaker != null)
+                {
+                    breaker.CommandedClosed =
+                        commanded;
+                }
+
+                if (systems != null)
+                {
+                    SpacecraftSystemComponent component =
+                        systems.FindComponent(
+                            load.EquipmentId);
+
+                    if (component != null)
+                    {
+                        component.CommandedOn =
+                            commanded;
+                    }
                 }
             }
         }
 
-        private static void ApplyBusStatesToSystems(SpacecraftSystemsModel systems,SyntheticElectricalDistributionModel d)
+        private static void ApplyBusStatesToSystems(
+            SpacecraftSystemsModel systems,
+            SyntheticElectricalDistributionModel distribution)
         {
-            if (systems==null || d==null) return;
-            for (int i=0;i<systems.Components.Count;i++) if (systems.Components[i]!=null) systems.Components[i].ProviderStateOverride=null;
-            for (int i=0;i<d.Buses.Count;i++)
+            if (systems == null ||
+                distribution == null)
             {
-                SyntheticElectricalBus bus=d.Buses[i]; if (bus==null) continue;
-                SpacecraftSystemComponent c=systems.FindComponent(bus.Id); if (c==null) continue;
-                c.ProviderStateOverride=ConvertBusState(bus.State);
+                return;
             }
+
+            /*
+             * Clear any prior electrical provider override before applying the
+             * new distribution state.
+             */
+            for (int index = 0;
+                 index < systems.Components.Count;
+                 index++)
+            {
+                SpacecraftSystemComponent component =
+                    systems.Components[index];
+
+                if (component != null)
+                {
+                    component.ProviderStateOverride =
+                        null;
+                }
+            }
+
+            for (int index = 0;
+                 index < distribution.Buses.Count;
+                 index++)
+            {
+                SyntheticElectricalBus bus =
+                    distribution.Buses[index];
+
+                if (bus == null)
+                {
+                    continue;
+                }
+
+                SpacecraftSystemComponent busComponent =
+                    systems.FindComponent(
+                        bus.Id);
+
+                if (busComponent == null)
+                {
+                    continue;
+                }
+
+                busComponent.ProviderStateOverride =
+                    ConvertBusState(
+                        bus.State);
+            }
+
+            /*
+             * Re-running the generic 14.0 graph now propagates bus state through
+             * the existing POWER dependencies to GUID/COMM/PUMP equipment.
+             */
             systems.Recalculate();
         }
 
-        private static SpacecraftSystemState ConvertBusState(SyntheticElectricalBusState state)
+        private static SpacecraftSystemState ConvertBusState(
+            SyntheticElectricalBusState state)
         {
-            switch(state)
+            switch (state)
             {
-                case SyntheticElectricalBusState.Unpowered: return SpacecraftSystemState.Unpowered;
+                case SyntheticElectricalBusState.Unpowered:
+                    return
+                        SpacecraftSystemState.Unpowered;
+
                 case SyntheticElectricalBusState.Overloaded:
-                case SyntheticElectricalBusState.Undervoltage: return SpacecraftSystemState.Degraded;
-                default: return SpacecraftSystemState.Online;
+                case SyntheticElectricalBusState.Undervoltage:
+                    return
+                        SpacecraftSystemState.Degraded;
+
+                default:
+                    return
+                        SpacecraftSystemState.Online;
             }
         }
 
-        private static bool IsSourceUsable(SyntheticElectricalDistributionModel d,SyntheticElectricalSource s)
+        private static bool IsSourceUsable(
+            SyntheticElectricalDistributionModel distribution,
+            SyntheticElectricalSource source)
         {
-            if (s==null || !s.Conducting || s.State==SyntheticElectricalSourceState.Offline) return false;
-            if (s.Kind!=SyntheticElectricalSourceKind.BusFeed) return true;
-            SyntheticElectricalBus parent=d.FindBus(s.ParentBusId);
-            return parent!=null && (parent.State==SyntheticElectricalBusState.Nominal || parent.State==SyntheticElectricalBusState.HighLoad);
-        }
-
-        private static double SumDemand(SyntheticElectricalDistributionModel d,string busId)
-        {
-            double demand=0.0;
-            for (int i=0;i<d.Loads.Count;i++)
+            if (source == null ||
+                !source.Conducting ||
+                source.State ==
+                    SyntheticElectricalSourceState.Offline)
             {
-                SyntheticElectricalLoad load=d.Loads[i];
-                if (load!=null && load.CommandedOn && string.Equals(load.BusId,busId,StringComparison.Ordinal)) demand+=Math.Max(0.0,load.DemandAmps);
+                return false;
             }
+
+            if (source.Kind !=
+                    SyntheticElectricalSourceKind.BusFeed)
+            {
+                return true;
+            }
+
+            SyntheticElectricalBus parent =
+                distribution.FindBus(
+                    source.ParentBusId);
+
+            if (parent == null)
+            {
+                return false;
+            }
+
+            return
+                parent.State ==
+                    SyntheticElectricalBusState.Nominal ||
+                parent.State ==
+                    SyntheticElectricalBusState.HighLoad;
+        }
+
+        private static double SumDemand(
+            SyntheticElectricalDistributionModel distribution,
+            string busId)
+        {
+            double demand = 0.0;
+
+            for (int index = 0;
+                 index < distribution.Loads.Count;
+                 index++)
+            {
+                SyntheticElectricalLoad load =
+                    distribution.Loads[index];
+
+                if (load != null &&
+                    load.CommandedOn &&
+                    string.Equals(
+                        load.BusId,
+                        busId,
+                        StringComparison.Ordinal))
+                {
+                    demand +=
+                        Math.Max(
+                            0.0,
+                            load.DemandAmps);
+                }
+            }
+
             return demand;
         }
 
-        private static void CalculateBusState(double nominal,double demand,double available,double sourceVoltage,out SyntheticElectricalBusState state,out double voltage)
+        private static void CalculateBusState(
+            double nominalVoltage,
+            double demandAmps,
+            double availableAmps,
+            double sourceVoltage,
+            out SyntheticElectricalBusState state,
+            out double voltage)
         {
-            if (available<=0.000001) { state=SyntheticElectricalBusState.Unpowered; voltage=0.0; return; }
-            double source=sourceVoltage>0.000001?sourceVoltage:nominal;
-            double fraction=demand/available;
-            if (fraction>1.0)
+            if (availableAmps <= 0.000001)
             {
-                voltage=source*Math.Max(0.70,available/Math.Max(demand,0.000001));
-                state=voltage<UndervoltageThreshold?SyntheticElectricalBusState.Undervoltage:SyntheticElectricalBusState.Overloaded;
+                state =
+                    SyntheticElectricalBusState.Unpowered;
+
+                voltage =
+                    0.0;
+
                 return;
             }
-            voltage=source;
-            state=fraction>=HighLoadThreshold?SyntheticElectricalBusState.HighLoad:SyntheticElectricalBusState.Nominal;
+
+            double effectiveSourceVoltage =
+                sourceVoltage > 0.000001
+                    ? sourceVoltage
+                    : nominalVoltage;
+
+            double fraction =
+                demandAmps /
+                availableAmps;
+
+            if (fraction > 1.0)
+            {
+                /*
+                 * Synthetic droop model:
+                 * overloaded supply loses voltage in proportion to available
+                 * current, with a lower clamp to keep the state observable.
+                 */
+                voltage =
+                    effectiveSourceVoltage *
+                    Math.Max(
+                        0.70,
+                        availableAmps /
+                        Math.Max(
+                            demandAmps,
+                            0.000001));
+
+                state =
+                    voltage <
+                        UndervoltageThreshold
+                        ? SyntheticElectricalBusState.Undervoltage
+                        : SyntheticElectricalBusState.Overloaded;
+
+                return;
+            }
+
+            voltage =
+                effectiveSourceVoltage;
+
+            state =
+                fraction >= HighLoadThreshold
+                    ? SyntheticElectricalBusState.HighLoad
+                    : SyntheticElectricalBusState.Nominal;
         }
 
-        private static void AddBus(SyntheticElectricalDistributionModel d,string id,string name,string transferId)
+        private static void AddBus(
+            SyntheticElectricalDistributionModel distribution,
+            string id,
+            string displayName,
+            string transferSwitchId)
         {
-            d.Buses.Add(new SyntheticElectricalBus { Id=id, DisplayName=name, TransferSwitchId=transferId, NominalVoltage=NominalVoltage });
+            distribution.Buses.Add(
+                new SyntheticElectricalBus
+                {
+                    Id = id,
+                    DisplayName = displayName,
+                    TransferSwitchId =
+                        transferSwitchId ?? string.Empty,
+                    NominalVoltage = NominalVoltage
+                });
         }
-        private static void AddSource(SyntheticElectricalDistributionModel d,string id,string name,string bus,string parent,SyntheticElectricalSourceKind kind,double amps,string contactor)
+
+        private static void AddSource(
+            SyntheticElectricalDistributionModel distribution,
+            string id,
+            string displayName,
+            string busId,
+            string parentBusId,
+            SyntheticElectricalSourceKind kind,
+            double capacityAmps,
+            string contactorId)
         {
-            d.Sources.Add(new SyntheticElectricalSource { Id=id, DisplayName=name, BusId=bus, ParentBusId=parent, ContactorId=contactor, Kind=kind, CommandedAvailable=true, State=SyntheticElectricalSourceState.Online, NominalVoltage=NominalVoltage, CapacityAmps=amps });
+            distribution.Sources.Add(
+                new SyntheticElectricalSource
+                {
+                    Id = id,
+                    DisplayName = displayName,
+                    BusId = busId,
+                    ParentBusId = parentBusId,
+                    ContactorId =
+                        contactorId ?? string.Empty,
+                    Kind = kind,
+                    CommandedAvailable = true,
+                    State =
+                        SyntheticElectricalSourceState.Online,
+                    NominalVoltage = NominalVoltage,
+                    CapacityAmps = capacityAmps
+                });
         }
-        private static void AddSwitch(SyntheticElectricalDistributionModel d,string id,string name,string upstream,string downstream,SyntheticElectricalSwitchKind kind,bool automatic)
+
+        private static void AddSwitch(
+            SyntheticElectricalDistributionModel distribution,
+            string id,
+            string displayName,
+            string upstreamId,
+            string downstreamId,
+            SyntheticElectricalSwitchKind kind,
+            bool automatic)
         {
-            d.Switches.Add(new SyntheticElectricalSwitch { Id=id, DisplayName=name, UpstreamId=upstream, DownstreamId=downstream, Kind=kind, CommandedClosed=true, ActualClosed=true, IndicatedClosed=true, Automatic=automatic });
+            distribution.Switches.Add(
+                new SyntheticElectricalSwitch
+                {
+                    Id = id,
+                    DisplayName = displayName,
+                    UpstreamId =
+                        upstreamId ?? string.Empty,
+                    DownstreamId =
+                        downstreamId ?? string.Empty,
+                    Kind = kind,
+                    CommandedClosed = true,
+                    ActualClosed = true,
+                    IndicatedClosed = true,
+                    Conducting = false,
+                    Automatic = automatic
+                });
         }
-        private static void AddLoad(SyntheticElectricalDistributionModel d,string id,string name,string bus,double amps,int priority)
+
+        private static void AddLoad(
+            SyntheticElectricalDistributionModel distribution,
+            string equipmentId,
+            string displayName,
+            string busId,
+            double demandAmps,
+            int priority)
         {
-            string breaker="BRK_"+id;
-            d.Loads.Add(new SyntheticElectricalLoad { EquipmentId=id, DisplayName=name, BusId=bus, BreakerId=breaker, DemandAmps=amps, Priority=priority, CommandedOn=true });
-            AddSwitch(d,breaker,name+" BREAKER",bus,id,SyntheticElectricalSwitchKind.LoadBreaker,false);
+            string breakerId =
+                "BRK_" +
+                equipmentId;
+
+            distribution.Loads.Add(
+                new SyntheticElectricalLoad
+                {
+                    EquipmentId = equipmentId,
+                    DisplayName = displayName,
+                    BusId = busId,
+                    BreakerId = breakerId,
+                    DemandAmps = demandAmps,
+                    Priority = priority,
+                    CommandedOn = true
+                });
+
+            AddSwitch(
+                distribution,
+                breakerId,
+                displayName + " BREAKER",
+                busId,
+                equipmentId,
+                SyntheticElectricalSwitchKind.LoadBreaker,
+                false);
         }
+
         private void WriteDiagnosticIfChanged(
             SpacecraftSystemsModel systems,
             SyntheticElectricalDistributionModel distribution)
@@ -756,6 +1587,5 @@ namespace KMC.Engine.SpacecraftSystems
                     : "MISSING";
         }
 #endif
-
     }
 }
