@@ -40,6 +40,101 @@ namespace KMC.Engine.SpacecraftSystems
         LoadBreaker = 3
     }
 
+    public enum SyntheticElectricalSwitchFailureMode
+    {
+        None = 0,
+        FailedOpen = 1,
+        WeldedClosed = 2,
+        TrippedOpen = 3,
+        FalseClosedIndication = 4,
+        FalseOpenIndication = 5
+    }
+
+    /// <summary>
+    /// Failure target IDs used by the existing Engine failure scheduler.
+    /// Mechanical switch faults use Component failure records; indication-only
+    /// faults use Instrumentation records. The electrical distribution parses
+    /// these IDs and owns the resulting hardware behavior.
+    /// </summary>
+    public static class SyntheticElectricalSwitchFailureTargets
+    {
+        private const string Prefix =
+            "ELEC_SWITCH:";
+
+        public static string Create(
+            string switchId,
+            SyntheticElectricalSwitchFailureMode mode)
+        {
+            if (string.IsNullOrWhiteSpace(switchId) ||
+                mode == SyntheticElectricalSwitchFailureMode.None)
+            {
+                return string.Empty;
+            }
+
+            return
+                Prefix +
+                mode.ToString().ToUpperInvariant() +
+                ":" +
+                switchId;
+        }
+
+        public static bool TryParse(
+            string targetId,
+            out string switchId,
+            out SyntheticElectricalSwitchFailureMode mode)
+        {
+            switchId = string.Empty;
+            mode = SyntheticElectricalSwitchFailureMode.None;
+
+            if (string.IsNullOrWhiteSpace(targetId) ||
+                !targetId.StartsWith(
+                    Prefix,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            string remainder =
+                targetId.Substring(
+                    Prefix.Length);
+
+            int separator =
+                remainder.IndexOf(':');
+
+            if (separator <= 0 ||
+                separator >= remainder.Length - 1)
+            {
+                return false;
+            }
+
+            string modeText =
+                remainder.Substring(
+                    0,
+                    separator);
+
+            string id =
+                remainder.Substring(
+                    separator + 1);
+
+            SyntheticElectricalSwitchFailureMode parsed;
+
+            if (!Enum.TryParse(
+                    modeText,
+                    true,
+                    out parsed) ||
+                parsed ==
+                    SyntheticElectricalSwitchFailureMode.None ||
+                string.IsNullOrWhiteSpace(id))
+            {
+                return false;
+            }
+
+            switchId = id;
+            mode = parsed;
+            return true;
+        }
+    }
+
     public sealed class SyntheticElectricalSwitch
     {
         public SyntheticElectricalSwitch()
@@ -55,6 +150,8 @@ namespace KMC.Engine.SpacecraftSystems
             IndicatedClosed = true;
             Conducting = false;
             Automatic = false;
+            FailureMode =
+                SyntheticElectricalSwitchFailureMode.None;
         }
 
         public string Id { get; set; }
@@ -67,6 +164,16 @@ namespace KMC.Engine.SpacecraftSystems
         public bool IndicatedClosed { get; set; }
         public bool Conducting { get; set; }
         public bool Automatic { get; set; }
+
+        /// <summary>
+        /// Engine-only hidden hardware failure truth. Operator displays consume
+        /// commanded/indicated/conduction evidence rather than this cause.
+        /// </summary>
+        internal SyntheticElectricalSwitchFailureMode FailureMode
+        {
+            get;
+            set;
+        }
 
         internal SyntheticElectricalSwitch Clone()
         {
@@ -82,7 +189,8 @@ namespace KMC.Engine.SpacecraftSystems
                     ActualClosed = ActualClosed,
                     IndicatedClosed = IndicatedClosed,
                     Conducting = Conducting,
-                    Automatic = Automatic
+                    Automatic = Automatic,
+                    FailureMode = FailureMode
                 };
         }
     }

@@ -50,6 +50,10 @@ namespace KMC.Engine.SpacecraftSystems
                 distribution,
                 failures);
 
+            ApplyElectricalSwitchFailures(
+                distribution,
+                failures);
+
             ResolveSwitching(
                 distribution);
 
@@ -252,10 +256,103 @@ namespace KMC.Engine.SpacecraftSystems
             }
         }
 
+        private static void ApplyElectricalSwitchFailures(
+            SyntheticElectricalDistributionModel distribution,
+            FailureSimulationSnapshot failures)
+        {
+            if (distribution == null ||
+                failures == null ||
+                failures.Mode ==
+                    FailureSimulationMode.Nominal)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < failures.Failures.Count;
+                 index++)
+            {
+                SyntheticFailureRecord failure =
+                    failures.Failures[index];
+
+                if (failure == null ||
+                    !failure.EffectiveNow)
+                {
+                    continue;
+                }
+
+                string switchId;
+                SyntheticElectricalSwitchFailureMode mode;
+
+                if (!SyntheticElectricalSwitchFailureTargets.TryParse(
+                        failure.TargetId,
+                        out switchId,
+                        out mode))
+                {
+                    continue;
+                }
+
+                SyntheticElectricalSwitch item =
+                    distribution.FindSwitch(
+                        switchId);
+
+                if (item != null)
+                {
+                    item.FailureMode =
+                        mode;
+                }
+            }
+        }
+
+        private static void ResolveSwitchHardwarePosition(
+            SyntheticElectricalSwitch item)
+        {
+            if (item == null)
+            {
+                return;
+            }
+
+            switch (item.FailureMode)
+            {
+                case SyntheticElectricalSwitchFailureMode.FailedOpen:
+                case SyntheticElectricalSwitchFailureMode.TrippedOpen:
+                    item.ActualClosed =
+                        false;
+                    break;
+
+                case SyntheticElectricalSwitchFailureMode.WeldedClosed:
+                    item.ActualClosed =
+                        true;
+                    break;
+
+                default:
+                    item.ActualClosed =
+                        item.CommandedClosed;
+                    break;
+            }
+
+            switch (item.FailureMode)
+            {
+                case SyntheticElectricalSwitchFailureMode.FalseClosedIndication:
+                    item.IndicatedClosed =
+                        true;
+                    break;
+
+                case SyntheticElectricalSwitchFailureMode.FalseOpenIndication:
+                    item.IndicatedClosed =
+                        false;
+                    break;
+
+                default:
+                    item.IndicatedClosed =
+                        item.ActualClosed;
+                    break;
+            }
+        }
+
         /// <summary>
-        /// Resolves the current no-fault hardware position and actual
-        /// conduction state. Later 14.11 builds will insert switch failure
-        /// effects between commanded and actual state.
+        /// Resolves commanded switch state into hardware position, indication
+        /// and actual conduction after any active hardware failure is applied.
         /// </summary>
         private static void ResolveSwitching(
             SyntheticElectricalDistributionModel distribution)
@@ -296,16 +393,8 @@ namespace KMC.Engine.SpacecraftSystems
                     continue;
                 }
 
-                /*
-                 * 14.11.3 establishes separate truth fields. In this foundation
-                 * build no switch hardware failure exists yet, so actual and
-                 * indicated position follow command.
-                 */
-                item.ActualClosed =
-                    item.CommandedClosed;
-
-                item.IndicatedClosed =
-                    item.ActualClosed;
+                ResolveSwitchHardwarePosition(
+                    item);
 
                 item.Conducting =
                     false;
@@ -357,11 +446,8 @@ namespace KMC.Engine.SpacecraftSystems
                 breaker.CommandedClosed =
                     load.CommandedOn;
 
-                breaker.ActualClosed =
-                    breaker.CommandedClosed;
-
-                breaker.IndicatedClosed =
-                    breaker.ActualClosed;
+                ResolveSwitchHardwarePosition(
+                    breaker);
 
                 breaker.Conducting =
                     breaker.ActualClosed;
@@ -421,11 +507,8 @@ namespace KMC.Engine.SpacecraftSystems
                 transfer.CommandedClosed =
                     selected != null;
 
-                transfer.ActualClosed =
-                    transfer.CommandedClosed;
-
-                transfer.IndicatedClosed =
-                    transfer.ActualClosed;
+                ResolveSwitchHardwarePosition(
+                    transfer);
 
                 transfer.Conducting =
                     transfer.ActualClosed &&
@@ -906,6 +989,45 @@ namespace KMC.Engine.SpacecraftSystems
             }
 
             /*
+             * A commanded-on load with a non-conducting branch breaker is
+             * electrically unpowered even if its parent bus remains healthy.
+             * This is provider evidence, not intrinsic component failure.
+             */
+            for (int index = 0;
+                 index < distribution.Loads.Count;
+                 index++)
+            {
+                SyntheticElectricalLoad load =
+                    distribution.Loads[index];
+
+                if (load == null ||
+                    !load.CommandedOn)
+                {
+                    continue;
+                }
+
+                SyntheticElectricalSwitch breaker =
+                    distribution.FindSwitch(
+                        load.BreakerId);
+
+                if (breaker == null ||
+                    breaker.Conducting)
+                {
+                    continue;
+                }
+
+                SpacecraftSystemComponent component =
+                    systems.FindComponent(
+                        load.EquipmentId);
+
+                if (component != null)
+                {
+                    component.ProviderStateOverride =
+                        SpacecraftSystemState.Unpowered;
+                }
+            }
+
+            /*
              * Re-running the generic 14.0 graph now propagates bus state through
              * the existing POWER dependencies to GUID/COMM/PUMP equipment.
              */
@@ -979,8 +1101,19 @@ namespace KMC.Engine.SpacecraftSystems
                 SyntheticElectricalLoad load =
                     distribution.Loads[index];
 
-                if (load != null &&
+                SyntheticElectricalSwitch breaker =
+                    load != null
+                        ? distribution.FindSwitch(
+                            load.BreakerId)
+                        : null;
+
+                bool branchConducting =
+                    load != null &&
                     load.CommandedOn &&
+                    (breaker == null ||
+                     breaker.Conducting);
+
+                if (branchConducting &&
                     string.Equals(
                         load.BusId,
                         busId,

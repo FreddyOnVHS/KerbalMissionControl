@@ -857,6 +857,64 @@ namespace KMC.MissionControl.Training
                                     out failureId,
                                     out result);
                     }
+                    else if (
+                        preset ==
+                            InstructorFailurePreset.GenAContactorFailedOpen ||
+                        preset ==
+                            InstructorFailurePreset.MainATransferFailedOpen ||
+                        preset ==
+                            InstructorFailurePreset.GuidABreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.GenAContactorFalseOpenIndication ||
+                        preset ==
+                            InstructorFailurePreset.GenAContactorWeldedClosed)
+                    {
+                        string switchId;
+                        SyntheticElectricalSwitchFailureMode switchMode;
+
+                        switch (preset)
+                        {
+                            case InstructorFailurePreset.GenAContactorFailedOpen:
+                                switchId = "CONT_GEN_A";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.FailedOpen;
+                                break;
+
+                            case InstructorFailurePreset.MainATransferFailedOpen:
+                                switchId = "XFER_MAIN_A";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.FailedOpen;
+                                break;
+
+                            case InstructorFailurePreset.GuidABreakerTripped:
+                                switchId = "BRK_GUID_A";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+
+                            case InstructorFailurePreset.GenAContactorFalseOpenIndication:
+                                switchId = "CONT_GEN_A";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.FalseOpenIndication;
+                                break;
+
+                            default:
+                                switchId = "CONT_GEN_A";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.WeldedClosed;
+                                break;
+                        }
+
+                        success =
+                            InstructorElectricalSourceFailureBridge
+                                .InjectSwitchFailure(
+                                    _receiver,
+                                    switchId,
+                                    switchMode,
+                                    delay,
+                                    out failureId,
+                                    out result);
+                    }
                     else
                     {
                         success =

@@ -215,28 +215,28 @@ namespace KMC.MissionControl.Rendering.Power
             DrawContactor(
                 g,
                 new Point(genABox.Left + genABox.Width / 2, deviceY + 24),
-                SwitchActualClosed(distribution, "CONT_GEN_A"),
+                distribution.FindSwitch("CONT_GEN_A"),
                 "GEN A",
                 context);
 
             DrawContactor(
                 g,
                 new Point(batABox.Left + batABox.Width / 2, deviceY + 24),
-                SwitchActualClosed(distribution, "CONT_BAT_A"),
+                distribution.FindSwitch("CONT_BAT_A"),
                 "BAT A",
                 context);
 
             DrawContactor(
                 g,
                 new Point(genBBox.Left + genBBox.Width / 2, deviceY + 24),
-                SwitchActualClosed(distribution, "CONT_GEN_B"),
+                distribution.FindSwitch("CONT_GEN_B"),
                 "GEN B",
                 context);
 
             DrawContactor(
                 g,
                 new Point(batBBox.Left + batBBox.Width / 2, deviceY + 24),
-                SwitchActualClosed(distribution, "CONT_BAT_B"),
+                distribution.FindSwitch("CONT_BAT_B"),
                 "BAT B",
                 context);
 
@@ -311,6 +311,7 @@ namespace KMC.MissionControl.Rendering.Power
                 mainABox,
                 new Point(feedAX, feedY + 28),
                 essBox,
+                distribution,
                 feedA,
                 "ESS A",
                 context);
@@ -320,6 +321,7 @@ namespace KMC.MissionControl.Rendering.Power
                 mainBBox,
                 new Point(feedBX, feedY + 28),
                 essBox,
+                distribution,
                 feedB,
                 "ESS B",
                 context);
@@ -433,34 +435,79 @@ namespace KMC.MissionControl.Rendering.Power
         private static void DrawContactor(
             Graphics g,
             Point center,
-            bool closed,
+            SyntheticElectricalSwitch item,
             string label,
             MissionRenderContext context)
         {
-            int r = 8;
-            Color color = closed ? Healthy : Advisory;
+            bool commanded =
+                item != null &&
+                item.CommandedClosed;
+
+            bool indicated =
+                item != null &&
+                item.IndicatedClosed;
+
+            bool conducting =
+                item != null &&
+                item.Conducting;
+
+            int radius = 8;
+
+            Color color =
+                conducting
+                    ? Healthy
+                    : indicated
+                        ? Advisory
+                        : Dead;
 
             using (Pen pen = new Pen(color, 2.0f))
             {
-                g.DrawEllipse(pen, center.X - r, center.Y - r, r * 2, r * 2);
-                g.DrawLine(pen, center.X, center.Y - 26, center.X, center.Y - r);
-                g.DrawLine(pen, center.X, center.Y + r, center.X, center.Y + 26);
+                g.DrawEllipse(
+                    pen,
+                    center.X - radius,
+                    center.Y - radius,
+                    radius * 2,
+                    radius * 2);
 
-                if (closed)
+                g.DrawLine(
+                    pen,
+                    center.X,
+                    center.Y - 26,
+                    center.X,
+                    center.Y - radius);
+
+                g.DrawLine(
+                    pen,
+                    center.X,
+                    center.Y + radius,
+                    center.X,
+                    center.Y + 26);
+
+                if (indicated)
                 {
-                    g.DrawLine(pen, center.X - 5, center.Y, center.X + 5, center.Y);
+                    g.DrawLine(
+                        pen,
+                        center.X - 5,
+                        center.Y,
+                        center.X + 5,
+                        center.Y);
                 }
                 else
                 {
-                    g.DrawLine(pen, center.X - 5, center.Y + 4, center.X + 5, center.Y - 5);
+                    g.DrawLine(
+                        pen,
+                        center.X - 5,
+                        center.Y + 4,
+                        center.X + 5,
+                        center.Y - 5);
                 }
             }
 
             Rectangle labelBox =
                 new Rectangle(
-                    center.X - 118,
+                    center.X - 190,
                     center.Y + 30,
-                    236,
+                    380,
                     34);
 
             using (SolidBrush labelBackground =
@@ -471,20 +518,23 @@ namespace KMC.MissionControl.Rendering.Power
                     labelBox);
             }
 
-            DrawText(g, labelBox,
-                label + "  " + (closed ? "CLOSED" : "OPEN"),
-                context.SmallFont, color,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
-                TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
-        }
+            string evidence =
+                label +
+                "   CMD " +
+                (commanded ? "CL" : "OP") +
+                "   IND " +
+                (indicated ? "CL" : "OP");
 
-        private static bool SwitchActualClosed(
-            SyntheticElectricalDistributionModel distribution,
-            string id)
-        {
-            SyntheticElectricalSwitch item =
-                distribution != null ? distribution.FindSwitch(id) : null;
-            return item != null && item.ActualClosed;
+            DrawText(
+                g,
+                labelBox,
+                evidence,
+                context.SmallFont,
+                color,
+                TextFormatFlags.HorizontalCenter |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
         }
 
         private static void DrawTransferSelector(
@@ -495,16 +545,16 @@ namespace KMC.MissionControl.Rendering.Power
             string label,
             MissionRenderContext context)
         {
-            bool closed = transfer != null && transfer.ActualClosed;
+            bool closed = transfer != null && transfer.IndicatedClosed;
             Color color = closed && bus != null && !string.IsNullOrWhiteSpace(bus.ActiveSourceId)
                 ? Healthy
                 : Advisory;
 
             Rectangle box =
                 new Rectangle(
-                    center.X - 210,
+                    center.X - 280,
                     center.Y - 34,
-                    420,
+                    560,
                     76);
 
             DrawBox(g, box, color);
@@ -522,7 +572,10 @@ namespace KMC.MissionControl.Rendering.Power
                     box.Top + 8,
                     box.Width - 24,
                     28),
-                label + "  AUTO",
+                label + "   AUTO   CMD " +
+                (transfer != null && transfer.CommandedClosed ? "CL" : "OP") +
+                "   IND " +
+                (closed ? "CL" : "OP"),
                 context.SmallFont,
                 color,
                 TextFormatFlags.HorizontalCenter |
@@ -550,13 +603,17 @@ namespace KMC.MissionControl.Rendering.Power
             Rectangle sourceBus,
             Point device,
             Rectangle essBus,
+            SyntheticElectricalDistributionModel distribution,
             SyntheticElectricalSource feed,
             string label,
             MissionRenderContext context)
         {
-            bool closed =
-                feed != null &&
-                feed.CommandedAvailable;
+            SyntheticElectricalSwitch feedSwitch =
+                feed != null
+                    ? distribution.FindSwitch(
+                        feed.ContactorId)
+                    : null;
+
             Color color = SourceColor(feed, context);
             int sourceX = sourceBus.Left + sourceBus.Width / 2;
             int sourceY = sourceBus.Bottom;
@@ -577,7 +634,7 @@ namespace KMC.MissionControl.Rendering.Power
                 g.DrawLine(pen, device.X, device.Y + 26, device.X, essBus.Top);
             }
 
-            DrawContactor(g, device, closed, label, context);
+            DrawContactor(g, device, feedSwitch, label, context);
         }
 
         private static void DrawSourceMerge(
@@ -617,9 +674,24 @@ namespace KMC.MissionControl.Rendering.Power
             SyntheticElectricalLoad load = FindLoad(distribution, id);
             SyntheticElectricalSwitch breaker =
                 load != null ? distribution.FindSwitch(load.BreakerId) : null;
-            bool commanded = load != null && load.CommandedOn;
-            bool actualClosed = breaker != null ? breaker.ActualClosed : commanded;
-            Color color = actualClosed ? Healthy : Dead;
+            bool commanded =
+                load != null &&
+                load.CommandedOn;
+
+            bool indicatedClosed =
+                breaker != null
+                    ? breaker.IndicatedClosed
+                    : commanded;
+
+            bool conducting =
+                breaker != null
+                    ? breaker.Conducting
+                    : commanded;
+
+            Color color =
+                conducting
+                    ? Healthy
+                    : Dead;
 
             Rectangle box = new Rectangle(x, y, width, height);
             int center = box.Left + box.Width / 2;
@@ -637,7 +709,8 @@ namespace KMC.MissionControl.Rendering.Power
             string name = load != null ? load.DisplayName : id;
             string demand = load != null ? load.DemandAmps.ToString("0.0") + " A" : "--";
             string state = load != null
-                ? "BRK " + (actualClosed ? "CLOSED" : "OPEN")
+                ? "CMD " + (commanded ? "ON" : "OFF") +
+                  " / IND " + (indicatedClosed ? "CLOSED" : "OPEN")
                 : "--";
             string priority = load != null ? "PRI " + load.Priority.ToString() : "--";
 
