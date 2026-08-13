@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿using System;
 using KMC.MissionControl.Debugging;
 using KMC.MissionControl.Debugging.Capabilities;
 using KMC.MissionControl.Debugging.Electrical;
