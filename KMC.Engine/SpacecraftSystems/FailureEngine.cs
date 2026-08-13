@@ -249,6 +249,55 @@ namespace KMC.Engine.SpacecraftSystems
                     }
                 }
 
+                if (request.TargetKind ==
+                        SyntheticFailureTargetKind.GuidanceEffect)
+                {
+                    uint reactionWheelPartId;
+
+                    if (!SyntheticFailureTargets.TryParseGuidanceTarget(
+                            request.TargetId,
+                            out reactionWheelPartId))
+                    {
+                        resultText =
+                            "REJECTED - INVALID GUIDANCE FAILURE TARGET";
+
+                        AddRejectedEvent(
+                            state,
+                            request,
+                            resultText);
+
+                        WriteAck(
+                            request.VesselId,
+                            string.Empty,
+                            request.TargetId,
+                            resultText);
+
+                        return false;
+                    }
+
+                    if (double.IsNaN(request.EffectMagnitude) ||
+                        double.IsInfinity(request.EffectMagnitude) ||
+                        request.EffectMagnitude < 0.00 ||
+                        request.EffectMagnitude > 1.00)
+                    {
+                        resultText =
+                            "REJECTED - REACTION WHEEL AUTHORITY MUST BE 0.00..1.00";
+
+                        AddRejectedEvent(
+                            state,
+                            request,
+                            resultText);
+
+                        WriteAck(
+                            request.VesselId,
+                            string.Empty,
+                            request.TargetId,
+                            resultText);
+
+                        return false;
+                    }
+                }
+
                 DateTime activateUtc =
                     request.ActivateUtc == DateTime.MinValue
                         ? DateTime.UtcNow

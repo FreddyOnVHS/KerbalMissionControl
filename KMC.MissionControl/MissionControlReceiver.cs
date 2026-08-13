@@ -30,6 +30,7 @@ namespace KMC.MissionControl
         private readonly ManeuverLinkTransport _maneuverLink;
         private readonly PowerFailureIntegrationController _powerFailureIntegration;
         private readonly PropulsionFailureIntegrationController _propulsionFailureIntegration;
+        private readonly GncFailureIntegrationController _gncFailureIntegration;
         private readonly TelemetryCache _cache;
         private readonly object _engineeringSyncRoot;
 
@@ -41,6 +42,10 @@ namespace KMC.MissionControl
         private string _propDerateTrainingVesselId;
         private string _propShutdownTrainingFailureId;
         private string _propShutdownTrainingVesselId;
+        private string _gncTrainingFailureId;
+        private string _gncTrainingVesselId;
+        private string _commATrainingFailureId;
+        private string _commATrainingVesselId;
 
         public MissionControlReceiver()
         {
@@ -58,6 +63,9 @@ namespace KMC.MissionControl
 
             _propulsionFailureIntegration =
                 new PropulsionFailureIntegrationController();
+
+            _gncFailureIntegration =
+                new GncFailureIntegrationController();
 
             _cache =
                 new TelemetryCache();
@@ -121,6 +129,10 @@ namespace KMC.MissionControl
                 _propDerateTrainingVesselId = string.Empty;
                 _propShutdownTrainingFailureId = string.Empty;
                 _propShutdownTrainingVesselId = string.Empty;
+                _gncTrainingFailureId = string.Empty;
+                _gncTrainingVesselId = string.Empty;
+                _commATrainingFailureId = string.Empty;
+                _commATrainingVesselId = string.Empty;
             }
 
             _maneuverLink.Start();
@@ -543,6 +555,217 @@ namespace KMC.MissionControl
             return true;
         }
 
+        /// <summary>
+        /// Build 14.7 explicit training toggle for 25% authority on one exact
+        /// reaction-wheel part discovered from the live topology.
+        /// </summary>
+        public bool ToggleGncReactionWheelTrainingFailure(
+            out string resultText)
+        {
+            if (!string.IsNullOrWhiteSpace(_gncTrainingFailureId))
+            {
+                return ClearTrainingFailure(
+                    ref _gncTrainingFailureId,
+                    ref _gncTrainingVesselId,
+                    out resultText);
+            }
+
+            uint partId;
+            if (!TrySelectReactionWheelPart(out partId, out resultText))
+                return false;
+
+            AnalysisPipelineResult latest;
+            if (!TryGetActiveEngineeringVessel(out latest, out resultText))
+                return false;
+
+            string vesselId = latest.Snapshot.Vessel.VesselId;
+            if (!EnsureTrainingMode(vesselId, latest, out resultText))
+                return false;
+
+            string targetId =
+                SyntheticFailureTargets.CreateReactionWheelAuthorityTarget(partId);
+            string failureId;
+            string injectResult;
+            bool injected = _engineeringEngine.InjectSyntheticFailure(
+                new SyntheticFailureRequest
+                {
+                    VesselId = vesselId,
+                    TargetId = targetId,
+                    TargetKind = SyntheticFailureTargetKind.GuidanceEffect,
+                    Kind = SyntheticFailureKind.Sudden,
+                    Severity = SyntheticFailureSeverity.Caution,
+                    ComponentHealth = SpacecraftSystemHealth.Degraded,
+                    EffectMagnitude = 0.25,
+                    ActivateUtc = DateTime.UtcNow,
+                    Detail = "BUILD 14.7 EXPLICIT GNC REACTION WHEEL TEST"
+                },
+                out failureId,
+                out injectResult);
+
+            if (!injected)
+            {
+                resultText = injectResult;
+                return false;
+            }
+
+            _gncTrainingFailureId = failureId;
+            _gncTrainingVesselId = vesselId;
+            resultText = "INJECTED " + failureId + " / " +
+                targetId + " / 25% AUTHORITY";
+            return true;
+        }
+
+        /// <summary>
+        /// Build 14.7 synthetic COMM-A failure. This changes KMC spacecraft
+        /// system truth only; it does not claim or mutate stock-KSP RF state.
+        /// </summary>
+        public bool ToggleCommATrainingFailure(
+            out string resultText)
+        {
+            if (!string.IsNullOrWhiteSpace(_commATrainingFailureId))
+            {
+                return ClearTrainingFailure(
+                    ref _commATrainingFailureId,
+                    ref _commATrainingVesselId,
+                    out resultText);
+            }
+
+            AnalysisPipelineResult latest;
+            if (!TryGetActiveEngineeringVessel(out latest, out resultText))
+                return false;
+
+            string vesselId = latest.Snapshot.Vessel.VesselId;
+            if (!EnsureTrainingMode(vesselId, latest, out resultText))
+                return false;
+
+            string failureId;
+            string injectResult;
+            bool injected = _engineeringEngine.InjectSyntheticFailure(
+                new SyntheticFailureRequest
+                {
+                    VesselId = vesselId,
+                    TargetId = "COMM_A",
+                    TargetKind = SyntheticFailureTargetKind.Component,
+                    Kind = SyntheticFailureKind.Sudden,
+                    Severity = SyntheticFailureSeverity.Caution,
+                    ComponentHealth = SpacecraftSystemHealth.Failed,
+                    ActivateUtc = DateTime.UtcNow,
+                    Detail = "BUILD 14.7 EXPLICIT COMM-A SYNTHETIC FAILURE TEST"
+                },
+                out failureId,
+                out injectResult);
+
+            if (!injected)
+            {
+                resultText = injectResult;
+                return false;
+            }
+
+            _commATrainingFailureId = failureId;
+            _commATrainingVesselId = vesselId;
+            resultText = "INJECTED " + failureId + " / COMM_A / FAILED";
+            return true;
+        }
+
+        private bool TrySelectReactionWheelPart(
+            out uint partId,
+            out string resultText)
+        {
+            partId = 0;
+            resultText = string.Empty;
+            VesselTopology topology = _cache.GetTopology();
+            if (topology == null || topology.Nodes == null)
+            {
+                resultText = "NO LIVE TOPOLOGY";
+                return false;
+            }
+
+            for (int i = 0; i < topology.Nodes.Count; i++)
+            {
+                VesselTopologyNode node = topology.Nodes[i];
+                if (node == null || node.PartId == 0 || node.Modules == null)
+                    continue;
+
+                for (int m = 0; m < node.Modules.Count; m++)
+                {
+                    VesselModuleDescriptor module = node.Modules[m];
+                    if (module == null) continue;
+                    if (string.Equals(module.ModuleName, "ModuleReactionWheel",
+                            StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(module.ModuleTypeName, "ModuleReactionWheel",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (partId == 0 || node.PartId < partId)
+                            partId = node.PartId;
+                    }
+                }
+            }
+
+            if (partId == 0)
+            {
+                resultText = "NO REACTION WHEEL IN LIVE TOPOLOGY";
+                return false;
+            }
+
+            resultText = "SELECTED REACTION WHEEL PART " + partId.ToString();
+            return true;
+        }
+
+        private static bool TryGetActiveEngineeringVessel(
+            out AnalysisPipelineResult latest,
+            out string resultText)
+        {
+            resultText = string.Empty;
+            if (!EngineeringSnapshotStore.TryGetLatest(out latest) ||
+                latest == null || latest.Snapshot == null ||
+                latest.Snapshot.Vessel == null ||
+                string.IsNullOrWhiteSpace(latest.Snapshot.Vessel.VesselId))
+            {
+                resultText = "NO ACTIVE ENGINEERING VESSEL";
+                return false;
+            }
+            return true;
+        }
+
+        private bool EnsureTrainingMode(
+            string vesselId,
+            AnalysisPipelineResult latest,
+            out string resultText)
+        {
+            resultText = string.Empty;
+            FailureSimulationSnapshot current =
+                latest.Snapshot.SpacecraftSystems != null
+                    ? latest.Snapshot.SpacecraftSystems.FailureSimulation
+                    : null;
+            if (current != null && current.Mode != FailureSimulationMode.Nominal)
+                return true;
+
+            return _engineeringEngine.SetFailureSimulationMode(
+                vesselId,
+                FailureSimulationMode.Training,
+                out resultText);
+        }
+
+        private bool ClearTrainingFailure(
+            ref string failureIdStore,
+            ref string vesselIdStore,
+            out string resultText)
+        {
+            string failureId = failureIdStore;
+            string vesselId = vesselIdStore;
+            string clearResult;
+            bool cleared = _engineeringEngine.ClearSyntheticFailure(
+                vesselId, failureId, out clearResult);
+            if (cleared)
+            {
+                resultText = "CLEARED " + failureId;
+                failureIdStore = string.Empty;
+                vesselIdStore = string.Empty;
+            }
+            else resultText = clearResult;
+            return cleared;
+        }
+
         public bool UploadLatestManeuver(
             out string resultText)
         {
@@ -905,6 +1128,9 @@ namespace KMC.MissionControl
 
                 _propulsionFailureIntegration.Evaluate(
                     result);
+
+                _gncFailureIntegration.Evaluate(
+                    result);
             }
             catch (Exception ex)
             {
@@ -951,6 +1177,7 @@ namespace KMC.MissionControl
         {
             _powerFailureIntegration.RestoreAll();
             _propulsionFailureIntegration.RestoreAll();
+            _gncFailureIntegration.RestoreAll();
 
             if (!_running)
             {
@@ -1010,6 +1237,7 @@ namespace KMC.MissionControl
             _maneuverLink.Dispose();
             _powerFailureIntegration.Dispose();
             _propulsionFailureIntegration.Dispose();
+            _gncFailureIntegration.Dispose();
         }
     }
 }

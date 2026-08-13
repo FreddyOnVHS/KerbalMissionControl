@@ -749,13 +749,11 @@ namespace KMC.MissionControl
 
             _navigationBar.AddPage(
                 "COMM",
-                new AscentPage(),
-                enabled: false);
+                new CommPage());
 
             _navigationBar.AddPage(
                 "SYS",
-                new AscentPage(),
-                enabled: false);
+                new SystemsPage());
 
             _navigationBar.AddPage(
                 "MAP",
@@ -1989,6 +1987,42 @@ namespace KMC.MissionControl
                     success +
                     " | Result=" +
                     resultText);
+
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+
+            if (e.Control &&
+                e.Shift &&
+                e.KeyCode == Keys.G)
+            {
+                string resultText;
+                bool success =
+                    _receiver.ToggleGncReactionWheelTrainingFailure(
+                        out resultText);
+
+                Debug.WriteLine(
+                    "KMC.MissionControl GNC REACTION WHEEL TEST" +
+                    " | Success=" + success +
+                    " | Result=" + resultText);
+
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+
+            if (e.Control &&
+                e.Shift &&
+                e.KeyCode == Keys.C)
+            {
+                string resultText;
+                bool success =
+                    _receiver.ToggleCommATrainingFailure(
+                        out resultText);
+
+                Debug.WriteLine(
+                    "KMC.MissionControl COMM-A FAILURE TEST" +
+                    " | Success=" + success +
+                    " | Result=" + resultText);
 
                 e.Handled = true;
                 e.SuppressKeyPress = true;

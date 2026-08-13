@@ -32,7 +32,8 @@ namespace KMC.Engine.SpacecraftSystems
         ElectricalSource = 1,
         Instrumentation = 2,
         PowerEffect = 3,
-        PropulsionEffect = 4
+        PropulsionEffect = 4,
+        GuidanceEffect = 5
     }
 
     /// <summary>
@@ -50,6 +51,9 @@ namespace KMC.Engine.SpacecraftSystems
         public const string EngineShutdownPrefix =
             "PROP_ENGINE_SHUTDOWN:";
 
+        public const string ReactionWheelAuthorityPrefix =
+            "GNC_REACTION_WHEEL:";
+
         public static string CreateEngineDerateTarget(
             uint partPersistentId)
         {
@@ -64,6 +68,39 @@ namespace KMC.Engine.SpacecraftSystems
             return
                 EngineShutdownPrefix +
                 partPersistentId.ToString();
+        }
+
+        public static string CreateReactionWheelAuthorityTarget(
+            uint partId)
+        {
+            return
+                ReactionWheelAuthorityPrefix +
+                partId.ToString();
+        }
+
+        public static bool TryParseGuidanceTarget(
+            string targetId,
+            out uint partId)
+        {
+            partId = 0;
+
+            if (string.IsNullOrWhiteSpace(targetId) ||
+                !targetId.StartsWith(
+                    ReactionWheelAuthorityPrefix,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            string value =
+                targetId.Substring(
+                    ReactionWheelAuthorityPrefix.Length);
+
+            return
+                uint.TryParse(
+                    value,
+                    out partId) &&
+                partId != 0;
         }
 
         public static bool TryParsePropulsionTarget(

@@ -854,9 +854,12 @@ namespace KMC.Plugin
             if (packet == null ||
                 string.IsNullOrWhiteSpace(restoreKey) ||
                 string.IsNullOrWhiteSpace(packet.CommandId) ||
-                !packet.CommandId.StartsWith(
+                (!packet.CommandId.StartsWith(
                     "PROP14.6-",
-                    StringComparison.Ordinal))
+                    StringComparison.Ordinal) &&
+                 !packet.CommandId.StartsWith(
+                    "GNC14.7-",
+                    StringComparison.Ordinal)))
             {
                 return;
             }
@@ -936,38 +939,59 @@ namespace KMC.Plugin
                 {
                     try
                     {
-                        PartModule engine =
-                            FindModule(
-                                part,
-                                "ModuleEngines",
-                                "ModuleEnginesFX");
-
-                        if (engine != null)
+                        if (lease.EffectType ==
+                                FailureEffectType.ReactionWheelAuthority)
                         {
-                            if (lease.EffectType ==
-                                    FailureEffectType.EngineDerate &&
-                                restore.Primary.HasValue)
+                            PartModule wheel =
+                                FindModule(
+                                    part,
+                                    "ModuleReactionWheel");
+
+                            if (wheel != null &&
+                                restore.Primary.HasValue &&
+                                restore.Secondary.HasValue &&
+                                restore.Tertiary.HasValue)
                             {
-                                SetNumericMember(
-                                    engine,
-                                    "thrustPercentage",
-                                    restore.Primary.Value);
+                                SetNumericMember(wheel, "PitchTorque", restore.Primary.Value);
+                                SetNumericMember(wheel, "YawTorque", restore.Secondary.Value);
+                                SetNumericMember(wheel, "RollTorque", restore.Tertiary.Value);
                             }
-                            else if (lease.EffectType ==
-                                         FailureEffectType.EngineShutdown &&
-                                     restore.Flag.HasValue &&
-                                     restore.Flag.Value)
+                        }
+                        else
+                        {
+                            PartModule engine =
+                                FindModule(
+                                    part,
+                                    "ModuleEngines",
+                                    "ModuleEnginesFX");
+
+                            if (engine != null)
                             {
-                                InvokeParameterless(
-                                    engine,
-                                    "Activate");
+                                if (lease.EffectType ==
+                                        FailureEffectType.EngineDerate &&
+                                    restore.Primary.HasValue)
+                                {
+                                    SetNumericMember(
+                                        engine,
+                                        "thrustPercentage",
+                                        restore.Primary.Value);
+                                }
+                                else if (lease.EffectType ==
+                                             FailureEffectType.EngineShutdown &&
+                                         restore.Flag.HasValue &&
+                                         restore.Flag.Value)
+                                {
+                                    InvokeParameterless(
+                                        engine,
+                                        "Activate");
+                                }
                             }
                         }
                     }
                     catch (Exception ex)
                     {
                         Debug.LogError(
-                            "[KMC] PROP FAILURE EFFECT FAILSAFE RESTORE ERROR" +
+                            "[KMC] FAILURE EFFECT FAILSAFE RESTORE ERROR" +
                             " | VesselId=" +
                             lease.VesselId +
                             " | Part=" +
@@ -992,7 +1016,7 @@ namespace KMC.Plugin
                     pair.Key);
 
                 Debug.Log(
-                    "[KMC] PROP FAILURE EFFECT FAILSAFE" +
+                    "[KMC] FAILURE EFFECT FAILSAFE" +
                     " | VesselId=" +
                     lease.VesselId +
                     " | Part=" +
@@ -1080,6 +1104,9 @@ namespace KMC.Plugin
                 _restore.Remove(
                     key);
 
+                _propulsionEffectLeases.Remove(
+                    key);
+
                 Complete(
                     packet,
                     "RESTORED",
@@ -1159,6 +1186,11 @@ namespace KMC.Plugin
                 GetNumericMember(
                     wheel,
                     "PitchTorque");
+
+            RefreshPropulsionEffectLease(
+                packet,
+                FailureEffectType.ReactionWheelAuthority,
+                key);
 
             Complete(
                 packet,
