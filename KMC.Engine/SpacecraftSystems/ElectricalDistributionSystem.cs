@@ -16,6 +16,14 @@ namespace KMC.Engine.SpacecraftSystems
         private const double HighLoadThreshold = 0.80;
         private const double UndervoltageThreshold = 24.0;
 
+        private string _lastDiagnosticKey;
+
+        public SyntheticElectricalDistributionSystem()
+        {
+            _lastDiagnosticKey =
+                string.Empty;
+        }
+
         public SyntheticElectricalDistributionModel BuildAndApply(
             SpacecraftSystemsModel systems,
             DateTime generatedUtc,
@@ -27,7 +35,18 @@ namespace KMC.Engine.SpacecraftSystems
             SyntheticFailureEngine.ApplyElectricalSourceFailures(distribution, failures);
             ResolveSwitching(distribution);
             Recalculate(distribution);
-            ApplyBusStatesToSystems(systems, distribution);
+            ApplyBusStatesToSystems(
+                systems,
+                distribution);
+
+            WriteDiagnosticIfChanged(
+                systems,
+                distribution);
+
+#if DEBUG
+            RunDependencySelfTestOnce();
+#endif
+
             return distribution;
         }
 
@@ -314,5 +333,429 @@ namespace KMC.Engine.SpacecraftSystems
             d.Loads.Add(new SyntheticElectricalLoad { EquipmentId=id, DisplayName=name, BusId=bus, BreakerId=breaker, DemandAmps=amps, Priority=priority, CommandedOn=true });
             AddSwitch(d,breaker,name+" BREAKER",bus,id,SyntheticElectricalSwitchKind.LoadBreaker,false);
         }
+        private void WriteDiagnosticIfChanged(
+            SpacecraftSystemsModel systems,
+            SyntheticElectricalDistributionModel distribution)
+        {
+            if (systems == null ||
+                distribution == null)
+            {
+                return;
+            }
+
+            string key =
+                (systems.VesselId ?? string.Empty) +
+                "|" +
+                systems.TopologyRevision.ToString() +
+                "|" +
+                (distribution.TemplateId ?? string.Empty) +
+                FormatBusDiagnostic(
+                    distribution.FindBus("BUS_MAIN_A"),
+                    "MAIN_A") +
+                FormatBusDiagnostic(
+                    distribution.FindBus("BUS_MAIN_B"),
+                    "MAIN_B") +
+                FormatBusDiagnostic(
+                    distribution.FindBus("BUS_ESS"),
+                    "ESS") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "GUID_A") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "GUID_B") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "COMM_A") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "COMM_B") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "PUMP_A") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "PUMP_B") +
+                "|" +
+                DescribeLiveSystemState(
+                    systems,
+                    "FLIGHT_COMPUTER");
+
+            if (string.Equals(
+                    key,
+                    _lastDiagnosticKey,
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _lastDiagnosticKey =
+                key;
+
+            Debug.WriteLine(
+                "KMC.Engine ELECTRICAL DISTRIBUTION" +
+                " | Vessel=" +
+                (systems.VesselName ?? string.Empty) +
+                " | Revision=" +
+                systems.TopologyRevision.ToString() +
+                " | Template=" +
+                (distribution.TemplateId ?? string.Empty) +
+                " | Sources=" +
+                distribution.Sources.Count.ToString() +
+                " | Buses=" +
+                distribution.Buses.Count.ToString() +
+                " | Loads=" +
+                distribution.Loads.Count.ToString() +
+                " | Switches=" +
+                distribution.Switches.Count.ToString() +
+                FormatBusDiagnostic(
+                    distribution.FindBus("BUS_MAIN_A"),
+                    "MAIN_A") +
+                FormatBusDiagnostic(
+                    distribution.FindBus("BUS_MAIN_B"),
+                    "MAIN_B") +
+                FormatBusDiagnostic(
+                    distribution.FindBus("BUS_ESS"),
+                    "ESS") +
+                " | GUID_A=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "GUID_A") +
+                " | GUID_B=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "GUID_B") +
+                " | COMM_A=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "COMM_A") +
+                " | COMM_B=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "COMM_B") +
+                " | PUMP_A=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "PUMP_A") +
+                " | PUMP_B=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "PUMP_B") +
+                " | FLIGHT_COMPUTER=" +
+                DescribeLiveSystemState(
+                    systems,
+                    "FLIGHT_COMPUTER"));
+        }
+
+        private static string DescribeLiveSystemState(
+            SpacecraftSystemsModel systems,
+            string componentId)
+        {
+            SpacecraftSystemComponent component =
+                systems != null
+                    ? systems.FindComponent(
+                        componentId)
+                    : null;
+
+            return
+                component != null
+                    ? component.State.ToString()
+                    : "MISSING";
+        }
+
+        private static string FormatBusDiagnostic(
+            SyntheticElectricalBus bus,
+            string label)
+        {
+            if (bus == null)
+            {
+                return
+                    " | " +
+                    label +
+                    "=MISSING";
+            }
+
+            return
+                " | " +
+                label +
+                "=" +
+                bus.State.ToString() +
+                "," +
+                bus.Voltage.ToString("0.0") +
+                "V," +
+                bus.DemandAmps.ToString("0.0") +
+                "/" +
+                bus.AvailableCurrentAmps.ToString("0.0") +
+                "A," +
+                bus.LoadPercent.ToString("0.0") +
+                "%," +
+                bus.ActiveSourceCount.ToString() +
+                "SRC," +
+                (string.IsNullOrWhiteSpace(
+                    bus.ActiveSourceId)
+                    ? "NONE"
+                    : bus.ActiveSourceId);
+        }
+
+#if DEBUG
+        private static bool _selfTestCompleted;
+
+        private static void RunDependencySelfTestOnce()
+        {
+            if (_selfTestCompleted)
+            {
+                return;
+            }
+
+            _selfTestCompleted =
+                true;
+
+            SyntheticElectricalDistributionModel distribution =
+                BuildNominalDistribution(
+                    DateTime.UtcNow);
+
+            SyntheticElectricalSource genB =
+                distribution.FindSource(
+                    "SRC_GEN_B");
+
+            SyntheticElectricalSource batB =
+                distribution.FindSource(
+                    "SRC_BAT_B");
+
+            if (genB != null)
+            {
+                genB.State =
+                    SyntheticElectricalSourceState.Offline;
+            }
+
+            if (batB != null)
+            {
+                batB.State =
+                    SyntheticElectricalSourceState.Offline;
+            }
+
+            Recalculate(
+                distribution);
+
+            SpacecraftSystemsModel systems =
+                BuildSelfTestSystemsModel();
+
+            ApplyBusStatesToSystems(
+                systems,
+                distribution);
+
+            SyntheticElectricalBus mainA =
+                distribution.FindBus(
+                    "BUS_MAIN_A");
+
+            SyntheticElectricalBus mainB =
+                distribution.FindBus(
+                    "BUS_MAIN_B");
+
+            SyntheticElectricalBus essential =
+                distribution.FindBus(
+                    "BUS_ESS");
+
+            SpacecraftSystemComponent guidA =
+                systems.FindComponent(
+                    "GUID_A");
+
+            SpacecraftSystemComponent guidB =
+                systems.FindComponent(
+                    "GUID_B");
+
+            SpacecraftSystemComponent commB =
+                systems.FindComponent(
+                    "COMM_B");
+
+            SpacecraftSystemComponent pumpB =
+                systems.FindComponent(
+                    "PUMP_B");
+
+            SpacecraftSystemComponent flightComputer =
+                systems.FindComponent(
+                    "FLIGHT_COMPUTER");
+
+            bool pass =
+                mainA != null &&
+                mainA.State ==
+                    SyntheticElectricalBusState.Nominal &&
+                string.Equals(
+                    mainA.ActiveSourceId,
+                    "SRC_GEN_A",
+                    StringComparison.Ordinal) &&
+                mainB != null &&
+                mainB.State ==
+                    SyntheticElectricalBusState.Unpowered &&
+                essential != null &&
+                essential.State ==
+                    SyntheticElectricalBusState.Nominal &&
+                guidA != null &&
+                guidA.State ==
+                    SpacecraftSystemState.Online &&
+                guidB != null &&
+                guidB.State ==
+                    SpacecraftSystemState.Unpowered &&
+                commB != null &&
+                commB.State ==
+                    SpacecraftSystemState.Unpowered &&
+                pumpB != null &&
+                pumpB.State ==
+                    SpacecraftSystemState.Unpowered &&
+                flightComputer != null &&
+                flightComputer.State ==
+                    SpacecraftSystemState.Online;
+
+            Debug.WriteLine(
+                "KMC.Engine ELECTRICAL DISTRIBUTION SELFTEST" +
+                " | " +
+                (pass ? "PASS" : "FAIL") +
+                " | MAIN_A=" +
+                DescribeBusState(mainA) +
+                " | MAIN_B=" +
+                DescribeBusState(mainB) +
+                " | ESS=" +
+                DescribeBusState(essential) +
+                " | GUID_A=" +
+                DescribeSystemState(guidA) +
+                " | GUID_B=" +
+                DescribeSystemState(guidB) +
+                " | COMM_B=" +
+                DescribeSystemState(commB) +
+                " | PUMP_B=" +
+                DescribeSystemState(pumpB) +
+                " | FLIGHT_COMPUTER=" +
+                DescribeSystemState(flightComputer) +
+                " | TEST=GEN_B+BAT_B OFFLINE / SWITCHED SOURCE");
+
+            Debug.Assert(
+                pass,
+                "Build 14.11.3 electrical distribution self-test failed.");
+        }
+
+        private static SpacecraftSystemsModel
+            BuildSelfTestSystemsModel()
+        {
+            SpacecraftSystemsModel systems =
+                new SpacecraftSystemsModel();
+
+            AddSelfTestComponent(
+                systems,
+                "BUS_MAIN_A");
+
+            AddSelfTestComponent(
+                systems,
+                "BUS_MAIN_B");
+
+            AddSelfTestComponent(
+                systems,
+                "BUS_ESS");
+
+            AddSelfTestComponent(
+                systems,
+                "GUID_A");
+
+            AddSelfTestComponent(
+                systems,
+                "GUID_B");
+
+            AddSelfTestComponent(
+                systems,
+                "COMM_B");
+
+            AddSelfTestComponent(
+                systems,
+                "PUMP_B");
+
+            AddSelfTestComponent(
+                systems,
+                "FLIGHT_COMPUTER");
+
+            AddSelfTestPowerDependency(
+                systems,
+                "BUS_MAIN_A",
+                "GUID_A");
+
+            AddSelfTestPowerDependency(
+                systems,
+                "BUS_MAIN_B",
+                "GUID_B");
+
+            AddSelfTestPowerDependency(
+                systems,
+                "BUS_MAIN_B",
+                "COMM_B");
+
+            AddSelfTestPowerDependency(
+                systems,
+                "BUS_MAIN_B",
+                "PUMP_B");
+
+            AddSelfTestPowerDependency(
+                systems,
+                "BUS_ESS",
+                "FLIGHT_COMPUTER");
+
+            systems.Recalculate();
+
+            return systems;
+        }
+
+        private static void AddSelfTestComponent(
+            SpacecraftSystemsModel systems,
+            string id)
+        {
+            systems.Components.Add(
+                new SpacecraftSystemComponent
+                {
+                    Id = id,
+                    DisplayName = id,
+                    CommandedOn = true,
+                    Health =
+                        SpacecraftSystemHealth.Nominal
+                });
+        }
+
+        private static void AddSelfTestPowerDependency(
+            SpacecraftSystemsModel systems,
+            string sourceId,
+            string targetId)
+        {
+            systems.Dependencies.Add(
+                new SpacecraftSystemDependency
+                {
+                    SourceId = sourceId,
+                    TargetId = targetId,
+                    Kind =
+                        SpacecraftDependencyKind.Power,
+                    Required = true
+                });
+        }
+
+        private static string DescribeBusState(
+            SyntheticElectricalBus bus)
+        {
+            return
+                bus != null
+                    ? bus.State.ToString()
+                    : "MISSING";
+        }
+
+        private static string DescribeSystemState(
+            SpacecraftSystemComponent component)
+        {
+            return
+                component != null
+                    ? component.State.ToString()
+                    : "MISSING";
+        }
+#endif
+
     }
 }
