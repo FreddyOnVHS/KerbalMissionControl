@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -229,7 +229,7 @@ namespace KMC.MissionControl.Training
                 new Label
                 {
                     Text =
-                        "INSTRUCTOR / SCENARIO CONTROL\n14.11.1A — STABILITY RECOVERY",
+                        "INSTRUCTOR / SCENARIO CONTROL\n14.11.3B — ELECTRICAL SOURCE TESTS",
                     Dock =
                         DockStyle.Fill,
                     TextAlign =
@@ -835,12 +835,37 @@ namespace KMC.MissionControl.Training
                     string failureId;
                     string result;
 
-                    bool success =
-                        _receiver.InjectInstructorFailure(
-                            preset,
-                            delay,
-                            out failureId,
-                            out result);
+                    bool success;
+
+                    if (preset ==
+                            InstructorFailurePreset.GeneratorA ||
+                        preset ==
+                            InstructorFailurePreset.GeneratorB)
+                    {
+                        string sourceId =
+                            preset ==
+                                InstructorFailurePreset.GeneratorA
+                                ? "SRC_GEN_A"
+                                : "SRC_GEN_B";
+
+                        success =
+                            InstructorElectricalSourceFailureBridge
+                                .InjectGeneratorFailure(
+                                    _receiver,
+                                    sourceId,
+                                    delay,
+                                    out failureId,
+                                    out result);
+                    }
+                    else
+                    {
+                        success =
+                            _receiver.InjectInstructorFailure(
+                                preset,
+                                delay,
+                                out failureId,
+                                out result);
+                    }
 
                     return
                         new CommandResult(

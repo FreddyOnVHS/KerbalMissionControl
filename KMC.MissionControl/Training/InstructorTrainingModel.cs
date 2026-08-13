@@ -13,7 +13,9 @@ namespace KMC.MissionControl.Training
         PumpB = 6,
         EngineDerate50 = 7,
         EngineShutdown = 8,
-        ReactionWheel25 = 9
+        ReactionWheel25 = 9,
+        GeneratorA = 10,
+        GeneratorB = 11
     }
 
     public enum InstructorScenarioPreset
@@ -30,6 +32,12 @@ namespace KMC.MissionControl.Training
             {
                 case InstructorFailurePreset.PowerEcLeak:
                     return "POWER - EC LEAK 8.0 EC/S";
+
+                case InstructorFailurePreset.GeneratorA:
+                    return "POWER - GENERATOR A FAILED";
+
+                case InstructorFailurePreset.GeneratorB:
+                    return "POWER - GENERATOR B FAILED";
 
                 case InstructorFailurePreset.CommA:
                     return "COMM - TRANSCEIVER A FAILED";

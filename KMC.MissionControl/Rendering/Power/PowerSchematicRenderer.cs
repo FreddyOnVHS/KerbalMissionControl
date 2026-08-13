@@ -9,14 +9,14 @@ using KMC.MissionControl.Models;
 namespace KMC.MissionControl.Rendering.Power
 {
     /// <summary>
-    /// Build 14.11.2 performance-first EECOM POWER 1/2 schematic.
+    /// Build 14.11.3 switched-source EECOM POWER 1/2 schematic.
     ///
     /// The renderer intentionally uses simple GDI primitives and direct model
     /// access only. It does not call the legacy POWER renderer, build LINQ
     /// lists, measure text every frame, or draw hidden panels.
     ///
     /// Current synthetic distribution truth is shown as:
-    /// SOURCE -> COMMAND/PROTECTION SYMBOL -> MAIN BUS -> ESS FEEDS -> LOADS.
+    /// SOURCE -> CONTACTOR -> SOURCE TRANSFER -> MAIN BUS -> ESS FEEDS -> LOAD BREAKERS -> LOADS.
     ///
     /// Contactors/breakers are visualized as the future switching layer, but
     /// this build does not invent separate hardware truth. Current source/feed
@@ -110,14 +110,21 @@ namespace KMC.MissionControl.Rendering.Power
             int top = area.Top + 42;
             int sourceY = top + 40;
             int sourceH = 124;
-            int deviceY = sourceY + sourceH + 26;
-            int busY = deviceY + 92;
+
+            // Dedicated source-contactor lane.
+            int deviceY = sourceY + sourceH + 30;
+
+            // Dedicated transfer-selector lane.
+            int transferY = deviceY + 116;
+
+            // Main buses are below the transfer row.
+            int busY = transferY + 100;
             int busH = 124;
-            int feedY = busY + busH + 42;
-            int essY = feedY + 88;
+            int feedY = busY + busH + 46;
+            int essY = feedY + 92;
             int essH = 118;
-            int loadY = essY + essH + 48;
-            int summaryY = area.Bottom - 136;
+            int loadY = essY + essH + 52;
+            int summaryY = area.Bottom - 140;
 
             int colGap = Math.Max(28, width / 40);
             int halfW = (width - colGap) / 2;
@@ -208,34 +215,50 @@ namespace KMC.MissionControl.Rendering.Power
             DrawContactor(
                 g,
                 new Point(genABox.Left + genABox.Width / 2, deviceY + 24),
-                genA != null && genA.CommandedAvailable,
+                SwitchActualClosed(distribution, "CONT_GEN_A"),
                 "GEN A",
                 context);
 
             DrawContactor(
                 g,
                 new Point(batABox.Left + batABox.Width / 2, deviceY + 24),
-                batA != null && batA.CommandedAvailable,
+                SwitchActualClosed(distribution, "CONT_BAT_A"),
                 "BAT A",
                 context);
 
             DrawContactor(
                 g,
                 new Point(genBBox.Left + genBBox.Width / 2, deviceY + 24),
-                genB != null && genB.CommandedAvailable,
+                SwitchActualClosed(distribution, "CONT_GEN_B"),
                 "GEN B",
                 context);
 
             DrawContactor(
                 g,
                 new Point(batBBox.Left + batBBox.Width / 2, deviceY + 24),
-                batB != null && batB.CommandedAvailable,
+                SwitchActualClosed(distribution, "CONT_BAT_B"),
                 "BAT B",
+                context);
+
+            DrawTransferSelector(
+                g,
+                new Point(aCenter, transferY),
+                distribution.FindSwitch("XFER_MAIN_A"),
+                mainA,
+                "MAIN A XFER",
+                context);
+
+            DrawTransferSelector(
+                g,
+                new Point(bCenter, transferY),
+                distribution.FindSwitch("XFER_MAIN_B"),
+                mainB,
+                "MAIN B XFER",
                 context);
 
             DrawSectionCaption(
                 g,
-                new Rectangle(left, busY - 58, width, 34),
+                new Rectangle(left, busY - 42, width, 34),
                 "MAIN DISTRIBUTION BUSES",
                 context);
 
@@ -351,12 +374,18 @@ namespace KMC.MissionControl.Rendering.Power
 
             string state = source == null
                 ? "UNAVAILABLE"
-                : source.CommandedAvailable
-                    ? source.State.ToString().ToUpperInvariant()
-                    : "CMD OFF";
+                : !source.CommandedAvailable
+                    ? "CMD OFF"
+                    : source.State == SyntheticElectricalSourceState.Offline
+                        ? "OFFLINE"
+                        : source.Conducting
+                            ? "ACTIVE / FEEDING"
+                            : source.Kind == SyntheticElectricalSourceKind.Battery
+                                ? "STANDBY / AVAILABLE"
+                                : "AVAILABLE / NOT FEEDING";
 
             string amps = source != null
-                ? "AVAIL " + source.AvailableCurrentAmps.ToString("0.0") + " A"
+                ? "RATED " + source.RatedAvailableCurrentAmps.ToString("0.0") + " A"
                 : "--";
 
             DrawText(g, new Rectangle(box.Left + 14, box.Top + 44, box.Width - 28, 32), state, context.SmallFont, color,
@@ -380,6 +409,9 @@ namespace KMC.MissionControl.Rendering.Power
             string voltage = bus != null ? bus.Voltage.ToString("0.0") + " V" : "--";
             string load = bus != null ? bus.DemandAmps.ToString("0.0") + " A / " + bus.AvailableCurrentAmps.ToString("0.0") + " A" : "--";
             string percent = bus != null ? FormatPercent(bus.LoadPercent) : "--";
+            string activeSource = bus != null && !string.IsNullOrWhiteSpace(bus.ActiveSourceId)
+                ? bus.ActiveSourceId.Replace("SRC_", string.Empty)
+                : "NONE";
 
             DrawText(g, new Rectangle(box.Left + 14, box.Top + 8, box.Width - 28, 34),
                 name, context.SmallFont, color,
@@ -392,7 +424,7 @@ namespace KMC.MissionControl.Rendering.Power
                 TextFormatFlags.NoPadding);
 
             DrawText(g, new Rectangle(box.Left + 14, box.Top + 82, box.Width - 28, 32),
-                "DEMAND " + load + "   LOAD " + percent,
+                "SOURCE " + activeSource + "   DEMAND " + load + "   LOAD " + percent,
                 context.SmallFont, context.DimPhosphorColor,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
@@ -446,6 +478,73 @@ namespace KMC.MissionControl.Rendering.Power
                 TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
         }
 
+        private static bool SwitchActualClosed(
+            SyntheticElectricalDistributionModel distribution,
+            string id)
+        {
+            SyntheticElectricalSwitch item =
+                distribution != null ? distribution.FindSwitch(id) : null;
+            return item != null && item.ActualClosed;
+        }
+
+        private static void DrawTransferSelector(
+            Graphics g,
+            Point center,
+            SyntheticElectricalSwitch transfer,
+            SyntheticElectricalBus bus,
+            string label,
+            MissionRenderContext context)
+        {
+            bool closed = transfer != null && transfer.ActualClosed;
+            Color color = closed && bus != null && !string.IsNullOrWhiteSpace(bus.ActiveSourceId)
+                ? Healthy
+                : Advisory;
+
+            Rectangle box =
+                new Rectangle(
+                    center.X - 210,
+                    center.Y - 34,
+                    420,
+                    76);
+
+            DrawBox(g, box, color);
+
+            string source =
+                bus != null &&
+                !string.IsNullOrWhiteSpace(bus.ActiveSourceId)
+                    ? bus.ActiveSourceId.Replace("SRC_", string.Empty)
+                    : "NONE";
+
+            DrawText(
+                g,
+                new Rectangle(
+                    box.Left + 12,
+                    box.Top + 8,
+                    box.Width - 24,
+                    28),
+                label + "  AUTO",
+                context.SmallFont,
+                color,
+                TextFormatFlags.HorizontalCenter |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
+
+            DrawText(
+                g,
+                new Rectangle(
+                    box.Left + 12,
+                    box.Top + 40,
+                    box.Width - 24,
+                    28),
+                "SELECTED " + source,
+                context.SmallFont,
+                color,
+                TextFormatFlags.HorizontalCenter |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+        }
+
         private static void DrawFeedPath(
             Graphics g,
             Rectangle sourceBus,
@@ -455,7 +554,9 @@ namespace KMC.MissionControl.Rendering.Power
             string label,
             MissionRenderContext context)
         {
-            bool closed = feed != null && feed.CommandedAvailable;
+            bool closed =
+                feed != null &&
+                feed.CommandedAvailable;
             Color color = SourceColor(feed, context);
             int sourceX = sourceBus.Left + sourceBus.Width / 2;
             int sourceY = sourceBus.Bottom;
@@ -514,8 +615,11 @@ namespace KMC.MissionControl.Rendering.Power
             MissionRenderContext context)
         {
             SyntheticElectricalLoad load = FindLoad(distribution, id);
+            SyntheticElectricalSwitch breaker =
+                load != null ? distribution.FindSwitch(load.BreakerId) : null;
             bool commanded = load != null && load.CommandedOn;
-            Color color = commanded ? Healthy : Dead;
+            bool actualClosed = breaker != null ? breaker.ActualClosed : commanded;
+            Color color = actualClosed ? Healthy : Dead;
 
             Rectangle box = new Rectangle(x, y, width, height);
             int center = box.Left + box.Width / 2;
@@ -532,7 +636,9 @@ namespace KMC.MissionControl.Rendering.Power
 
             string name = load != null ? load.DisplayName : id;
             string demand = load != null ? load.DemandAmps.ToString("0.0") + " A" : "--";
-            string state = load != null ? (load.CommandedOn ? "ON" : "SHED/OFF") : "--";
+            string state = load != null
+                ? "BRK " + (actualClosed ? "CLOSED" : "OPEN")
+                : "--";
             string priority = load != null ? "PRI " + load.Priority.ToString() : "--";
 
             DrawText(g, new Rectangle(box.Left + 12, box.Top + 8, box.Width - 24, 34), name, context.SmallFont, color,
@@ -669,7 +775,7 @@ namespace KMC.MissionControl.Rendering.Power
             MissionRenderContext context)
         {
             DrawText(g, box,
-                "SCHEMATIC FOUNDATION / COMMAND STATE ONLY / HARDWARE CONTACTOR & BREAKER TRUTH FOLLOWS",
+                "SWITCHED DISTRIBUTION / CMD + ACTUAL + CONDUCTION / GENERATOR PRIMARY / BATTERY AUTO-TRANSFER",
                 context.SmallFont, context.DimPhosphorColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
         }
@@ -718,26 +824,14 @@ namespace KMC.MissionControl.Rendering.Power
             MissionRenderContext context)
         {
             if (source == null)
-            {
                 return context.DimPhosphorColor;
-            }
-
             if (!source.CommandedAvailable)
-            {
                 return Advisory;
-            }
-
-            switch (source.State)
-            {
-                case SyntheticElectricalSourceState.Online:
-                    return Healthy;
-
-                case SyntheticElectricalSourceState.Degraded:
-                    return Warning;
-
-                default:
-                    return Dead;
-            }
+            if (source.State == SyntheticElectricalSourceState.Offline)
+                return Critical;
+            if (source.State == SyntheticElectricalSourceState.Degraded)
+                return Warning;
+            return source.Conducting ? Healthy : Dead;
         }
 
         private static Color BusColor(

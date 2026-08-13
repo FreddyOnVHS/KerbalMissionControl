@@ -36,7 +36,7 @@ namespace KMC.MissionControl.Pages
                  */
                 return new Size(
                     3000,
-                    1100);
+                    1250);
             }
         }
 
