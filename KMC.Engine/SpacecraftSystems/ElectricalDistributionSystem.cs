@@ -17,7 +17,7 @@ namespace KMC.Engine.SpacecraftSystems
     public sealed class SyntheticElectricalDistributionSystem
     {
         private const string DistributionTemplateId =
-            "KMC-14.11.3-28V-DC-SWITCHED";
+            "KMC-14.11.5-28V-DC-LOAD-MANAGEMENT";
 
         private const double NominalVoltage = 28.0;
         private const double HighLoadThreshold = 0.80;
@@ -83,6 +83,9 @@ namespace KMC.Engine.SpacecraftSystems
                 return;
             }
 
+            ResetAutomaticLoadShedding(
+                distribution);
+
             /*
              * Loads remain deterministic bus assignments. Switch conduction is
              * resolved separately so source hardware truth and energy flow are
@@ -101,9 +104,10 @@ namespace KMC.Engine.SpacecraftSystems
                 }
 
                 bus.DemandAmps =
-                    SumDemand(
-                        distribution,
-                        bus.Id);
+                    0.0;
+
+                bus.ShedDemandAmps =
+                    0.0;
 
                 bus.AvailableCurrentAmps =
                     0.0;
@@ -150,6 +154,16 @@ namespace KMC.Engine.SpacecraftSystems
                     {
                         continue;
                     }
+
+                    bus.DemandAmps =
+                        SumDemand(
+                            distribution,
+                            bus.Id);
+
+                    bus.ShedDemandAmps =
+                        SumShedDemand(
+                            distribution,
+                            bus.Id);
 
                     double available = 0.0;
                     double sourceVoltage = 0.0;
@@ -200,6 +214,26 @@ namespace KMC.Engine.SpacecraftSystems
                             activeSourceId =
                                 source.Id;
                         }
+                    }
+
+                    if (available > 0.000001 &&
+                        bus.DemandAmps >
+                            available + 0.000001)
+                    {
+                        ApplyAutomaticLoadShedding(
+                            distribution,
+                            bus.Id,
+                            available);
+
+                        bus.DemandAmps =
+                            SumDemand(
+                                distribution,
+                                bus.Id);
+
+                        bus.ShedDemandAmps =
+                            SumShedDemand(
+                                distribution,
+                                bus.Id);
                     }
 
                     SyntheticElectricalBusState nextState;
@@ -450,7 +484,8 @@ namespace KMC.Engine.SpacecraftSystems
                     breaker);
 
                 breaker.Conducting =
-                    breaker.ActualClosed;
+                    breaker.ActualClosed &&
+                    !load.AutomaticallyShed;
             }
         }
 
@@ -838,6 +873,55 @@ namespace KMC.Engine.SpacecraftSystems
                 3.0,
                 1);
 
+            /*
+             * Build 14.11.5 expanded synthetic spacecraft loads.
+             *
+             * Each main bus receives 2.0 A of shed-first utility/thermal load.
+             * Normal main-bus demand becomes 9.5 A / 12.0 A (79%), just below
+             * the HIGH LOAD threshold. A 6 A degraded source or battery
+             * transfer automatically sheds these priority-3 loads, preserving
+             * the existing 7.5 A core spacecraft load.
+             */
+            AddLoad(
+                distribution,
+                "CABIN_FAN_A",
+                "CABIN FAN A",
+                "BUS_MAIN_A",
+                1.0,
+                3);
+
+            AddLoad(
+                distribution,
+                "THERMAL_HEATER_A",
+                "THERMAL HEATER A",
+                "BUS_MAIN_A",
+                1.0,
+                3);
+
+            AddLoad(
+                distribution,
+                "CABIN_FAN_B",
+                "CABIN FAN B",
+                "BUS_MAIN_B",
+                1.0,
+                3);
+
+            AddLoad(
+                distribution,
+                "THERMAL_HEATER_B",
+                "THERMAL HEATER B",
+                "BUS_MAIN_B",
+                1.0,
+                3);
+
+            AddLoad(
+                distribution,
+                "INSTRUMENTATION_ESS",
+                "ESS INSTRUMENTATION",
+                "BUS_ESS",
+                1.0,
+                1);
+
             return distribution;
         }
 
@@ -1086,6 +1170,134 @@ namespace KMC.Engine.SpacecraftSystems
                     SyntheticElectricalBusState.Nominal ||
                 parent.State ==
                     SyntheticElectricalBusState.HighLoad;
+        }
+
+        private static void ResetAutomaticLoadShedding(
+            SyntheticElectricalDistributionModel distribution)
+        {
+            if (distribution == null)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < distribution.Loads.Count;
+                 index++)
+            {
+                SyntheticElectricalLoad load =
+                    distribution.Loads[index];
+
+                if (load != null)
+                {
+                    load.AutomaticallyShed =
+                        false;
+                }
+            }
+        }
+
+        private static void ApplyAutomaticLoadShedding(
+            SyntheticElectricalDistributionModel distribution,
+            string busId,
+            double availableAmps)
+        {
+            if (distribution == null ||
+                string.IsNullOrWhiteSpace(busId) ||
+                availableAmps <= 0.000001)
+            {
+                return;
+            }
+
+            double demand =
+                SumDemand(
+                    distribution,
+                    busId);
+
+            if (demand <=
+                    availableAmps + 0.000001)
+            {
+                return;
+            }
+
+            /*
+             * Build 14.11.5 protects priority 1/2 equipment and sheds only
+             * explicit priority-3 utility loads. List order is deterministic.
+             */
+            for (int index = 0;
+                 index < distribution.Loads.Count &&
+                 demand >
+                    availableAmps + 0.000001;
+                 index++)
+            {
+                SyntheticElectricalLoad load =
+                    distribution.Loads[index];
+
+                if (load == null ||
+                    !load.CommandedOn ||
+                    load.AutomaticallyShed ||
+                    load.Priority < 3 ||
+                    !string.Equals(
+                        load.BusId,
+                        busId,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                SyntheticElectricalSwitch breaker =
+                    distribution.FindSwitch(
+                        load.BreakerId);
+
+                if (breaker != null &&
+                    !breaker.ActualClosed)
+                {
+                    continue;
+                }
+
+                load.AutomaticallyShed =
+                    true;
+
+                if (breaker != null)
+                {
+                    breaker.Conducting =
+                        false;
+                }
+
+                demand -=
+                    Math.Max(
+                        0.0,
+                        load.DemandAmps);
+            }
+        }
+
+        private static double SumShedDemand(
+            SyntheticElectricalDistributionModel distribution,
+            string busId)
+        {
+            double shed = 0.0;
+
+            for (int index = 0;
+                 index < distribution.Loads.Count;
+                 index++)
+            {
+                SyntheticElectricalLoad load =
+                    distribution.Loads[index];
+
+                if (load != null &&
+                    load.CommandedOn &&
+                    load.AutomaticallyShed &&
+                    string.Equals(
+                        load.BusId,
+                        busId,
+                        StringComparison.Ordinal))
+                {
+                    shed +=
+                        Math.Max(
+                            0.0,
+                            load.DemandAmps);
+                }
+            }
+
+            return shed;
         }
 
         private static double SumDemand(
@@ -1458,7 +1670,9 @@ namespace KMC.Engine.SpacecraftSystems
                 bus.AvailableCurrentAmps.ToString("0.0") +
                 "A," +
                 bus.LoadPercent.ToString("0.0") +
-                "%," +
+                "%,SHED=" +
+                bus.ShedDemandAmps.ToString("0.0") +
+                "A," +
                 bus.ActiveSourceCount.ToString() +
                 "SRC," +
                 (string.IsNullOrWhiteSpace(

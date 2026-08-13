@@ -840,19 +840,28 @@ namespace KMC.MissionControl.Training
                     if (preset ==
                             InstructorFailurePreset.GeneratorA ||
                         preset ==
-                            InstructorFailurePreset.GeneratorB)
+                            InstructorFailurePreset.GeneratorB ||
+                        preset ==
+                            InstructorFailurePreset.GeneratorADegraded50)
                     {
                         string sourceId =
                             preset ==
-                                InstructorFailurePreset.GeneratorA
-                                ? "SRC_GEN_A"
-                                : "SRC_GEN_B";
+                                InstructorFailurePreset.GeneratorB
+                                ? "SRC_GEN_B"
+                                : "SRC_GEN_A";
+
+                        SpacecraftSystemHealth sourceHealth =
+                            preset ==
+                                InstructorFailurePreset.GeneratorADegraded50
+                                ? SpacecraftSystemHealth.Degraded
+                                : SpacecraftSystemHealth.Failed;
 
                         success =
                             InstructorElectricalSourceFailureBridge
                                 .InjectGeneratorFailure(
                                     _receiver,
                                     sourceId,
+                                    sourceHealth,
                                     delay,
                                     out failureId,
                                     out result);

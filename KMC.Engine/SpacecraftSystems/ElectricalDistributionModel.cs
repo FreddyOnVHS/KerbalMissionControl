@@ -298,6 +298,7 @@ namespace KMC.Engine.SpacecraftSystems
             DemandAmps = 0.0;
             Priority = 2;
             CommandedOn = true;
+            AutomaticallyShed = false;
         }
 
         public string EquipmentId { get; set; }
@@ -306,6 +307,16 @@ namespace KMC.Engine.SpacecraftSystems
         public string BreakerId { get; set; }
         public double DemandAmps { get; set; }
         public bool CommandedOn { get; set; }
+
+        /// <summary>
+        /// Transient protection result for this engineering frame.
+        /// Command remains ON; this records automatic priority load shedding.
+        /// </summary>
+        public bool AutomaticallyShed
+        {
+            get;
+            internal set;
+        }
 
         /// <summary>
         /// 1 = essential/protected, 2 = normal, 3 = shed-first.
@@ -324,7 +335,8 @@ namespace KMC.Engine.SpacecraftSystems
                     BreakerId = BreakerId ?? string.Empty,
                     DemandAmps = DemandAmps,
                     Priority = Priority,
-                    CommandedOn = CommandedOn
+                    CommandedOn = CommandedOn,
+                    AutomaticallyShed = AutomaticallyShed
                 };
         }
     }
@@ -339,6 +351,7 @@ namespace KMC.Engine.SpacecraftSystems
             TransferSwitchId = string.Empty;
             NominalVoltage = 28.0;
             Voltage = 0.0;
+            ShedDemandAmps = 0.0;
             State = SyntheticElectricalBusState.Unpowered;
         }
 
@@ -350,6 +363,7 @@ namespace KMC.Engine.SpacecraftSystems
         public double Voltage { get; internal set; }
         public double AvailableCurrentAmps { get; internal set; }
         public double DemandAmps { get; internal set; }
+        public double ShedDemandAmps { get; internal set; }
         public int ActiveSourceCount { get; internal set; }
         public SyntheticElectricalBusState State { get; internal set; }
 
@@ -406,6 +420,7 @@ namespace KMC.Engine.SpacecraftSystems
                     AvailableCurrentAmps =
                         AvailableCurrentAmps,
                     DemandAmps = DemandAmps,
+                    ShedDemandAmps = ShedDemandAmps,
                     ActiveSourceCount = ActiveSourceCount,
                     State = State
                 };

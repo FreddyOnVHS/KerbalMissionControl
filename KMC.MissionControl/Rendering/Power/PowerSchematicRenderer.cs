@@ -124,7 +124,7 @@ namespace KMC.MissionControl.Rendering.Power
             int essY = feedY + 92;
             int essH = 118;
             int loadY = essY + essH + 52;
-            int summaryY = area.Bottom - 140;
+            int summaryY = area.Bottom - 154;
 
             int colGap = Math.Max(28, width / 40);
             int halfW = (width - colGap) / 2;
@@ -240,22 +240,6 @@ namespace KMC.MissionControl.Rendering.Power
                 "BAT B",
                 context);
 
-            DrawTransferSelector(
-                g,
-                new Point(aCenter, transferY),
-                distribution.FindSwitch("XFER_MAIN_A"),
-                mainA,
-                "MAIN A XFER",
-                context);
-
-            DrawTransferSelector(
-                g,
-                new Point(bCenter, transferY),
-                distribution.FindSwitch("XFER_MAIN_B"),
-                mainB,
-                "MAIN B XFER",
-                context);
-
             DrawSectionCaption(
                 g,
                 new Rectangle(left, busY - 42, width, 34),
@@ -289,13 +273,35 @@ namespace KMC.MissionControl.Rendering.Power
                 mainB,
                 context);
 
+            /*
+             * Draw transfer selectors after the source-merge conductors.
+             * Their opaque panel fill masks the feeder inside the selector
+             * rectangle, making the switch appear electrically in-series:
+             * conductor -> selector box -> conductor.
+             */
+            DrawTransferSelector(
+                g,
+                new Point(aCenter, transferY),
+                distribution.FindSwitch("XFER_MAIN_A"),
+                mainA,
+                "MAIN A XFER",
+                context);
+
+            DrawTransferSelector(
+                g,
+                new Point(bCenter, transferY),
+                distribution.FindSwitch("XFER_MAIN_B"),
+                mainB,
+                "MAIN B XFER",
+                context);
+
             DrawSectionCaption(
                 g,
                 new Rectangle(left, feedY - 36, width, 34),
                 "BUS TIE / ESSENTIAL FEEDS",
                 context);
 
-            int essWidth = Math.Min(620, width * 44 / 100);
+            int essWidth = Math.Min(820, width * 52 / 100);
             Rectangle essBox =
                 new Rectangle(
                     left + (width - essWidth) / 2,
@@ -338,13 +344,13 @@ namespace KMC.MissionControl.Rendering.Power
             int loadWidth = (width - loadGap * 6) / 7;
             int loadH = 124;
 
-            DrawLoadBranch(g, distribution, "GUID_A", aLeft + 0 * (loadWidth + loadGap), loadY, loadWidth, loadH, mainABox, context);
-            DrawLoadBranch(g, distribution, "COMM_A", aLeft + 1 * (loadWidth + loadGap), loadY, loadWidth, loadH, mainABox, context);
-            DrawLoadBranch(g, distribution, "PUMP_A", aLeft + 2 * (loadWidth + loadGap), loadY, loadWidth, loadH, mainABox, context);
-            DrawLoadBranch(g, distribution, "FLIGHT_COMPUTER", aLeft + 3 * (loadWidth + loadGap), loadY, loadWidth, loadH, essBox, context);
-            DrawLoadBranch(g, distribution, "GUID_B", aLeft + 4 * (loadWidth + loadGap), loadY, loadWidth, loadH, mainBBox, context);
-            DrawLoadBranch(g, distribution, "COMM_B", aLeft + 5 * (loadWidth + loadGap), loadY, loadWidth, loadH, mainBBox, context);
-            DrawLoadBranch(g, distribution, "PUMP_B", aLeft + 6 * (loadWidth + loadGap), loadY, loadWidth, loadH, mainBBox, context);
+            DrawLoadBranch(g, distribution, "GUID_A", aLeft + 0 * (loadWidth + loadGap), loadY, loadWidth, loadH, mainABox, essBox, context);
+            DrawLoadBranch(g, distribution, "COMM_A", aLeft + 1 * (loadWidth + loadGap), loadY, loadWidth, loadH, mainABox, essBox, context);
+            DrawLoadBranch(g, distribution, "PUMP_A", aLeft + 2 * (loadWidth + loadGap), loadY, loadWidth, loadH, mainABox, essBox, context);
+            DrawLoadBranch(g, distribution, "FLIGHT_COMPUTER", aLeft + 3 * (loadWidth + loadGap), loadY, loadWidth, loadH, essBox, Rectangle.Empty, context);
+            DrawLoadBranch(g, distribution, "GUID_B", aLeft + 4 * (loadWidth + loadGap), loadY, loadWidth, loadH, mainBBox, essBox, context);
+            DrawLoadBranch(g, distribution, "COMM_B", aLeft + 5 * (loadWidth + loadGap), loadY, loadWidth, loadH, mainBBox, essBox, context);
+            DrawLoadBranch(g, distribution, "PUMP_B", aLeft + 6 * (loadWidth + loadGap), loadY, loadWidth, loadH, mainBBox, essBox, context);
 
             DrawRealEcSummary(
                 g,
@@ -354,7 +360,7 @@ namespace KMC.MissionControl.Rendering.Power
 
             DrawFooter(
                 g,
-                new Rectangle(left, area.Bottom - 38, width, 34),
+                new Rectangle(left, area.Bottom - 42, width, 34),
                 context);
         }
 
@@ -425,8 +431,16 @@ namespace KMC.MissionControl.Rendering.Power
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding);
 
+            string shed =
+                bus != null &&
+                bus.ShedDemandAmps > 0.01
+                    ? "   SHED " +
+                      bus.ShedDemandAmps.ToString("0.0") +
+                      " A"
+                    : string.Empty;
+
             DrawText(g, new Rectangle(box.Left + 14, box.Top + 82, box.Width - 28, 32),
-                "SOURCE " + activeSource + "   DEMAND " + load + "   LOAD " + percent,
+                "SOURCE " + activeSource + "   DEMAND " + load + "   LOAD " + percent + shed,
                 context.SmallFont, context.DimPhosphorColor,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
@@ -557,6 +571,14 @@ namespace KMC.MissionControl.Rendering.Power
                     560,
                     76);
 
+            using (SolidBrush fill =
+                new SolidBrush(Panel))
+            {
+                g.FillRectangle(
+                    fill,
+                    box);
+            }
+
             DrawBox(g, box, color);
 
             string source =
@@ -669,6 +691,7 @@ namespace KMC.MissionControl.Rendering.Power
             int width,
             int height,
             Rectangle parentBus,
+            Rectangle avoidBox,
             MissionRenderContext context)
         {
             SyntheticElectricalLoad load = FindLoad(distribution, id);
@@ -697,11 +720,88 @@ namespace KMC.MissionControl.Rendering.Power
             int center = box.Left + box.Width / 2;
             int parentCenter = Math.Max(parentBus.Left + 8, Math.Min(parentBus.Right - 8, center));
 
+            const int avoidClearance = 24;
+
+            bool branchTouchesAvoidZone =
+                !avoidBox.IsEmpty &&
+                (parentCenter >=
+                    avoidBox.Left - avoidClearance &&
+                 parentCenter <=
+                    avoidBox.Right + avoidClearance);
+
+            bool routeAroundAvoidBox =
+                branchTouchesAvoidZone &&
+                parentBus.Bottom <
+                    avoidBox.Bottom &&
+                y - 18 >
+                    avoidBox.Top;
+
             using (Pen wire = new Pen(color, 1.6f))
             {
-                g.DrawLine(wire, parentCenter, parentBus.Bottom, parentCenter, y - 18);
-                g.DrawLine(wire, parentCenter, y - 18, center, y - 18);
-                g.DrawLine(wire, center, y - 18, center, y);
+                if (routeAroundAvoidBox)
+                {
+                    bool routeLeft =
+                        center <
+                            avoidBox.Left +
+                            avoidBox.Width / 2;
+
+                    int routeX =
+                        routeLeft
+                            ? avoidBox.Left -
+                              avoidClearance
+                            : avoidBox.Right +
+                              avoidClearance;
+
+                    /*
+                     * Leave the parent bus and jog sideways immediately.
+                     * The long vertical leg therefore stays completely clear
+                     * of the ESS box and its border instead of riding an edge.
+                     */
+                    int topRouteY =
+                        parentBus.Bottom +
+                        12;
+
+                    g.DrawLine(
+                        wire,
+                        parentCenter,
+                        parentBus.Bottom,
+                        parentCenter,
+                        topRouteY);
+
+                    g.DrawLine(
+                        wire,
+                        parentCenter,
+                        topRouteY,
+                        routeX,
+                        topRouteY);
+
+                    g.DrawLine(
+                        wire,
+                        routeX,
+                        topRouteY,
+                        routeX,
+                        y - 18);
+
+                    g.DrawLine(
+                        wire,
+                        routeX,
+                        y - 18,
+                        center,
+                        y - 18);
+
+                    g.DrawLine(
+                        wire,
+                        center,
+                        y - 18,
+                        center,
+                        y);
+                }
+                else
+                {
+                    g.DrawLine(wire, parentCenter, parentBus.Bottom, parentCenter, y - 18);
+                    g.DrawLine(wire, parentCenter, y - 18, center, y - 18);
+                    g.DrawLine(wire, center, y - 18, center, y);
+                }
             }
 
             DrawBox(g, box, color);
@@ -782,16 +882,16 @@ namespace KMC.MissionControl.Rendering.Power
                 net = power.Flow.NetStorageRateEcPerSecond.ToString("+0.00;-0.00;0.00") + " EC/S";
             }
 
-            DrawText(g, new Rectangle(box.Left + 16, box.Top + 6, box.Width - 32, 34),
+            DrawText(g, new Rectangle(box.Left + 16, box.Top + 2, box.Width - 32, 32),
                 "REAL KSP ELECTRICCHARGE / OBSERVED TELEMETRY",
                 context.SmallFont, context.PhosphorColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
 
             int col = (box.Width - 32) / 4;
-            DrawValueCell(g, new Rectangle(box.Left + 16, box.Top + 42, col, 72), "STORAGE", storage, context);
-            DrawValueCell(g, new Rectangle(box.Left + 16 + col, box.Top + 42, col, 72), "RESERVE", reserve, context);
-            DrawValueCell(g, new Rectangle(box.Left + 16 + col * 2, box.Top + 42, col, 72), "NET FLOW", net, context);
-            DrawValueCell(g, new Rectangle(box.Left + 16 + col * 3, box.Top + 42, col, 72), "ENDURANCE", endurance, context);
+            DrawValueCell(g, new Rectangle(box.Left + 16, box.Top + 34, col, 64), "STORAGE", storage, context);
+            DrawValueCell(g, new Rectangle(box.Left + 16 + col, box.Top + 34, col, 64), "RESERVE", reserve, context);
+            DrawValueCell(g, new Rectangle(box.Left + 16 + col * 2, box.Top + 34, col, 64), "NET FLOW", net, context);
+            DrawValueCell(g, new Rectangle(box.Left + 16 + col * 3, box.Top + 34, col, 64), "ENDURANCE", endurance, context);
         }
 
         private static void DrawValueCell(
@@ -804,7 +904,7 @@ namespace KMC.MissionControl.Rendering.Power
             DrawText(g, new Rectangle(box.Left, box.Top, box.Width, 32), label, context.SmallFont, context.DimPhosphorColor,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
 
-            DrawText(g, new Rectangle(box.Left, box.Top + 36, box.Width, 32), value, context.SmallFont, context.PhosphorColor,
+            DrawText(g, new Rectangle(box.Left, box.Top + 32, box.Width, 32), value, context.SmallFont, context.PhosphorColor,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
         }
 
@@ -848,7 +948,7 @@ namespace KMC.MissionControl.Rendering.Power
             MissionRenderContext context)
         {
             DrawText(g, box,
-                "SWITCHED DISTRIBUTION / CMD + ACTUAL + CONDUCTION / GENERATOR PRIMARY / BATTERY AUTO-TRANSFER",
+                "SWITCHED DISTRIBUTION / P3 AUTO-SHED / GENERATOR PRIMARY / BATTERY AUTO-TRANSFER",
                 context.SmallFont, context.DimPhosphorColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
         }

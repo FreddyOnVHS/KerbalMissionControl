@@ -20,7 +20,8 @@ namespace KMC.MissionControl.Training
         MainATransferFailedOpen = 13,
         GuidABreakerTripped = 14,
         GenAContactorFalseOpenIndication = 15,
-        GenAContactorWeldedClosed = 16
+        GenAContactorWeldedClosed = 16,
+        GeneratorADegraded50 = 17
     }
 
     public enum InstructorScenarioPreset
@@ -43,6 +44,9 @@ namespace KMC.MissionControl.Training
 
                 case InstructorFailurePreset.GeneratorB:
                     return "POWER - GENERATOR B FAILED";
+
+                case InstructorFailurePreset.GeneratorADegraded50:
+                    return "POWER - GENERATOR A DEGRADED 50%";
 
                 case InstructorFailurePreset.GenAContactorFailedOpen:
                     return "POWER - GEN A CONTACTOR FAILED OPEN";

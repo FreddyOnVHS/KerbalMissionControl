@@ -18,6 +18,7 @@ namespace KMC.MissionControl.Training
         public static bool InjectGeneratorFailure(
             MissionControlReceiver receiver,
             string sourceId,
+            SpacecraftSystemHealth sourceHealth,
             double delaySeconds,
             out string failureId,
             out string resultText)
@@ -35,6 +36,15 @@ namespace KMC.MissionControl.Training
                 !string.Equals(sourceId, "SRC_GEN_B", StringComparison.Ordinal))
             {
                 resultText = "UNSUPPORTED GENERATOR SOURCE";
+                return false;
+            }
+
+            if (sourceHealth !=
+                    SpacecraftSystemHealth.Degraded &&
+                sourceHealth !=
+                    SpacecraftSystemHealth.Failed)
+            {
+                resultText = "UNSUPPORTED GENERATOR HEALTH";
                 return false;
             }
 
@@ -108,13 +118,14 @@ namespace KMC.MissionControl.Training
                     Severity =
                         SyntheticFailureSeverity.Caution,
                     ComponentHealth =
-                        SpacecraftSystemHealth.Failed,
+                        sourceHealth,
                     ActivateUtc =
                         DateTime.UtcNow.AddSeconds(delay),
                     Detail =
-                        "BUILD 14.11.3B INSTRUCTOR / " +
+                        "BUILD 14.11.5 INSTRUCTOR / " +
                         sourceId +
-                        " FAILED"
+                        " / " +
+                        sourceHealth.ToString().ToUpperInvariant()
                 };
 
             string injectResult;
@@ -136,7 +147,8 @@ namespace KMC.MissionControl.Training
                 failureId +
                 " / " +
                 sourceId +
-                " / FAILED" +
+                " / " +
+                sourceHealth.ToString().ToUpperInvariant() +
                 (delay > 0.25
                     ? " / SCHEDULED"
                     : " / IMMEDIATE");
