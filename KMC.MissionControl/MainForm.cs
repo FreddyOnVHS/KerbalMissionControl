@@ -33,6 +33,7 @@ namespace KMC.MissionControl
         private const int HeaderHeight = 52;
         private const int SectionSpacing = 16;
         private const int NavigationHeight = 44;
+        private const int FailureAwarenessHeight = 54;
         private const int NormalSummaryHeight = 110;
         private const int CompactSummaryHeight = 0;
         private const int CompactHeightBreakpoint = 1050;
@@ -72,6 +73,8 @@ namespace KMC.MissionControl
         private readonly MissionDisplay _missionDisplay;
         private readonly NavigationBar _navigationBar;
         private readonly MissionSummary _missionSummary;
+        private readonly IntegratedFailureAwarenessStrip _failureAwarenessStrip;
+        private readonly IntegratedMasterWarningBridge _integratedMasterWarningBridge;
         private readonly PerformanceOverlay _performanceOverlay;
         private InstructorConsoleForm _instructorConsole;
 
@@ -165,6 +168,18 @@ namespace KMC.MissionControl
 
             _missionSummary.UpdateTelemetry(initialTelemetry);
 
+            _integratedMasterWarningBridge =
+                new IntegratedMasterWarningBridge(
+                    _missionSummary);
+
+            _failureAwarenessStrip =
+                new IntegratedFailureAwarenessStrip
+                {
+                    Dock = DockStyle.Fill,
+                    Margin = Padding.Empty,
+                    MinimumSize = new Size(320, 42)
+                };
+
             _performanceOverlay =
                 new PerformanceOverlay
                 {
@@ -252,7 +267,7 @@ namespace KMC.MissionControl
                     Padding = new Padding(OuterMargin),
                     Margin = Padding.Empty,
                     ColumnCount = 1,
-                    RowCount = 5
+                    RowCount = 6
                 };
 
             rootLayout.ColumnStyles.Add(
@@ -278,6 +293,11 @@ namespace KMC.MissionControl
             rootLayout.RowStyles.Add(
                 new RowStyle(
                     SizeType.Absolute,
+                    FailureAwarenessHeight));
+
+            rootLayout.RowStyles.Add(
+                new RowStyle(
+                    SizeType.Absolute,
                     NormalSummaryHeight));
 
             rootLayout.RowStyles.Add(
@@ -289,7 +309,8 @@ namespace KMC.MissionControl
 
             rootLayout.Controls.Add(header, 0, 0);
             rootLayout.Controls.Add(_displayPanel, 0, 1);
-            rootLayout.Controls.Add(_missionSummary, 0, 3);
+            rootLayout.Controls.Add(_failureAwarenessStrip, 0, 3);
+            rootLayout.Controls.Add(_missionSummary, 0, 4);
 
             return rootLayout;
         }
@@ -1672,13 +1693,11 @@ namespace KMC.MissionControl
             {
                 _missionSummary.Visible = visible;
 
-                _rootLayout.RowStyles[3].Height =
+                _rootLayout.RowStyles[4].Height =
                     Math.Max(0, height);
 
                 _rootLayout.RowStyles[2].Height =
-                    visible
-                        ? SectionSpacing
-                        : 0;
+                    SectionSpacing;
             }
             finally
             {
@@ -1813,6 +1832,14 @@ namespace KMC.MissionControl
                 _missionSummary.Height > 0)
             {
                 _missionSummary.UpdateTelemetry(telemetry);
+
+                /*
+                 * Build 14.10.5: MissionSummary's legacy warning evaluator runs
+                 * inside UpdateTelemetry and does not know about integrated
+                 * Build 14 warning truth. Reapply the integrated master state
+                 * synchronously before WinForms can repaint.
+                 */
+                _integratedMasterWarningBridge.RefreshAfterTelemetry();
             }
 
             _displayedPacketCount++;
@@ -2226,6 +2253,7 @@ namespace KMC.MissionControl
             _maneuverQueueTransport.Dispose();
             _electricalControlReceiver.Dispose();
             _failureEffectAckReceiver.Dispose();
+            _integratedMasterWarningBridge.Dispose();
             ElectricalControlCommandStore.Clear();
             _receiver.Dispose();
         }

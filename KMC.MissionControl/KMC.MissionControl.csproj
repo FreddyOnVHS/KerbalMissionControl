@@ -28,6 +28,8 @@
     <Compile Include="Controls\ConsolePanel.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\MissionDisplay.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\MissionSummary.cs"><SubType>Component</SubType></Compile>
+    <Compile Include="Controls\IntegratedFailureAwarenessStrip.cs"><SubType>Component</SubType></Compile>
+    <Compile Include="Controls\IntegratedMasterWarningBridge.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\NavigationBar.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\PerformanceOverlay.cs"><SubType>Component</SubType></Compile>
     <Compile Include="Controls\TelemetryValue.cs"><SubType>UserControl</SubType></Compile>

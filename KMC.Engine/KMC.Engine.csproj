@@ -126,6 +126,7 @@
     <Compile Include="SpacecraftSystems\SpacecraftSystemsModel.cs" />
     <Compile Include="SpacecraftSystems\SpacecraftSystemsFoundationSystem.cs" />
     <Compile Include="SpacecraftSystems\FaultIsolationModel.cs" />
+    <Compile Include="SpacecraftSystems\IntegratedCautionWarningModel.cs" />
     <Compile Include="Systems\VesselCapabilityBuilder.cs" />
     <Compile Include="Systems\PowerSystem.cs" />
     <Compile Include="Systems\PropulsionSystem.cs" />
