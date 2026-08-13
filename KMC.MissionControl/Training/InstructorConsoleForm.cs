@@ -1,15 +1,29 @@
 using System;
 using System.Drawing;
+using System.Threading.Tasks;
 using System.Windows.Forms;
+using KMC.Engine.Analysis;
 using KMC.Engine.SpacecraftSystems;
+using KMC.MissionControl.Engineering;
 using KMC.MissionControl.Themes;
 
 namespace KMC.MissionControl.Training
 {
+    /// <summary>
+    /// Build 14.11.1A stability recovery.
+    ///
+    /// IMPORTANT:
+    /// - The F10 UI never calls live Engine snapshot APIs on the WinForms UI thread.
+    /// - Display state comes from EngineeringSnapshotStore only.
+    /// - Instructor mutations run on a worker thread with exception containment.
+    /// - There is no periodic F10 timer.
+    ///
+    /// This prevents instructor work from starving the MainForm message loop,
+    /// which also owns the Integrated Systems C/W WinForms timer.
+    /// </summary>
     public sealed class InstructorConsoleForm : Form
     {
         private readonly MissionControlReceiver _receiver;
-        private readonly Timer _refreshTimer;
 
         private readonly Label _vesselLabel;
         private readonly Label _modeLabel;
@@ -18,6 +32,8 @@ namespace KMC.MissionControl.Training
         private readonly NumericUpDown _delaySeconds;
         private readonly ComboBox _scenarioSelector;
         private readonly ListView _failureList;
+
+        private bool _commandRunning;
 
         public InstructorConsoleForm(
             MissionControlReceiver receiver)
@@ -31,7 +47,7 @@ namespace KMC.MissionControl.Training
             _receiver = receiver;
 
             Text =
-                "KMC - Instructor Console / Build 14.9";
+                "KMC - Instructor Console / Stability Recovery";
 
             ClientSize =
                 new Size(
@@ -74,7 +90,7 @@ namespace KMC.MissionControl.Training
 
             _statusLabel =
                 CreateStatusLabel(
-                    "READY");
+                    "READY / DISPLAY FROM PUBLISHED SNAPSHOT");
 
             _failureSelector =
                 CreateFailureSelector();
@@ -91,20 +107,8 @@ namespace KMC.MissionControl.Training
             Controls.Add(
                 BuildRootLayout());
 
-            _refreshTimer =
-                new Timer
-                {
-                    Interval = 500
-                };
-
-            _refreshTimer.Tick +=
-                OnRefreshTimerTick;
-
             Shown +=
                 OnShown;
-
-            FormClosed +=
-                OnFormClosed;
         }
 
         private Control BuildRootLayout()
@@ -225,7 +229,7 @@ namespace KMC.MissionControl.Training
                 new Label
                 {
                     Text =
-                        "INSTRUCTOR / SCENARIO CONTROL\nBUILD 14.9 — EXPLICIT COMMANDS ONLY",
+                        "INSTRUCTOR / SCENARIO CONTROL\n14.11.1A — STABILITY RECOVERY",
                     Dock =
                         DockStyle.Fill,
                     TextAlign =
@@ -241,12 +245,6 @@ namespace KMC.MissionControl.Training
                             11.0f,
                             FontStyle.Bold)
                 };
-
-            _vesselLabel.TextAlign =
-                ContentAlignment.MiddleLeft;
-
-            _modeLabel.TextAlign =
-                ContentAlignment.MiddleLeft;
 
             panel.Controls.Add(
                 title,
@@ -319,7 +317,7 @@ namespace KMC.MissionControl.Training
                 0,
                 0);
 
-            Label delayLabel =
+            panel.Controls.Add(
                 new Label
                 {
                     Text =
@@ -330,10 +328,7 @@ namespace KMC.MissionControl.Training
                         ContentAlignment.MiddleCenter,
                     ForeColor =
                         ForeColor
-                };
-
-            panel.Controls.Add(
-                delayLabel,
+                },
                 1,
                 0);
 
@@ -342,23 +337,17 @@ namespace KMC.MissionControl.Training
                 2,
                 0);
 
-            Button training =
+            panel.Controls.Add(
                 CreateButton(
                     "TRAINING",
-                    OnTrainingModeClick);
-
-            Button inject =
-                CreateButton(
-                    "INJECT",
-                    OnInjectClick);
-
-            panel.Controls.Add(
-                training,
+                    OnTrainingModeClick),
                 3,
                 0);
 
             panel.Controls.Add(
-                inject,
+                CreateButton(
+                    "INJECT",
+                    OnInjectClick),
                 4,
                 0);
 
@@ -765,62 +754,56 @@ namespace KMC.MissionControl.Training
             object sender,
             EventArgs e)
         {
-            RefreshSnapshot();
-            _refreshTimer.Start();
-        }
-
-        private void OnFormClosed(
-            object sender,
-            FormClosedEventArgs e)
-        {
-            _refreshTimer.Stop();
-            _refreshTimer.Dispose();
-        }
-
-        private void OnRefreshTimerTick(
-            object sender,
-            EventArgs e)
-        {
-            RefreshSnapshot();
+            RefreshPublishedSnapshot();
         }
 
         private void OnRefreshClick(
             object sender,
             EventArgs e)
         {
-            RefreshSnapshot();
+            RefreshPublishedSnapshot();
         }
 
         private void OnTrainingModeClick(
             object sender,
             EventArgs e)
         {
-            string result;
+            RunCommand(
+                delegate
+                {
+                    string result;
 
-            bool success =
-                _receiver.SetInstructorFailureMode(
-                    FailureSimulationMode.Training,
-                    out result);
+                    bool success =
+                        _receiver.SetInstructorFailureMode(
+                            FailureSimulationMode.Training,
+                            out result);
 
-            SetCommandResult(
-                success,
-                result);
+                    return
+                        new CommandResult(
+                            success,
+                            result);
+                });
         }
 
         private void OnScenarioModeClick(
             object sender,
             EventArgs e)
         {
-            string result;
+            RunCommand(
+                delegate
+                {
+                    string result;
 
-            bool success =
-                _receiver.SetInstructorFailureMode(
-                    FailureSimulationMode.Scenario,
-                    out result);
+                    bool success =
+                        _receiver.SetInstructorFailureMode(
+                            FailureSimulationMode.Scenario,
+                            out result);
 
-            SetCommandResult(
-                success,
-                result);
+                    return
+                        new CommandResult(
+                            success,
+                            result);
+                });
         }
 
         private void OnInjectClick(
@@ -833,26 +816,37 @@ namespace KMC.MissionControl.Training
 
             if (choice == null)
             {
-                SetCommandResult(
+                SetStatus(
                     false,
                     "NO FAILURE PRESET SELECTED");
 
                 return;
             }
 
-            string failureId;
-            string result;
+            InstructorFailurePreset preset =
+                choice.Value;
 
-            bool success =
-                _receiver.InjectInstructorFailure(
-                    choice.Value,
-                    (double)_delaySeconds.Value,
-                    out failureId,
-                    out result);
+            double delay =
+                (double)_delaySeconds.Value;
 
-            SetCommandResult(
-                success,
-                result);
+            RunCommand(
+                delegate
+                {
+                    string failureId;
+                    string result;
+
+                    bool success =
+                        _receiver.InjectInstructorFailure(
+                            preset,
+                            delay,
+                            out failureId,
+                            out result);
+
+                    return
+                        new CommandResult(
+                            success,
+                            result);
+                });
         }
 
         private void OnStartScenarioClick(
@@ -865,23 +859,31 @@ namespace KMC.MissionControl.Training
 
             if (choice == null)
             {
-                SetCommandResult(
+                SetStatus(
                     false,
                     "NO SCENARIO SELECTED");
 
                 return;
             }
 
-            string result;
+            InstructorScenarioPreset scenario =
+                choice.Value;
 
-            bool success =
-                _receiver.StartInstructorScenario(
-                    choice.Value,
-                    out result);
+            RunCommand(
+                delegate
+                {
+                    string result;
 
-            SetCommandResult(
-                success,
-                result);
+                    bool success =
+                        _receiver.StartInstructorScenario(
+                            scenario,
+                            out result);
+
+                    return
+                        new CommandResult(
+                            success,
+                            result);
+                });
         }
 
         private void OnClearSelectedClick(
@@ -890,7 +892,7 @@ namespace KMC.MissionControl.Training
         {
             if (_failureList.SelectedItems.Count == 0)
             {
-                SetCommandResult(
+                SetStatus(
                     false,
                     "SELECT A FAILURE FIRST");
 
@@ -901,31 +903,46 @@ namespace KMC.MissionControl.Training
                 Convert.ToString(
                     _failureList.SelectedItems[0].Tag);
 
-            string result;
+            RunCommand(
+                delegate
+                {
+                    string result;
 
-            bool success =
-                _receiver.ClearInstructorFailure(
-                    failureId,
-                    out result);
+                    bool success =
+                        _receiver.ClearInstructorFailure(
+                            failureId,
+                            out result);
 
-            SetCommandResult(
-                success,
-                result);
+                    return
+                        new CommandResult(
+                            success,
+                            result);
+                });
         }
 
         private void OnClearAllClick(
             object sender,
             EventArgs e)
         {
-            string result;
+            /*
+             * Clear All is explicitly exception-contained on the worker.
+             * A failure-engine or integration exception is reported to the
+             * instructor status line instead of escaping through WinForms.
+             */
+            RunCommand(
+                delegate
+                {
+                    string result;
 
-            bool success =
-                _receiver.ClearAllInstructorFailures(
-                    out result);
+                    bool success =
+                        _receiver.ClearAllInstructorFailures(
+                            out result);
 
-            SetCommandResult(
-                success,
-                result);
+                    return
+                        new CommandResult(
+                            success,
+                            result);
+                });
         }
 
         private void OnResetNominalClick(
@@ -947,43 +964,170 @@ namespace KMC.MissionControl.Training
                 return;
             }
 
-            string result;
+            RunCommand(
+                delegate
+                {
+                    string result;
 
-            bool success =
-                _receiver.ResetInstructorNominal(
-                    out result);
+                    bool success =
+                        _receiver.ResetInstructorNominal(
+                            out result);
 
-            SetCommandResult(
-                success,
-                result);
+                    return
+                        new CommandResult(
+                            success,
+                            result);
+                });
         }
 
-        private void SetCommandResult(
-            bool success,
-            string result)
+        private async void RunCommand(
+            Func<CommandResult> command)
         {
+            if (_commandRunning)
+            {
+                SetStatus(
+                    false,
+                    "COMMAND ALREADY RUNNING");
+
+                return;
+            }
+
+            _commandRunning =
+                true;
+
+            SetCommandControlsEnabled(
+                false);
+
             _statusLabel.Text =
-                (success
-                    ? "ACK  "
-                    : "REJECT  ") +
-                (result ??
-                 string.Empty);
+                "WORKING / UI REMAINS LIVE";
 
-            RefreshSnapshot();
+            CommandResult result;
+
+            try
+            {
+                result =
+                    await Task.Run(
+                        delegate
+                        {
+                            try
+                            {
+                                return
+                                    command != null
+                                        ? command()
+                                        : new CommandResult(
+                                            false,
+                                            "NO COMMAND");
+                            }
+                            catch (Exception ex)
+                            {
+                                return
+                                    new CommandResult(
+                                        false,
+                                        "COMMAND EXCEPTION / " +
+                                        ex.GetType().Name +
+                                        " / " +
+                                        ex.Message);
+                            }
+                        });
+            }
+            catch (Exception ex)
+            {
+                result =
+                    new CommandResult(
+                        false,
+                        "WORKER EXCEPTION / " +
+                        ex.GetType().Name +
+                        " / " +
+                        ex.Message);
+            }
+            finally
+            {
+                _commandRunning =
+                    false;
+
+                SetCommandControlsEnabled(
+                    true);
+            }
+
+            SetStatus(
+                result.Success,
+                result.Text);
+
+            /*
+             * Read only the last published engineering snapshot. No direct
+             * failure-engine query occurs on the UI thread.
+             */
+            RefreshPublishedSnapshot();
         }
 
-        private void RefreshSnapshot()
+        private void SetCommandControlsEnabled(
+            bool enabled)
         {
-            string vesselId;
-            string vesselName;
-            FailureSimulationSnapshot snapshot;
-            string result;
+            _failureSelector.Enabled =
+                enabled;
 
-            if (!_receiver.TryGetInstructorFailureSnapshot(
-                    out vesselId,
-                    out vesselName,
-                    out snapshot,
-                    out result))
+            _delaySeconds.Enabled =
+                enabled;
+
+            _scenarioSelector.Enabled =
+                enabled;
+
+            /*
+             * Leave REFRESH/list/window painting alive. Disable only buttons
+             * whose click would issue another command.
+             */
+            foreach (Control control in Controls)
+            {
+                SetCommandButtonsEnabledRecursive(
+                    control,
+                    enabled);
+            }
+        }
+
+        private static void SetCommandButtonsEnabledRecursive(
+            Control control,
+            bool enabled)
+        {
+            if (control == null)
+            {
+                return;
+            }
+
+            Button button =
+                control as Button;
+
+            if (button != null)
+            {
+                if (!string.Equals(
+                        button.Text,
+                        "REFRESH",
+                        StringComparison.Ordinal))
+                {
+                    button.Enabled =
+                        enabled;
+                }
+            }
+
+            foreach (Control child in control.Controls)
+            {
+                SetCommandButtonsEnabledRecursive(
+                    child,
+                    enabled);
+            }
+        }
+
+        private void RefreshPublishedSnapshot()
+        {
+            AnalysisPipelineResult result;
+
+            if (!EngineeringSnapshotStore.TryGetLatest(
+                    out result) ||
+                result == null ||
+                result.Snapshot == null ||
+                result.Snapshot.Vessel == null ||
+                result.Snapshot.SpacecraftSystems == null ||
+                result.Snapshot.SpacecraftSystems
+                    .FailureSimulation == null)
             {
                 _vesselLabel.Text =
                     "VESSEL  --";
@@ -993,15 +1137,19 @@ namespace KMC.MissionControl.Training
 
                 _failureList.Items.Clear();
 
-                if (!string.IsNullOrWhiteSpace(
-                        result))
-                {
-                    _statusLabel.Text =
-                        result;
-                }
-
                 return;
             }
+
+            string vesselId =
+                result.Snapshot.Vessel.VesselId;
+
+            string vesselName =
+                result.Snapshot.Vessel.VesselName ??
+                string.Empty;
+
+            FailureSimulationSnapshot snapshot =
+                result.Snapshot.SpacecraftSystems
+                    .FailureSimulation;
 
             _vesselLabel.Text =
                 "VESSEL  " +
@@ -1016,6 +1164,13 @@ namespace KMC.MissionControl.Training
                 " / ACTIVE " +
                 snapshot.ActiveFailureCount.ToString();
 
+            RebuildFailureList(
+                snapshot);
+        }
+
+        private void RebuildFailureList(
+            FailureSimulationSnapshot snapshot)
+        {
             string selectedFailureId =
                 _failureList.SelectedItems.Count > 0
                     ? Convert.ToString(
@@ -1027,6 +1182,11 @@ namespace KMC.MissionControl.Training
             try
             {
                 _failureList.Items.Clear();
+
+                if (snapshot == null)
+                {
+                    return;
+                }
 
                 DateTime now =
                     DateTime.UtcNow;
@@ -1049,7 +1209,8 @@ namespace KMC.MissionControl.Training
 
                     if (failure.EffectiveNow)
                     {
-                        timing = "ACTIVE NOW";
+                        timing =
+                            "ACTIVE NOW";
                     }
                     else
                     {
@@ -1105,13 +1266,52 @@ namespace KMC.MissionControl.Training
                             failure.FailureId,
                             StringComparison.Ordinal))
                     {
-                        item.Selected = true;
+                        item.Selected =
+                            true;
                     }
                 }
             }
             finally
             {
                 _failureList.EndUpdate();
+            }
+        }
+
+        private void SetStatus(
+            bool success,
+            string result)
+        {
+            _statusLabel.Text =
+                (success
+                    ? "ACK  "
+                    : "REJECT  ") +
+                (result ??
+                 string.Empty);
+        }
+
+        private sealed class CommandResult
+        {
+            public CommandResult(
+                bool success,
+                string text)
+            {
+                Success =
+                    success;
+
+                Text =
+                    text ?? string.Empty;
+            }
+
+            public bool Success
+            {
+                get;
+                private set;
+            }
+
+            public string Text
+            {
+                get;
+                private set;
             }
         }
 
