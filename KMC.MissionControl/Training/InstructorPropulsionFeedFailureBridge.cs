@@ -80,6 +80,189 @@ namespace KMC.MissionControl.Training
                     out resultText);
         }
 
+        public static bool InjectExactEngineThrustDecay(
+            MissionControlReceiver receiver,
+            double delaySeconds,
+            out string failureId,
+            out string resultText)
+        {
+            return
+                InjectExactEngineThrustFailure(
+                    receiver,
+                    delaySeconds,
+                    SyntheticFailureKind.Degrading,
+                    0.35,
+                    4.0,
+                    0.50,
+                    "EXACT ENGINE THRUST DECAY",
+                    out failureId,
+                    out resultText);
+        }
+
+        public static bool InjectExactEngineUnstableThrust(
+            MissionControlReceiver receiver,
+            double delaySeconds,
+            out string failureId,
+            out string resultText)
+        {
+            return
+                InjectExactEngineThrustFailure(
+                    receiver,
+                    delaySeconds,
+                    SyntheticFailureKind.Intermittent,
+                    0.45,
+                    4.0,
+                    0.50,
+                    "EXACT ENGINE UNSTABLE THRUST",
+                    out failureId,
+                    out resultText);
+        }
+
+        private static bool InjectExactEngineThrustFailure(
+            MissionControlReceiver receiver,
+            double delaySeconds,
+            SyntheticFailureKind kind,
+            double targetMagnitude,
+            double intermittentPeriodSeconds,
+            double intermittentDutyCycle,
+            string instructorDetail,
+            out string failureId,
+            out string resultText)
+        {
+            failureId = string.Empty;
+            resultText = string.Empty;
+
+            if (receiver == null)
+            {
+                resultText = "NO MISSION CONTROL RECEIVER";
+                return false;
+            }
+
+            uint partId;
+
+            if (!TrySelectEngine(
+                    out partId,
+                    out resultText))
+            {
+                return false;
+            }
+
+            AnalysisPipelineResult latest;
+
+            if (!EngineeringSnapshotStore.TryGetLatest(
+                    out latest) ||
+                latest == null ||
+                latest.Snapshot == null ||
+                latest.Snapshot.Vessel == null ||
+                string.IsNullOrWhiteSpace(
+                    latest.Snapshot.Vessel.VesselId))
+            {
+                resultText = "NO ACTIVE ENGINEERING VESSEL";
+                return false;
+            }
+
+            FieldInfo field =
+                typeof(MissionControlReceiver).GetField(
+                    "_engineeringEngine",
+                    BindingFlags.Instance |
+                    BindingFlags.NonPublic);
+
+            EngineeringEngine engine =
+                field != null
+                    ? field.GetValue(receiver) as EngineeringEngine
+                    : null;
+
+            if (engine == null)
+            {
+                resultText = "ENGINE ACCESS UNAVAILABLE";
+                return false;
+            }
+
+            string vesselId =
+                latest.Snapshot.Vessel.VesselId;
+
+            FailureSimulationSnapshot current =
+                latest.Snapshot.SpacecraftSystems != null
+                    ? latest.Snapshot.SpacecraftSystems.FailureSimulation
+                    : null;
+
+            if (current == null ||
+                current.Mode == FailureSimulationMode.Nominal)
+            {
+                string modeResult;
+
+                if (!engine.SetFailureSimulationMode(
+                        vesselId,
+                        FailureSimulationMode.Training,
+                        out modeResult))
+                {
+                    resultText = modeResult;
+                    return false;
+                }
+            }
+
+            string targetId =
+                SyntheticFailureTargets.CreateEngineDerateTarget(
+                    partId);
+
+            double delay =
+                Math.Max(
+                    0.0,
+                    Math.Min(
+                        300.0,
+                        delaySeconds));
+
+            SyntheticFailureRequest request =
+                new SyntheticFailureRequest
+                {
+                    VesselId = vesselId,
+                    TargetId = targetId,
+                    TargetKind =
+                        SyntheticFailureTargetKind.PropulsionEffect,
+                    Kind = kind,
+                    Severity =
+                        SyntheticFailureSeverity.Caution,
+                    ComponentHealth =
+                        SpacecraftSystemHealth.Degraded,
+                    EffectMagnitude =
+                        targetMagnitude,
+                    ActivateUtc =
+                        DateTime.UtcNow.AddSeconds(delay),
+                    IntermittentPeriodSeconds =
+                        intermittentPeriodSeconds,
+                    IntermittentDutyCycle =
+                        intermittentDutyCycle,
+                    Detail =
+                        "BUILD 14.12.6 INSTRUCTOR / " +
+                        instructorDetail +
+                        " / PART " +
+                        partId.ToString()
+                };
+
+            string injectResult;
+
+            bool injected =
+                engine.InjectSyntheticFailure(
+                    request,
+                    out failureId,
+                    out injectResult);
+
+            resultText =
+                injected
+                    ? "INJECTED " +
+                      failureId +
+                      " / " +
+                      targetId +
+                      " / " +
+                      kind.ToString().ToUpperInvariant() +
+                      (delay > 0.25
+                          ? " / SCHEDULED"
+                          : " / IMMEDIATE")
+                    : injectResult;
+
+            return injected;
+        }
+
         public static bool InjectExactEngineStartInhibit(
             MissionControlReceiver receiver,
             double delaySeconds,

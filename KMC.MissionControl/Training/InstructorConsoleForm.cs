@@ -977,6 +977,30 @@ namespace KMC.MissionControl.Training
                                     out failureId,
                                     out result);
                     }
+                    else if (
+                        preset ==
+                            InstructorFailurePreset.EngineThrustDecay)
+                    {
+                        success =
+                            InstructorPropulsionFeedFailureBridge
+                                .InjectExactEngineThrustDecay(
+                                    _receiver,
+                                    delay,
+                                    out failureId,
+                                    out result);
+                    }
+                    else if (
+                        preset ==
+                            InstructorFailurePreset.EngineThrustUnstable)
+                    {
+                        success =
+                            InstructorPropulsionFeedFailureBridge
+                                .InjectExactEngineUnstableThrust(
+                                    _receiver,
+                                    delay,
+                                    out failureId,
+                                    out result);
+                    }
                     else
                     {
                         success =

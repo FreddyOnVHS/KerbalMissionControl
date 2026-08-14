@@ -319,11 +319,8 @@ namespace KMC.MissionControl.Engineering
                 double magnitude =
                     shutdown
                         ? 1.0
-                        : Math.Max(
-                            0.10,
-                            Math.Min(
-                                1.00,
-                                failure.EffectMagnitude));
+                        : ResolveDerateMagnitude(
+                            failure);
 
                 DesiredEffect existing;
 
@@ -354,6 +351,56 @@ namespace KMC.MissionControl.Engineering
             }
 
             return desired;
+        }
+
+        private static double ResolveDerateMagnitude(
+            SyntheticFailureRecord failure)
+        {
+            if (failure == null)
+            {
+                return 1.0;
+            }
+
+            double target =
+                Math.Max(
+                    0.10,
+                    Math.Min(
+                        1.00,
+                        failure.EffectMagnitude));
+
+            if (failure.Kind !=
+                    SyntheticFailureKind.Degrading)
+            {
+                return target;
+            }
+
+            /*
+             * Build 14.12.6 progressive thrust decay:
+             * 100% -> requested target over 20 seconds from activation.
+             * The failure engine owns timing/truth; this bridge converts that
+             * truth into the continuously refreshed physical derate magnitude.
+             */
+            const double decaySeconds = 20.0;
+
+            double elapsed =
+                Math.Max(
+                    0.0,
+                    (DateTime.UtcNow -
+                     failure.ActivateUtc)
+                    .TotalSeconds);
+
+            double fraction =
+                Math.Max(
+                    0.0,
+                    Math.Min(
+                        1.0,
+                        elapsed /
+                        decaySeconds));
+
+            return
+                1.0 -
+                ((1.0 - target) *
+                 fraction);
         }
 
         private void Send(

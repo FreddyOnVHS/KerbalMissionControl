@@ -231,7 +231,19 @@ namespace KMC.Engine.Propulsion
                         StartInhibited =
                             IsExactStartInhibitActive(
                                 failures,
-                                topologyEngine.PartId)
+                                topologyEngine.PartId),
+
+                        ThrustDegraded =
+                            IsExactThrustFailureActive(
+                                failures,
+                                topologyEngine.PartId,
+                                SyntheticFailureKind.Degrading),
+
+                        ThrustUnstable =
+                            IsExactThrustFailureActive(
+                                failures,
+                                topologyEngine.PartId,
+                                SyntheticFailureKind.Intermittent)
                     };
 
                 if (liveEngine != null)
@@ -296,6 +308,16 @@ namespace KMC.Engine.Propulsion
                     status.StartInhibitedEngineCount++;
                 }
 
+                if (channel.ThrustDegraded)
+                {
+                    status.ThrustDegradedEngineCount++;
+                }
+
+                if (channel.ThrustUnstable)
+                {
+                    status.ThrustUnstableEngineCount++;
+                }
+
                 if (channel.Severity ==
                         PropulsionSeverity.Warning ||
                     channel.Severity ==
@@ -343,6 +365,28 @@ namespace KMC.Engine.Propulsion
             {
                 channel.Condition =
                     PropulsionEngineChannelCondition.StartInhibit;
+
+                channel.Severity =
+                    PropulsionSeverity.Advisory;
+
+                return;
+            }
+
+            if (channel.ThrustUnstable)
+            {
+                channel.Condition =
+                    PropulsionEngineChannelCondition.ThrustUnstable;
+
+                channel.Severity =
+                    PropulsionSeverity.Advisory;
+
+                return;
+            }
+
+            if (channel.ThrustDegraded)
+            {
+                channel.Condition =
+                    PropulsionEngineChannelCondition.ThrustDegraded;
 
                 channel.Severity =
                     PropulsionSeverity.Advisory;
@@ -464,6 +508,52 @@ namespace KMC.Engine.Propulsion
 
             channel.Severity =
                 PropulsionSeverity.Normal;
+        }
+
+        private static bool IsExactThrustFailureActive(
+            FailureSimulationSnapshot failures,
+            uint partId,
+            SyntheticFailureKind kind)
+        {
+            if (failures == null ||
+                failures.Failures == null ||
+                partId == 0)
+            {
+                return false;
+            }
+
+            for (int index = 0;
+                 index < failures.Failures.Count;
+                 index++)
+            {
+                SyntheticFailureRecord failure =
+                    failures.Failures[index];
+
+                if (failure == null ||
+                    !failure.EffectiveNow ||
+                    failure.TargetKind !=
+                        SyntheticFailureTargetKind.PropulsionEffect ||
+                    failure.Kind !=
+                        kind)
+                {
+                    continue;
+                }
+
+                uint targetPartId;
+                bool shutdown;
+
+                if (SyntheticFailureTargets.TryParsePropulsionTarget(
+                        failure.TargetId,
+                        out targetPartId,
+                        out shutdown) &&
+                    !shutdown &&
+                    targetPartId == partId)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool IsExactStartInhibitActive(
@@ -647,6 +737,36 @@ namespace KMC.Engine.Propulsion
                 status.Summary =
                     status.StartInhibitedEngineCount.ToString() +
                     " exact engine start channel(s) are inhibited.";
+
+                return;
+            }
+
+            if (status.ThrustUnstableEngineCount > 0)
+            {
+                status.Severity =
+                    PropulsionSeverity.Advisory;
+
+                status.Condition =
+                    PropulsionCondition.EngineThrustUnstable;
+
+                status.Summary =
+                    status.ThrustUnstableEngineCount.ToString() +
+                    " exact engine thrust channel(s) are unstable.";
+
+                return;
+            }
+
+            if (status.ThrustDegradedEngineCount > 0)
+            {
+                status.Severity =
+                    PropulsionSeverity.Advisory;
+
+                status.Condition =
+                    PropulsionCondition.EngineThrustDegraded;
+
+                status.Summary =
+                    status.ThrustDegradedEngineCount.ToString() +
+                    " exact engine thrust channel(s) are degraded.";
 
                 return;
             }

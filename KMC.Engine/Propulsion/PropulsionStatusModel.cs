@@ -70,6 +70,8 @@ namespace KMC.Engine.Propulsion
         EngineFeedPathDegraded,
         EngineFeedPathLost,
         EngineStartInhibited,
+        EngineThrustDegraded,
+        EngineThrustUnstable,
         FeedStateConflict,
         EngineFlameout,
         PropulsionLost,
@@ -108,6 +110,8 @@ namespace KMC.Engine.Propulsion
         FeedDegraded,
         FeedLimited,
         StartInhibit,
+        ThrustDegraded,
+        ThrustUnstable,
         FeedStateConflict
     }
 
@@ -148,6 +152,10 @@ namespace KMC.Engine.Propulsion
         public bool FeedStateKnown { get; internal set; }
 
         public bool StartInhibited { get; internal set; }
+
+        public bool ThrustDegraded { get; internal set; }
+
+        public bool ThrustUnstable { get; internal set; }
 
         public PropulsionFeedStatus CurrentFeedStatus
         {
@@ -264,6 +272,10 @@ namespace KMC.Engine.Propulsion
         }
 
         public int StartInhibitedEngineCount { get; internal set; }
+
+        public int ThrustDegradedEngineCount { get; internal set; }
+
+        public int ThrustUnstableEngineCount { get; internal set; }
 
         public int ProducingFeedConflictCount { get; internal set; }
 
