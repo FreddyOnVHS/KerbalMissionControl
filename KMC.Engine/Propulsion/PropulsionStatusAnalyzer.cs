@@ -105,6 +105,9 @@ namespace KMC.Engine.Propulsion
                 status.SyntheticFeedFlowLost =
                     feed.SyntheticPumpFlowLost;
 
+                status.ExactFeedPathDegradedEngineCount =
+                    feed.SyntheticExactFeedPathDegradedEngineCount;
+
                 status.ExactFeedPathLostEngineCount =
                     feed.SyntheticExactFeedPathLostEngineCount;
 
@@ -593,6 +596,21 @@ namespace KMC.Engine.Propulsion
                 status.Summary =
                     status.ExactFeedPathLostEngineCount.ToString() +
                     " exact engine feed path(s) are unavailable.";
+
+                return;
+            }
+
+            if (status.ExactFeedPathDegradedEngineCount > 0)
+            {
+                status.Severity =
+                    PropulsionSeverity.Advisory;
+
+                status.Condition =
+                    PropulsionCondition.EngineFeedPathDegraded;
+
+                status.Summary =
+                    status.ExactFeedPathDegradedEngineCount.ToString() +
+                    " exact engine feed path(s) report low pressure.";
 
                 return;
             }

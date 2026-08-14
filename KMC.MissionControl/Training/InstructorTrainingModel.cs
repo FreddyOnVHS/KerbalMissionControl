@@ -22,7 +22,9 @@ namespace KMC.MissionControl.Training
         GenAContactorFalseOpenIndication = 15,
         GenAContactorWeldedClosed = 16,
         GeneratorADegraded50 = 17,
-        EngineFeedValveClosed = 18
+        EngineFeedValveClosed = 18,
+        EngineFeedRestriction = 19,
+        EngineFeedIntermittent = 20
     }
 
     public enum InstructorScenarioPreset
@@ -90,6 +92,12 @@ namespace KMC.MissionControl.Training
 
                 case InstructorFailurePreset.EngineFeedValveClosed:
                     return "PROP - EXACT ENGINE FEED VALVE CLOSED";
+
+                case InstructorFailurePreset.EngineFeedRestriction:
+                    return "PROP - EXACT ENGINE FEED RESTRICTION";
+
+                case InstructorFailurePreset.EngineFeedIntermittent:
+                    return "PROP - EXACT ENGINE INTERMITTENT FEED";
 
                 case InstructorFailurePreset.ReactionWheel25:
                     return "GNC - REACTION WHEEL 25% AUTHORITY";

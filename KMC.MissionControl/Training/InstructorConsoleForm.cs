@@ -926,15 +926,44 @@ namespace KMC.MissionControl.Training
                     }
                     else if (
                         preset ==
-                            InstructorFailurePreset.EngineFeedValveClosed)
+                            InstructorFailurePreset.EngineFeedValveClosed ||
+                        preset ==
+                            InstructorFailurePreset.EngineFeedRestriction ||
+                        preset ==
+                            InstructorFailurePreset.EngineFeedIntermittent)
                     {
-                        success =
-                            InstructorPropulsionFeedFailureBridge
-                                .InjectExactEngineFeedPathFailure(
-                                    _receiver,
-                                    delay,
-                                    out failureId,
-                                    out result);
+                        if (preset ==
+                                InstructorFailurePreset.EngineFeedRestriction)
+                        {
+                            success =
+                                InstructorPropulsionFeedFailureBridge
+                                    .InjectExactEngineFeedRestriction(
+                                        _receiver,
+                                        delay,
+                                        out failureId,
+                                        out result);
+                        }
+                        else if (preset ==
+                                 InstructorFailurePreset.EngineFeedIntermittent)
+                        {
+                            success =
+                                InstructorPropulsionFeedFailureBridge
+                                    .InjectExactEngineIntermittentFeedFailure(
+                                        _receiver,
+                                        delay,
+                                        out failureId,
+                                        out result);
+                        }
+                        else
+                        {
+                            success =
+                                InstructorPropulsionFeedFailureBridge
+                                    .InjectExactEngineFeedPathFailure(
+                                        _receiver,
+                                        delay,
+                                        out failureId,
+                                        out result);
+                        }
                     }
                     else
                     {

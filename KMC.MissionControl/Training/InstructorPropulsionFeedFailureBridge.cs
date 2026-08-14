@@ -29,6 +29,68 @@ namespace KMC.MissionControl.Training
             out string failureId,
             out string resultText)
         {
+            return
+                InjectExactEngineFeedFailure(
+                    receiver,
+                    delaySeconds,
+                    SpacecraftSystemHealth.Failed,
+                    SyntheticFailureKind.Sudden,
+                    4.0,
+                    0.50,
+                    "EXACT ENGINE FEED PATH LOSS",
+                    out failureId,
+                    out resultText);
+        }
+
+        public static bool InjectExactEngineFeedRestriction(
+            MissionControlReceiver receiver,
+            double delaySeconds,
+            out string failureId,
+            out string resultText)
+        {
+            return
+                InjectExactEngineFeedFailure(
+                    receiver,
+                    delaySeconds,
+                    SpacecraftSystemHealth.Degraded,
+                    SyntheticFailureKind.Sudden,
+                    4.0,
+                    0.50,
+                    "EXACT ENGINE FEED RESTRICTION",
+                    out failureId,
+                    out resultText);
+        }
+
+        public static bool InjectExactEngineIntermittentFeedFailure(
+            MissionControlReceiver receiver,
+            double delaySeconds,
+            out string failureId,
+            out string resultText)
+        {
+            return
+                InjectExactEngineFeedFailure(
+                    receiver,
+                    delaySeconds,
+                    SpacecraftSystemHealth.Failed,
+                    SyntheticFailureKind.Intermittent,
+                    6.0,
+                    0.50,
+                    "EXACT ENGINE INTERMITTENT FEED LOSS",
+                    out failureId,
+                    out resultText);
+        }
+
+        private static bool InjectExactEngineFeedFailure(
+            MissionControlReceiver receiver,
+            double delaySeconds,
+            SpacecraftSystemHealth health,
+            SyntheticFailureKind kind,
+            double intermittentPeriodSeconds,
+            double intermittentDutyCycle,
+            string instructorDetail,
+            out string failureId,
+            out string resultText)
+        {
             failureId = string.Empty;
             resultText = string.Empty;
 
@@ -143,23 +205,17 @@ namespace KMC.MissionControl.Training
                     TargetId =
                         targetId,
 
-                    /*
-                     * This is a synthetic local spacecraft component failure,
-                     * not a direct real-KSP effect. The PROP-prefixed target
-                     * keeps operator subsystem attribution in PROP while the
-                     * real-KSP propulsion bridge ignores Component targets.
-                     */
                     TargetKind =
                         SyntheticFailureTargetKind.Component,
 
                     Kind =
-                        SyntheticFailureKind.Sudden,
+                        kind,
 
                     Severity =
                         SyntheticFailureSeverity.Caution,
 
                     ComponentHealth =
-                        SpacecraftSystemHealth.Failed,
+                        health,
 
                     EffectMagnitude =
                         1.0,
@@ -168,9 +224,16 @@ namespace KMC.MissionControl.Training
                         DateTime.UtcNow.AddSeconds(
                             delay),
 
+                    IntermittentPeriodSeconds =
+                        intermittentPeriodSeconds,
+
+                    IntermittentDutyCycle =
+                        intermittentDutyCycle,
+
                     Detail =
-                        "BUILD 14.12.3 INSTRUCTOR / " +
-                        "EXACT ENGINE FEED PATH LOSS / PART " +
+                        "BUILD 14.12.4 INSTRUCTOR / " +
+                        instructorDetail +
+                        " / PART " +
                         partId.ToString()
                 };
 
@@ -195,6 +258,8 @@ namespace KMC.MissionControl.Training
                 failureId +
                 " / " +
                 targetId +
+                " / " +
+                kind.ToString().ToUpperInvariant() +
                 (delay > 0.25
                     ? " / SCHEDULED"
                     : " / IMMEDIATE");

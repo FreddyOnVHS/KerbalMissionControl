@@ -362,6 +362,12 @@ namespace KMC.Engine.Propulsion
         /// Number of exact engine channels whose synthetic local feed path is
         /// unavailable. This is separate from shared Pump A/B state.
         /// </summary>
+        public int SyntheticExactFeedPathDegradedEngineCount
+        {
+            get;
+            internal set;
+        }
+
         public int SyntheticExactFeedPathLostEngineCount
         {
             get;

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using KMC.Engine.SpacecraftSystems;
 
 namespace KMC.Engine.Propulsion
@@ -252,6 +253,9 @@ namespace KMC.Engine.Propulsion
             PropulsionFeedModel feed,
             FailureSimulationSnapshot failures)
         {
+            feed.SyntheticExactFeedPathDegradedEngineCount =
+                0;
+
             feed.SyntheticExactFeedPathLostEngineCount =
                 0;
 
@@ -260,6 +264,9 @@ namespace KMC.Engine.Propulsion
             {
                 return;
             }
+
+            HashSet<uint> affectedPartIds =
+                new HashSet<uint>();
 
             for (int failureIndex = 0;
                  failureIndex < failures.Failures.Count;
@@ -296,6 +303,12 @@ namespace KMC.Engine.Propulsion
                     continue;
                 }
 
+                PropulsionFeedStatus syntheticStatus =
+                    failure.ComponentHealth ==
+                        SpacecraftSystemHealth.Degraded
+                        ? PropulsionFeedStatus.PressureLow
+                        : PropulsionFeedStatus.FlowDisabled;
+
                 bool affected =
                     false;
 
@@ -321,7 +334,7 @@ namespace KMC.Engine.Propulsion
                     requirement.CurrentStatus =
                         ApplyIfSyntheticCanDominate(
                             requirement.CurrentStatus,
-                            PropulsionFeedStatus.FlowDisabled);
+                            syntheticStatus);
 
                     if (requirement.CurrentStatus !=
                             currentBefore)
@@ -332,14 +345,49 @@ namespace KMC.Engine.Propulsion
 
                     if (engine.SurvivesNextStage)
                     {
+                        PropulsionFeedStatus nextBefore =
+                            requirement.NextStageStatus;
+
                         requirement.NextStageStatus =
                             ApplyIfSyntheticCanDominate(
                                 requirement.NextStageStatus,
-                                PropulsionFeedStatus.FlowDisabled);
+                                syntheticStatus);
+
+                        if (requirement.NextStageStatus !=
+                                nextBefore)
+                        {
+                            affected =
+                                true;
+                        }
                     }
                 }
 
                 if (affected)
+                {
+                    affectedPartIds.Add(
+                        partId);
+                }
+            }
+
+            foreach (uint partId in affectedPartIds)
+            {
+                PropulsionEngineFeedModel engine =
+                    FindEngine(
+                        feed,
+                        partId);
+
+                if (engine == null)
+                {
+                    continue;
+                }
+
+                if (engine.CurrentFeedStatus ==
+                        PropulsionFeedStatus.PressureLow)
+                {
+                    feed.SyntheticExactFeedPathDegradedEngineCount++;
+                }
+                else if (engine.CurrentFeedStatus ==
+                            PropulsionFeedStatus.FlowDisabled)
                 {
                     feed.SyntheticExactFeedPathLostEngineCount++;
                 }
