@@ -814,10 +814,12 @@ namespace KMC.MissionControl.Pages
             string[] labels =
             {
                 "CURRENT FED",
-                "READY / FED",
+                "DEGRADED",
                 "NEXT RETAIN",
                 "NEXT LOST",
-                "NEXT FED"
+                "NEXT FED",
+                "PUMP A",
+                "PUMP B"
             };
 
             string[] values =
@@ -826,9 +828,8 @@ namespace KMC.MissionControl.Pages
                 "/" +
                 feed.EngineCount,
 
-                feed.ReadyEngineFeedAvailableCount +
-                "/" +
-                feed.ReadyEngineCount,
+                feed.CurrentFeedDegradedEngineCount
+                    .ToString(),
 
                 feed.NextStageRetainedEngineCount
                     .ToString(),
@@ -838,7 +839,13 @@ namespace KMC.MissionControl.Pages
 
                 feed.NextStageRetainedFeedAvailableCount +
                 "/" +
-                feed.NextStageRetainedEngineCount
+                feed.NextStageRetainedEngineCount,
+
+                ShortPump(
+                    feed.PumpAState),
+
+                ShortPump(
+                    feed.PumpBState)
             };
 
             DrawSummaryCells(
@@ -1665,6 +1672,9 @@ namespace KMC.MissionControl.Pages
                 case PropulsionFeedStatus.Available:
                     return "AVAILABLE";
 
+                case PropulsionFeedStatus.PressureLow:
+                    return "PRESS LOW";
+
                 case PropulsionFeedStatus.Depleted:
                     return "DEPLETED";
 
@@ -1676,6 +1686,25 @@ namespace KMC.MissionControl.Pages
 
                 case PropulsionFeedStatus.NoReachableSource:
                     return "NO SOURCE";
+
+                default:
+                    return "UNKNOWN";
+            }
+        }
+
+        private static string ShortPump(
+            PropulsionFeedPumpState state)
+        {
+            switch (state)
+            {
+                case PropulsionFeedPumpState.Nominal:
+                    return "NOMINAL";
+
+                case PropulsionFeedPumpState.Degraded:
+                    return "DEGRADED";
+
+                case PropulsionFeedPumpState.Failed:
+                    return "FAILED";
 
                 default:
                     return "UNKNOWN";

@@ -96,6 +96,15 @@ namespace KMC.Engine.Propulsion
                 status.FeedLimitedEngineCount =
                     feed.CurrentFeedLimitedEngineCount;
 
+                status.FeedDegradedEngineCount =
+                    feed.CurrentFeedDegradedEngineCount;
+
+                status.SyntheticFeedPressureDegraded =
+                    feed.SyntheticPumpPressureDegraded;
+
+                status.SyntheticFeedFlowLost =
+                    feed.SyntheticPumpFlowLost;
+
                 status.NextStageEngineLossCount =
                     feed.NextStageLostEngineCount;
 
@@ -109,7 +118,8 @@ namespace KMC.Engine.Propulsion
                     feed.NextStageRetainedFeedLimitedCount;
 
                 status.NextStageHasFeedRisk =
-                    feed.NextStageRetainedFeedLimitedCount > 0;
+                    feed.NextStageRetainedFeedLimitedCount > 0 ||
+                    feed.NextStageRetainedFeedDegradedCount > 0;
 
                 status.NextStageEndsPropulsion =
                     topology.EngineCount > 0 &&
@@ -312,8 +322,18 @@ namespace KMC.Engine.Propulsion
                     PropulsionEngineOperatingState.Producing)
             {
                 if (channel.FeedStateKnown &&
-                    channel.CurrentFeedStatus !=
-                        PropulsionFeedStatus.Available)
+                    channel.CurrentFeedStatus ==
+                        PropulsionFeedStatus.PressureLow)
+                {
+                    channel.Condition =
+                        PropulsionEngineChannelCondition.FeedDegraded;
+
+                    channel.Severity =
+                        PropulsionSeverity.Advisory;
+                }
+                else if (channel.FeedStateKnown &&
+                         channel.CurrentFeedStatus !=
+                            PropulsionFeedStatus.Available)
                 {
                     /*
                      * Direct live thrust is stronger current evidence than the
@@ -341,8 +361,18 @@ namespace KMC.Engine.Propulsion
             if (channel.ReadyForThrust)
             {
                 if (channel.FeedStateKnown &&
-                    channel.CurrentFeedStatus !=
-                        PropulsionFeedStatus.Available)
+                    channel.CurrentFeedStatus ==
+                        PropulsionFeedStatus.PressureLow)
+                {
+                    channel.Condition =
+                        PropulsionEngineChannelCondition.FeedDegraded;
+
+                    channel.Severity =
+                        PropulsionSeverity.Advisory;
+                }
+                else if (channel.FeedStateKnown &&
+                         channel.CurrentFeedStatus !=
+                            PropulsionFeedStatus.Available)
                 {
                     channel.Condition =
                         PropulsionEngineChannelCondition.FeedLimited;
@@ -521,6 +551,34 @@ namespace KMC.Engine.Propulsion
                 return;
             }
 
+            if (status.SyntheticFeedFlowLost)
+            {
+                status.Severity =
+                    PropulsionSeverity.Warning;
+
+                status.Condition =
+                    PropulsionCondition.FeedFlowLost;
+
+                status.Summary =
+                    "Synthetic liquid-feed pressure is unavailable; pump-fed engine feed paths are not available.";
+
+                return;
+            }
+
+            if (status.SyntheticFeedPressureDegraded)
+            {
+                status.Severity =
+                    PropulsionSeverity.Advisory;
+
+                status.Condition =
+                    PropulsionCondition.FeedPressureDegraded;
+
+                status.Summary =
+                    "Synthetic liquid-feed redundancy is degraded; pump-fed engine pressure is low.";
+
+                return;
+            }
+
             /*
              * A producing engine together with snapshot feed evidence saying
              * its feed is unavailable is contradictory evidence. The live
@@ -683,7 +741,9 @@ namespace KMC.Engine.Propulsion
                     engine.OperatingState ==
                         PropulsionEngineOperatingState.Producing &&
                     engine.CurrentFeedStatus !=
-                        PropulsionFeedStatus.Available)
+                        PropulsionFeedStatus.Available &&
+                    engine.CurrentFeedStatus !=
+                        PropulsionFeedStatus.PressureLow)
                 {
                     count++;
                 }

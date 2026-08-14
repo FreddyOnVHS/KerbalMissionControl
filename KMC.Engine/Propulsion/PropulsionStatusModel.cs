@@ -20,6 +20,8 @@ namespace KMC.Engine.Propulsion
         Standby,
         Nominal,
         FeedEvidenceLimited,
+        FeedPressureDegraded,
+        FeedFlowLost,
         FeedStateConflict,
         EngineFlameout,
         PropulsionLost,
@@ -55,6 +57,7 @@ namespace KMC.Engine.Propulsion
         Producing,
         Shutdown,
         Flameout,
+        FeedDegraded,
         FeedLimited,
         FeedStateConflict
     }
@@ -190,6 +193,12 @@ namespace KMC.Engine.Propulsion
         public int ReadyFeedLimitedEngineCount { get; internal set; }
 
         public int FeedLimitedEngineCount { get; internal set; }
+
+        public int FeedDegradedEngineCount { get; internal set; }
+
+        public bool SyntheticFeedPressureDegraded { get; internal set; }
+
+        public bool SyntheticFeedFlowLost { get; internal set; }
 
         public int ProducingFeedConflictCount { get; internal set; }
 

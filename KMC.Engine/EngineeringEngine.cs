@@ -369,6 +369,33 @@ namespace KMC.Engine
             result.Snapshot.SpacecraftSystems =
                 _spacecraftSystemsSystem.GetLatest();
 
+            /*
+             * Build 14.12.2:
+             * Propulsion topology/live/feed analysis executes before the
+             * spacecraft failure engine in the main pipeline. Apply the
+             * Engine-owned synthetic feed-pump consequences after the current
+             * failure snapshot is available, then rebuild propulsion status
+             * from the modified feed evidence.
+             */
+            if (result.Snapshot.Propulsion != null &&
+                result.Snapshot.Propulsion.Feed != null)
+            {
+                FailureSimulationSnapshot failures =
+                    result.Snapshot.SpacecraftSystems != null
+                        ? result.Snapshot.SpacecraftSystems.FailureSimulation
+                        : null;
+
+                PropulsionFeedFailureApplier.Apply(
+                    result.Snapshot.Propulsion.Feed,
+                    failures);
+
+                result.Snapshot.Propulsion.Status =
+                    PropulsionStatusAnalyzer.Analyze(
+                        result.Snapshot.Propulsion.Topology,
+                        result.Snapshot.Propulsion.Live,
+                        result.Snapshot.Propulsion.Feed);
+            }
+
             _ascentFoundationSystem.Update(
                 telemetryPacket as KMC.Shared.TelemetryPacket,
                 receivedUtc,

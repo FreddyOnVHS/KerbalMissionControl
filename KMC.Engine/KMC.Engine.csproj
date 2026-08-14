@@ -102,6 +102,7 @@
     <Compile Include="Propulsion\PropulsionLiveStateAnalyzer.cs" />
     <Compile Include="Propulsion\PropulsionFeedModel.cs" />
     <Compile Include="Propulsion\PropulsionFeedAnalyzer.cs" />
+    <Compile Include="Propulsion\PropulsionFeedFailureApplier.cs" />
     <Compile Include="Propulsion\PropulsionStatusModel.cs" />
     <Compile Include="Propulsion\PropulsionStatusAnalyzer.cs" />
     <Compile Include="EngineeringEngine.cs" />

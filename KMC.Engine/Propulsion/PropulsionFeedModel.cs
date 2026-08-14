@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+﻿﻿using System.Collections.Generic;
 
 namespace KMC.Engine.Propulsion
 {
@@ -6,10 +6,25 @@ namespace KMC.Engine.Propulsion
     {
         Unknown = 0,
         Available,
+        PressureLow,
         Depleted,
         FlowDisabled,
         SourceStateUnknown,
         NoReachableSource
+    }
+
+    /// <summary>
+    /// Build 14.12.2 synthetic redundant feed-pump state.
+    ///
+    /// This is KMC Engine-owned spacecraft behavior. It is not a claim about
+    /// stock KSP pump hardware.
+    /// </summary>
+    public enum PropulsionFeedPumpState
+    {
+        Unknown = 0,
+        Nominal,
+        Degraded,
+        Failed
     }
 
     /// <summary>
@@ -166,6 +181,12 @@ namespace KMC.Engine.Propulsion
         {
             Engines =
                 new List<PropulsionEngineFeedModel>();
+
+            PumpAState =
+                PropulsionFeedPumpState.Unknown;
+
+            PumpBState =
+                PropulsionFeedPumpState.Unknown;
         }
 
         public bool Available { get; internal set; }
@@ -182,6 +203,12 @@ namespace KMC.Engine.Propulsion
             internal set;
         }
 
+        public int CurrentFeedDegradedEngineCount
+        {
+            get;
+            internal set;
+        }
+
         public int CurrentFeedLimitedEngineCount
         {
             get;
@@ -191,6 +218,12 @@ namespace KMC.Engine.Propulsion
         public int ReadyEngineCount { get; internal set; }
 
         public int ReadyEngineFeedAvailableCount
+        {
+            get;
+            internal set;
+        }
+
+        public int ReadyEngineFeedDegradedCount
         {
             get;
             internal set;
@@ -220,6 +253,12 @@ namespace KMC.Engine.Propulsion
             internal set;
         }
 
+        public int NextStageRetainedFeedDegradedCount
+        {
+            get;
+            internal set;
+        }
+
         public int NextStageRetainedFeedLimitedCount
         {
             get;
@@ -235,6 +274,36 @@ namespace KMC.Engine.Propulsion
         }
 
         public int NextStageAvailableRequirementCount
+        {
+            get;
+            internal set;
+        }
+
+        public bool SyntheticPumpModelAvailable
+        {
+            get;
+            internal set;
+        }
+
+        public PropulsionFeedPumpState PumpAState
+        {
+            get;
+            internal set;
+        }
+
+        public PropulsionFeedPumpState PumpBState
+        {
+            get;
+            internal set;
+        }
+
+        public bool SyntheticPumpPressureDegraded
+        {
+            get;
+            internal set;
+        }
+
+        public bool SyntheticPumpFlowLost
         {
             get;
             internal set;
