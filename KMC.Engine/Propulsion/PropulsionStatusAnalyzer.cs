@@ -1,4 +1,5 @@
 ﻿using System;
+using KMC.Engine.SpacecraftSystems;
 
 namespace KMC.Engine.Propulsion
 {
@@ -8,6 +9,20 @@ namespace KMC.Engine.Propulsion
             PropulsionTopologyModel topology,
             PropulsionLiveStateModel live,
             PropulsionFeedModel feed)
+        {
+            return
+                Analyze(
+                    topology,
+                    live,
+                    feed,
+                    null);
+        }
+
+        public static PropulsionStatusModel Analyze(
+            PropulsionTopologyModel topology,
+            PropulsionLiveStateModel live,
+            PropulsionFeedModel feed,
+            FailureSimulationSnapshot failures)
         {
             PropulsionStatusModel status =
                 new PropulsionStatusModel
@@ -144,6 +159,7 @@ namespace KMC.Engine.Propulsion
                 topology,
                 live,
                 feed,
+                failures,
                 status);
 
             SelectPrimaryCondition(
@@ -162,6 +178,7 @@ namespace KMC.Engine.Propulsion
             PropulsionTopologyModel topology,
             PropulsionLiveStateModel live,
             PropulsionFeedModel feed,
+            FailureSimulationSnapshot failures,
             PropulsionStatusModel status)
         {
             if (topology == null ||
@@ -209,7 +226,12 @@ namespace KMC.Engine.Propulsion
                             topologyEngine.SeparationStage,
 
                         SurvivesNextStage =
-                            topologyEngine.SurvivesNextStage
+                            topologyEngine.SurvivesNextStage,
+
+                        StartInhibited =
+                            IsExactStartInhibitActive(
+                                failures,
+                                topologyEngine.PartId)
                     };
 
                 if (liveEngine != null)
@@ -269,6 +291,11 @@ namespace KMC.Engine.Propulsion
                 status.EngineChannels.Add(
                     channel);
 
+                if (channel.StartInhibited)
+                {
+                    status.StartInhibitedEngineCount++;
+                }
+
                 if (channel.Severity ==
                         PropulsionSeverity.Warning ||
                     channel.Severity ==
@@ -308,6 +335,17 @@ namespace KMC.Engine.Propulsion
 
                 channel.Severity =
                     PropulsionSeverity.Unknown;
+
+                return;
+            }
+
+            if (channel.StartInhibited)
+            {
+                channel.Condition =
+                    PropulsionEngineChannelCondition.StartInhibit;
+
+                channel.Severity =
+                    PropulsionSeverity.Advisory;
 
                 return;
             }
@@ -426,6 +464,47 @@ namespace KMC.Engine.Propulsion
 
             channel.Severity =
                 PropulsionSeverity.Normal;
+        }
+
+        private static bool IsExactStartInhibitActive(
+            FailureSimulationSnapshot failures,
+            uint partId)
+        {
+            if (failures == null ||
+                failures.Failures == null ||
+                partId == 0)
+            {
+                return false;
+            }
+
+            for (int index = 0;
+                 index < failures.Failures.Count;
+                 index++)
+            {
+                SyntheticFailureRecord failure =
+                    failures.Failures[index];
+
+                if (failure == null ||
+                    !failure.EffectiveNow ||
+                    failure.TargetKind !=
+                        SyntheticFailureTargetKind.Component)
+                {
+                    continue;
+                }
+
+                uint targetPartId;
+
+                if (PropulsionEngineFailureTargets
+                        .TryParseExactEngineStartInhibitTarget(
+                            failure.TargetId,
+                            out targetPartId) &&
+                    targetPartId == partId)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static PropulsionEngineLiveStateModel
@@ -553,6 +632,21 @@ namespace KMC.Engine.Propulsion
                         ? "Current propulsion capability is lost following engine flameout."
                         : status.FlameoutEngineCount +
                           " engine(s) report flameout.";
+
+                return;
+            }
+
+            if (status.StartInhibitedEngineCount > 0)
+            {
+                status.Severity =
+                    PropulsionSeverity.Advisory;
+
+                status.Condition =
+                    PropulsionCondition.EngineStartInhibited;
+
+                status.Summary =
+                    status.StartInhibitedEngineCount.ToString() +
+                    " exact engine start channel(s) are inhibited.";
 
                 return;
             }

@@ -5,19 +5,12 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using KMC.Engine.Analysis;
+using KMC.Engine.Propulsion;
 using KMC.Engine.SpacecraftSystems;
 using KMC.Shared;
 
 namespace KMC.MissionControl.Engineering
 {
-    /// <summary>
-    /// Build 14.6 bridge from Engine-owned PROP failure truth to the
-    /// Build 14.4 validated KSP failure-effect actuator.
-    ///
-    /// Every propulsion target contains the exact persistent KSP part ID.
-    /// The bridge never substitutes a different engine if the target
-    /// disappears after staging or topology changes.
-    /// </summary>
     internal sealed class PropulsionFailureIntegrationController :
         IDisposable
     {
@@ -261,9 +254,48 @@ namespace KMC.MissionControl.Engineering
                     snapshot.Failures[index];
 
                 if (failure == null ||
-                    !failure.EffectiveNow ||
-                    failure.TargetKind !=
-                        SyntheticFailureTargetKind.PropulsionEffect)
+                    !failure.EffectiveNow)
+                {
+                    continue;
+                }
+
+                /*
+                 * Build 14.12.5:
+                 * A synthetic exact-engine START INHIBIT is Component truth,
+                 * but its truthful physical consequence is that the selected
+                 * engine cannot run. Reuse the validated EngineShutdown
+                 * actuator without reclassifying the hidden failure itself as
+                 * a direct PropulsionEffect.
+                 */
+                if (failure.TargetKind ==
+                        SyntheticFailureTargetKind.Component)
+                {
+                    uint startPartId;
+
+                    if (PropulsionEngineFailureTargets
+                            .TryParseExactEngineStartInhibitTarget(
+                                failure.TargetId,
+                                out startPartId))
+                    {
+                        desired[failure.TargetId] =
+                            new DesiredEffect
+                            {
+                                TargetId =
+                                    failure.TargetId,
+                                PartPersistentId =
+                                    startPartId,
+                                EffectType =
+                                    FailureEffectType.EngineShutdown,
+                                Magnitude =
+                                    1.0
+                            };
+                    }
+
+                    continue;
+                }
+
+                if (failure.TargetKind !=
+                    SyntheticFailureTargetKind.PropulsionEffect)
                 {
                     continue;
                 }

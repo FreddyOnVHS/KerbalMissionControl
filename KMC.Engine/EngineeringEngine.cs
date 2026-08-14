@@ -393,7 +393,8 @@ namespace KMC.Engine
                     PropulsionStatusAnalyzer.Analyze(
                         result.Snapshot.Propulsion.Topology,
                         result.Snapshot.Propulsion.Live,
-                        result.Snapshot.Propulsion.Feed);
+                        result.Snapshot.Propulsion.Feed,
+                        failures);
             }
 
             _ascentFoundationSystem.Update(

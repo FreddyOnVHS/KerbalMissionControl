@@ -1,7 +1,52 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace KMC.Engine.Propulsion
 {
+
+    /// <summary>
+    /// Build 14.12.5 exact-engine start-channel failure identity.
+    /// This is synthetic spacecraft truth. Mission Control may translate the
+    /// consequence into the already-validated real KSP engine-shutdown effect.
+    /// </summary>
+    public static class PropulsionEngineFailureTargets
+    {
+        public const string ExactEngineStartInhibitPrefix =
+            "PROP START / PART ";
+
+        public static string CreateExactEngineStartInhibitTarget(
+            uint partId)
+        {
+            return
+                partId == 0
+                    ? string.Empty
+                    : ExactEngineStartInhibitPrefix +
+                      partId.ToString();
+        }
+
+        public static bool TryParseExactEngineStartInhibitTarget(
+            string targetId,
+            out uint partId)
+        {
+            partId = 0;
+
+            if (string.IsNullOrWhiteSpace(targetId) ||
+                !targetId.StartsWith(
+                    ExactEngineStartInhibitPrefix,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            return
+                uint.TryParse(
+                    targetId.Substring(
+                        ExactEngineStartInhibitPrefix.Length),
+                    out partId) &&
+                partId != 0;
+        }
+    }
+
     public enum PropulsionSeverity
     {
         Unknown = 0,
@@ -24,6 +69,7 @@ namespace KMC.Engine.Propulsion
         FeedFlowLost,
         EngineFeedPathDegraded,
         EngineFeedPathLost,
+        EngineStartInhibited,
         FeedStateConflict,
         EngineFlameout,
         PropulsionLost,
@@ -61,6 +107,7 @@ namespace KMC.Engine.Propulsion
         Flameout,
         FeedDegraded,
         FeedLimited,
+        StartInhibit,
         FeedStateConflict
     }
 
@@ -99,6 +146,8 @@ namespace KMC.Engine.Propulsion
         public bool FutureStage { get; internal set; }
 
         public bool FeedStateKnown { get; internal set; }
+
+        public bool StartInhibited { get; internal set; }
 
         public PropulsionFeedStatus CurrentFeedStatus
         {
@@ -213,6 +262,8 @@ namespace KMC.Engine.Propulsion
             get;
             internal set;
         }
+
+        public int StartInhibitedEngineCount { get; internal set; }
 
         public int ProducingFeedConflictCount { get; internal set; }
 

@@ -24,7 +24,8 @@ namespace KMC.MissionControl.Training
         GeneratorADegraded50 = 17,
         EngineFeedValveClosed = 18,
         EngineFeedRestriction = 19,
-        EngineFeedIntermittent = 20
+        EngineFeedIntermittent = 20,
+        EngineStartInhibit = 21
     }
 
     public enum InstructorScenarioPreset
@@ -98,6 +99,9 @@ namespace KMC.MissionControl.Training
 
                 case InstructorFailurePreset.EngineFeedIntermittent:
                     return "PROP - EXACT ENGINE INTERMITTENT FEED";
+
+                case InstructorFailurePreset.EngineStartInhibit:
+                    return "PROP - EXACT ENGINE START INHIBIT";
 
                 case InstructorFailurePreset.ReactionWheel25:
                     return "GNC - REACTION WHEEL 25% AUTHORITY";

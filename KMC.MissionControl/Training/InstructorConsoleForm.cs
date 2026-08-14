@@ -965,6 +965,18 @@ namespace KMC.MissionControl.Training
                                         out result);
                         }
                     }
+                    else if (
+                        preset ==
+                            InstructorFailurePreset.EngineStartInhibit)
+                    {
+                        success =
+                            InstructorPropulsionFeedFailureBridge
+                                .InjectExactEngineStartInhibit(
+                                    _receiver,
+                                    delay,
+                                    out failureId,
+                                    out result);
+                    }
                     else
                     {
                         success =
