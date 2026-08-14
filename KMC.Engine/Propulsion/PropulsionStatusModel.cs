@@ -1,4 +1,6 @@
-﻿namespace KMC.Engine.Propulsion
+﻿using System.Collections.Generic;
+
+namespace KMC.Engine.Propulsion
 {
     public enum PropulsionSeverity
     {
@@ -39,6 +41,94 @@
     }
 
     /// <summary>
+    /// Build 14.12.1 per-engine engineering channel classification.
+    ///
+    /// This combines already-validated topology, live engine state and
+    /// feed-analysis evidence without inventing any new KSP telemetry.
+    /// </summary>
+    public enum PropulsionEngineChannelCondition
+    {
+        Unknown = 0,
+        Standby,
+        FutureStage,
+        Ready,
+        Producing,
+        Shutdown,
+        Flameout,
+        FeedLimited,
+        FeedStateConflict
+    }
+
+    public sealed class PropulsionEngineChannelModel
+    {
+        public PropulsionEngineChannelModel()
+        {
+            PartTitle = string.Empty;
+            Condition = PropulsionEngineChannelCondition.Unknown;
+            Severity = PropulsionSeverity.Unknown;
+            OperatingState = PropulsionEngineOperatingState.Unknown;
+            CurrentFeedStatus = PropulsionFeedStatus.Unknown;
+            NextStageFeedStatus = PropulsionFeedStatus.Unknown;
+        }
+
+        public uint PartId { get; internal set; }
+
+        public string PartTitle { get; internal set; }
+
+        public int ActivationStage { get; internal set; }
+
+        public int SeparationStage { get; internal set; }
+
+        public bool SurvivesNextStage { get; internal set; }
+
+        public bool LiveStateKnown { get; internal set; }
+
+        public PropulsionEngineOperatingState OperatingState
+        {
+            get;
+            internal set;
+        }
+
+        public bool ReadyForThrust { get; internal set; }
+
+        public bool FutureStage { get; internal set; }
+
+        public bool FeedStateKnown { get; internal set; }
+
+        public PropulsionFeedStatus CurrentFeedStatus
+        {
+            get;
+            internal set;
+        }
+
+        public PropulsionFeedStatus NextStageFeedStatus
+        {
+            get;
+            internal set;
+        }
+
+        public bool CurrentThrustKnown { get; internal set; }
+
+        public double CurrentThrust { get; internal set; }
+
+        public bool MaximumThrustKnown { get; internal set; }
+
+        public double MaximumThrust { get; internal set; }
+
+        public PropulsionEngineChannelCondition Condition
+        {
+            get;
+            internal set;
+        }
+
+        public PropulsionSeverity Severity
+        {
+            get;
+            internal set;
+        }
+    }
+
+    /// <summary>
     /// Controller-level propulsion interpretation built from validated
     /// topology, live engine state, and feed/stage analysis.
     ///
@@ -54,6 +144,9 @@
 
             StageSummary =
                 string.Empty;
+
+            EngineChannels =
+                new List<PropulsionEngineChannelModel>();
         }
 
         public bool Available { get; internal set; }
@@ -73,8 +166,8 @@
         }
 
         /// <summary>
-        /// False in Build 8.15. Source amount/capacity is topology-snapshot
-        /// evidence, not a continuous live tank-quantity stream.
+        /// False in the current architecture. Source amount/capacity is
+        /// topology-snapshot evidence, not a continuous live tank stream.
         /// </summary>
         public bool LivePropellantQuantityAvailable
         {
@@ -99,6 +192,20 @@
         public int FeedLimitedEngineCount { get; internal set; }
 
         public int ProducingFeedConflictCount { get; internal set; }
+
+        public int ChannelFaultCount { get; internal set; }
+
+        public int ChannelAdvisoryCount { get; internal set; }
+
+        public int ChannelNormalCount { get; internal set; }
+
+        public int ChannelUnknownCount { get; internal set; }
+
+        public List<PropulsionEngineChannelModel> EngineChannels
+        {
+            get;
+            private set;
+        }
 
         public bool CurrentThrustKnown { get; internal set; }
 

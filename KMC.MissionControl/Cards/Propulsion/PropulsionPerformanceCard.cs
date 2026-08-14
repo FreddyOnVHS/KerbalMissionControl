@@ -39,10 +39,18 @@ namespace KMC.MissionControl.Cards.Propulsion
                 model.Engineering.Live;
 
             int gap = 12;
+
             int topHeight =
                 Math.Max(
-                    132,
-                    bounds.Height * 52 / 100);
+                    118,
+                    bounds.Height * 47 / 100);
+
+            int channelHeight =
+                Math.Max(
+                    86,
+                    Math.Min(
+                        104,
+                        bounds.Height * 25 / 100));
 
             int columnWidth =
                 Math.Max(
@@ -76,16 +84,23 @@ namespace KMC.MissionControl.Cards.Propulsion
                         gap),
                     topHeight);
 
+            Rectangle channels =
+                new Rectangle(
+                    bounds.Left,
+                    engines.Bottom + 10,
+                    bounds.Width,
+                    channelHeight);
+
             Rectangle summary =
                 new Rectangle(
                     bounds.Left,
-                    engines.Bottom + 12,
+                    channels.Bottom + 10,
                     bounds.Width,
                     Math.Max(
                         1,
                         bounds.Bottom -
-                        engines.Bottom -
-                        12));
+                        channels.Bottom -
+                        10));
 
             DrawMiniPanel(
                 context,
@@ -149,10 +164,191 @@ namespace KMC.MissionControl.Cards.Propulsion
                 system,
                 status);
 
+            DrawChannelHealthStrip(
+                context,
+                channels,
+                status);
+
             DrawSummaryPanel(
                 context,
                 summary,
                 status);
+        }
+
+        private static void DrawChannelHealthStrip(
+            MissionRenderContext context,
+            Rectangle bounds,
+            PropulsionStatusModel status)
+        {
+            using (Pen border =
+                new Pen(
+                    Color.FromArgb(
+                        95,
+                        context.DimPhosphorColor)))
+            using (SolidBrush titleBrush =
+                new SolidBrush(
+                    context.DimPhosphorColor))
+            {
+                context.Graphics.DrawRectangle(
+                    border,
+                    bounds);
+
+                context.Graphics.DrawString(
+                    "ENGINE CHANNEL HEALTH  /  DETAIL ON PROP 2/3",
+                    context.SmallFont,
+                    titleBrush,
+                    bounds.Left + 10,
+                    bounds.Top + 5);
+            }
+
+            string[] labels =
+            {
+                "TOTAL",
+                "NORMAL",
+                "ADVISORY",
+                "FAULT",
+                "UNKNOWN"
+            };
+
+            string[] values =
+            {
+                status.EngineChannels.Count.ToString("00"),
+                status.ChannelNormalCount.ToString("00"),
+                status.ChannelAdvisoryCount.ToString("00"),
+                status.ChannelFaultCount.ToString("00"),
+                status.ChannelUnknownCount.ToString("00")
+            };
+
+            int top =
+                bounds.Top + 30;
+
+            int cellWidth =
+                Math.Max(
+                    1,
+                    bounds.Width /
+                    labels.Length);
+
+            for (int index = 0;
+                 index < labels.Length;
+                 index++)
+            {
+                Rectangle cell =
+                    new Rectangle(
+                        bounds.Left +
+                        index * cellWidth,
+                        top,
+                        index ==
+                            labels.Length - 1
+                                ? bounds.Right -
+                                  (bounds.Left +
+                                   index * cellWidth)
+                                : cellWidth,
+                        Math.Max(
+                            1,
+                            bounds.Bottom -
+                            top - 4));
+
+                Color valueColor =
+                    index == 2 &&
+                    status.ChannelAdvisoryCount > 0
+                        ? Color.FromArgb(
+                            255,
+                            220,
+                            185,
+                            92)
+                    : index == 3 &&
+                      status.ChannelFaultCount > 0
+                        ? Color.FromArgb(
+                            255,
+                            255,
+                            82,
+                            72)
+                    : index == 4 &&
+                      status.ChannelUnknownCount > 0
+                        ? context.DimPhosphorColor
+                    : context.PhosphorColor;
+
+                DrawHealthCell(
+                    context,
+                    cell,
+                    labels[index],
+                    values[index],
+                    index > 0,
+                    valueColor);
+            }
+        }
+
+        private static void DrawHealthCell(
+            MissionRenderContext context,
+            Rectangle bounds,
+            string label,
+            string value,
+            bool divider,
+            Color valueColor)
+        {
+            using (Pen dividerPen =
+                new Pen(
+                    Color.FromArgb(
+                        70,
+                        context.DimPhosphorColor)))
+            using (SolidBrush labelBrush =
+                new SolidBrush(
+                    context.DimPhosphorColor))
+            using (SolidBrush valueBrush =
+                new SolidBrush(
+                    valueColor))
+            using (StringFormat centered =
+                new StringFormat
+                {
+                    Alignment =
+                        StringAlignment.Center,
+                    LineAlignment =
+                        StringAlignment.Center
+                })
+            {
+                if (divider)
+                {
+                    context.Graphics.DrawLine(
+                        dividerPen,
+                        bounds.Left,
+                        bounds.Top + 3,
+                        bounds.Left,
+                        bounds.Bottom - 3);
+                }
+
+                int labelHeight =
+                    Math.Max(
+                        30,
+                        bounds.Height / 2);
+
+                int valueHeight =
+                    Math.Max(
+                        30,
+                        bounds.Height -
+                        labelHeight);
+
+                context.Graphics.DrawString(
+                    label,
+                    context.SmallFont,
+                    labelBrush,
+                    new Rectangle(
+                        bounds.Left + 3,
+                        bounds.Top,
+                        bounds.Width - 6,
+                        labelHeight),
+                    centered);
+
+                context.Graphics.DrawString(
+                    value,
+                    context.SmallFont,
+                    valueBrush,
+                    new Rectangle(
+                        bounds.Left + 3,
+                        bounds.Top + labelHeight,
+                        bounds.Width - 6,
+                        valueHeight),
+                    centered);
+            }
         }
 
         private static void DrawMiniPanel(
@@ -295,6 +491,11 @@ namespace KMC.MissionControl.Cards.Propulsion
             Rectangle bounds,
             PropulsionStatusModel status)
         {
+            if (bounds.Height <= 0)
+            {
+                return;
+            }
+
             using (Pen border =
                 new Pen(
                     Color.FromArgb(
@@ -316,11 +517,11 @@ namespace KMC.MissionControl.Cards.Propulsion
                 Rectangle summary =
                     new Rectangle(
                         bounds.Left + 12,
-                        bounds.Top + 9,
+                        bounds.Top + 6,
                         bounds.Width - 24,
                         Math.Max(
-                            26,
-                            bounds.Height / 2 - 4));
+                            20,
+                            bounds.Height / 2 - 2));
 
                 context.Graphics.DrawString(
                     status.Summary,
@@ -335,8 +536,8 @@ namespace KMC.MissionControl.Cards.Propulsion
                         bounds.Height / 2,
                         bounds.Width - 24,
                         Math.Max(
-                            22,
-                            bounds.Height / 2 - 8));
+                            18,
+                            bounds.Height / 2 - 5));
 
                 context.Graphics.DrawString(
                     status.StageSummary,

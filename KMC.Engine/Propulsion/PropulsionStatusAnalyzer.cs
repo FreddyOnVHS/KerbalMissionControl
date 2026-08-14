@@ -124,6 +124,12 @@ namespace KMC.Engine.Propulsion
                 CountActiveEngineLosses(
                     feed);
 
+            BuildEngineChannels(
+                topology,
+                live,
+                feed,
+                status);
+
             SelectPrimaryCondition(
                 topology,
                 live,
@@ -134,6 +140,310 @@ namespace KMC.Engine.Propulsion
                 status);
 
             return status;
+        }
+
+        private static void BuildEngineChannels(
+            PropulsionTopologyModel topology,
+            PropulsionLiveStateModel live,
+            PropulsionFeedModel feed,
+            PropulsionStatusModel status)
+        {
+            if (topology == null ||
+                status == null)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < topology.Engines.Count;
+                 index++)
+            {
+                PropulsionEngineModel topologyEngine =
+                    topology.Engines[index];
+
+                if (topologyEngine == null)
+                {
+                    continue;
+                }
+
+                PropulsionEngineLiveStateModel liveEngine =
+                    FindLiveEngine(
+                        live,
+                        topologyEngine.PartId);
+
+                PropulsionEngineFeedModel feedEngine =
+                    FindFeedEngine(
+                        feed,
+                        topologyEngine.PartId);
+
+                PropulsionEngineChannelModel channel =
+                    new PropulsionEngineChannelModel
+                    {
+                        PartId =
+                            topologyEngine.PartId,
+
+                        PartTitle =
+                            topologyEngine.PartTitle ??
+                            string.Empty,
+
+                        ActivationStage =
+                            topologyEngine.ActivationStage,
+
+                        SeparationStage =
+                            topologyEngine.SeparationStage,
+
+                        SurvivesNextStage =
+                            topologyEngine.SurvivesNextStage
+                    };
+
+                if (liveEngine != null)
+                {
+                    channel.LiveStateKnown =
+                        live != null &&
+                        live.TelemetryFresh &&
+                        liveEngine.TelemetryMatched;
+
+                    channel.OperatingState =
+                        channel.LiveStateKnown
+                            ? liveEngine.OperatingState
+                            : PropulsionEngineOperatingState.Unknown;
+
+                    channel.ReadyForThrust =
+                        channel.LiveStateKnown &&
+                        liveEngine.ReadyForThrust;
+
+                    channel.FutureStage =
+                        channel.LiveStateKnown &&
+                        liveEngine.IsFutureStage;
+
+                    channel.CurrentThrustKnown =
+                        channel.LiveStateKnown;
+
+                    channel.CurrentThrust =
+                        channel.CurrentThrustKnown
+                            ? liveEngine.CurrentThrust
+                            : 0.0;
+
+                    channel.MaximumThrustKnown =
+                        channel.LiveStateKnown;
+
+                    channel.MaximumThrust =
+                        channel.MaximumThrustKnown
+                            ? liveEngine.MaximumThrust
+                            : 0.0;
+                }
+
+                if (feedEngine != null &&
+                    feed != null &&
+                    feed.Available)
+                {
+                    channel.FeedStateKnown =
+                        true;
+
+                    channel.CurrentFeedStatus =
+                        feedEngine.CurrentFeedStatus;
+
+                    channel.NextStageFeedStatus =
+                        feedEngine.NextStageFeedStatus;
+                }
+
+                ClassifyChannel(
+                    channel);
+
+                status.EngineChannels.Add(
+                    channel);
+
+                if (channel.Severity ==
+                        PropulsionSeverity.Warning ||
+                    channel.Severity ==
+                        PropulsionSeverity.Critical)
+                {
+                    status.ChannelFaultCount++;
+                }
+                else if (channel.Severity ==
+                         PropulsionSeverity.Advisory)
+                {
+                    status.ChannelAdvisoryCount++;
+                }
+                else if (channel.Severity ==
+                         PropulsionSeverity.Normal)
+                {
+                    status.ChannelNormalCount++;
+                }
+                else
+                {
+                    status.ChannelUnknownCount++;
+                }
+            }
+        }
+
+        private static void ClassifyChannel(
+            PropulsionEngineChannelModel channel)
+        {
+            if (channel == null)
+            {
+                return;
+            }
+
+            if (!channel.LiveStateKnown)
+            {
+                channel.Condition =
+                    PropulsionEngineChannelCondition.Unknown;
+
+                channel.Severity =
+                    PropulsionSeverity.Unknown;
+
+                return;
+            }
+
+            if (channel.OperatingState ==
+                    PropulsionEngineOperatingState.Flameout)
+            {
+                channel.Condition =
+                    PropulsionEngineChannelCondition.Flameout;
+
+                channel.Severity =
+                    PropulsionSeverity.Warning;
+
+                return;
+            }
+
+            if (channel.OperatingState ==
+                    PropulsionEngineOperatingState.Producing)
+            {
+                if (channel.FeedStateKnown &&
+                    channel.CurrentFeedStatus !=
+                        PropulsionFeedStatus.Available)
+                {
+                    /*
+                     * Direct live thrust is stronger current evidence than the
+                     * topology-snapshot feed state. Report the conflict rather
+                     * than declaring the producing engine starved.
+                     */
+                    channel.Condition =
+                        PropulsionEngineChannelCondition.FeedStateConflict;
+
+                    channel.Severity =
+                        PropulsionSeverity.Advisory;
+                }
+                else
+                {
+                    channel.Condition =
+                        PropulsionEngineChannelCondition.Producing;
+
+                    channel.Severity =
+                        PropulsionSeverity.Normal;
+                }
+
+                return;
+            }
+
+            if (channel.ReadyForThrust)
+            {
+                if (channel.FeedStateKnown &&
+                    channel.CurrentFeedStatus !=
+                        PropulsionFeedStatus.Available)
+                {
+                    channel.Condition =
+                        PropulsionEngineChannelCondition.FeedLimited;
+
+                    channel.Severity =
+                        PropulsionSeverity.Advisory;
+                }
+                else
+                {
+                    channel.Condition =
+                        PropulsionEngineChannelCondition.Ready;
+
+                    channel.Severity =
+                        PropulsionSeverity.Normal;
+                }
+
+                return;
+            }
+
+            if (channel.FutureStage)
+            {
+                channel.Condition =
+                    PropulsionEngineChannelCondition.FutureStage;
+
+                channel.Severity =
+                    PropulsionSeverity.Normal;
+
+                return;
+            }
+
+            if (channel.OperatingState ==
+                    PropulsionEngineOperatingState.Shutdown)
+            {
+                channel.Condition =
+                    PropulsionEngineChannelCondition.Shutdown;
+
+                channel.Severity =
+                    PropulsionSeverity.Normal;
+
+                return;
+            }
+
+            channel.Condition =
+                PropulsionEngineChannelCondition.Standby;
+
+            channel.Severity =
+                PropulsionSeverity.Normal;
+        }
+
+        private static PropulsionEngineLiveStateModel
+            FindLiveEngine(
+                PropulsionLiveStateModel live,
+                uint partId)
+        {
+            if (live == null)
+            {
+                return null;
+            }
+
+            for (int index = 0;
+                 index < live.Engines.Count;
+                 index++)
+            {
+                PropulsionEngineLiveStateModel engine =
+                    live.Engines[index];
+
+                if (engine != null &&
+                    engine.PartId == partId)
+                {
+                    return engine;
+                }
+            }
+
+            return null;
+        }
+
+        private static PropulsionEngineFeedModel
+            FindFeedEngine(
+                PropulsionFeedModel feed,
+                uint partId)
+        {
+            if (feed == null)
+            {
+                return null;
+            }
+
+            for (int index = 0;
+                 index < feed.Engines.Count;
+                 index++)
+            {
+                PropulsionEngineFeedModel engine =
+                    feed.Engines[index];
+
+                if (engine != null &&
+                    engine.PartId == partId)
+                {
+                    return engine;
+                }
+            }
+
+            return null;
         }
 
         private static void SelectPrimaryCondition(
@@ -232,9 +542,9 @@ namespace KMC.Engine.Propulsion
             }
 
             /*
-             * Feed amount / FlowEnabled state is topology-snapshot evidence in
-             * Build 8.15. Do not promote a snapshot-only limitation to a live
-             * engine failure without direct engine evidence.
+             * Feed amount / FlowEnabled state is topology-snapshot evidence.
+             * Do not promote a snapshot-only limitation to a live engine
+             * failure without direct engine evidence.
              */
             if (status.ReadyFeedLimitedEngineCount > 0 ||
                 status.FeedLimitedEngineCount > 0)
