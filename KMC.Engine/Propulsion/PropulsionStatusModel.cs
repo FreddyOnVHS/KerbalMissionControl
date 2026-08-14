@@ -24,6 +24,41 @@ namespace KMC.Engine.Propulsion
                       partId.ToString();
         }
 
+        public const string ExactEngineThrustIndicationPrefix =
+            "PROP THRUST IND / PART ";
+
+        public static string CreateExactEngineThrustIndicationTarget(
+            uint partId)
+        {
+            return
+                partId == 0
+                    ? string.Empty
+                    : ExactEngineThrustIndicationPrefix +
+                      partId.ToString();
+        }
+
+        public static bool TryParseExactEngineThrustIndicationTarget(
+            string targetId,
+            out uint partId)
+        {
+            partId = 0;
+
+            if (string.IsNullOrWhiteSpace(targetId) ||
+                !targetId.StartsWith(
+                    ExactEngineThrustIndicationPrefix,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            return
+                uint.TryParse(
+                    targetId.Substring(
+                        ExactEngineThrustIndicationPrefix.Length),
+                    out partId) &&
+                partId != 0;
+        }
+
         public static bool TryParseExactEngineStartInhibitTarget(
             string targetId,
             out uint partId)
@@ -72,6 +107,7 @@ namespace KMC.Engine.Propulsion
         EngineStartInhibited,
         EngineThrustDegraded,
         EngineThrustUnstable,
+        EngineThrustIndicationFault,
         FeedStateConflict,
         EngineFlameout,
         PropulsionLost,
@@ -112,6 +148,7 @@ namespace KMC.Engine.Propulsion
         StartInhibit,
         ThrustDegraded,
         ThrustUnstable,
+        ThrustIndicationFault,
         FeedStateConflict
     }
 
@@ -156,6 +193,8 @@ namespace KMC.Engine.Propulsion
         public bool ThrustDegraded { get; internal set; }
 
         public bool ThrustUnstable { get; internal set; }
+
+        public bool ThrustIndicationFailed { get; internal set; }
 
         public PropulsionFeedStatus CurrentFeedStatus
         {
@@ -276,6 +315,8 @@ namespace KMC.Engine.Propulsion
         public int ThrustDegradedEngineCount { get; internal set; }
 
         public int ThrustUnstableEngineCount { get; internal set; }
+
+        public int ThrustIndicationFaultEngineCount { get; internal set; }
 
         public int ProducingFeedConflictCount { get; internal set; }
 

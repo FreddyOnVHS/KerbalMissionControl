@@ -243,7 +243,12 @@ namespace KMC.Engine.Propulsion
                             IsExactThrustFailureActive(
                                 failures,
                                 topologyEngine.PartId,
-                                SyntheticFailureKind.Intermittent)
+                                SyntheticFailureKind.Intermittent),
+
+                        ThrustIndicationFailed =
+                            IsExactThrustIndicationFailureActive(
+                                failures,
+                                topologyEngine.PartId)
                     };
 
                 if (liveEngine != null)
@@ -281,6 +286,20 @@ namespace KMC.Engine.Propulsion
                         channel.MaximumThrustKnown
                             ? liveEngine.MaximumThrust
                             : 0.0;
+
+                    /*
+                     * Build 14.12.7:
+                     * Preserve the validated live engine truth in the live
+                     * model and aggregate propulsion totals. Only the
+                     * operator-facing exact-engine current thrust indication
+                     * is failed low.
+                     */
+                    if (channel.ThrustIndicationFailed &&
+                        channel.CurrentThrustKnown)
+                    {
+                        channel.CurrentThrust =
+                            0.0;
+                    }
                 }
 
                 if (feedEngine != null &&
@@ -316,6 +335,11 @@ namespace KMC.Engine.Propulsion
                 if (channel.ThrustUnstable)
                 {
                     status.ThrustUnstableEngineCount++;
+                }
+
+                if (channel.ThrustIndicationFailed)
+                {
+                    status.ThrustIndicationFaultEngineCount++;
                 }
 
                 if (channel.Severity ==
@@ -365,6 +389,17 @@ namespace KMC.Engine.Propulsion
             {
                 channel.Condition =
                     PropulsionEngineChannelCondition.StartInhibit;
+
+                channel.Severity =
+                    PropulsionSeverity.Advisory;
+
+                return;
+            }
+
+            if (channel.ThrustIndicationFailed)
+            {
+                channel.Condition =
+                    PropulsionEngineChannelCondition.ThrustIndicationFault;
 
                 channel.Severity =
                     PropulsionSeverity.Advisory;
@@ -508,6 +543,47 @@ namespace KMC.Engine.Propulsion
 
             channel.Severity =
                 PropulsionSeverity.Normal;
+        }
+
+        private static bool IsExactThrustIndicationFailureActive(
+            FailureSimulationSnapshot failures,
+            uint partId)
+        {
+            if (failures == null ||
+                failures.Failures == null ||
+                partId == 0)
+            {
+                return false;
+            }
+
+            for (int index = 0;
+                 index < failures.Failures.Count;
+                 index++)
+            {
+                SyntheticFailureRecord failure =
+                    failures.Failures[index];
+
+                if (failure == null ||
+                    !failure.EffectiveNow ||
+                    failure.TargetKind !=
+                        SyntheticFailureTargetKind.Component)
+                {
+                    continue;
+                }
+
+                uint targetPartId;
+
+                if (PropulsionEngineFailureTargets
+                        .TryParseExactEngineThrustIndicationTarget(
+                            failure.TargetId,
+                            out targetPartId) &&
+                    targetPartId == partId)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool IsExactThrustFailureActive(
@@ -737,6 +813,21 @@ namespace KMC.Engine.Propulsion
                 status.Summary =
                     status.StartInhibitedEngineCount.ToString() +
                     " exact engine start channel(s) are inhibited.";
+
+                return;
+            }
+
+            if (status.ThrustIndicationFaultEngineCount > 0)
+            {
+                status.Severity =
+                    PropulsionSeverity.Advisory;
+
+                status.Condition =
+                    PropulsionCondition.EngineThrustIndicationFault;
+
+                status.Summary =
+                    status.ThrustIndicationFaultEngineCount.ToString() +
+                    " exact engine thrust indication channel(s) are failed.";
 
                 return;
             }

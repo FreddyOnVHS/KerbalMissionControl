@@ -1001,6 +1001,18 @@ namespace KMC.MissionControl.Training
                                     out failureId,
                                     out result);
                     }
+                    else if (
+                        preset ==
+                            InstructorFailurePreset.EngineThrustIndicationFailLow)
+                    {
+                        success =
+                            InstructorPropulsionFeedFailureBridge
+                                .InjectExactEngineThrustIndicationFailLow(
+                                    _receiver,
+                                    delay,
+                                    out failureId,
+                                    out result);
+                    }
                     else
                     {
                         success =

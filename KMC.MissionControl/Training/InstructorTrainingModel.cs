@@ -27,7 +27,8 @@ namespace KMC.MissionControl.Training
         EngineFeedIntermittent = 20,
         EngineStartInhibit = 21,
         EngineThrustDecay = 22,
-        EngineThrustUnstable = 23
+        EngineThrustUnstable = 23,
+        EngineThrustIndicationFailLow = 24
     }
 
     public enum InstructorScenarioPreset
@@ -110,6 +111,9 @@ namespace KMC.MissionControl.Training
 
                 case InstructorFailurePreset.EngineThrustUnstable:
                     return "PROP - EXACT ENGINE UNSTABLE THRUST";
+
+                case InstructorFailurePreset.EngineThrustIndicationFailLow:
+                    return "PROP - EXACT ENGINE THRUST IND FAIL LOW";
 
                 case InstructorFailurePreset.ReactionWheel25:
                     return "GNC - REACTION WHEEL 25% AUTHORITY";
