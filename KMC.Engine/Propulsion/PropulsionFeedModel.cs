@@ -28,6 +28,55 @@ namespace KMC.Engine.Propulsion
     }
 
     /// <summary>
+    /// Build 14.12.3 exact-engine synthetic feed-path failure identity.
+    ///
+    /// The target text is intentionally operator-readable evidence rather
+    /// than a hidden mechanical-cause label. Instructor UI may describe the
+    /// training cause as a failed-closed valve, while normal Mission Control
+    /// displays see only the resulting exact feed-path loss.
+    /// </summary>
+    public static class PropulsionFeedFailureTargets
+    {
+        public const string ExactEngineFeedPathPrefix =
+            "PROP FEED PATH / PART ";
+
+        public static string CreateExactEngineFeedPathTarget(
+            uint partId)
+        {
+            return
+                partId == 0
+                    ? string.Empty
+                    : ExactEngineFeedPathPrefix +
+                      partId.ToString();
+        }
+
+        public static bool TryParseExactEngineFeedPathTarget(
+            string targetId,
+            out uint partId)
+        {
+            partId = 0;
+
+            if (string.IsNullOrWhiteSpace(targetId) ||
+                !targetId.StartsWith(
+                    ExactEngineFeedPathPrefix,
+                    System.StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            string value =
+                targetId.Substring(
+                    ExactEngineFeedPathPrefix.Length);
+
+            return
+                uint.TryParse(
+                    value,
+                    out partId) &&
+                partId != 0;
+        }
+    }
+
+    /// <summary>
     /// Engineering interpretation of one propellant requirement for one engine.
     /// Current and next-stage states are evaluated independently.
     /// </summary>
@@ -304,6 +353,16 @@ namespace KMC.Engine.Propulsion
         }
 
         public bool SyntheticPumpFlowLost
+        {
+            get;
+            internal set;
+        }
+
+        /// <summary>
+        /// Number of exact engine channels whose synthetic local feed path is
+        /// unavailable. This is separate from shared Pump A/B state.
+        /// </summary>
+        public int SyntheticExactFeedPathLostEngineCount
         {
             get;
             internal set;

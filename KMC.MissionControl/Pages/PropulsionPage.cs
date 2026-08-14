@@ -814,7 +814,7 @@ namespace KMC.MissionControl.Pages
             string[] labels =
             {
                 "CURRENT FED",
-                "DEGRADED",
+                "DEG / LOST",
                 "NEXT RETAIN",
                 "NEXT LOST",
                 "NEXT FED",
@@ -829,6 +829,9 @@ namespace KMC.MissionControl.Pages
                 feed.EngineCount,
 
                 feed.CurrentFeedDegradedEngineCount
+                    .ToString() +
+                " / " +
+                feed.CurrentFeedLimitedEngineCount
                     .ToString(),
 
                 feed.NextStageRetainedEngineCount

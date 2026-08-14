@@ -22,6 +22,7 @@ namespace KMC.Engine.Propulsion
         FeedEvidenceLimited,
         FeedPressureDegraded,
         FeedFlowLost,
+        EngineFeedPathLost,
         FeedStateConflict,
         EngineFlameout,
         PropulsionLost,
@@ -199,6 +200,12 @@ namespace KMC.Engine.Propulsion
         public bool SyntheticFeedPressureDegraded { get; internal set; }
 
         public bool SyntheticFeedFlowLost { get; internal set; }
+
+        public int ExactFeedPathLostEngineCount
+        {
+            get;
+            internal set;
+        }
 
         public int ProducingFeedConflictCount { get; internal set; }
 

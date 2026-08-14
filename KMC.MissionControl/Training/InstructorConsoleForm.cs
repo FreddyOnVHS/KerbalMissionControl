@@ -924,6 +924,18 @@ namespace KMC.MissionControl.Training
                                     out failureId,
                                     out result);
                     }
+                    else if (
+                        preset ==
+                            InstructorFailurePreset.EngineFeedValveClosed)
+                    {
+                        success =
+                            InstructorPropulsionFeedFailureBridge
+                                .InjectExactEngineFeedPathFailure(
+                                    _receiver,
+                                    delay,
+                                    out failureId,
+                                    out result);
+                    }
                     else
                     {
                         success =

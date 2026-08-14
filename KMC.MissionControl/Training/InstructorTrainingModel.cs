@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace KMC.MissionControl.Training
 {
@@ -21,7 +21,8 @@ namespace KMC.MissionControl.Training
         GuidABreakerTripped = 14,
         GenAContactorFalseOpenIndication = 15,
         GenAContactorWeldedClosed = 16,
-        GeneratorADegraded50 = 17
+        GeneratorADegraded50 = 17,
+        EngineFeedValveClosed = 18
     }
 
     public enum InstructorScenarioPreset
@@ -86,6 +87,9 @@ namespace KMC.MissionControl.Training
 
                 case InstructorFailurePreset.EngineShutdown:
                     return "PROP - EXACT ENGINE SHUTDOWN";
+
+                case InstructorFailurePreset.EngineFeedValveClosed:
+                    return "PROP - EXACT ENGINE FEED VALVE CLOSED";
 
                 case InstructorFailurePreset.ReactionWheel25:
                     return "GNC - REACTION WHEEL 25% AUTHORITY";

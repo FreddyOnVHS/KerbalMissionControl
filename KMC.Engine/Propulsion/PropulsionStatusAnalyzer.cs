@@ -105,6 +105,9 @@ namespace KMC.Engine.Propulsion
                 status.SyntheticFeedFlowLost =
                     feed.SyntheticPumpFlowLost;
 
+                status.ExactFeedPathLostEngineCount =
+                    feed.SyntheticExactFeedPathLostEngineCount;
+
                 status.NextStageEngineLossCount =
                     feed.NextStageLostEngineCount;
 
@@ -575,6 +578,21 @@ namespace KMC.Engine.Propulsion
 
                 status.Summary =
                     "Synthetic liquid-feed redundancy is degraded; pump-fed engine pressure is low.";
+
+                return;
+            }
+
+            if (status.ExactFeedPathLostEngineCount > 0)
+            {
+                status.Severity =
+                    PropulsionSeverity.Advisory;
+
+                status.Condition =
+                    PropulsionCondition.EngineFeedPathLost;
+
+                status.Summary =
+                    status.ExactFeedPathLostEngineCount.ToString() +
+                    " exact engine feed path(s) are unavailable.";
 
                 return;
             }

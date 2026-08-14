@@ -99,6 +99,16 @@ namespace KMC.Engine.Propulsion
                     syntheticStatus);
             }
 
+            /*
+             * Exact feed-path failures are applied after the shared pump
+             * consequence. A local FLOW OFF therefore dominates PRESS LOW for
+             * only the selected engine while every other engine keeps the
+             * shared-system state.
+             */
+            ApplyExactEngineFeedPathFailures(
+                feed,
+                failures);
+
             Recalculate(
                 feed);
         }
@@ -236,6 +246,125 @@ namespace KMC.Engine.Propulsion
                     }
                 }
             }
+        }
+
+        private static void ApplyExactEngineFeedPathFailures(
+            PropulsionFeedModel feed,
+            FailureSimulationSnapshot failures)
+        {
+            feed.SyntheticExactFeedPathLostEngineCount =
+                0;
+
+            if (failures == null ||
+                failures.Failures == null)
+            {
+                return;
+            }
+
+            for (int failureIndex = 0;
+                 failureIndex < failures.Failures.Count;
+                 failureIndex++)
+            {
+                SyntheticFailureRecord failure =
+                    failures.Failures[failureIndex];
+
+                if (failure == null ||
+                    !failure.EffectiveNow ||
+                    failure.TargetKind !=
+                        SyntheticFailureTargetKind.Component)
+                {
+                    continue;
+                }
+
+                uint partId;
+
+                if (!PropulsionFeedFailureTargets
+                        .TryParseExactEngineFeedPathTarget(
+                            failure.TargetId,
+                            out partId))
+                {
+                    continue;
+                }
+
+                PropulsionEngineFeedModel engine =
+                    FindEngine(
+                        feed,
+                        partId);
+
+                if (engine == null)
+                {
+                    continue;
+                }
+
+                bool affected =
+                    false;
+
+                for (int requirementIndex = 0;
+                     requirementIndex <
+                        engine.Requirements.Count;
+                     requirementIndex++)
+                {
+                    PropulsionRequirementFeedModel requirement =
+                        engine.Requirements[
+                            requirementIndex];
+
+                    if (requirement == null ||
+                        !IsPumpFedResource(
+                            requirement.ResourceName))
+                    {
+                        continue;
+                    }
+
+                    PropulsionFeedStatus currentBefore =
+                        requirement.CurrentStatus;
+
+                    requirement.CurrentStatus =
+                        ApplyIfSyntheticCanDominate(
+                            requirement.CurrentStatus,
+                            PropulsionFeedStatus.FlowDisabled);
+
+                    if (requirement.CurrentStatus !=
+                            currentBefore)
+                    {
+                        affected =
+                            true;
+                    }
+
+                    if (engine.SurvivesNextStage)
+                    {
+                        requirement.NextStageStatus =
+                            ApplyIfSyntheticCanDominate(
+                                requirement.NextStageStatus,
+                                PropulsionFeedStatus.FlowDisabled);
+                    }
+                }
+
+                if (affected)
+                {
+                    feed.SyntheticExactFeedPathLostEngineCount++;
+                }
+            }
+        }
+
+        private static PropulsionEngineFeedModel FindEngine(
+            PropulsionFeedModel feed,
+            uint partId)
+        {
+            for (int index = 0;
+                 index < feed.Engines.Count;
+                 index++)
+            {
+                PropulsionEngineFeedModel engine =
+                    feed.Engines[index];
+
+                if (engine != null &&
+                    engine.PartId == partId)
+                {
+                    return engine;
+                }
+            }
+
+            return null;
         }
 
         private static PropulsionFeedStatus
