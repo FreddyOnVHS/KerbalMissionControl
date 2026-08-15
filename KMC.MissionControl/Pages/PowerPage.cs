@@ -30,6 +30,11 @@ namespace KMC.MissionControl.Pages
         private Rectangle _oneLineTab;
         private Rectangle _detailTab;
 
+        private int _sourceInventoryPage;
+        private int _sourceInventoryPageCount = 1;
+        private Rectangle _sourcePreviousButton;
+        private Rectangle _sourceNextButton;
+
         public PowerPage()
         {
             /*
@@ -135,6 +140,25 @@ namespace KMC.MissionControl.Pages
             {
                 _subpage = 2;
             }
+            else if (_subpage == 2 &&
+                     _sourcePreviousButton.Contains(
+                         point) &&
+                     _sourceInventoryPage > 0)
+            {
+                _sourceInventoryPage--;
+                display.RequestRender();
+                return false;
+            }
+            else if (_subpage == 2 &&
+                     _sourceNextButton.Contains(
+                         point) &&
+                     _sourceInventoryPage <
+                         _sourceInventoryPageCount - 1)
+            {
+                _sourceInventoryPage++;
+                display.RequestRender();
+                return false;
+            }
             else
             {
                 return false;
@@ -166,14 +190,24 @@ namespace KMC.MissionControl.Pages
             if (_subpage == 2)
             {
                 /*
-                 * Build 14.14.1:
-                 * Activate the existing deep electrical engineering renderer as
-                 * POWER 2/2 rather than leaving the selector decorative.
+                 * Build 14.14.2C:
+                 * Render POWER 2/2 once using the consolidated two-column
+                 * layout. The previous base-renderer + overlay stack is no
+                 * longer called, eliminating hidden duplicate drawing work.
                  */
-                PowerPageRenderer.Draw(
+                int effectivePage;
+
+                PowerDetailConsolidatedRenderer.Draw(
                     context,
-                    telemetry,
-                    engineering);
+                    engineering,
+                    _sourceInventoryPage,
+                    out _sourcePreviousButton,
+                    out _sourceNextButton,
+                    out _sourceInventoryPageCount,
+                    out effectivePage);
+
+                _sourceInventoryPage =
+                    effectivePage;
             }
             else
             {
