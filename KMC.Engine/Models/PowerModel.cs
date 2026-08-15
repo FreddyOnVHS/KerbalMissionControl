@@ -11,7 +11,8 @@ namespace KMC.Engine.Electrical
         SourceTransfer,
         AutomaticShed,
         ManualShed,
-        SwitchState
+        SwitchState,
+        SourceState
     }
 
     public sealed class ElectricalDistributionEventRecord
@@ -115,6 +116,24 @@ namespace KMC.Engine.Electrical
             _previousSwitches =
                 new Dictionary<string, SwitchSnapshot>(
                     StringComparer.Ordinal);
+
+        /*
+         * Build 14.14.6:
+         * Main source state is controller evidence already visible on POWER.
+         * Preserve its transitions without exposing failure records or causes.
+         */
+        private readonly Dictionary<string, SourceSnapshot>
+            _previousSources =
+                new Dictionary<string, SourceSnapshot>(
+                    StringComparer.Ordinal);
+
+        private static readonly string[] SourceIds =
+        {
+            "SRC_GEN_A",
+            "SRC_BAT_A",
+            "SRC_GEN_B",
+            "SRC_BAT_B"
+        };
 
         private string _vesselId =
             string.Empty;
@@ -240,6 +259,10 @@ namespace KMC.Engine.Electrical
                 utc,
                 distribution);
 
+            TrackSourceEvidence(
+                utc,
+                distribution);
+
             return
                 BuildModel();
         }
@@ -300,6 +323,9 @@ namespace KMC.Engine.Electrical
             _baselineCandidateMatches = 0;
 
             CaptureSwitchBaseline(
+                distribution);
+
+            CaptureSourceBaseline(
                 distribution);
 
             _established = true;
@@ -411,6 +437,222 @@ namespace KMC.Engine.Electrical
                     left.ManualShedAmps -
                     right.ManualShedAmps) <=
                     ShedToleranceAmps;
+        }
+
+        private void CaptureSourceBaseline(
+            SyntheticElectricalDistributionModel distribution)
+        {
+            _previousSources.Clear();
+
+            if (distribution == null)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < SourceIds.Length;
+                 index++)
+            {
+                SyntheticElectricalSource source =
+                    distribution.FindSource(
+                        SourceIds[index]);
+
+                if (source == null)
+                {
+                    continue;
+                }
+
+                _previousSources[source.Id] =
+                    SourceSnapshot.FromSource(
+                        source);
+            }
+        }
+
+        private void TrackSourceEvidence(
+            DateTime utc,
+            SyntheticElectricalDistributionModel distribution)
+        {
+            if (distribution == null)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < SourceIds.Length;
+                 index++)
+            {
+                SyntheticElectricalSource source =
+                    distribution.FindSource(
+                        SourceIds[index]);
+
+                if (source == null ||
+                    string.IsNullOrWhiteSpace(
+                        source.Id))
+                {
+                    continue;
+                }
+
+                SourceSnapshot previous;
+
+                if (!_previousSources.TryGetValue(
+                        source.Id,
+                        out previous))
+                {
+                    /*
+                     * Late discovery is learned silently. Discovery is not a
+                     * spacecraft event.
+                     */
+                    _previousSources[source.Id] =
+                        SourceSnapshot.FromSource(
+                            source);
+
+                    continue;
+                }
+
+                if (previous.State !=
+                    source.State)
+                {
+                    AddSourceStateEvent(
+                        utc,
+                        SourceStateSeverity(
+                            source.State),
+                        source,
+                        previous.State,
+                        source.State);
+                }
+
+                _previousSources[source.Id] =
+                    SourceSnapshot.FromSource(
+                        source);
+            }
+        }
+
+        private void AddSourceStateEvent(
+            DateTime utc,
+            ElectricalEventSeverity severity,
+            SyntheticElectricalSource source,
+            SyntheticElectricalSourceState previous,
+            SyntheticElectricalSourceState current)
+        {
+            _events.Add(
+                new ElectricalDistributionEventRecord
+                {
+                    Sequence =
+                        _nextSequence++,
+
+                    TimestampUtc =
+                        utc,
+
+                    Severity =
+                        severity,
+
+                    Kind =
+                        ElectricalDistributionEventKind.SourceState,
+
+                    /*
+                     * Legacy field names remain for renderer compatibility.
+                     * The subject here is a source channel, not a bus.
+                     */
+                    BusId =
+                        source != null
+                            ? source.Id ?? string.Empty
+                            : string.Empty,
+
+                    BusName =
+                        SourceDisplayName(
+                            source),
+
+                    Code =
+                        SourceDisplayName(
+                            source),
+
+                    Message =
+                        SourceStateText(
+                            previous) +
+                        " -> " +
+                        SourceStateText(
+                            current)
+                });
+
+            while (_events.Count >
+                   MaximumHistoryCount)
+            {
+                _events.RemoveAt(
+                    0);
+            }
+        }
+
+        private static ElectricalEventSeverity SourceStateSeverity(
+            SyntheticElectricalSourceState state)
+        {
+            switch (state)
+            {
+                case SyntheticElectricalSourceState.Online:
+                    return
+                        ElectricalEventSeverity.Info;
+
+                case SyntheticElectricalSourceState.Degraded:
+                    return
+                        ElectricalEventSeverity.Advisory;
+
+                case SyntheticElectricalSourceState.Offline:
+                    return
+                        ElectricalEventSeverity.Warning;
+
+                case SyntheticElectricalSourceState.Unknown:
+                default:
+                    return
+                        ElectricalEventSeverity.Advisory;
+            }
+        }
+
+        private static string SourceDisplayName(
+            SyntheticElectricalSource source)
+        {
+            if (source == null)
+            {
+                return "SOURCE";
+            }
+
+            if (!string.IsNullOrWhiteSpace(
+                    source.DisplayName))
+            {
+                return
+                    source.DisplayName
+                        .Trim()
+                        .ToUpperInvariant();
+            }
+
+            return
+                (source.Id ?? "SOURCE")
+                    .Replace(
+                        "SRC_",
+                        string.Empty)
+                    .Replace(
+                        '_',
+                        ' ')
+                    .Trim()
+                    .ToUpperInvariant();
+        }
+
+        private static string SourceStateText(
+            SyntheticElectricalSourceState state)
+        {
+            switch (state)
+            {
+                case SyntheticElectricalSourceState.Online:
+                    return "ONLINE";
+
+                case SyntheticElectricalSourceState.Degraded:
+                    return "DEGRADED";
+
+                case SyntheticElectricalSourceState.Offline:
+                    return "OFFLINE";
+
+                case SyntheticElectricalSourceState.Unknown:
+                default:
+                    return "UNKNOWN";
+            }
         }
 
         private void CaptureSwitchBaseline(
@@ -863,6 +1105,7 @@ namespace KMC.Engine.Electrical
             _events.Clear();
             _previous.Clear();
             _previousSwitches.Clear();
+            _previousSources.Clear();
             _baselineCandidate.Clear();
             _baselineCandidateMatches = 0;
 
@@ -991,6 +1234,28 @@ namespace KMC.Engine.Electrical
             return
                 builder.ToString()
                     .ToUpperInvariant();
+        }
+
+        private sealed class SourceSnapshot
+        {
+            public SyntheticElectricalSourceState State
+            {
+                get;
+                set;
+            }
+
+            public static SourceSnapshot FromSource(
+                SyntheticElectricalSource source)
+            {
+                return
+                    new SourceSnapshot
+                    {
+                        State =
+                            source != null
+                                ? source.State
+                                : SyntheticElectricalSourceState.Unknown
+                    };
+            }
         }
 
         private sealed class SwitchSnapshot
