@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using KMC.Engine.Electrical;
 using KMC.Engine.Models;
@@ -319,6 +319,9 @@ namespace KMC.Engine.SpacecraftSystems
                 bus.ShedDemandAmps =
                     0.0;
 
+                bus.ManualShedDemandAmps =
+                    0.0;
+
                 bus.AvailableCurrentAmps =
                     0.0;
 
@@ -375,6 +378,11 @@ namespace KMC.Engine.SpacecraftSystems
                         bus.ShedDemandAmps =
                             0.0;
 
+                        bus.ManualShedDemandAmps =
+                            SumManualShedDemand(
+                                distribution,
+                                bus.Id);
+
                         bus.AvailableCurrentAmps =
                             0.0;
 
@@ -400,6 +408,11 @@ namespace KMC.Engine.SpacecraftSystems
 
                     bus.ShedDemandAmps =
                         SumShedDemand(
+                            distribution,
+                            bus.Id);
+
+                    bus.ManualShedDemandAmps =
+                        SumManualShedDemand(
                             distribution,
                             bus.Id);
 
@@ -478,6 +491,11 @@ namespace KMC.Engine.SpacecraftSystems
 
                         bus.ShedDemandAmps =
                             SumShedDemand(
+                                distribution,
+                                bus.Id);
+
+                        bus.ManualShedDemandAmps =
+                            SumManualShedDemand(
                                 distribution,
                                 bus.Id);
                     }
@@ -1630,6 +1648,50 @@ namespace KMC.Engine.SpacecraftSystems
                         0.0,
                         load.DemandAmps);
             }
+        }
+
+        /// <summary>
+        /// Build 14.13.3 manual load-management accounting.
+        ///
+        /// Only explicit crew-commanded OFF loads count here. Automatic
+        /// priority shedding remains in ShedDemandAmps so EECOM can distinguish
+        /// operator action from protection-system action.
+        /// </summary>
+        private static double SumManualShedDemand(
+            SyntheticElectricalDistributionModel distribution,
+            string busId)
+        {
+            double shed = 0.0;
+
+            if (distribution == null ||
+                string.IsNullOrWhiteSpace(
+                    busId))
+            {
+                return shed;
+            }
+
+            for (int index = 0;
+                 index < distribution.Loads.Count;
+                 index++)
+            {
+                SyntheticElectricalLoad load =
+                    distribution.Loads[index];
+
+                if (load != null &&
+                    !load.CommandedOn &&
+                    string.Equals(
+                        load.BusId,
+                        busId,
+                        StringComparison.Ordinal))
+                {
+                    shed +=
+                        Math.Max(
+                            0.0,
+                            load.DemandAmps);
+                }
+            }
+
+            return shed;
         }
 
         private static double SumShedDemand(

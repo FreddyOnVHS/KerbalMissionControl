@@ -443,16 +443,25 @@ namespace KMC.MissionControl.Rendering.Power
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding);
 
-            string shed =
+            string automaticShed =
                 bus != null &&
                 bus.ShedDemandAmps > 0.01
-                    ? "   SHED " +
+                    ? "   AUTO " +
                       bus.ShedDemandAmps.ToString("0.0") +
                       " A"
                     : string.Empty;
 
+            string manualShed =
+                bus != null &&
+                bus.ManualShedDemandAmps > 0.01
+                    ? "   MAN " +
+                      bus.ManualShedDemandAmps.ToString("0.0") +
+                      " A"
+                    : string.Empty;
+
             DrawText(g, new Rectangle(box.Left + 14, box.Top + 82, box.Width - 28, 32),
-                "SOURCE " + activeSource + "   DEMAND " + load + "   LOAD " + percent + shed,
+                "SOURCE " + activeSource + "   DEMAND " + load + "   LOAD " + percent +
+                automaticShed + manualShed,
                 context.SmallFont, context.DimPhosphorColor,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
@@ -767,6 +776,15 @@ namespace KMC.MissionControl.Rendering.Power
                 y - 18 >
                     avoidBox.Top;
 
+            int breakerX =
+                parentCenter;
+
+            int breakerY =
+                parentBus.Bottom +
+                Math.Max(
+                    24,
+                    (y - 18 - parentBus.Bottom) / 2);
+
             using (Pen wire = new Pen(color, 1.6f))
             {
                 if (routeAroundAvoidBox)
@@ -791,6 +809,15 @@ namespace KMC.MissionControl.Rendering.Power
                     int topRouteY =
                         parentBus.Bottom +
                         12;
+
+                    breakerX =
+                        routeX;
+
+                    breakerY =
+                        topRouteY +
+                        Math.Max(
+                            24,
+                            (y - 18 - topRouteY) / 2);
 
                     g.DrawLine(
                         wire,
@@ -835,6 +862,29 @@ namespace KMC.MissionControl.Rendering.Power
                 }
             }
 
+            /*
+             * Build 14.13.3A:
+             * Show the physical load breaker in-series on the six Main Bus
+             * branch feeders marked on the POWER one-line. The Primary Flight
+             * Computer retains its compact ESS breaker evidence in the load
+             * box because the ESS-to-load vertical space is intentionally
+             * tight on POWER 1/2.
+             */
+            if (!string.Equals(
+                    id,
+                    "FLIGHT_COMPUTER",
+                    StringComparison.Ordinal))
+            {
+                DrawLoadBreaker(
+                    g,
+                    new Point(
+                        breakerX,
+                        breakerY),
+                    breaker,
+                    id,
+                    context);
+            }
+
             DrawBox(g, box, color);
 
             string name = load != null ? load.DisplayName : id;
@@ -853,6 +903,193 @@ namespace KMC.MissionControl.Rendering.Power
 
             DrawText(g, new Rectangle(box.Left + 12, box.Top + 84, box.Width - 24, 30), demand + "  " + priority, context.SmallFont, context.DimPhosphorColor,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
+
+        /// <summary>
+        /// Compact one-line breaker symbol for individual major-load feeders.
+        ///
+        /// CMD and IND are intentionally shown separately:
+        /// - CMD = commanded mechanical position
+        /// - IND = operator-facing indicated position
+        /// - symbol color/conduction remains actual electrical-path truth
+        ///
+        /// A breaker can therefore read CMD CL / IND CL while the downstream
+        /// load is unpowered because the upstream bus itself is dead.
+        /// </summary>
+        private static void DrawLoadBreaker(
+            Graphics g,
+            Point center,
+            SyntheticElectricalSwitch breaker,
+            string loadId,
+            MissionRenderContext context)
+        {
+            bool commanded =
+                breaker != null &&
+                breaker.CommandedClosed;
+
+            bool indicated =
+                breaker != null &&
+                breaker.IndicatedClosed;
+
+            bool conducting =
+                breaker != null &&
+                breaker.Conducting;
+
+            Color color =
+                conducting
+                    ? Healthy
+                    : indicated
+                        ? Advisory
+                        : Dead;
+
+            const int radius = 7;
+
+            using (SolidBrush background =
+                new SolidBrush(Panel))
+            {
+                g.FillEllipse(
+                    background,
+                    center.X - radius - 2,
+                    center.Y - radius - 2,
+                    radius * 2 + 4,
+                    radius * 2 + 4);
+            }
+
+            using (Pen pen =
+                new Pen(
+                    color,
+                    1.8f))
+            {
+                g.DrawEllipse(
+                    pen,
+                    center.X - radius,
+                    center.Y - radius,
+                    radius * 2,
+                    radius * 2);
+
+                if (indicated)
+                {
+                    g.DrawLine(
+                        pen,
+                        center.X - 5,
+                        center.Y,
+                        center.X + 5,
+                        center.Y);
+                }
+                else
+                {
+                    g.DrawLine(
+                        pen,
+                        center.X - 5,
+                        center.Y + 4,
+                        center.X + 5,
+                        center.Y - 5);
+                }
+            }
+
+            /*
+             * 14.13.3A1:
+             * Use a compact stacked evidence block instead of left/right text.
+             * Six adjacent feeders do not have enough horizontal room for
+             * side-by-side CMD/IND labels at the mission-display font size.
+             */
+            /*
+             * 14.13.3A3:
+             * 86 px was too narrow for the mission-display SmallFont at the
+             * live render scale; TextRenderer clipped the final stroke of CL.
+             * Give the evidence block enough horizontal breathing room.
+             */
+            const int evidenceWidth = 112;
+            const int evidenceLineHeight = 22;
+            const int evidenceOffsetX = 20;
+            const int evidenceInnerPad = 6;
+
+            bool placeEvidenceLeft =
+                string.Equals(
+                    loadId,
+                    "PUMP_A",
+                    StringComparison.Ordinal);
+
+            int evidenceX =
+                placeEvidenceLeft
+                    ? center.X -
+                        evidenceOffsetX -
+                        evidenceWidth
+                    : center.X +
+                        evidenceOffsetX;
+
+            Rectangle evidenceBox =
+                new Rectangle(
+                    evidenceX,
+                    center.Y -
+                        evidenceLineHeight,
+                    evidenceWidth,
+                    evidenceLineHeight * 2);
+
+            Rectangle commandBox =
+                new Rectangle(
+                    evidenceBox.Left +
+                        evidenceInnerPad,
+                    evidenceBox.Top,
+                    evidenceBox.Width -
+                        evidenceInnerPad * 2,
+                    evidenceLineHeight);
+
+            Rectangle indicationBox =
+                new Rectangle(
+                    evidenceBox.Left +
+                        evidenceInnerPad,
+                    evidenceBox.Top +
+                        evidenceLineHeight,
+                    evidenceBox.Width -
+                        evidenceInnerPad * 2,
+                    evidenceLineHeight);
+
+            using (SolidBrush labelBackground =
+                new SolidBrush(Panel))
+            {
+                g.FillRectangle(
+                    labelBackground,
+                    evidenceBox);
+            }
+
+            /*
+             * 14.13.3A4:
+             * The breaker evidence labels were still clipping the final glyph
+             * stroke (CL looked like CI) because TextRenderer was using
+             * NoPadding in a very tight evidence line box. For these compact
+             * breaker labels we want stable legibility more than ultra-tight
+             * edge alignment, so allow normal glyph padding and disable
+             * clipping on the text itself.
+             */
+            TextFormatFlags evidenceAlignment =
+                (placeEvidenceLeft
+                    ? TextFormatFlags.Right
+                    : TextFormatFlags.Left) |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoClipping;
+
+            DrawText(
+                g,
+                commandBox,
+                "CMD " +
+                    (commanded
+                        ? "CL"
+                        : "OP"),
+                context.SmallFont,
+                color,
+                evidenceAlignment);
+
+            DrawText(
+                g,
+                indicationBox,
+                "IND " +
+                    (indicated
+                        ? "CL"
+                        : "OP"),
+                context.SmallFont,
+                color,
+                evidenceAlignment);
         }
 
         private static SyntheticElectricalLoad FindLoad(

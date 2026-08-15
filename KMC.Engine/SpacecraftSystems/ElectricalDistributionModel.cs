@@ -364,6 +364,7 @@ namespace KMC.Engine.SpacecraftSystems
             NominalVoltage = 28.0;
             Voltage = 0.0;
             ShedDemandAmps = 0.0;
+            ManualShedDemandAmps = 0.0;
             State = SyntheticElectricalBusState.Unpowered;
         }
 
@@ -375,7 +376,18 @@ namespace KMC.Engine.SpacecraftSystems
         public double Voltage { get; internal set; }
         public double AvailableCurrentAmps { get; internal set; }
         public double DemandAmps { get; internal set; }
+
+        /// <summary>
+        /// Demand removed automatically by KMC priority-3 load shedding.
+        /// </summary>
         public double ShedDemandAmps { get; internal set; }
+
+        /// <summary>
+        /// Build 14.13.3 demand removed explicitly by crew/manual breaker
+        /// commands. This is kept separate from automatic shed truth.
+        /// </summary>
+        public double ManualShedDemandAmps { get; internal set; }
+
         public int ActiveSourceCount { get; internal set; }
         public SyntheticElectricalBusState State { get; internal set; }
 
@@ -440,6 +452,8 @@ namespace KMC.Engine.SpacecraftSystems
                         AvailableCurrentAmps,
                     DemandAmps = DemandAmps,
                     ShedDemandAmps = ShedDemandAmps,
+                    ManualShedDemandAmps =
+                        ManualShedDemandAmps,
                     ActiveSourceCount = ActiveSourceCount,
                     State = State,
                     HardwareFailed = HardwareFailed
