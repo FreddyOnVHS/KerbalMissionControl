@@ -19,7 +19,7 @@ namespace KMC.MissionControl.Rendering.Power
     /// - grouped producer summaries for immediate situational awareness
     /// - current A/B/ESS distribution truth
     /// - live KSP EC truth kept separate from topology and KMC synthetic truth
-    /// - short MOCR-style operator text instead of long prose
+    /// - short MOCR-style controller evidence instead of diagnostic answers
     ///
     /// The old POWER 2/2 base renderer/overlays remain compiled for now, but
     /// PowerPage no longer calls them. This avoids hidden duplicate rendering.
@@ -179,14 +179,25 @@ namespace KMC.MissionControl.Rendering.Power
             int busHeight =
                 right.Height * 29 / 100;
 
+            /*
+             * Build 14.14.4A:
+             * Rebalance the lower-right stack so the 60-second trend panel
+             * has room for all three evidence rows (A/B voltage, ESS/net EC,
+             * samples/window) without changing the overall two-column layout.
+             */
+            /*
+             * Build 14.14.4B:
+             * Final right-column balance. Restore enough height for all
+             * Native KSP Consumer rows while preserving all three trend rows.
+             */
             int actionHeight =
-                right.Height * 20 / 100;
+                right.Height * 16 / 100;
 
             int nativeHeight =
                 right.Height * 19 / 100;
 
             int currentHeight =
-                right.Height * 16 / 100;
+                right.Height * 20 / 100;
 
             Rectangle busPanel =
                 new Rectangle(
@@ -251,11 +262,10 @@ namespace KMC.MissionControl.Rendering.Power
                 busPanel,
                 distribution);
 
-            DrawActionPanel(
+            DrawEventHistoryPanel(
                 context,
                 actionPanel,
-                distribution,
-                power.Flow);
+                power.DistributionEvents);
 
             DrawNativeConsumerPanel(
                 context,
@@ -264,11 +274,10 @@ namespace KMC.MissionControl.Rendering.Power
                 power.LoadShedding,
                 distribution);
 
-            DrawCurrentPanel(
+            DrawTrendPanel(
                 context,
                 currentPanel,
-                distribution,
-                power.Flow);
+                power.DistributionTrend);
 
             DrawStagePanel(
                 context,
@@ -1070,116 +1079,158 @@ namespace KMC.MissionControl.Rendering.Power
             }
         }
 
-        private static void DrawActionPanel(
+        private static void DrawEventHistoryPanel(
             MissionRenderContext context,
             Rectangle panel,
-            SyntheticElectricalDistributionModel distribution,
-            ElectricalFlowModel flow)
+            ElectricalDistributionEventHistoryModel history)
         {
             Rectangle body =
                 BeginPanel(
                     context,
                     panel,
-                    "CURRENT ELECTRICAL ACTION");
+                    "DISTRIBUTION EVENT HISTORY");
 
-            SyntheticElectricalBus mainA =
-                distribution != null
-                    ? distribution.FindBus("BUS_MAIN_A")
-                    : null;
-
-            SyntheticElectricalBus mainB =
-                distribution != null
-                    ? distribution.FindBus("BUS_MAIN_B")
-                    : null;
-
-            SyntheticElectricalBus ess =
-                distribution != null
-                    ? distribution.FindBus("BUS_ESS")
-                    : null;
-
-            bool blackout =
-                IsDead(mainA) &&
-                IsDead(mainB) &&
-                IsDead(ess);
-
-            bool degraded =
-                IsDegraded(mainA) ||
-                IsDegraded(mainB) ||
-                IsDegraded(ess);
-
-            bool battery =
-                IsBatteryFed(mainA) ||
-                IsBatteryFed(mainB);
-
-            bool discharging =
-                flow != null &&
-                flow.HasMeasuredNetStorageRate &&
-                flow.NetStorageRateEcPerSecond <
-                    -0.000001;
-
-            string state;
-            string action;
-            string objective;
-            Color color;
-
-            if (blackout)
+            if (history == null ||
+                history.Events == null ||
+                history.Events.Count == 0)
             {
-                state = "BLACKOUT";
-                action = "RESTORE SOURCE PATH / GENERATION. SHED NONESSENTIAL LOAD.";
-                objective = "RE-ENERGIZE ESSENTIAL BUS.";
-                color = Critical;
-            }
-            else if (degraded)
-            {
-                state = "DISTRIBUTION DEGRADED";
-                action = "REDUCE NONESSENTIAL LOAD. RESTORE GENERATION IF AVAILABLE.";
-                objective = "RELIEVE A/B LOAD; MAINTAIN ESSENTIAL AVIONICS.";
-                color = Warning;
-            }
-            else if (battery && discharging)
-            {
-                state = "BATTERY OPERATION";
-                action = "CONSERVE POWER. SHED LOAD AS REQUIRED.";
-                objective = "MAXIMIZE ENDURANCE; PROTECT ESSENTIAL LOADS.";
-                color = Advisory;
-            }
-            else
-            {
-                state = "DISTRIBUTION STABLE";
-                action = "NO IMMEDIATE SWITCHING ACTION.";
-                objective = "MONITOR BUS / RESERVE / EC TREND.";
-                color = Healthy;
+                DrawCentered(
+                    context,
+                    body,
+                    "NO DISTRIBUTION TRANSITIONS SINCE BASELINE",
+                    context.DimPhosphorColor);
+
+                return;
             }
 
-            int y =
-                body.Top;
+            int visible =
+                Math.Min(
+                    4,
+                    history.Events.Count);
 
-            y = DrawSingle(
-                context,
-                body,
-                y,
-                "STATE",
-                state,
-                context.DimPhosphorColor,
-                color);
+            int rowHeight =
+                Math.Max(
+                    1,
+                    body.Height /
+                    visible);
 
-            y = DrawSingle(
-                context,
-                body,
-                y,
-                "ACTION",
-                action,
-                context.DimPhosphorColor,
-                color);
+            for (int index = 0;
+                 index < visible;
+                 index++)
+            {
+                ElectricalDistributionEventRecord item =
+                    history.Events[
+                        history.Events.Count -
+                        1 -
+                        index];
 
-            DrawSingle(
-                context,
-                body,
-                y,
-                "OBJECTIVE",
-                objective,
-                context.DimPhosphorColor,
-                context.PhosphorColor);
+                Rectangle row =
+                    new Rectangle(
+                        body.Left,
+                        body.Top +
+                        index * rowHeight,
+                        body.Width,
+                        Math.Min(
+                            rowHeight,
+                            body.Bottom -
+                            (body.Top +
+                             index * rowHeight)));
+
+                if (row.Height <= 0)
+                {
+                    break;
+                }
+
+                int timeWidth =
+                    Math.Min(
+                        150,
+                        row.Width * 14 / 100);
+
+                int busWidth =
+                    Math.Min(
+                        205,
+                        row.Width * 20 / 100);
+
+                DrawText(
+                    context.Graphics,
+                    new Rectangle(
+                        row.Left,
+                        row.Top,
+                        timeWidth,
+                        row.Height),
+                    item.TimestampUtc.ToString("HH:mm:ss") +
+                    "Z",
+                    context,
+                    context.DimPhosphorColor,
+                    TextFormatFlags.Left |
+                    TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.NoPadding |
+                    TextFormatFlags.EndEllipsis);
+
+                DrawText(
+                    context.Graphics,
+                    new Rectangle(
+                        row.Left + timeWidth,
+                        row.Top,
+                        busWidth,
+                        row.Height),
+                    ShortBusName(
+                        item.BusName,
+                        item.BusId),
+                    context,
+                    EventSeverityColor(
+                        item.Severity,
+                        context),
+                    TextFormatFlags.Left |
+                    TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.NoPadding |
+                    TextFormatFlags.EndEllipsis);
+
+                string evidence =
+                    !string.IsNullOrWhiteSpace(
+                        item.Message)
+                        ? item.Message
+                        : item.Code;
+
+                DrawText(
+                    context.Graphics,
+                    new Rectangle(
+                        row.Left +
+                        timeWidth +
+                        busWidth,
+                        row.Top,
+                        Math.Max(
+                            0,
+                            row.Width -
+                            timeWidth -
+                            busWidth),
+                        row.Height),
+                    evidence,
+                    context,
+                    context.PhosphorColor,
+                    TextFormatFlags.Left |
+                    TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.NoPadding |
+                    TextFormatFlags.EndEllipsis);
+
+                if (index < visible - 1)
+                {
+                    using (Pen divider =
+                        new Pen(
+                            Color.FromArgb(
+                                45,
+                                context.DimPhosphorColor),
+                            1.0f))
+                    {
+                        context.Graphics.DrawLine(
+                            divider,
+                            row.Left,
+                            row.Bottom - 1,
+                            row.Right,
+                            row.Bottom - 1);
+                    }
+                }
+            }
         }
 
         private static void DrawNativeConsumerPanel(
@@ -1257,31 +1308,42 @@ namespace KMC.MissionControl.Rendering.Power
              */
         }
 
-        private static void DrawCurrentPanel(
+        private static void DrawTrendPanel(
             MissionRenderContext context,
             Rectangle panel,
-            SyntheticElectricalDistributionModel distribution,
-            ElectricalFlowModel flow)
+            ElectricalDistributionTrendHistoryModel trend)
         {
             Rectangle body =
                 BeginPanel(
                     context,
                     panel,
-                    "CURRENT DISTRIBUTION / EC TREND");
+                    "60 SEC ELECTRICAL TREND");
 
-            double auto =
-                distribution != null
-                    ? distribution.Buses
-                        .Where(bus => bus != null)
-                        .Sum(bus => bus.ShedDemandAmps)
-                    : 0.0;
+            if (trend == null ||
+                trend.Samples == null ||
+                trend.Samples.Count == 0 ||
+                trend.Latest == null)
+            {
+                DrawCentered(
+                    context,
+                    body,
+                    "TREND DATA BUILDING",
+                    context.DimPhosphorColor);
 
-            double manual =
-                distribution != null
-                    ? distribution.Buses
-                        .Where(bus => bus != null)
-                        .Sum(bus => bus.ManualShedDemandAmps)
-                    : 0.0;
+                return;
+            }
+
+            ElectricalDistributionTrendSample oldest =
+                trend.Oldest;
+
+            ElectricalDistributionTrendSample latest =
+                trend.Latest;
+
+            string window =
+                trend.WindowSeconds >= 1.0
+                    ? trend.WindowSeconds.ToString("0") +
+                      " S"
+                    : "<1 S";
 
             int y =
                 body.Top;
@@ -1290,35 +1352,133 @@ namespace KMC.MissionControl.Rendering.Power
                 context,
                 body,
                 y,
-                "NET FLOW",
-                flow != null &&
-                flow.HasMeasuredNetStorageRate
-                    ? SignedRate(
-                        flow.NetStorageRateEcPerSecond)
-                    : "--",
-                "KMC LOAD CMD",
-                distribution != null
-                    ? distribution.KmcOwnedActiveLoadEcPerSecond
-                        .ToString("0.000") +
-                      " EC/S"
-                    : "--",
+                "MAIN A V",
+                TrendValue(
+                    oldest.MainAVoltage,
+                    latest.MainAVoltage,
+                    "0.0",
+                    " V"),
+                "MAIN B V",
+                TrendValue(
+                    oldest.MainBVoltage,
+                    latest.MainBVoltage,
+                    "0.0",
+                    " V"),
+                context.PhosphorColor);
+
+            y = DrawPair(
+                context,
+                body,
+                y,
+                "ESS V",
+                TrendValue(
+                    oldest.EssentialVoltage,
+                    latest.EssentialVoltage,
+                    "0.0",
+                    " V"),
+                "NET EC",
+                TrendNetFlow(
+                    oldest,
+                    latest),
                 context.PhosphorColor);
 
             DrawPair(
                 context,
                 body,
                 y,
-                "AUTO SHED",
-                auto > 0.01
-                    ? auto.ToString("0.0") +
-                      " A"
-                    : "--",
-                "MAN SHED",
-                manual > 0.01
-                    ? manual.ToString("0.0") +
-                      " A"
-                    : "--",
-                Advisory);
+                "SAMPLES",
+                trend.Count.ToString(),
+                "WINDOW",
+                window,
+                context.DimPhosphorColor);
+        }
+
+        private static string TrendValue(
+            double oldest,
+            double latest,
+            string format,
+            string suffix)
+        {
+            return
+                oldest.ToString(format) +
+                " -> " +
+                latest.ToString(format) +
+                suffix;
+        }
+
+        private static string TrendNetFlow(
+            ElectricalDistributionTrendSample oldest,
+            ElectricalDistributionTrendSample latest)
+        {
+            if (oldest == null ||
+                latest == null ||
+                !oldest.NetFlowKnown ||
+                !latest.NetFlowKnown)
+            {
+                return "--";
+            }
+
+            return
+                SignedRate(
+                    oldest.NetFlowEcPerSecond) +
+                " -> " +
+                SignedRate(
+                    latest.NetFlowEcPerSecond);
+        }
+
+        private static string ShortBusName(
+            string busName,
+            string busId)
+        {
+            string value =
+                !string.IsNullOrWhiteSpace(busName)
+                    ? busName
+                    : busId;
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "BUS";
+            }
+
+            return
+                value
+                    .Replace(
+                        "MAIN BUS ",
+                        "MAIN ")
+                    .Replace(
+                        "ESSENTIAL BUS",
+                        "ESS")
+                    .Replace(
+                        "BUS_",
+                        string.Empty)
+                    .Replace(
+                        '_',
+                        ' ')
+                    .Trim()
+                    .ToUpperInvariant();
+        }
+
+        private static Color EventSeverityColor(
+            ElectricalEventSeverity severity,
+            MissionRenderContext context)
+        {
+            switch (severity)
+            {
+                case ElectricalEventSeverity.Info:
+                    return Healthy;
+
+                case ElectricalEventSeverity.Advisory:
+                    return Advisory;
+
+                case ElectricalEventSeverity.Warning:
+                    return Warning;
+
+                case ElectricalEventSeverity.Critical:
+                    return Critical;
+
+                default:
+                    return context.DimPhosphorColor;
+            }
         }
 
         private static void DrawStagePanel(

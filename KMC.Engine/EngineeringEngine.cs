@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using KMC.Engine.Analysis;
 using KMC.Engine.Ascent;
 using KMC.Engine.Electrical;
@@ -24,6 +24,8 @@ namespace KMC.Engine
         private readonly ElectricalFlowTracker _electricalFlowTracker;
         private readonly ElectricalDistributionEventTracker
             _electricalDistributionEventTracker;
+        private readonly ElectricalDistributionTrendTracker
+            _electricalDistributionTrendTracker;
         private readonly object _electricalAttributionSyncRoot;
         private ElectricalAttributionModel _latestElectricalAttribution;
         private readonly object _propulsionTelemetrySyncRoot;
@@ -63,6 +65,9 @@ namespace KMC.Engine
 
             _electricalDistributionEventTracker =
                 new ElectricalDistributionEventTracker();
+
+            _electricalDistributionTrendTracker =
+                new ElectricalDistributionTrendTracker();
 
             _electricalAttributionSyncRoot = new object();
             _latestElectricalAttribution = new ElectricalAttributionModel();
@@ -411,6 +416,23 @@ namespace KMC.Engine
                         spacecraftSystems != null
                             ? spacecraftSystems.ElectricalDistribution
                             : null);
+
+
+                /*
+                 * Build 14.14.4:
+                 * Sample controller-observable evidence only. This model does
+                 * not carry exact failure identity, likely cause, or procedure.
+                 */
+                result.Snapshot.Power.DistributionTrend =
+                    _electricalDistributionTrendTracker.Analyze(
+                        receivedUtc,
+                        spacecraftSystems != null
+                            ? spacecraftSystems.VesselId
+                            : string.Empty,
+                        spacecraftSystems != null
+                            ? spacecraftSystems.ElectricalDistribution
+                            : null,
+                        result.Snapshot.Power.Flow);
             }
 
             /*
