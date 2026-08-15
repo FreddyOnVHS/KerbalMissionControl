@@ -156,6 +156,144 @@ namespace KMC.MissionControl.Training
             return true;
         }
 
+        public static bool InjectMainBusFailure(
+            MissionControlReceiver receiver,
+            string busId,
+            double delaySeconds,
+            out string failureId,
+            out string resultText)
+        {
+            failureId = string.Empty;
+            resultText = string.Empty;
+
+            if (receiver == null)
+            {
+                resultText = "NO MISSION CONTROL RECEIVER";
+                return false;
+            }
+
+            if (!string.Equals(
+                    busId,
+                    "BUS_MAIN_A",
+                    StringComparison.Ordinal) &&
+                !string.Equals(
+                    busId,
+                    "BUS_MAIN_B",
+                    StringComparison.Ordinal))
+            {
+                resultText = "UNSUPPORTED MAIN BUS";
+                return false;
+            }
+
+            AnalysisPipelineResult latest;
+
+            if (!EngineeringSnapshotStore.TryGetLatest(out latest) ||
+                latest == null ||
+                latest.Snapshot == null ||
+                latest.Snapshot.Vessel == null ||
+                string.IsNullOrWhiteSpace(
+                    latest.Snapshot.Vessel.VesselId))
+            {
+                resultText = "NO ACTIVE ENGINEERING VESSEL";
+                return false;
+            }
+
+            FieldInfo field =
+                typeof(MissionControlReceiver).GetField(
+                    "_engineeringEngine",
+                    BindingFlags.Instance |
+                    BindingFlags.NonPublic);
+
+            EngineeringEngine engine =
+                field != null
+                    ? field.GetValue(receiver) as EngineeringEngine
+                    : null;
+
+            if (engine == null)
+            {
+                resultText = "ENGINE ACCESS UNAVAILABLE";
+                return false;
+            }
+
+            string vesselId =
+                latest.Snapshot.Vessel.VesselId;
+
+            FailureSimulationSnapshot current =
+                latest.Snapshot.SpacecraftSystems != null
+                    ? latest.Snapshot.SpacecraftSystems.FailureSimulation
+                    : null;
+
+            if (current == null ||
+                current.Mode ==
+                    FailureSimulationMode.Nominal)
+            {
+                string modeResult;
+
+                if (!engine.SetFailureSimulationMode(
+                        vesselId,
+                        FailureSimulationMode.Training,
+                        out modeResult))
+                {
+                    resultText = modeResult;
+                    return false;
+                }
+            }
+
+            double delay =
+                Math.Max(
+                    0.0,
+                    Math.Min(
+                        300.0,
+                        delaySeconds));
+
+            SyntheticFailureRequest request =
+                new SyntheticFailureRequest
+                {
+                    VesselId = vesselId,
+                    TargetId = busId,
+                    TargetKind =
+                        SyntheticFailureTargetKind.Component,
+                    Kind =
+                        SyntheticFailureKind.Sudden,
+                    Severity =
+                        SyntheticFailureSeverity.Caution,
+                    ComponentHealth =
+                        SpacecraftSystemHealth.Failed,
+                    ActivateUtc =
+                        DateTime.UtcNow.AddSeconds(delay),
+                    Detail =
+                        "BUILD 14.13.1A INSTRUCTOR / " +
+                        busId +
+                        " / FAILED"
+                };
+
+            string injectResult;
+
+            bool injected =
+                engine.InjectSyntheticFailure(
+                    request,
+                    out failureId,
+                    out injectResult);
+
+            if (!injected)
+            {
+                resultText = injectResult;
+                return false;
+            }
+
+            resultText =
+                "INJECTED " +
+                failureId +
+                " / " +
+                busId +
+                " / FAILED" +
+                (delay > 0.25
+                    ? " / SCHEDULED"
+                    : " / IMMEDIATE");
+
+            return true;
+        }
+
         public static bool InjectSwitchFailure(
             MissionControlReceiver receiver,
             string switchId,

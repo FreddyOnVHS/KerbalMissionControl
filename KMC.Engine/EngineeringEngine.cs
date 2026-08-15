@@ -387,7 +387,8 @@ namespace KMC.Engine
 
                 PropulsionFeedFailureApplier.Apply(
                     result.Snapshot.Propulsion.Feed,
-                    failures);
+                    failures,
+                    result.Snapshot.SpacecraftSystems);
 
                 result.Snapshot.Propulsion.Status =
                     PropulsionStatusAnalyzer.Analyze(

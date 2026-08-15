@@ -838,6 +838,26 @@ namespace KMC.MissionControl.Training
                     bool success;
 
                     if (preset ==
+                            InstructorFailurePreset.MainBusAFailed ||
+                        preset ==
+                            InstructorFailurePreset.MainBusBFailed)
+                    {
+                        string busId =
+                            preset ==
+                                InstructorFailurePreset.MainBusBFailed
+                                ? "BUS_MAIN_B"
+                                : "BUS_MAIN_A";
+
+                        success =
+                            InstructorElectricalSourceFailureBridge
+                                .InjectMainBusFailure(
+                                    _receiver,
+                                    busId,
+                                    delay,
+                                    out failureId,
+                                    out result);
+                    }
+                    else if (preset ==
                             InstructorFailurePreset.GeneratorA ||
                         preset ==
                             InstructorFailurePreset.GeneratorB ||

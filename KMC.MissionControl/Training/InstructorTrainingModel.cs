@@ -28,7 +28,9 @@ namespace KMC.MissionControl.Training
         EngineStartInhibit = 21,
         EngineThrustDecay = 22,
         EngineThrustUnstable = 23,
-        EngineThrustIndicationFailLow = 24
+        EngineThrustIndicationFailLow = 24,
+        MainBusAFailed = 25,
+        MainBusBFailed = 26
     }
 
     public enum InstructorScenarioPreset
@@ -60,6 +62,12 @@ namespace KMC.MissionControl.Training
 
                 case InstructorFailurePreset.MainATransferFailedOpen:
                     return "POWER - MAIN A TRANSFER FAILED OPEN";
+
+                case InstructorFailurePreset.MainBusAFailed:
+                    return "POWER - MAIN BUS A FAILED";
+
+                case InstructorFailurePreset.MainBusBFailed:
+                    return "POWER - MAIN BUS B FAILED";
 
                 case InstructorFailurePreset.GuidABreakerTripped:
                     return "POWER - GUID A BREAKER TRIPPED";

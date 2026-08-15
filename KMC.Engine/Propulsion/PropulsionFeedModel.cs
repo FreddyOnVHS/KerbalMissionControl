@@ -24,7 +24,8 @@ namespace KMC.Engine.Propulsion
         Unknown = 0,
         Nominal,
         Degraded,
-        Failed
+        Failed,
+        Unpowered
     }
 
     /// <summary>

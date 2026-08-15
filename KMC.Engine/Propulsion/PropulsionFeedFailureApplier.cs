@@ -26,6 +26,17 @@ namespace KMC.Engine.Propulsion
             PropulsionFeedModel feed,
             FailureSimulationSnapshot failures)
         {
+            Apply(
+                feed,
+                failures,
+                null);
+        }
+
+        public static void Apply(
+            PropulsionFeedModel feed,
+            FailureSimulationSnapshot failures,
+            SpacecraftSystemsModel spacecraftSystems)
+        {
             if (feed == null ||
                 !feed.Available)
             {
@@ -58,25 +69,27 @@ namespace KMC.Engine.Propulsion
 
             feed.PumpAState =
                 ResolvePumpState(
+                    spacecraftSystems,
                     failures,
                     "PUMP_A");
 
             feed.PumpBState =
                 ResolvePumpState(
+                    spacecraftSystems,
                     failures,
                     "PUMP_B");
 
-            bool pumpAFailed =
-                feed.PumpAState ==
-                    PropulsionFeedPumpState.Failed;
+            bool pumpAUnavailable =
+                IsPumpUnavailable(
+                    feed.PumpAState);
 
-            bool pumpBFailed =
-                feed.PumpBState ==
-                    PropulsionFeedPumpState.Failed;
+            bool pumpBUnavailable =
+                IsPumpUnavailable(
+                    feed.PumpBState);
 
             feed.SyntheticPumpFlowLost =
-                pumpAFailed &&
-                pumpBFailed;
+                pumpAUnavailable &&
+                pumpBUnavailable;
 
             feed.SyntheticPumpPressureDegraded =
                 !feed.SyntheticPumpFlowLost &&
@@ -115,9 +128,49 @@ namespace KMC.Engine.Propulsion
         }
 
         private static PropulsionFeedPumpState ResolvePumpState(
+            SpacecraftSystemsModel spacecraftSystems,
             FailureSimulationSnapshot failures,
             string targetId)
         {
+            /*
+             * Build 14.13.1:
+             * Prefer the propagated spacecraft component state. This allows
+             * POWER dependency consequences such as BUS_MAIN_A -> PUMP_A to
+             * reach PROP without creating a second synthetic pump failure.
+             *
+             * The failure-snapshot parser remains as a compatibility fallback
+             * for callers/tests that do not yet supply the systems model.
+             */
+            if (spacecraftSystems != null)
+            {
+                SpacecraftSystemComponent component =
+                    spacecraftSystems.FindComponent(
+                        targetId);
+
+                if (component != null)
+                {
+                    switch (component.State)
+                    {
+                        case SpacecraftSystemState.Online:
+                            return
+                                PropulsionFeedPumpState.Nominal;
+
+                        case SpacecraftSystemState.Degraded:
+                            return
+                                PropulsionFeedPumpState.Degraded;
+
+                        case SpacecraftSystemState.Failed:
+                            return
+                                PropulsionFeedPumpState.Failed;
+
+                        case SpacecraftSystemState.Unpowered:
+                        case SpacecraftSystemState.Offline:
+                            return
+                                PropulsionFeedPumpState.Unpowered;
+                    }
+                }
+            }
+
             PropulsionFeedPumpState state =
                 PropulsionFeedPumpState.Nominal;
 
@@ -162,6 +215,16 @@ namespace KMC.Engine.Propulsion
             }
 
             return state;
+        }
+
+        private static bool IsPumpUnavailable(
+            PropulsionFeedPumpState state)
+        {
+            return
+                state ==
+                    PropulsionFeedPumpState.Failed ||
+                state ==
+                    PropulsionFeedPumpState.Unpowered;
         }
 
         private static bool ContainsPumpFedRequirement(

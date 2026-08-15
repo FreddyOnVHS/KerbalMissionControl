@@ -54,6 +54,10 @@ namespace KMC.Engine.SpacecraftSystems
                 distribution,
                 failures);
 
+            ApplyElectricalBusFailures(
+                distribution,
+                failures);
+
             ResolveSwitching(
                 distribution);
 
@@ -122,7 +126,9 @@ namespace KMC.Engine.SpacecraftSystems
                     0.0;
 
                 bus.State =
-                    SyntheticElectricalBusState.Unpowered;
+                    bus.HardwareFailed
+                        ? SyntheticElectricalBusState.Failed
+                        : SyntheticElectricalBusState.Unpowered;
             }
 
             /*
@@ -152,6 +158,32 @@ namespace KMC.Engine.SpacecraftSystems
 
                     if (bus == null)
                     {
+                        continue;
+                    }
+
+                    if (bus.HardwareFailed)
+                    {
+                        bus.DemandAmps =
+                            0.0;
+
+                        bus.ShedDemandAmps =
+                            0.0;
+
+                        bus.AvailableCurrentAmps =
+                            0.0;
+
+                        bus.ActiveSourceCount =
+                            0;
+
+                        bus.ActiveSourceId =
+                            string.Empty;
+
+                        bus.Voltage =
+                            0.0;
+
+                        bus.State =
+                            SyntheticElectricalBusState.Failed;
+
                         continue;
                     }
 
@@ -286,6 +318,64 @@ namespace KMC.Engine.SpacecraftSystems
                 if (!changed)
                 {
                     break;
+                }
+            }
+        }
+
+        private static void ApplyElectricalBusFailures(
+            SyntheticElectricalDistributionModel distribution,
+            FailureSimulationSnapshot failures)
+        {
+            if (distribution == null ||
+                failures == null ||
+                failures.Mode ==
+                    FailureSimulationMode.Nominal ||
+                failures.Failures == null)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < failures.Failures.Count;
+                 index++)
+            {
+                SyntheticFailureRecord failure =
+                    failures.Failures[index];
+
+                if (failure == null ||
+                    !failure.EffectiveNow ||
+                    failure.TargetKind !=
+                        SyntheticFailureTargetKind.Component ||
+                    failure.ComponentHealth !=
+                        SpacecraftSystemHealth.Failed)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(
+                        failure.TargetId,
+                        "BUS_MAIN_A",
+                        StringComparison.Ordinal) &&
+                    !string.Equals(
+                        failure.TargetId,
+                        "BUS_MAIN_B",
+                        StringComparison.Ordinal) &&
+                    !string.Equals(
+                        failure.TargetId,
+                        "BUS_ESS",
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                SyntheticElectricalBus bus =
+                    distribution.FindBus(
+                        failure.TargetId);
+
+                if (bus != null)
+                {
+                    bus.HardwareFailed =
+                        true;
                 }
             }
         }
@@ -483,9 +573,18 @@ namespace KMC.Engine.SpacecraftSystems
                 ResolveSwitchHardwarePosition(
                     breaker);
 
+                SyntheticElectricalBus parentBus =
+                    distribution.FindBus(
+                        load.BusId);
+
+                bool parentBusFailed =
+                    parentBus != null &&
+                    parentBus.HardwareFailed;
+
                 breaker.Conducting =
                     breaker.ActualClosed &&
-                    !load.AutomaticallyShed;
+                    !load.AutomaticallyShed &&
+                    !parentBusFailed;
             }
         }
 
@@ -520,6 +619,14 @@ namespace KMC.Engine.SpacecraftSystems
                 distribution.FindSwitch(
                     transferId);
 
+            SyntheticElectricalBus destinationBus =
+                distribution.FindBus(
+                    busId);
+
+            bool busFailed =
+                destinationBus != null &&
+                destinationBus.HardwareFailed;
+
             bool generatorReady =
                 SourceHardwareReady(
                     generator,
@@ -547,7 +654,8 @@ namespace KMC.Engine.SpacecraftSystems
 
                 transfer.Conducting =
                     transfer.ActualClosed &&
-                    selected != null;
+                    selected != null &&
+                    !busFailed;
 
                 transfer.UpstreamId =
                     selected != null
@@ -564,11 +672,12 @@ namespace KMC.Engine.SpacecraftSystems
             }
 
             selected.SelectedForBus =
-                true;
+                !busFailed;
 
             selected.Conducting =
-                transfer == null ||
-                transfer.Conducting;
+                !busFailed &&
+                (transfer == null ||
+                 transfer.Conducting);
 
             SyntheticElectricalSwitch selectedContactor =
                 distribution.FindSwitch(
@@ -1123,6 +1232,10 @@ namespace KMC.Engine.SpacecraftSystems
         {
             switch (state)
             {
+                case SyntheticElectricalBusState.Failed:
+                    return
+                        SpacecraftSystemState.Failed;
+
                 case SyntheticElectricalBusState.Unpowered:
                     return
                         SpacecraftSystemState.Unpowered;

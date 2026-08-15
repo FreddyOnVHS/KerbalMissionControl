@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace KMC.Engine.SpacecraftSystems
@@ -23,7 +23,8 @@ namespace KMC.Engine.SpacecraftSystems
         Nominal = 1,
         HighLoad = 2,
         Overloaded = 3,
-        Undervoltage = 4
+        Undervoltage = 4,
+        Failed = 5
     }
 
     /// <summary>
@@ -367,6 +368,13 @@ namespace KMC.Engine.SpacecraftSystems
         public int ActiveSourceCount { get; internal set; }
         public SyntheticElectricalBusState State { get; internal set; }
 
+        /// <summary>
+        /// Build 14.13.1B hidden bus-hardware failure truth.
+        /// A failed bus cannot be re-energized by source transfer.
+        /// Operator displays consume the resulting FAILED / 0 V evidence.
+        /// </summary>
+        internal bool HardwareFailed { get; set; }
+
         public double LoadFraction
         {
             get
@@ -422,7 +430,8 @@ namespace KMC.Engine.SpacecraftSystems
                     DemandAmps = DemandAmps,
                     ShedDemandAmps = ShedDemandAmps,
                     ActiveSourceCount = ActiveSourceCount,
-                    State = State
+                    State = State,
+                    HardwareFailed = HardwareFailed
                 };
         }
     }

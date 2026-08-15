@@ -1718,6 +1718,9 @@ namespace KMC.MissionControl.Pages
                 case PropulsionFeedPumpState.Failed:
                     return "FAILED";
 
+                case PropulsionFeedPumpState.Unpowered:
+                    return "UNPOWERED";
+
                 default:
                     return "UNKNOWN";
             }
