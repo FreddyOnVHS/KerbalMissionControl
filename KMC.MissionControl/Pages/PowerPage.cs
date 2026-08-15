@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿using System;
 using System.Drawing;
 using KMC.Engine.Analysis;
 using KMC.MissionControl.Engineering;
