@@ -108,6 +108,7 @@ namespace KMC.Engine.Propulsion
         EngineThrustDegraded,
         EngineThrustUnstable,
         EngineThrustIndicationFault,
+        ThrustDataDisagreement,
         FeedStateConflict,
         EngineFlameout,
         PropulsionLost,
@@ -337,6 +338,28 @@ namespace KMC.Engine.Propulsion
         public bool CurrentThrustKnown { get; internal set; }
 
         public double CurrentThrust { get; internal set; }
+
+        /// <summary>
+        /// Sum of the operator-facing per-engine current-thrust indications.
+        /// Unlike CurrentThrust, this value may include synthetic indication
+        /// faults. Build 14.12.8 compares the two evidence paths.
+        /// </summary>
+        public bool IndicatedCurrentThrustKnown { get; internal set; }
+
+        public double IndicatedCurrentThrust { get; internal set; }
+
+        public bool ThrustDiscrepancyKnown { get; internal set; }
+
+        /// <summary>
+        /// Aggregate live vehicle thrust minus summed per-engine indications.
+        /// Positive means the vehicle is producing more thrust than the
+        /// individual channel indications account for.
+        /// </summary>
+        public double ThrustDiscrepancy { get; internal set; }
+
+        public double ThrustDiscrepancyTolerance { get; internal set; }
+
+        public bool ThrustDataDisagreement { get; internal set; }
 
         public bool AvailableThrustKnown { get; internal set; }
 

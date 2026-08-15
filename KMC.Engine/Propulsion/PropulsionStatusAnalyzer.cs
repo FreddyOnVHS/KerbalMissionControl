@@ -162,6 +162,9 @@ namespace KMC.Engine.Propulsion
                 failures,
                 status);
 
+            EvaluateThrustDiscrepancy(
+                status);
+
             SelectPrimaryCondition(
                 topology,
                 live,
@@ -545,6 +548,71 @@ namespace KMC.Engine.Propulsion
                 PropulsionSeverity.Normal;
         }
 
+        private static void EvaluateThrustDiscrepancy(
+            PropulsionStatusModel status)
+        {
+            if (status == null ||
+                !status.CurrentThrustKnown ||
+                !status.LiveEngineCoverageComplete ||
+                status.EngineChannels == null ||
+                status.EngineChannels.Count <= 0)
+            {
+                return;
+            }
+
+            double indicated =
+                0.0;
+
+            for (int index = 0;
+                 index < status.EngineChannels.Count;
+                 index++)
+            {
+                PropulsionEngineChannelModel channel =
+                    status.EngineChannels[index];
+
+                if (channel == null ||
+                    !channel.CurrentThrustKnown)
+                {
+                    return;
+                }
+
+                indicated +=
+                    Math.Max(
+                        0.0,
+                        channel.CurrentThrust);
+            }
+
+            status.IndicatedCurrentThrustKnown =
+                true;
+
+            status.IndicatedCurrentThrust =
+                indicated;
+
+            status.ThrustDiscrepancyKnown =
+                true;
+
+            status.ThrustDiscrepancy =
+                status.CurrentThrust -
+                indicated;
+
+            double reference =
+                Math.Max(
+                    Math.Abs(
+                        status.CurrentThrust),
+                    Math.Abs(
+                        indicated));
+
+            status.ThrustDiscrepancyTolerance =
+                Math.Max(
+                    0.5,
+                    reference * 0.01);
+
+            status.ThrustDataDisagreement =
+                Math.Abs(
+                    status.ThrustDiscrepancy) >
+                status.ThrustDiscrepancyTolerance;
+        }
+
         private static bool IsExactThrustIndicationFailureActive(
             FailureSimulationSnapshot failures,
             uint partId)
@@ -798,6 +866,27 @@ namespace KMC.Engine.Propulsion
                         ? "Current propulsion capability is lost following engine flameout."
                         : status.FlameoutEngineCount +
                           " engine(s) report flameout.";
+
+                return;
+            }
+
+            if (status.ThrustDataDisagreement)
+            {
+                status.Severity =
+                    PropulsionSeverity.Advisory;
+
+                status.Condition =
+                    PropulsionCondition.ThrustDataDisagreement;
+
+                status.Summary =
+                    "Thrust data disagree: vehicle " +
+                    status.CurrentThrust.ToString("0.0") +
+                    " kN, channel indications " +
+                    status.IndicatedCurrentThrust.ToString("0.0") +
+                    " kN, delta " +
+                    FormatSignedThrust(
+                        status.ThrustDiscrepancy) +
+                    ".";
 
                 return;
             }
@@ -1092,6 +1181,20 @@ namespace KMC.Engine.Propulsion
 
             status.ProducingFeedConflictCount =
                 count;
+        }
+
+        private static string FormatSignedThrust(
+            double value)
+        {
+            string sign =
+                value > 0.0
+                    ? "+"
+                    : string.Empty;
+
+            return
+                sign +
+                value.ToString("0.0") +
+                " kN";
         }
 
         private static void BuildStageSummary(

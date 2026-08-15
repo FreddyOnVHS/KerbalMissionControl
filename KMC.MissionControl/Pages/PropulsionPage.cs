@@ -767,10 +767,19 @@ namespace KMC.MissionControl.Pages
             Rectangle bounds,
             PropulsionStatusModel status)
         {
+            string healthTitle =
+                status != null &&
+                status.ThrustDataDisagreement &&
+                status.ThrustDiscrepancyKnown
+                    ? "CHANNEL HEALTH / THRUST DATA DISAGREE / DELTA " +
+                      FormatSignedThrust(
+                          status.ThrustDiscrepancy)
+                    : "CHANNEL HEALTH";
+
             DrawPanelFrame(
                 context,
                 bounds,
-                "CHANNEL HEALTH");
+                healthTitle);
 
             string[] labels =
             {
@@ -1747,6 +1756,20 @@ namespace KMC.MissionControl.Pages
             return
                 result.ToString()
                     .ToUpperInvariant();
+        }
+
+        private static string FormatSignedThrust(
+            double value)
+        {
+            string sign =
+                value > 0.0
+                    ? "+"
+                    : string.Empty;
+
+            return
+                sign +
+                value.ToString("0.0") +
+                " kN";
         }
 
         private static Color SeverityColor(
