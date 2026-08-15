@@ -10,7 +10,8 @@ namespace KMC.Engine.Electrical
         BusState = 0,
         SourceTransfer,
         AutomaticShed,
-        ManualShed
+        ManualShed,
+        SwitchState
     }
 
     public sealed class ElectricalDistributionEventRecord
@@ -103,6 +104,16 @@ namespace KMC.Engine.Electrical
         private readonly Dictionary<string, BusSnapshot>
             _previous =
                 new Dictionary<string, BusSnapshot>(
+                    StringComparer.Ordinal);
+
+        /*
+         * Build 14.14.5:
+         * Observable switch history is tracked separately from hidden switch
+         * failure truth. Only command and indication changes are recorded.
+         */
+        private readonly Dictionary<string, SwitchSnapshot>
+            _previousSwitches =
+                new Dictionary<string, SwitchSnapshot>(
                     StringComparer.Ordinal);
 
         private string _vesselId =
@@ -225,6 +236,10 @@ namespace KMC.Engine.Electrical
                         bus);
             }
 
+            TrackSwitchEvidence(
+                utc,
+                distribution);
+
             return
                 BuildModel();
         }
@@ -283,6 +298,10 @@ namespace KMC.Engine.Electrical
 
             _baselineCandidate.Clear();
             _baselineCandidateMatches = 0;
+
+            CaptureSwitchBaseline(
+                distribution);
+
             _established = true;
 
             return true;
@@ -392,6 +411,210 @@ namespace KMC.Engine.Electrical
                     left.ManualShedAmps -
                     right.ManualShedAmps) <=
                     ShedToleranceAmps;
+        }
+
+        private void CaptureSwitchBaseline(
+            SyntheticElectricalDistributionModel distribution)
+        {
+            _previousSwitches.Clear();
+
+            if (distribution == null ||
+                distribution.Switches == null)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < distribution.Switches.Count;
+                 index++)
+            {
+                SyntheticElectricalSwitch item =
+                    distribution.Switches[index];
+
+                if (item == null ||
+                    string.IsNullOrWhiteSpace(
+                        item.Id))
+                {
+                    continue;
+                }
+
+                _previousSwitches[item.Id] =
+                    SwitchSnapshot.FromSwitch(
+                        item);
+            }
+        }
+
+        private void TrackSwitchEvidence(
+            DateTime utc,
+            SyntheticElectricalDistributionModel distribution)
+        {
+            if (distribution == null ||
+                distribution.Switches == null)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < distribution.Switches.Count;
+                 index++)
+            {
+                SyntheticElectricalSwitch item =
+                    distribution.Switches[index];
+
+                if (item == null ||
+                    string.IsNullOrWhiteSpace(
+                        item.Id))
+                {
+                    continue;
+                }
+
+                SwitchSnapshot previous;
+
+                if (!_previousSwitches.TryGetValue(
+                        item.Id,
+                        out previous))
+                {
+                    /*
+                     * A switch discovered after baseline is learned silently
+                     * first; discovery is not a spacecraft event.
+                     */
+                    _previousSwitches[item.Id] =
+                        SwitchSnapshot.FromSwitch(
+                            item);
+
+                    continue;
+                }
+
+                bool commandChanged =
+                    previous.CommandedClosed !=
+                    item.CommandedClosed;
+
+                bool indicationChanged =
+                    previous.IndicatedClosed !=
+                    item.IndicatedClosed;
+
+                if (commandChanged ||
+                    indicationChanged)
+                {
+                    bool mismatch =
+                        item.CommandedClosed !=
+                        item.IndicatedClosed;
+
+                    AddSwitchEvent(
+                        utc,
+                        mismatch
+                            ? ElectricalEventSeverity.Warning
+                            : ElectricalEventSeverity.Info,
+                        item,
+                        SwitchPosition(
+                            previous.CommandedClosed) +
+                        " -> " +
+                        SwitchPosition(
+                            item.CommandedClosed),
+                        SwitchPosition(
+                            previous.IndicatedClosed) +
+                        " -> " +
+                        SwitchPosition(
+                            item.IndicatedClosed));
+                }
+
+                _previousSwitches[item.Id] =
+                    SwitchSnapshot.FromSwitch(
+                        item);
+            }
+        }
+
+        private void AddSwitchEvent(
+            DateTime utc,
+            ElectricalEventSeverity severity,
+            SyntheticElectricalSwitch item,
+            string commandTransition,
+            string indicationTransition)
+        {
+            _events.Add(
+                new ElectricalDistributionEventRecord
+                {
+                    Sequence =
+                        _nextSequence++,
+
+                    TimestampUtc =
+                        utc,
+
+                    Severity =
+                        severity,
+
+                    Kind =
+                        ElectricalDistributionEventKind.SwitchState,
+
+                    /*
+                     * These legacy field names are retained for compatibility
+                     * with the existing event renderer. For switch events they
+                     * represent the observable subject, not a bus diagnosis.
+                     */
+                    BusId =
+                        item != null
+                            ? item.Id ?? string.Empty
+                            : string.Empty,
+
+                    BusName =
+                        SwitchDisplayName(
+                            item),
+
+                    Code =
+                        SwitchDisplayName(
+                            item),
+
+                    Message =
+                        "CMD " +
+                        commandTransition +
+                        " / IND " +
+                        indicationTransition
+                });
+
+            while (_events.Count >
+                   MaximumHistoryCount)
+            {
+                _events.RemoveAt(
+                    0);
+            }
+        }
+
+        private static string SwitchDisplayName(
+            SyntheticElectricalSwitch item)
+        {
+            if (item == null)
+            {
+                return "SWITCH";
+            }
+
+            if (!string.IsNullOrWhiteSpace(
+                    item.DisplayName))
+            {
+                return
+                    item.DisplayName
+                        .Trim()
+                        .ToUpperInvariant();
+            }
+
+            return
+                (item.Id ?? "SWITCH")
+                    .Replace(
+                        "SW_",
+                        string.Empty)
+                    .Replace(
+                        '_',
+                        ' ')
+                    .Trim()
+                    .ToUpperInvariant();
+        }
+
+        private static string SwitchPosition(
+            bool closed)
+        {
+            return
+                closed
+                    ? "CL"
+                    : "OP";
         }
 
         private void TrackState(
@@ -639,6 +862,7 @@ namespace KMC.Engine.Electrical
         {
             _events.Clear();
             _previous.Clear();
+            _previousSwitches.Clear();
             _baselineCandidate.Clear();
             _baselineCandidateMatches = 0;
 
@@ -767,6 +991,37 @@ namespace KMC.Engine.Electrical
             return
                 builder.ToString()
                     .ToUpperInvariant();
+        }
+
+        private sealed class SwitchSnapshot
+        {
+            public bool CommandedClosed
+            {
+                get;
+                set;
+            }
+
+            public bool IndicatedClosed
+            {
+                get;
+                set;
+            }
+
+            public static SwitchSnapshot FromSwitch(
+                SyntheticElectricalSwitch item)
+            {
+                return
+                    new SwitchSnapshot
+                    {
+                        CommandedClosed =
+                            item != null &&
+                            item.CommandedClosed,
+
+                        IndicatedClosed =
+                            item != null &&
+                            item.IndicatedClosed
+                    };
+            }
         }
 
         private sealed class BusSnapshot

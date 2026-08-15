@@ -1174,7 +1174,7 @@ namespace KMC.MissionControl.Rendering.Power
                         row.Top,
                         busWidth,
                         row.Height),
-                    ShortBusName(
+                    ShortEventSubject(
                         item.BusName,
                         item.BusId),
                     context,
@@ -1426,7 +1426,7 @@ namespace KMC.MissionControl.Rendering.Power
                     latest.NetFlowEcPerSecond);
         }
 
-        private static string ShortBusName(
+        private static string ShortEventSubject(
             string busName,
             string busId)
         {
