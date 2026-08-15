@@ -370,6 +370,21 @@ namespace KMC.Engine
                 _spacecraftSystemsSystem.GetLatest();
 
             /*
+             * Build 14.13.2:
+             * Gate the synthetic A/B source channels with real KSP electrical
+             * evidence already present in the Engine POWER model. Real KSP
+             * producer parts are not assigned to either synthetic side.
+             */
+            SyntheticElectricalDistributionSystem
+                .ApplyRealKspSourceEvidence(
+                    result.Snapshot.SpacecraftSystems,
+                    result.Snapshot.SpacecraftSystems != null
+                        ? result.Snapshot.SpacecraftSystems
+                            .ElectricalDistribution
+                        : null,
+                    result.Snapshot.Power);
+
+            /*
              * Build 14.12.2:
              * Propulsion topology/live/feed analysis executes before the
              * spacecraft failure engine in the main pipeline. Apply the

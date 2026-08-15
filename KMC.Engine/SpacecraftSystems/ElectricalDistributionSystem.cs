@@ -1,5 +1,7 @@
 using System;
 using System.Diagnostics;
+using KMC.Engine.Electrical;
+using KMC.Engine.Models;
 
 namespace KMC.Engine.SpacecraftSystems
 {
@@ -23,12 +25,216 @@ namespace KMC.Engine.SpacecraftSystems
         private const double HighLoadThreshold = 0.80;
         private const double UndervoltageThreshold = 24.0;
 
+        /*
+         * Build 14.13.2B:
+         * Essential avionics remain powered through a degraded main-bus
+         * condition while usable voltage still exists. This is a synthetic
+         * spacecraft design threshold, not a KSP voltage value.
+         */
+        private const double EssentialFeedMinimumVoltage = 20.0;
+
         private string _lastDiagnosticKey;
 
         public SyntheticElectricalDistributionSystem()
         {
             _lastDiagnosticKey =
                 string.Empty;
+        }
+
+
+        /// <summary>
+        /// Build 14.13.2 integration boundary.
+        ///
+        /// KSP decides whether generation and stored ElectricCharge really
+        /// exist. KMC continues to own the synthetic 28 V A/B distribution.
+        ///
+        /// Real producer parts are deliberately NOT assigned to A or B.
+        /// Both synthetic generator channels are gated by the same vessel-level
+        /// real generation evidence.
+        /// </summary>
+        public static void ApplyRealKspSourceEvidence(
+            SpacecraftSystemsModel systems,
+            SyntheticElectricalDistributionModel distribution,
+            PowerModel power)
+        {
+            if (distribution == null)
+            {
+                return;
+            }
+
+            ElectricalAttributionModel attribution =
+                power != null
+                    ? power.Attribution
+                    : null;
+
+            ElectricalPowerDiagnosticModel diagnostic =
+                power != null
+                    ? power.Diagnostic
+                    : null;
+
+            ElectricalFlowModel flow =
+                power != null
+                    ? power.Flow
+                    : null;
+
+            bool generationKnown;
+            bool generationActive;
+
+            ResolveGenerationEvidence(
+                attribution,
+                out generationKnown,
+                out generationActive);
+
+            bool storageKnown =
+                diagnostic != null &&
+                diagnostic.TelemetryAvailable;
+
+            bool batteryAvailable =
+                storageKnown &&
+                diagnostic.CapacityEc > 0.000001 &&
+                diagnostic.StoredEc > 0.000001;
+
+            bool storageDraining =
+                flow != null &&
+                flow.HasMeasuredNetStorageRate &&
+                flow.NetStorageRateEcPerSecond < -0.01;
+
+            bool supplement =
+                generationKnown &&
+                generationActive &&
+                batteryAvailable &&
+                storageDraining;
+
+            ApplyRealGeneratorState(
+                distribution.FindSource("SRC_GEN_A"),
+                generationKnown,
+                generationActive);
+
+            ApplyRealGeneratorState(
+                distribution.FindSource("SRC_GEN_B"),
+                generationKnown,
+                generationActive);
+
+            ApplyRealBatteryState(
+                distribution.FindSource("SRC_BAT_A"),
+                storageKnown,
+                batteryAvailable,
+                supplement);
+
+            ApplyRealBatteryState(
+                distribution.FindSource("SRC_BAT_B"),
+                storageKnown,
+                batteryAvailable,
+                supplement);
+
+            /*
+             * Reapply local synthetic source failures after real KSP evidence
+             * gates normal availability. A real producer cannot resurrect an
+             * injected failed KMC generator channel.
+             */
+            FailureSimulationSnapshot failures =
+                systems != null
+                    ? systems.FailureSimulation
+                    : null;
+
+            SyntheticFailureEngine.ApplyElectricalSourceFailures(
+                distribution,
+                failures);
+
+            ResolveSwitching(
+                distribution);
+
+            Recalculate(
+                distribution);
+
+            ApplyBusStatesToSystems(
+                systems,
+                distribution);
+        }
+
+        private static void ResolveGenerationEvidence(
+            ElectricalAttributionModel attribution,
+            out bool known,
+            out bool active)
+        {
+            known = false;
+            active = false;
+
+            if (attribution == null ||
+                !attribution.TelemetryAvailable)
+            {
+                return;
+            }
+
+            if (attribution.ProducerCount <= 0)
+            {
+                known = true;
+                return;
+            }
+
+            if (attribution.KnownCurrentGenerationEcPerSecond >
+                0.000001)
+            {
+                known = true;
+                active = true;
+                return;
+            }
+
+            /*
+             * Zero generation is only authoritative when every discovered
+             * producer has current-rate evidence. If any producer is unknown,
+             * keep the generator state UNKNOWN rather than inventing zero.
+             */
+            if (attribution.KnownCurrentProducerCount >=
+                attribution.ProducerCount)
+            {
+                known = true;
+                active = false;
+            }
+        }
+
+        private static void ApplyRealGeneratorState(
+            SyntheticElectricalSource source,
+            bool generationKnown,
+            bool generationActive)
+        {
+            if (source == null)
+            {
+                return;
+            }
+
+            source.Supplementing =
+                false;
+
+            source.State =
+                !generationKnown
+                    ? SyntheticElectricalSourceState.Unknown
+                    : generationActive
+                        ? SyntheticElectricalSourceState.Online
+                        : SyntheticElectricalSourceState.Offline;
+        }
+
+        private static void ApplyRealBatteryState(
+            SyntheticElectricalSource source,
+            bool storageKnown,
+            bool batteryAvailable,
+            bool supplement)
+        {
+            if (source == null)
+            {
+                return;
+            }
+
+            source.State =
+                !storageKnown
+                    ? SyntheticElectricalSourceState.Unknown
+                    : batteryAvailable
+                        ? SyntheticElectricalSourceState.Online
+                        : SyntheticElectricalSourceState.Offline;
+
+            source.Supplementing =
+                batteryAvailable &&
+                supplement;
         }
 
         public SyntheticElectricalDistributionModel BuildAndApply(
@@ -233,10 +439,18 @@ namespace KMC.Engine.SpacecraftSystems
                         available +=
                             current;
 
+                        double candidateVoltage =
+                            source.Kind ==
+                                SyntheticElectricalSourceKind.BusFeed
+                                ? GetBusFeedVoltage(
+                                    distribution,
+                                    source)
+                                : source.NominalVoltage;
+
                         sourceVoltage =
                             Math.Max(
                                 sourceVoltage,
-                                source.NominalVoltage);
+                                candidateVoltage);
 
                         sourceCount++;
 
@@ -577,14 +791,19 @@ namespace KMC.Engine.SpacecraftSystems
                     distribution.FindBus(
                         load.BusId);
 
-                bool parentBusFailed =
+                bool parentBusEnergized =
                     parentBus != null &&
-                    parentBus.HardwareFailed;
+                    parentBus.State !=
+                        SyntheticElectricalBusState.Unpowered &&
+                    parentBus.State !=
+                        SyntheticElectricalBusState.Failed &&
+                    parentBus.Voltage >
+                        0.000001;
 
                 breaker.Conducting =
                     breaker.ActualClosed &&
                     !load.AutomaticallyShed &&
-                    !parentBusFailed;
+                    parentBusEnergized;
             }
         }
 
@@ -688,6 +907,31 @@ namespace KMC.Engine.SpacecraftSystems
                 selectedContactor.Conducting =
                     selected.Conducting;
             }
+
+            /*
+             * When real generation is active but the observed EC store is
+             * draining, KMC keeps the generator as the primary transfer
+             * selection and allows the modeled battery channel to supplement.
+             * No real KSP part is assigned to either A or B.
+             */
+            if (selected == generator &&
+                batteryReady &&
+                battery != null &&
+                battery.Supplementing &&
+                !busFailed)
+            {
+                battery.Conducting =
+                    true;
+
+                battery.SelectedForBus =
+                    false;
+
+                if (batteryContactor != null)
+                {
+                    batteryContactor.Conducting =
+                        true;
+                }
+            }
         }
 
         private static bool SourceHardwareReady(
@@ -696,8 +940,10 @@ namespace KMC.Engine.SpacecraftSystems
         {
             if (source == null ||
                 !source.CommandedAvailable ||
-                source.State ==
+                (source.State ==
                     SyntheticElectricalSourceState.Offline ||
+                 source.State ==
+                    SyntheticElectricalSourceState.Unknown) ||
                 source.RatedAvailableCurrentAmps <=
                     0.000001)
             {
@@ -736,10 +982,12 @@ namespace KMC.Engine.SpacecraftSystems
 
             bool parentUsable =
                 parent != null &&
-                (parent.State ==
-                    SyntheticElectricalBusState.Nominal ||
-                 parent.State ==
-                    SyntheticElectricalBusState.HighLoad);
+                parent.State !=
+                    SyntheticElectricalBusState.Unpowered &&
+                parent.State !=
+                    SyntheticElectricalBusState.Failed &&
+                parent.Voltage >=
+                    EssentialFeedMinimumVoltage;
 
             feed.SelectedForBus =
                 closed &&
@@ -1279,10 +1527,12 @@ namespace KMC.Engine.SpacecraftSystems
             }
 
             return
-                parent.State ==
-                    SyntheticElectricalBusState.Nominal ||
-                parent.State ==
-                    SyntheticElectricalBusState.HighLoad;
+                parent.State !=
+                    SyntheticElectricalBusState.Unpowered &&
+                parent.State !=
+                    SyntheticElectricalBusState.Failed &&
+                parent.Voltage >=
+                    EssentialFeedMinimumVoltage;
         }
 
         private static void ResetAutomaticLoadShedding(
@@ -1454,6 +1704,33 @@ namespace KMC.Engine.SpacecraftSystems
             return demand;
         }
 
+        private static double GetBusFeedVoltage(
+            SyntheticElectricalDistributionModel distribution,
+            SyntheticElectricalSource source)
+        {
+            if (distribution == null ||
+                source == null ||
+                string.IsNullOrWhiteSpace(
+                    source.ParentBusId))
+            {
+                return
+                    source != null
+                        ? source.NominalVoltage
+                        : 0.0;
+            }
+
+            SyntheticElectricalBus parent =
+                distribution.FindBus(
+                    source.ParentBusId);
+
+            return
+                parent != null
+                    ? Math.Max(
+                        0.0,
+                        parent.Voltage)
+                    : 0.0;
+        }
+
         private static void CalculateBusState(
             double nominalVoltage,
             double demandAmps,
@@ -1509,6 +1786,15 @@ namespace KMC.Engine.SpacecraftSystems
 
             voltage =
                 effectiveSourceVoltage;
+
+            if (voltage <
+                UndervoltageThreshold)
+            {
+                state =
+                    SyntheticElectricalBusState.Undervoltage;
+
+                return;
+            }
 
             state =
                 fraction >= HighLoadThreshold

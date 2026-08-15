@@ -14,7 +14,8 @@ namespace KMC.Engine.SpacecraftSystems
     {
         Offline = 0,
         Online = 1,
-        Degraded = 2
+        Degraded = 2,
+        Unknown = 3
     }
 
     public enum SyntheticElectricalBusState
@@ -227,6 +228,13 @@ namespace KMC.Engine.SpacecraftSystems
         public bool Conducting { get; internal set; }
 
         /// <summary>
+        /// Build 14.13.2 real-KSP evidence state. This is true only when the
+        /// battery is contributing alongside an active generation source.
+        /// It is not an A/B assignment of any KSP battery part.
+        /// </summary>
+        public bool Supplementing { get; internal set; }
+
+        /// <summary>
         /// Hardware/source capability before distribution switching is applied.
         /// </summary>
         public double RatedAvailableCurrentAmps
@@ -235,7 +243,9 @@ namespace KMC.Engine.SpacecraftSystems
             {
                 if (!CommandedAvailable ||
                     State ==
-                        SyntheticElectricalSourceState.Offline)
+                        SyntheticElectricalSourceState.Offline ||
+                    State ==
+                        SyntheticElectricalSourceState.Unknown)
                 {
                     return 0.0;
                 }
@@ -283,7 +293,8 @@ namespace KMC.Engine.SpacecraftSystems
                     NominalVoltage = NominalVoltage,
                     CapacityAmps = CapacityAmps,
                     SelectedForBus = SelectedForBus,
-                    Conducting = Conducting
+                    Conducting = Conducting,
+                    Supplementing = Supplementing
                 };
         }
     }

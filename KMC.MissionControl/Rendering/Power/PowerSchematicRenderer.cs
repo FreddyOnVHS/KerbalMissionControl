@@ -384,13 +384,19 @@ namespace KMC.MissionControl.Rendering.Power
                 ? "UNAVAILABLE"
                 : !source.CommandedAvailable
                     ? "CMD OFF"
-                    : source.State == SyntheticElectricalSourceState.Offline
-                        ? "OFFLINE"
-                        : source.Conducting
-                            ? "ACTIVE / FEEDING"
-                            : source.Kind == SyntheticElectricalSourceKind.Battery
-                                ? "STANDBY / AVAILABLE"
-                                : "AVAILABLE / NOT FEEDING";
+                    : source.State == SyntheticElectricalSourceState.Unknown
+                        ? "REAL STATE UNKNOWN"
+                        : source.State == SyntheticElectricalSourceState.Offline
+                            ? "OFFLINE"
+                            : source.Kind == SyntheticElectricalSourceKind.Battery &&
+                              source.Supplementing &&
+                              source.Conducting
+                                ? "ACTIVE / SUPPLEMENTING"
+                                : source.Conducting
+                                    ? "ACTIVE / FEEDING"
+                                    : source.Kind == SyntheticElectricalSourceKind.Battery
+                                        ? "STANDBY / AVAILABLE"
+                                        : "AVAILABLE / NOT FEEDING";
 
             string amps = source != null
                 ? "RATED " + source.RatedAvailableCurrentAmps.ToString("0.0") + " A"
@@ -717,8 +723,27 @@ namespace KMC.MissionControl.Rendering.Power
                     ? breaker.Conducting
                     : commanded;
 
+            SyntheticElectricalBus upstreamBus =
+                load != null
+                    ? distribution.FindBus(
+                        load.BusId)
+                    : null;
+
+            bool upstreamEnergized =
+                upstreamBus != null &&
+                upstreamBus.State !=
+                    SyntheticElectricalBusState.Unpowered &&
+                upstreamBus.State !=
+                    SyntheticElectricalBusState.Failed &&
+                upstreamBus.Voltage >
+                    0.000001;
+
+            bool energized =
+                conducting &&
+                upstreamEnergized;
+
             Color color =
-                conducting
+                energized
                     ? Healthy
                     : Dead;
 
@@ -1006,6 +1031,8 @@ namespace KMC.MissionControl.Rendering.Power
                 return context.DimPhosphorColor;
             if (!source.CommandedAvailable)
                 return Advisory;
+            if (source.State == SyntheticElectricalSourceState.Unknown)
+                return context.DimPhosphorColor;
             if (source.State == SyntheticElectricalSourceState.Offline)
                 return Critical;
             if (source.State == SyntheticElectricalSourceState.Degraded)
