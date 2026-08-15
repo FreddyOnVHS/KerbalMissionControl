@@ -69,11 +69,6 @@ namespace KMC.MissionControl.Rendering.Power
                     context.ContentBounds.Width - 36,
                     context.ContentBounds.Height - 92);
 
-            DrawPageSelector(
-                g,
-                area,
-                context);
-
             if (engineering == null ||
                 engineering.Snapshot == null ||
                 engineering.Snapshot.SpacecraftSystems == null ||
