@@ -1,6 +1,7 @@
-﻿using System;
+﻿﻿using System;
 using System.Drawing;
 using KMC.Engine.Analysis;
+using KMC.Engine.Electrical;
 using KMC.MissionControl.Controls;
 using KMC.MissionControl.Engineering;
 using KMC.MissionControl.Models;
@@ -208,6 +209,15 @@ namespace KMC.MissionControl.Pages
 
                 _sourceInventoryPage =
                     effectivePage;
+
+                /*
+                 * Build 14.14.3:
+                 * Compact latest A/B/ESS transition evidence in unused header
+                 * space. This does not alter the consolidated panel geometry.
+                 */
+                DrawDistributionEventHeader(
+                    context,
+                    engineering);
             }
             else
             {
@@ -219,6 +229,115 @@ namespace KMC.MissionControl.Pages
 
             DrawSubpageTabs(
                 context);
+        }
+
+        private static void DrawDistributionEventHeader(
+            MissionRenderContext context,
+            AnalysisPipelineResult engineering)
+        {
+            if (context == null)
+            {
+                return;
+            }
+
+            Rectangle content =
+                context.ContentBounds;
+
+            Rectangle box =
+                new Rectangle(
+                    content.Left + 720,
+                    content.Top + 24,
+                    Math.Max(
+                        0,
+                        content.Width - 1130),
+                    32);
+
+            if (box.Width <= 0)
+            {
+                return;
+            }
+
+            ElectricalDistributionEventHistoryModel history =
+                engineering != null &&
+                engineering.Snapshot != null &&
+                engineering.Snapshot.Power != null
+                    ? engineering.Snapshot.Power.DistributionEvents
+                    : null;
+
+            ElectricalDistributionEventRecord latest =
+                history != null
+                    ? history.Latest
+                    : null;
+
+            string text;
+            Color color;
+
+            if (latest == null)
+            {
+                text =
+                    "DIST EVT 00 / BASELINE";
+
+                color =
+                    context.DimPhosphorColor;
+            }
+            else
+            {
+                text =
+                    "DIST EVT " +
+                    history.Count.ToString("00") +
+                    "  " +
+                    latest.TimestampUtc.ToString("HH:mm:ss") +
+                    "Z  " +
+                    (latest.Code ?? "---");
+
+                if (!string.IsNullOrWhiteSpace(
+                        latest.Message))
+                {
+                    text +=
+                        "  [" +
+                        latest.Message +
+                        "]";
+                }
+
+                color =
+                    DistributionEventColor(
+                        latest.Severity,
+                        context);
+            }
+
+            TextRenderer.DrawText(
+                context.Graphics,
+                text.ToUpperInvariant(),
+                context.SmallFont,
+                box,
+                color,
+                TextFormatFlags.Right |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.EndEllipsis);
+        }
+
+        private static Color DistributionEventColor(
+            ElectricalEventSeverity severity,
+            MissionRenderContext context)
+        {
+            switch (severity)
+            {
+                case ElectricalEventSeverity.Info:
+                    return Color.FromArgb(112, 202, 154);
+
+                case ElectricalEventSeverity.Advisory:
+                    return Color.FromArgb(232, 188, 84);
+
+                case ElectricalEventSeverity.Warning:
+                    return Color.FromArgb(236, 142, 66);
+
+                case ElectricalEventSeverity.Critical:
+                    return Color.FromArgb(236, 92, 76);
+
+                default:
+                    return context.DimPhosphorColor;
+            }
         }
 
         private void DrawSubpageTabs(

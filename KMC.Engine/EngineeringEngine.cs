@@ -22,6 +22,8 @@ namespace KMC.Engine
         private readonly GuidanceSystem _guidanceSystem;
         private readonly SpacecraftSystemsSystem _spacecraftSystemsSystem;
         private readonly ElectricalFlowTracker _electricalFlowTracker;
+        private readonly ElectricalDistributionEventTracker
+            _electricalDistributionEventTracker;
         private readonly object _electricalAttributionSyncRoot;
         private ElectricalAttributionModel _latestElectricalAttribution;
         private readonly object _propulsionTelemetrySyncRoot;
@@ -58,6 +60,10 @@ namespace KMC.Engine
             _spacecraftSystemsSystem =
                 new SpacecraftSystemsSystem();
             _electricalFlowTracker = new ElectricalFlowTracker();
+
+            _electricalDistributionEventTracker =
+                new ElectricalDistributionEventTracker();
+
             _electricalAttributionSyncRoot = new object();
             _latestElectricalAttribution = new ElectricalAttributionModel();
             _propulsionTelemetrySyncRoot = new object();
@@ -383,6 +389,29 @@ namespace KMC.Engine
                             .ElectricalDistribution
                         : null,
                     result.Snapshot.Power);
+
+            /*
+             * Build 14.14.3:
+             * PowerSystem's older event tracker runs before the synthetic
+             * spacecraft distribution exists. Observe A/B/ESS only after real
+             * KSP source evidence has been applied so event history represents
+             * the exact same distribution truth seen by POWER 1/2 and 2/2.
+             */
+            if (result.Snapshot.Power != null)
+            {
+                SpacecraftSystemsModel spacecraftSystems =
+                    result.Snapshot.SpacecraftSystems;
+
+                result.Snapshot.Power.DistributionEvents =
+                    _electricalDistributionEventTracker.Analyze(
+                        receivedUtc,
+                        spacecraftSystems != null
+                            ? spacecraftSystems.VesselId
+                            : string.Empty,
+                        spacecraftSystems != null
+                            ? spacecraftSystems.ElectricalDistribution
+                            : null);
+            }
 
             /*
              * Build 14.12.2:
