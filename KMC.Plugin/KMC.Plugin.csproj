@@ -92,6 +92,8 @@
     <Compile Include="ManeuverUplinkReceiver.cs" />
     <Compile Include="FailureEffectReceiver.cs" />
     <Compile Include="KmcElectricalLoadReceiver.cs" />
+    <Compile Include="KmcMfdStatusReceiver.cs" />
+    <Compile Include="KmcRpmVariableHandler.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
 
     <Compile Include="Topology\ActivePropellantAnalyzer.cs" />
