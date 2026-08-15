@@ -109,6 +109,7 @@ namespace KMC.Engine.Propulsion
         EngineThrustUnstable,
         EngineThrustIndicationFault,
         ThrustDataDisagreement,
+        StageThrustCapabilityReduced,
         FeedStateConflict,
         EngineFlameout,
         PropulsionLost,
@@ -360,6 +361,29 @@ namespace KMC.Engine.Propulsion
         public double ThrustDiscrepancyTolerance { get; internal set; }
 
         public bool ThrustDataDisagreement { get; internal set; }
+
+        /// <summary>
+        /// Build 14.12.9 current reached-stage thrust consequence model.
+        /// Reference capability reconstructs the pre-failure commanded
+        /// maximum for active synthetic derates. It is not a new KSP sensor.
+        /// </summary>
+        public bool StageThrustCapabilityKnown { get; internal set; }
+
+        public double StageReferenceThrust { get; internal set; }
+
+        public double StageRemainingThrust { get; internal set; }
+
+        public double StageLostThrust { get; internal set; }
+
+        public double StageRemainingThrustFraction { get; internal set; }
+
+        public int StageCapabilityEngineCount { get; internal set; }
+
+        public int StageUnavailableEngineCount { get; internal set; }
+
+        public int StageDeratedEngineCount { get; internal set; }
+
+        public bool StageThrustCapabilityReduced { get; internal set; }
 
         public bool AvailableThrustKnown { get; internal set; }
 

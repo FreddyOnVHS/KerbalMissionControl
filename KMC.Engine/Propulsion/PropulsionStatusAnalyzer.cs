@@ -165,6 +165,10 @@ namespace KMC.Engine.Propulsion
             EvaluateThrustDiscrepancy(
                 status);
 
+            EvaluateStageThrustCapability(
+                failures,
+                status);
+
             SelectPrimaryCondition(
                 topology,
                 live,
@@ -546,6 +550,258 @@ namespace KMC.Engine.Propulsion
 
             channel.Severity =
                 PropulsionSeverity.Normal;
+        }
+
+        private static void EvaluateStageThrustCapability(
+            FailureSimulationSnapshot failures,
+            PropulsionStatusModel status)
+        {
+            if (status == null ||
+                !status.LiveEngineCoverageComplete ||
+                status.EngineChannels == null ||
+                status.EngineChannels.Count <= 0)
+            {
+                return;
+            }
+
+            double referenceThrust =
+                0.0;
+
+            double remainingThrust =
+                0.0;
+
+            int capabilityEngineCount =
+                0;
+
+            int unavailableEngineCount =
+                0;
+
+            int deratedEngineCount =
+                0;
+
+            for (int index = 0;
+                 index < status.EngineChannels.Count;
+                 index++)
+            {
+                PropulsionEngineChannelModel channel =
+                    status.EngineChannels[index];
+
+                if (channel == null ||
+                    !channel.LiveStateKnown ||
+                    !channel.MaximumThrustKnown ||
+                    channel.FutureStage)
+                {
+                    continue;
+                }
+
+                double actualMaximum =
+                    Math.Max(
+                        0.0,
+                        channel.MaximumThrust);
+
+                double derateFactor =
+                    ResolveSyntheticDerateMagnitude(
+                        failures,
+                        channel.PartId);
+
+                double referenceMaximum =
+                    actualMaximum;
+
+                /*
+                 * EngineStateTelemetrySender transmits maxThrust multiplied
+                 * by the active KSP thrustPercentage. The existing synthetic
+                 * derate actuator changes that limiter, so divide by the
+                 * active synthetic factor to recover the pre-failure
+                 * commanded capability.
+                 */
+                if (derateFactor > 0.0001 &&
+                    derateFactor < 0.9999)
+                {
+                    referenceMaximum =
+                        actualMaximum /
+                        derateFactor;
+
+                    deratedEngineCount++;
+                }
+
+                if (referenceMaximum <= 0.0001)
+                {
+                    continue;
+                }
+
+                capabilityEngineCount++;
+
+                referenceThrust +=
+                    referenceMaximum;
+
+                if (channel.ReadyForThrust &&
+                    !channel.StartInhibited)
+                {
+                    remainingThrust +=
+                        actualMaximum;
+                }
+                else
+                {
+                    unavailableEngineCount++;
+                }
+            }
+
+            if (capabilityEngineCount <= 0 ||
+                referenceThrust <= 0.0001)
+            {
+                return;
+            }
+
+            status.StageThrustCapabilityKnown =
+                true;
+
+            status.StageReferenceThrust =
+                referenceThrust;
+
+            status.StageRemainingThrust =
+                Math.Max(
+                    0.0,
+                    Math.Min(
+                        referenceThrust,
+                        remainingThrust));
+
+            status.StageLostThrust =
+                Math.Max(
+                    0.0,
+                    referenceThrust -
+                    status.StageRemainingThrust);
+
+            status.StageRemainingThrustFraction =
+                Math.Max(
+                    0.0,
+                    Math.Min(
+                        1.0,
+                        status.StageRemainingThrust /
+                        referenceThrust));
+
+            status.StageCapabilityEngineCount =
+                capabilityEngineCount;
+
+            status.StageUnavailableEngineCount =
+                unavailableEngineCount;
+
+            status.StageDeratedEngineCount =
+                deratedEngineCount;
+
+            double tolerance =
+                Math.Max(
+                    0.5,
+                    referenceThrust * 0.01);
+
+            status.StageThrustCapabilityReduced =
+                status.StageLostThrust >
+                tolerance;
+        }
+
+        private static double ResolveSyntheticDerateMagnitude(
+            FailureSimulationSnapshot failures,
+            uint partId)
+        {
+            if (failures == null ||
+                failures.Failures == null ||
+                partId == 0)
+            {
+                return 1.0;
+            }
+
+            double strongestFactor =
+                1.0;
+
+            for (int index = 0;
+                 index < failures.Failures.Count;
+                 index++)
+            {
+                SyntheticFailureRecord failure =
+                    failures.Failures[index];
+
+                if (failure == null ||
+                    !failure.EffectiveNow ||
+                    failure.TargetKind !=
+                        SyntheticFailureTargetKind.PropulsionEffect)
+                {
+                    continue;
+                }
+
+                uint targetPartId;
+                bool shutdown;
+
+                if (!SyntheticFailureTargets.TryParsePropulsionTarget(
+                        failure.TargetId,
+                        out targetPartId,
+                        out shutdown) ||
+                    shutdown ||
+                    targetPartId != partId)
+                {
+                    continue;
+                }
+
+                strongestFactor =
+                    Math.Min(
+                        strongestFactor,
+                        ResolveFailureDerateMagnitude(
+                            failure));
+            }
+
+            return
+                Math.Max(
+                    0.10,
+                    Math.Min(
+                        1.00,
+                        strongestFactor));
+        }
+
+        private static double ResolveFailureDerateMagnitude(
+            SyntheticFailureRecord failure)
+        {
+            if (failure == null)
+            {
+                return 1.0;
+            }
+
+            double target =
+                Math.Max(
+                    0.10,
+                    Math.Min(
+                        1.00,
+                        failure.EffectMagnitude));
+
+            if (failure.Kind !=
+                    SyntheticFailureKind.Degrading)
+            {
+                return target;
+            }
+
+            /*
+             * Match Build 14.12.6 exactly:
+             * 100% -> requested target over 20 seconds.
+             */
+            const double decaySeconds =
+                20.0;
+
+            double elapsed =
+                Math.Max(
+                    0.0,
+                    (DateTime.UtcNow -
+                     failure.ActivateUtc)
+                    .TotalSeconds);
+
+            double fraction =
+                Math.Max(
+                    0.0,
+                    Math.Min(
+                        1.0,
+                        elapsed /
+                        decaySeconds));
+
+            return
+                1.0 -
+                ((1.0 - target) *
+                 fraction);
         }
 
         private static void EvaluateThrustDiscrepancy(
@@ -946,7 +1202,24 @@ namespace KMC.Engine.Propulsion
 
                 status.Summary =
                     status.ThrustDegradedEngineCount.ToString() +
-                    " exact engine thrust channel(s) are degraded.";
+                    " exact engine thrust channel(s) are degraded; " +
+                    BuildCapabilitySummary(
+                        status);
+
+                return;
+            }
+
+            if (status.StageThrustCapabilityReduced)
+            {
+                status.Severity =
+                    PropulsionSeverity.Advisory;
+
+                status.Condition =
+                    PropulsionCondition.StageThrustCapabilityReduced;
+
+                status.Summary =
+                    BuildCapabilitySummary(
+                        status);
 
                 return;
             }
@@ -1197,6 +1470,52 @@ namespace KMC.Engine.Propulsion
                 " kN";
         }
 
+        private static string BuildCapabilitySummary(
+            PropulsionStatusModel status)
+        {
+            if (status == null ||
+                !status.StageThrustCapabilityKnown)
+            {
+                return
+                    "Current-stage thrust consequence is unavailable.";
+            }
+
+            return
+                "Current-stage thrust capability " +
+                (status.StageRemainingThrustFraction * 100.0)
+                    .ToString("0.0") +
+                "% (" +
+                status.StageRemainingThrust.ToString("0.0") +
+                " / " +
+                status.StageReferenceThrust.ToString("0.0") +
+                " kN), loss " +
+                status.StageLostThrust.ToString("0.0") +
+                " kN; " +
+                status.StageUnavailableEngineCount.ToString() +
+                " unavailable, " +
+                status.StageDeratedEngineCount.ToString() +
+                " derated.";
+        }
+
+        private static string BuildStageCapabilityPrefix(
+            PropulsionStatusModel status)
+        {
+            if (status == null ||
+                !status.StageThrustCapabilityKnown)
+            {
+                return
+                    string.Empty;
+            }
+
+            return
+                "Current-stage capability " +
+                (status.StageRemainingThrustFraction * 100.0)
+                    .ToString("0.0") +
+                "%; loss " +
+                status.StageLostThrust.ToString("0.0") +
+                " kN. ";
+        }
+
         private static void BuildStageSummary(
             PropulsionStatusModel status)
         {
@@ -1208,6 +1527,7 @@ namespace KMC.Engine.Propulsion
             if (status.NextStageHasFeedRisk)
             {
                 status.StageSummary =
+                    BuildStageCapabilityPrefix(status) +
                     "Stage " +
                     status.NextStage +
                     " retains " +
@@ -1221,6 +1541,7 @@ namespace KMC.Engine.Propulsion
             if (status.NextStageEndsPropulsion)
             {
                 status.StageSummary =
+                    BuildStageCapabilityPrefix(status) +
                     "Stage " +
                     status.NextStage +
                     " removes all " +
@@ -1232,6 +1553,7 @@ namespace KMC.Engine.Propulsion
             if (status.NextStageEngineLossCount > 0)
             {
                 status.StageSummary =
+                    BuildStageCapabilityPrefix(status) +
                     "Stage " +
                     status.NextStage +
                     " separates " +
@@ -1245,6 +1567,7 @@ namespace KMC.Engine.Propulsion
             }
 
             status.StageSummary =
+                BuildStageCapabilityPrefix(status) +
                 "Stage " +
                 status.NextStage +
                 " retains all current propulsion engines and their analyzed feed paths.";
