@@ -30,7 +30,24 @@ namespace KMC.MissionControl.Training
         EngineThrustUnstable = 23,
         EngineThrustIndicationFailLow = 24,
         MainBusAFailed = 25,
-        MainBusBFailed = 26
+        MainBusBFailed = 26,
+
+        /*
+         * Build 14.14.7 — final POWER failure-catalog expansion.
+         * Values are appended so existing preset numeric IDs remain stable.
+         */
+        BatteryA = 27,
+        BatteryB = 28,
+        BatteryADegraded50 = 29,
+        BatteryBDegraded50 = 30,
+        GeneratorBDegraded50 = 31,
+        GenBContactorFailedOpen = 32,
+        MainBTransferFailedOpen = 33,
+        EssFeedAContactorFailedOpen = 34,
+        EssFeedBContactorFailedOpen = 35,
+        CommABreakerTripped = 36,
+        CommBBreakerTripped = 37,
+        GenBContactorFalseOpenIndication = 38
     }
 
     public enum InstructorScenarioPreset
@@ -57,11 +74,38 @@ namespace KMC.MissionControl.Training
                 case InstructorFailurePreset.GeneratorADegraded50:
                     return "POWER - GENERATOR A DEGRADED 50%";
 
+                case InstructorFailurePreset.GeneratorBDegraded50:
+                    return "POWER - GENERATOR B DEGRADED 50%";
+
+                case InstructorFailurePreset.BatteryA:
+                    return "POWER - BATTERY A FAILED";
+
+                case InstructorFailurePreset.BatteryB:
+                    return "POWER - BATTERY B FAILED";
+
+                case InstructorFailurePreset.BatteryADegraded50:
+                    return "POWER - BATTERY A DEGRADED 50%";
+
+                case InstructorFailurePreset.BatteryBDegraded50:
+                    return "POWER - BATTERY B DEGRADED 50%";
+
                 case InstructorFailurePreset.GenAContactorFailedOpen:
                     return "POWER - GEN A CONTACTOR FAILED OPEN";
 
                 case InstructorFailurePreset.MainATransferFailedOpen:
                     return "POWER - MAIN A TRANSFER FAILED OPEN";
+
+                case InstructorFailurePreset.GenBContactorFailedOpen:
+                    return "POWER - GEN B CONTACTOR FAILED OPEN";
+
+                case InstructorFailurePreset.MainBTransferFailedOpen:
+                    return "POWER - MAIN B TRANSFER FAILED OPEN";
+
+                case InstructorFailurePreset.EssFeedAContactorFailedOpen:
+                    return "POWER - ESS FEED A CONTACTOR FAILED OPEN";
+
+                case InstructorFailurePreset.EssFeedBContactorFailedOpen:
+                    return "POWER - ESS FEED B CONTACTOR FAILED OPEN";
 
                 case InstructorFailurePreset.MainBusAFailed:
                     return "POWER - MAIN BUS A FAILED";
@@ -72,8 +116,17 @@ namespace KMC.MissionControl.Training
                 case InstructorFailurePreset.GuidABreakerTripped:
                     return "POWER - GUID A BREAKER TRIPPED";
 
+                case InstructorFailurePreset.CommABreakerTripped:
+                    return "POWER - COMM A BREAKER TRIPPED";
+
+                case InstructorFailurePreset.CommBBreakerTripped:
+                    return "POWER - COMM B BREAKER TRIPPED";
+
                 case InstructorFailurePreset.GenAContactorFalseOpenIndication:
                     return "POWER - GEN A CONTACTOR FALSE OPEN IND";
+
+                case InstructorFailurePreset.GenBContactorFalseOpenIndication:
+                    return "POWER - GEN B CONTACTOR FALSE OPEN IND";
 
                 case InstructorFailurePreset.GenAContactorWeldedClosed:
                     return "POWER - GEN A CONTACTOR WELDED CLOSED";

@@ -229,7 +229,7 @@ namespace KMC.MissionControl.Training
                 new Label
                 {
                     Text =
-                        "INSTRUCTOR / SCENARIO CONTROL\n14.11.3B — ELECTRICAL SOURCE TESTS",
+                        "INSTRUCTOR / SCENARIO CONTROL\n14.14.7 — ELECTRICAL FAILURE TESTS",
                     Dock =
                         DockStyle.Fill,
                     TextAlign =
@@ -862,23 +862,60 @@ namespace KMC.MissionControl.Training
                         preset ==
                             InstructorFailurePreset.GeneratorB ||
                         preset ==
-                            InstructorFailurePreset.GeneratorADegraded50)
+                            InstructorFailurePreset.GeneratorADegraded50 ||
+                        preset ==
+                            InstructorFailurePreset.GeneratorBDegraded50 ||
+                        preset ==
+                            InstructorFailurePreset.BatteryA ||
+                        preset ==
+                            InstructorFailurePreset.BatteryB ||
+                        preset ==
+                            InstructorFailurePreset.BatteryADegraded50 ||
+                        preset ==
+                            InstructorFailurePreset.BatteryBDegraded50)
                     {
-                        string sourceId =
+                        string sourceId;
+
+                        switch (preset)
+                        {
+                            case InstructorFailurePreset.GeneratorB:
+                            case InstructorFailurePreset.GeneratorBDegraded50:
+                                sourceId = "SRC_GEN_B";
+                                break;
+
+                            case InstructorFailurePreset.BatteryA:
+                            case InstructorFailurePreset.BatteryADegraded50:
+                                sourceId = "SRC_BAT_A";
+                                break;
+
+                            case InstructorFailurePreset.BatteryB:
+                            case InstructorFailurePreset.BatteryBDegraded50:
+                                sourceId = "SRC_BAT_B";
+                                break;
+
+                            default:
+                                sourceId = "SRC_GEN_A";
+                                break;
+                        }
+
+                        bool degraded =
                             preset ==
-                                InstructorFailurePreset.GeneratorB
-                                ? "SRC_GEN_B"
-                                : "SRC_GEN_A";
+                                InstructorFailurePreset.GeneratorADegraded50 ||
+                            preset ==
+                                InstructorFailurePreset.GeneratorBDegraded50 ||
+                            preset ==
+                                InstructorFailurePreset.BatteryADegraded50 ||
+                            preset ==
+                                InstructorFailurePreset.BatteryBDegraded50;
 
                         SpacecraftSystemHealth sourceHealth =
-                            preset ==
-                                InstructorFailurePreset.GeneratorADegraded50
+                            degraded
                                 ? SpacecraftSystemHealth.Degraded
                                 : SpacecraftSystemHealth.Failed;
 
                         success =
                             InstructorElectricalSourceFailureBridge
-                                .InjectGeneratorFailure(
+                                .InjectElectricalSourceFailure(
                                     _receiver,
                                     sourceId,
                                     sourceHealth,
@@ -890,11 +927,25 @@ namespace KMC.MissionControl.Training
                         preset ==
                             InstructorFailurePreset.GenAContactorFailedOpen ||
                         preset ==
+                            InstructorFailurePreset.GenBContactorFailedOpen ||
+                        preset ==
                             InstructorFailurePreset.MainATransferFailedOpen ||
+                        preset ==
+                            InstructorFailurePreset.MainBTransferFailedOpen ||
+                        preset ==
+                            InstructorFailurePreset.EssFeedAContactorFailedOpen ||
+                        preset ==
+                            InstructorFailurePreset.EssFeedBContactorFailedOpen ||
                         preset ==
                             InstructorFailurePreset.GuidABreakerTripped ||
                         preset ==
+                            InstructorFailurePreset.CommABreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.CommBBreakerTripped ||
+                        preset ==
                             InstructorFailurePreset.GenAContactorFalseOpenIndication ||
+                        preset ==
+                            InstructorFailurePreset.GenBContactorFalseOpenIndication ||
                         preset ==
                             InstructorFailurePreset.GenAContactorWeldedClosed)
                     {
@@ -909,8 +960,32 @@ namespace KMC.MissionControl.Training
                                     SyntheticElectricalSwitchFailureMode.FailedOpen;
                                 break;
 
+                            case InstructorFailurePreset.GenBContactorFailedOpen:
+                                switchId = "CONT_GEN_B";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.FailedOpen;
+                                break;
+
                             case InstructorFailurePreset.MainATransferFailedOpen:
                                 switchId = "XFER_MAIN_A";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.FailedOpen;
+                                break;
+
+                            case InstructorFailurePreset.MainBTransferFailedOpen:
+                                switchId = "XFER_MAIN_B";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.FailedOpen;
+                                break;
+
+                            case InstructorFailurePreset.EssFeedAContactorFailedOpen:
+                                switchId = "CONT_ESS_A";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.FailedOpen;
+                                break;
+
+                            case InstructorFailurePreset.EssFeedBContactorFailedOpen:
+                                switchId = "CONT_ESS_B";
                                 switchMode =
                                     SyntheticElectricalSwitchFailureMode.FailedOpen;
                                 break;
@@ -921,8 +996,26 @@ namespace KMC.MissionControl.Training
                                     SyntheticElectricalSwitchFailureMode.TrippedOpen;
                                 break;
 
+                            case InstructorFailurePreset.CommABreakerTripped:
+                                switchId = "BRK_COMM_A";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+
+                            case InstructorFailurePreset.CommBBreakerTripped:
+                                switchId = "BRK_COMM_B";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+
                             case InstructorFailurePreset.GenAContactorFalseOpenIndication:
                                 switchId = "CONT_GEN_A";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.FalseOpenIndication;
+                                break;
+
+                            case InstructorFailurePreset.GenBContactorFalseOpenIndication:
+                                switchId = "CONT_GEN_B";
                                 switchMode =
                                     SyntheticElectricalSwitchFailureMode.FalseOpenIndication;
                                 break;

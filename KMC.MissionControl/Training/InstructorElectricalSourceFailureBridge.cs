@@ -15,7 +15,7 @@ namespace KMC.MissionControl.Training
     /// </summary>
     internal static class InstructorElectricalSourceFailureBridge
     {
-        public static bool InjectGeneratorFailure(
+        public static bool InjectElectricalSourceFailure(
             MissionControlReceiver receiver,
             string sourceId,
             SpacecraftSystemHealth sourceHealth,
@@ -33,9 +33,11 @@ namespace KMC.MissionControl.Training
             }
 
             if (!string.Equals(sourceId, "SRC_GEN_A", StringComparison.Ordinal) &&
-                !string.Equals(sourceId, "SRC_GEN_B", StringComparison.Ordinal))
+                !string.Equals(sourceId, "SRC_GEN_B", StringComparison.Ordinal) &&
+                !string.Equals(sourceId, "SRC_BAT_A", StringComparison.Ordinal) &&
+                !string.Equals(sourceId, "SRC_BAT_B", StringComparison.Ordinal))
             {
-                resultText = "UNSUPPORTED GENERATOR SOURCE";
+                resultText = "UNSUPPORTED ELECTRICAL SOURCE";
                 return false;
             }
 
@@ -44,7 +46,7 @@ namespace KMC.MissionControl.Training
                 sourceHealth !=
                     SpacecraftSystemHealth.Failed)
             {
-                resultText = "UNSUPPORTED GENERATOR HEALTH";
+                resultText = "UNSUPPORTED ELECTRICAL SOURCE HEALTH";
                 return false;
             }
 
@@ -122,7 +124,7 @@ namespace KMC.MissionControl.Training
                     ActivateUtc =
                         DateTime.UtcNow.AddSeconds(delay),
                     Detail =
-                        "BUILD 14.11.5 INSTRUCTOR / " +
+                        "BUILD 14.14.7 INSTRUCTOR / " +
                         sourceId +
                         " / " +
                         sourceHealth.ToString().ToUpperInvariant()
