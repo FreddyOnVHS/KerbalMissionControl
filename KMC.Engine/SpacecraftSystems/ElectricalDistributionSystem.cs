@@ -33,6 +33,17 @@ namespace KMC.Engine.SpacecraftSystems
          */
         private const double EssentialFeedMinimumVoltage = 20.0;
 
+        /*
+         * Build 14.13.4:
+         * KMC-owned spacecraft loads have a normalized full-load EC budget.
+         *
+         * This is deliberately NOT an amp-to-EC physical conversion.
+         * The 0.100 EC/s budget is apportioned by each synthetic load's share
+         * of total configured amp demand. Actual breaker conduction determines
+         * whether that share is currently charged to KSP.
+         */
+        private const double KmcOwnedFullLoadEcPerSecond = 0.100;
+
         private string _lastDiagnosticKey;
 
         public SyntheticElectricalDistributionSystem()
@@ -552,6 +563,90 @@ namespace KMC.Engine.SpacecraftSystems
                     break;
                 }
             }
+
+            UpdateKmcOwnedEcLoad(
+                distribution);
+        }
+
+        /// <summary>
+        /// Build 14.13.4 KMC-owned real-EC load bridge calculation.
+        ///
+        /// Configured amp demand is used only as a weighting system. KSP never
+        /// receives an amp value. A load contributes to the current EC command
+        /// only when its resolved breaker is actually conducting. Therefore:
+        ///
+        /// - manual breaker open -> EC load falls
+        /// - automatic shed -> EC load falls
+        /// - upstream bus unpowered -> EC load falls
+        /// - welded-closed breaker can continue consuming despite CMD OPEN
+        /// </summary>
+        private static void UpdateKmcOwnedEcLoad(
+            SyntheticElectricalDistributionModel distribution)
+        {
+            if (distribution == null)
+            {
+                return;
+            }
+
+            double configuredAmps = 0.0;
+            double energizedAmps = 0.0;
+
+            for (int index = 0;
+                 index < distribution.Loads.Count;
+                 index++)
+            {
+                SyntheticElectricalLoad load =
+                    distribution.Loads[index];
+
+                if (load == null)
+                {
+                    continue;
+                }
+
+                double demand =
+                    Math.Max(
+                        0.0,
+                        load.DemandAmps);
+
+                configuredAmps +=
+                    demand;
+
+                SyntheticElectricalSwitch breaker =
+                    distribution.FindSwitch(
+                        load.BreakerId);
+
+                if (breaker != null &&
+                    breaker.Conducting)
+                {
+                    energizedAmps +=
+                        demand;
+                }
+            }
+
+            double fraction =
+                configuredAmps > 0.000001
+                    ? Math.Max(
+                        0.0,
+                        Math.Min(
+                            1.0,
+                            energizedAmps /
+                            configuredAmps))
+                    : 0.0;
+
+            distribution.KmcOwnedFullLoadEcPerSecond =
+                configuredAmps > 0.000001
+                    ? KmcOwnedFullLoadEcPerSecond
+                    : 0.0;
+
+            distribution.KmcOwnedActiveLoadEcPerSecond =
+                KmcOwnedFullLoadEcPerSecond *
+                fraction;
+
+            distribution.KmcOwnedConfiguredDemandAmps =
+                configuredAmps;
+
+            distribution.KmcOwnedEnergizedDemandAmps =
+                energizedAmps;
         }
 
         private static void ApplyElectricalBusFailures(

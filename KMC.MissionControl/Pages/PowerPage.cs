@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Drawing;
 using KMC.Engine.Analysis;
 using KMC.MissionControl.Engineering;
@@ -19,6 +19,18 @@ namespace KMC.MissionControl.Pages
         IMissionPage,
         IMissionPageCanvasProvider
     {
+        public PowerPage()
+        {
+            /*
+             * Build 14.13.4:
+             * MainForm constructs the POWER page during navigation setup even
+             * when another page is selected. Starting the lease sender here
+             * therefore does not make real EC loading dependent on POWER being
+             * visible.
+             */
+            ElectricalLoadLeaseSender.EnsureStarted();
+        }
+
         public string Name
         {
             get { return "POWER"; }

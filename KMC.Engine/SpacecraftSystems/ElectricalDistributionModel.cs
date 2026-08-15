@@ -496,6 +496,31 @@ namespace KMC.Engine.SpacecraftSystems
         public string TemplateId { get; internal set; }
         public DateTime GeneratedUtc { get; internal set; }
 
+        /// <summary>
+        /// Build 14.13.4 normalized full-load ElectricCharge budget owned by
+        /// KMC's synthetic spacecraft systems. This is a simulator calibration,
+        /// not a claim that KSP ElectricCharge is physically equivalent to amps.
+        /// </summary>
+        public double KmcOwnedFullLoadEcPerSecond { get; internal set; }
+
+        /// <summary>
+        /// Current KMC-owned ElectricCharge rate corresponding only to loads
+        /// whose resolved breaker path is actually conducting.
+        /// </summary>
+        public double KmcOwnedActiveLoadEcPerSecond { get; internal set; }
+
+        /// <summary>
+        /// Sum of all configured synthetic load demand used only to normalize
+        /// the KMC-owned EC budget.
+        /// </summary>
+        public double KmcOwnedConfiguredDemandAmps { get; internal set; }
+
+        /// <summary>
+        /// Sum of currently energized synthetic load demand used to calculate
+        /// the current KMC-owned EC rate.
+        /// </summary>
+        public double KmcOwnedEnergizedDemandAmps { get; internal set; }
+
         public IList<SyntheticElectricalSource> Sources
         {
             get { return _sources; }
@@ -609,7 +634,19 @@ namespace KMC.Engine.SpacecraftSystems
                         TemplateId ?? string.Empty,
 
                     GeneratedUtc =
-                        GeneratedUtc
+                        GeneratedUtc,
+
+                    KmcOwnedFullLoadEcPerSecond =
+                        KmcOwnedFullLoadEcPerSecond,
+
+                    KmcOwnedActiveLoadEcPerSecond =
+                        KmcOwnedActiveLoadEcPerSecond,
+
+                    KmcOwnedConfiguredDemandAmps =
+                        KmcOwnedConfiguredDemandAmps,
+
+                    KmcOwnedEnergizedDemandAmps =
+                        KmcOwnedEnergizedDemandAmps
                 };
 
             for (int index = 0;

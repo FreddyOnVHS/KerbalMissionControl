@@ -361,6 +361,7 @@ namespace KMC.MissionControl.Rendering.Power
             DrawFooter(
                 g,
                 new Rectangle(left, area.Bottom - 42, width, 34),
+                distribution,
                 context);
         }
 
@@ -1213,10 +1214,19 @@ namespace KMC.MissionControl.Rendering.Power
         private static void DrawFooter(
             Graphics g,
             Rectangle box,
+            SyntheticElectricalDistributionModel distribution,
             MissionRenderContext context)
         {
+            string ownedLoad =
+                distribution != null
+                    ? distribution.KmcOwnedActiveLoadEcPerSecond
+                        .ToString("0.000") +
+                      " EC/S"
+                    : "--";
+
             DrawText(g, box,
-                "SWITCHED DISTRIBUTION / P3 AUTO-SHED / GENERATOR PRIMARY / BATTERY AUTO-TRANSFER",
+                "SWITCHED DISTRIBUTION / P3 AUTO-SHED / GENERATOR PRIMARY / BATTERY AUTO-TRANSFER" +
+                " / KMC LOAD CMD " + ownedLoad,
                 context.SmallFont, context.DimPhosphorColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
         }
