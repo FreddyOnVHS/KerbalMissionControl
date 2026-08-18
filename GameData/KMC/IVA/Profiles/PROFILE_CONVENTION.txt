@@ -1,0 +1,91 @@
+KMC IVA ELECTRICAL PROFILE CONVENTION
+=====================================
+
+PURPOSE
+-------
+Build 14.17.1 separates reusable RPM electrical behavior from capsule-specific
+wiring.
+
+Reusable MFD power behavior lives in:
+    GameData/KMC/IVA/KmcRpmPowerDomains.cfg
+
+Capsule / IVA mappings live in:
+    GameData/KMC/IVA/Profiles/<IVA package>/
+
+POWER DOMAINS
+-------------
+MAIN_A
+    Primary A-side electrical distribution.
+
+MAIN_B
+    Primary B-side electrical distribution.
+
+ESS
+    Essential / standby distribution.
+
+SUPPORTED GENERIC PROP FAMILY
+-----------------------------
+ASET / RPM:
+    ALCORMFD40x20
+
+Generated KMC variants:
+    KMC_ALCORMFD40x20_MAIN_A
+    KMC_ALCORMFD40x20_MAIN_B
+    KMC_ALCORMFD40x20_ESS
+
+PROFILE FORMAT
+--------------
+A profile only remaps a physical prop instance.
+
+Example:
+
+@INTERNAL[SomeInternal]:NEEDS[RasterPropMonitor]
+{
+    @PROP[ALCORMFD40x20],0
+    {
+        @name = KMC_ALCORMFD40x20_MAIN_A
+    }
+
+    @PROP[ALCORMFD40x20],1
+    {
+        @name = KMC_ALCORMFD40x20_ESS
+    }
+
+    @PROP[ALCORMFD40x20],2
+    {
+        @name = KMC_ALCORMFD40x20_MAIN_B
+    }
+}
+
+This means a three-MFD capsule can be wired:
+    A / ESS / B
+
+A five-MFD capsule could be:
+    A / B / ESS / A / B
+
+There is no fixed MFD-count limit in this convention.
+
+RULES
+-----
+1. Do not duplicate RPM blackout / recovery logic inside an IVA profile.
+2. Profiles only assign physical MFD instances to generic KMC prop variants.
+3. Use an explicit profile when the IVA topology is known.
+4. Do not assume left/right ordering across unrelated IVA packages.
+5. MAIN_A / MAIN_B / ESS assignments should reflect intended spacecraft
+   redundancy rather than arbitrary visual symmetry.
+6. Unsupported-IVAs fallback behavior is NOT part of Build 14.17.1.
+7. Additional MFD families are added to KmcRpmPowerDomains.cfg once, then used
+   by profiles.
+
+CURRENT PROFILES
+----------------
+DE_IVAExtension:
+    DE_mk1pod_IVA
+        MFD 0 -> MAIN A
+        MFD 1 -> MAIN B
+
+    DE_mk2CockpitStandardInternals
+        MFD 0 -> MAIN A
+        MFD 1 -> MAIN B
+        MFD 2 -> MAIN A
+        MFD 3 -> MAIN B
