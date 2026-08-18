@@ -4,10 +4,13 @@ KMC IVA ELECTRICAL PROFILE CONVENTION
 PURPOSE
 -------
 Build 14.17 separates reusable RPM electrical behavior from capsule-specific
-wiring.
+wiring and adds a safe fallback for unknown compatible IVAs.
 
 Reusable MFD power behavior lives in:
     GameData/KMC/IVA/KmcRpmPowerDomains.cfg
+
+Generic unsupported-IVA fallback lives in:
+    GameData/KMC/IVA/KmcRpmUnsupportedIvaFallback.cfg
 
 Capsule / IVA mappings live in:
     GameData/KMC/IVA/Profiles/<IVA package>/
@@ -65,6 +68,29 @@ A five-MFD capsule could be:
 
 There is no fixed MFD-count limit in this convention.
 
+UNSUPPORTED-IVA FALLBACK
+------------------------
+Build 14.17.3 adds a conservative fallback for IVAs that use the supported
+ALCORMFD40x20 prop family but do not have an explicit KMC profile.
+
+The fallback executes in ModuleManager's FINAL pass.  By that point, verified
+profiles have already renamed their known MFD instances to KMC-specific
+MAIN_A / MAIN_B / ESS variants.  The fallback therefore matches only physical
+ALCORMFD40x20 instances that remain untouched.
+
+All remaining ALCORMFD40x20 instances are assigned to:
+    KMC_ALCORMFD40x20_ESS
+
+ESS is intentionally used for unknown topology.  KMC does not pretend to know
+left/right, primary/secondary, or redundant feed wiring for an IVA that has not
+been inspected.  A later explicit profile can replace this generic behavior
+with verified MAIN_A / MAIN_B / ESS assignments.
+
+The fallback does not alter RPM rendering behavior.  It only remaps the prop to
+the already-proven KMC ESS variant, which continues to use RPM's native
+needsElectricCharge/resourceName/emptyColor behavior and the existing
+KmcRpmPowerWake recovery helper.
+
 RULES
 -----
 1. Do not duplicate RPM blackout / recovery logic inside an IVA profile.
@@ -73,13 +99,18 @@ RULES
 4. Do not assume left/right ordering across unrelated IVA packages.
 5. MAIN_A / MAIN_B / ESS assignments should reflect intended spacecraft
    redundancy rather than arbitrary visual symmetry.
-6. Unsupported-IVAs fallback behavior is NOT part of Build 14.17.2.
+6. Unknown compatible IVAs fall back to ESS only after explicit profiles have
+   had the opportunity to remap known MFD instances.
 7. Additional MFD families are added to KmcRpmPowerDomains.cfg once, then used
-   by profiles.
+   by profiles and, only when intentionally supported, by fallback rules.
 8. Profile MFD counts / INTERNAL names must be verified from upstream IVA source
    before a compatibility profile is added.
-9. If no display has a justified essential role, use balanced A/B redundancy
-   instead of inventing an ESS assignment.
+9. If no display has a justified essential role in a verified profile, use
+   balanced A/B redundancy instead of inventing an ESS assignment.
+10. Unsupported prop families remain untouched.  Fallback support must be added
+    family-by-family only after its native RPM/MAS behavior is understood.
+11. Do not replace RPM's native blackout/recovery path with renderer, mesh,
+    texture, or RenderTexture manipulation hacks.
 
 CURRENT PROFILES
 ----------------
