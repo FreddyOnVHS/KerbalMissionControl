@@ -3,7 +3,7 @@ KMC IVA ELECTRICAL PROFILE CONVENTION
 
 PURPOSE
 -------
-Build 14.17.1 separates reusable RPM electrical behavior from capsule-specific
+Build 14.17 separates reusable RPM electrical behavior from capsule-specific
 wiring.
 
 Reusable MFD power behavior lives in:
@@ -73,19 +73,42 @@ RULES
 4. Do not assume left/right ordering across unrelated IVA packages.
 5. MAIN_A / MAIN_B / ESS assignments should reflect intended spacecraft
    redundancy rather than arbitrary visual symmetry.
-6. Unsupported-IVAs fallback behavior is NOT part of Build 14.17.1.
+6. Unsupported-IVAs fallback behavior is NOT part of Build 14.17.2.
 7. Additional MFD families are added to KmcRpmPowerDomains.cfg once, then used
    by profiles.
+8. Profile MFD counts / INTERNAL names must be verified from upstream IVA source
+   before a compatibility profile is added.
+9. If no display has a justified essential role, use balanced A/B redundancy
+   instead of inventing an ESS assignment.
 
 CURRENT PROFILES
 ----------------
 DE_IVAExtension:
+
     DE_mk1pod_IVA
         MFD 0 -> MAIN A
         MFD 1 -> MAIN B
+
+    DE_mk1CockpitInternal
+        MFD 0 -> MAIN A
+        MFD 1 -> MAIN B
+
+    DE_landerCabinSmallInternal
+        MFD 0 -> MAIN A
+        MFD 1 -> MAIN B
+
+    DE_Mk1-3
+        MFD 0 -> MAIN A
+        MFD 1 -> MAIN B
+        MFD 2 -> MAIN A
+        MFD 3 -> MAIN B
 
     DE_mk2CockpitStandardInternals
         MFD 0 -> MAIN A
         MFD 1 -> MAIN B
         MFD 2 -> MAIN A
         MFD 3 -> MAIN B
+
+    DE_mk2LanderCanInternal
+        MFD 0 -> MAIN A
+        MFD 1 -> MAIN B
