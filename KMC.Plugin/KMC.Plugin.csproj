@@ -1,5 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<?xml version='1.0' encoding='utf-8'?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="15.0">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
 
   <PropertyGroup>
@@ -41,39 +41,16 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Reference Include="Assembly-CSharp">
-      <HintPath>$(KspManagedPath)\Assembly-CSharp.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine">
-      <HintPath>$(KspManagedPath)\UnityEngine.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(KspManagedPath)\UnityEngine.CoreModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.IMGUIModule">
-      <HintPath>$(KspManagedPath)\UnityEngine.IMGUIModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="UnityEngine.InputLegacyModule">
-      <HintPath>$(KspManagedPath)\UnityEngine.InputLegacyModule.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.Xml.Linq" />
-    <Reference Include="System.Data.DataSetExtensions" />
-    <Reference Include="Microsoft.CSharp" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.Net.Http" />
-    <Reference Include="System.Xml" />
+    <Reference Include="Assembly-CSharp"><HintPath>$(KspManagedPath)\Assembly-CSharp.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(KspManagedPath)\UnityEngine.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(KspManagedPath)\UnityEngine.CoreModule.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(KspManagedPath)\UnityEngine.IMGUIModule.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(KspManagedPath)\UnityEngine.InputLegacyModule.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="System" /><Reference Include="System.Core" /><Reference Include="System.Xml.Linq" /><Reference Include="System.Data.DataSetExtensions" /><Reference Include="Microsoft.CSharp" /><Reference Include="System.Data" /><Reference Include="System.Net.Http" /><Reference Include="System.Xml" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="CraftAnalyzer.cs" />
-
     <Compile Include="Simulation\CraftSimulationBuilder.cs" />
     <Compile Include="Simulation\CraftSimulationModel.cs" />
     <Compile Include="Simulation\CraftSimulationReporter.cs" />
@@ -82,7 +59,6 @@
     <Compile Include="Simulation\SimulatedPart.cs" />
     <Compile Include="Simulation\SimulatedPropellant.cs" />
     <Compile Include="Simulation\SimulatedResource.cs" />
-
     <Compile Include="TelemetrySender.cs" />
     <Compile Include="VelocityVectorTelemetrySender.cs" />
     <Compile Include="SolidFuelTelemetrySender.cs" />
@@ -94,8 +70,9 @@
     <Compile Include="KmcElectricalLoadReceiver.cs" />
     <Compile Include="KmcMfdStatusReceiver.cs" />
     <Compile Include="KmcRpmVariableHandler.cs" />
+    <Compile Include="KmcIvaAnnunciatorTestReceiver.cs" />
+    <Compile Include="KmcIvaAnnunciatorTestVariableHandler.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-
     <Compile Include="Topology\ActivePropellantAnalyzer.cs" />
     <Compile Include="Topology\VesselPartClassifier.cs" />
     <Compile Include="Topology\VesselModuleDiscoveryAnalyzer.cs" />
@@ -108,58 +85,27 @@
     <Compile Include="SasStateTelemetrySender.cs" />
     <Compile Include="SystemsStateTelemetrySender.cs" />
 
-    <Compile Include="..\KMC.shared\TelemetryPacket.cs">
-      <Link>Shared\TelemetryPacket.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\ManeuverEpochPacket.cs">
-      <Link>Shared\ManeuverEpochPacket.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\ManeuverUplinkPacket.cs">
-      <Link>Shared\ManeuverUplinkPacket.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\FailureEffectPacket.cs">
-      <Link>Shared\FailureEffectPacket.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\ElectricalLoadLeasePacket.cs">
-      <Link>Shared\ElectricalLoadLeasePacket.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselAttachmentType.cs">
-      <Link>Shared\Topology\VesselAttachmentType.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselNodeCategory.cs">
-      <Link>Shared\Topology\VesselNodeCategory.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselNodeRole.cs">
-      <Link>Shared\Topology\VesselNodeRole.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselResourceState.cs">
-      <Link>Shared\Topology\VesselResourceState.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselModuleResource.cs">
-      <Link>Shared\Topology\VesselModuleResource.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselModuleDescriptor.cs">
-      <Link>Shared\Topology\VesselModuleDescriptor.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselPropellantRequirement.cs">
-      <Link>Shared\Topology\VesselPropellantRequirement.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs">
-      <Link>Shared\Topology\VesselTopologyNode.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselTopology.cs">
-      <Link>Shared\Topology\VesselTopology.cs</Link>
-    </Compile>
-    <Compile Include="..\KMC.shared\Topology\VesselTopologyPacketCodec.cs">
-      <Link>Shared\Topology\VesselTopologyPacketCodec.cs</Link>
-    </Compile>
-  </ItemGroup>
+    <Compile Include="..\KMC.shared\TelemetryPacket.cs"><Link>Shared\TelemetryPacket.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\ManeuverEpochPacket.cs"><Link>Shared\ManeuverEpochPacket.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\ManeuverUplinkPacket.cs"><Link>Shared\ManeuverUplinkPacket.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\FailureEffectPacket.cs"><Link>Shared\FailureEffectPacket.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\ElectricalLoadLeasePacket.cs"><Link>Shared\ElectricalLoadLeasePacket.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselAttachmentType.cs"><Link>Shared\Topology\VesselAttachmentType.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselNodeCategory.cs"><Link>Shared\Topology\VesselNodeCategory.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselNodeRole.cs"><Link>Shared\Topology\VesselNodeRole.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselResourceState.cs"><Link>Shared\Topology\VesselResourceState.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselModuleResource.cs"><Link>Shared\Topology\VesselModuleResource.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselModuleDescriptor.cs"><Link>Shared\Topology\VesselModuleDescriptor.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselPropellantRequirement.cs"><Link>Shared\Topology\VesselPropellantRequirement.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs"><Link>Shared\Topology\VesselTopologyNode.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselTopology.cs"><Link>Shared\Topology\VesselTopology.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselTopologyPacketCodec.cs"><Link>Shared\Topology\VesselTopologyPacketCodec.cs</Link></Compile>
+  <Compile Include="..\KMC.shared\IvaAnnunciatorTestPacket.cs"><Link>Shared\IvaAnnunciatorTestPacket.cs</Link></Compile></ItemGroup>
 
   <Target Name="ValidateKspManagedPath" BeforeTargets="ResolveAssemblyReferences">
     <Error Condition="'$(KspManagedPath)' == '' or !Exists('$(KspManagedPath)\Assembly-CSharp.dll')" Text="KSP managed assemblies were not found. Set KSP_DIR and reload Visual Studio." />
     <Error Condition="!Exists('$(KspManagedPath)\UnityEngine.IMGUIModule.dll')" Text="KSP Unity IMGUI module was not found at $(KspManagedPath)\UnityEngine.IMGUIModule.dll." />
     <Error Condition="!Exists('$(KspManagedPath)\UnityEngine.InputLegacyModule.dll')" Text="KSP Unity Input Legacy module was not found at $(KspManagedPath)\UnityEngine.InputLegacyModule.dll." />
   </Target>
-
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

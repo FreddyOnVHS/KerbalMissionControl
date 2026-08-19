@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace KMC.MissionControl.Training
 {
@@ -31,11 +31,6 @@ namespace KMC.MissionControl.Training
         EngineThrustIndicationFailLow = 24,
         MainBusAFailed = 25,
         MainBusBFailed = 26,
-
-        /*
-         * Build 14.14.7 — final POWER failure-catalog expansion.
-         * Values are appended so existing preset numeric IDs remain stable.
-         */
         BatteryA = 27,
         BatteryB = 28,
         BatteryADegraded50 = 29,
@@ -57,143 +52,63 @@ namespace KMC.MissionControl.Training
 
     public static class InstructorTrainingText
     {
-        public static string GetFailurePresetName(
-            InstructorFailurePreset preset)
+        public static string GetFailurePresetName(InstructorFailurePreset preset)
         {
+            // Build 14.18.2: arm the separate F10 IVA test-panel hook without
+            // adding any test command to the real synthetic failure catalog.
+            InstructorIvaAnnunciatorTestUiHook.EnsureInstalled();
+
             switch (preset)
             {
-                case InstructorFailurePreset.PowerEcLeak:
-                    return "POWER - EC LEAK 8.0 EC/S";
-
-                case InstructorFailurePreset.GeneratorA:
-                    return "POWER - GENERATOR A FAILED";
-
-                case InstructorFailurePreset.GeneratorB:
-                    return "POWER - GENERATOR B FAILED";
-
-                case InstructorFailurePreset.GeneratorADegraded50:
-                    return "POWER - GENERATOR A DEGRADED 50%";
-
-                case InstructorFailurePreset.GeneratorBDegraded50:
-                    return "POWER - GENERATOR B DEGRADED 50%";
-
-                case InstructorFailurePreset.BatteryA:
-                    return "POWER - BATTERY A FAILED";
-
-                case InstructorFailurePreset.BatteryB:
-                    return "POWER - BATTERY B FAILED";
-
-                case InstructorFailurePreset.BatteryADegraded50:
-                    return "POWER - BATTERY A DEGRADED 50%";
-
-                case InstructorFailurePreset.BatteryBDegraded50:
-                    return "POWER - BATTERY B DEGRADED 50%";
-
-                case InstructorFailurePreset.GenAContactorFailedOpen:
-                    return "POWER - GEN A CONTACTOR FAILED OPEN";
-
-                case InstructorFailurePreset.MainATransferFailedOpen:
-                    return "POWER - MAIN A TRANSFER FAILED OPEN";
-
-                case InstructorFailurePreset.GenBContactorFailedOpen:
-                    return "POWER - GEN B CONTACTOR FAILED OPEN";
-
-                case InstructorFailurePreset.MainBTransferFailedOpen:
-                    return "POWER - MAIN B TRANSFER FAILED OPEN";
-
-                case InstructorFailurePreset.EssFeedAContactorFailedOpen:
-                    return "POWER - ESS FEED A CONTACTOR FAILED OPEN";
-
-                case InstructorFailurePreset.EssFeedBContactorFailedOpen:
-                    return "POWER - ESS FEED B CONTACTOR FAILED OPEN";
-
-                case InstructorFailurePreset.MainBusAFailed:
-                    return "POWER - MAIN BUS A FAILED";
-
-                case InstructorFailurePreset.MainBusBFailed:
-                    return "POWER - MAIN BUS B FAILED";
-
-                case InstructorFailurePreset.GuidABreakerTripped:
-                    return "POWER - GUID A BREAKER TRIPPED";
-
-                case InstructorFailurePreset.CommABreakerTripped:
-                    return "POWER - COMM A BREAKER TRIPPED";
-
-                case InstructorFailurePreset.CommBBreakerTripped:
-                    return "POWER - COMM B BREAKER TRIPPED";
-
-                case InstructorFailurePreset.GenAContactorFalseOpenIndication:
-                    return "POWER - GEN A CONTACTOR FALSE OPEN IND";
-
-                case InstructorFailurePreset.GenBContactorFalseOpenIndication:
-                    return "POWER - GEN B CONTACTOR FALSE OPEN IND";
-
-                case InstructorFailurePreset.GenAContactorWeldedClosed:
-                    return "POWER - GEN A CONTACTOR WELDED CLOSED";
-
-                case InstructorFailurePreset.CommA:
-                    return "COMM - TRANSCEIVER A FAILED";
-
-                case InstructorFailurePreset.CommB:
-                    return "COMM - TRANSCEIVER B FAILED";
-
-                case InstructorFailurePreset.GuidA:
-                    return "GNC - GUID COMPUTER A FAILED";
-
-                case InstructorFailurePreset.GuidB:
-                    return "GNC - GUID COMPUTER B FAILED";
-
-                case InstructorFailurePreset.PumpA:
-                    return "PROP - FEED PUMP A FAILED";
-
-                case InstructorFailurePreset.PumpB:
-                    return "PROP - FEED PUMP B FAILED";
-
-                case InstructorFailurePreset.EngineDerate50:
-                    return "PROP - EXACT ENGINE 50% DERATE";
-
-                case InstructorFailurePreset.EngineShutdown:
-                    return "PROP - EXACT ENGINE SHUTDOWN";
-
-                case InstructorFailurePreset.EngineFeedValveClosed:
-                    return "PROP - EXACT ENGINE FEED VALVE CLOSED";
-
-                case InstructorFailurePreset.EngineFeedRestriction:
-                    return "PROP - EXACT ENGINE FEED RESTRICTION";
-
-                case InstructorFailurePreset.EngineFeedIntermittent:
-                    return "PROP - EXACT ENGINE INTERMITTENT FEED";
-
-                case InstructorFailurePreset.EngineStartInhibit:
-                    return "PROP - EXACT ENGINE START INHIBIT";
-
-                case InstructorFailurePreset.EngineThrustDecay:
-                    return "PROP - EXACT ENGINE THRUST DECAY";
-
-                case InstructorFailurePreset.EngineThrustUnstable:
-                    return "PROP - EXACT ENGINE UNSTABLE THRUST";
-
-                case InstructorFailurePreset.EngineThrustIndicationFailLow:
-                    return "PROP - EXACT ENGINE THRUST IND FAIL LOW";
-
-                case InstructorFailurePreset.ReactionWheel25:
-                    return "GNC - REACTION WHEEL 25% AUTHORITY";
-
-                default:
-                    return preset.ToString();
+                case InstructorFailurePreset.PowerEcLeak: return "POWER - EC LEAK 8.0 EC/S";
+                case InstructorFailurePreset.GeneratorA: return "POWER - GENERATOR A FAILED";
+                case InstructorFailurePreset.GeneratorB: return "POWER - GENERATOR B FAILED";
+                case InstructorFailurePreset.GeneratorADegraded50: return "POWER - GENERATOR A DEGRADED 50%";
+                case InstructorFailurePreset.GeneratorBDegraded50: return "POWER - GENERATOR B DEGRADED 50%";
+                case InstructorFailurePreset.BatteryA: return "POWER - BATTERY A FAILED";
+                case InstructorFailurePreset.BatteryB: return "POWER - BATTERY B FAILED";
+                case InstructorFailurePreset.BatteryADegraded50: return "POWER - BATTERY A DEGRADED 50%";
+                case InstructorFailurePreset.BatteryBDegraded50: return "POWER - BATTERY B DEGRADED 50%";
+                case InstructorFailurePreset.GenAContactorFailedOpen: return "POWER - GEN A CONTACTOR FAILED OPEN";
+                case InstructorFailurePreset.MainATransferFailedOpen: return "POWER - MAIN A TRANSFER FAILED OPEN";
+                case InstructorFailurePreset.GenBContactorFailedOpen: return "POWER - GEN B CONTACTOR FAILED OPEN";
+                case InstructorFailurePreset.MainBTransferFailedOpen: return "POWER - MAIN B TRANSFER FAILED OPEN";
+                case InstructorFailurePreset.EssFeedAContactorFailedOpen: return "POWER - ESS FEED A CONTACTOR FAILED OPEN";
+                case InstructorFailurePreset.EssFeedBContactorFailedOpen: return "POWER - ESS FEED B CONTACTOR FAILED OPEN";
+                case InstructorFailurePreset.MainBusAFailed: return "POWER - MAIN BUS A FAILED";
+                case InstructorFailurePreset.MainBusBFailed: return "POWER - MAIN BUS B FAILED";
+                case InstructorFailurePreset.GuidABreakerTripped: return "POWER - GUID A BREAKER TRIPPED";
+                case InstructorFailurePreset.CommABreakerTripped: return "POWER - COMM A BREAKER TRIPPED";
+                case InstructorFailurePreset.CommBBreakerTripped: return "POWER - COMM B BREAKER TRIPPED";
+                case InstructorFailurePreset.GenAContactorFalseOpenIndication: return "POWER - GEN A CONTACTOR FALSE OPEN IND";
+                case InstructorFailurePreset.GenBContactorFalseOpenIndication: return "POWER - GEN B CONTACTOR FALSE OPEN IND";
+                case InstructorFailurePreset.GenAContactorWeldedClosed: return "POWER - GEN A CONTACTOR WELDED CLOSED";
+                case InstructorFailurePreset.CommA: return "COMM - TRANSCEIVER A FAILED";
+                case InstructorFailurePreset.CommB: return "COMM - TRANSCEIVER B FAILED";
+                case InstructorFailurePreset.GuidA: return "GNC - GUID COMPUTER A FAILED";
+                case InstructorFailurePreset.GuidB: return "GNC - GUID COMPUTER B FAILED";
+                case InstructorFailurePreset.PumpA: return "PROP - FEED PUMP A FAILED";
+                case InstructorFailurePreset.PumpB: return "PROP - FEED PUMP B FAILED";
+                case InstructorFailurePreset.EngineDerate50: return "PROP - EXACT ENGINE 50% DERATE";
+                case InstructorFailurePreset.EngineShutdown: return "PROP - EXACT ENGINE SHUTDOWN";
+                case InstructorFailurePreset.EngineFeedValveClosed: return "PROP - EXACT ENGINE FEED VALVE CLOSED";
+                case InstructorFailurePreset.EngineFeedRestriction: return "PROP - EXACT ENGINE FEED RESTRICTION";
+                case InstructorFailurePreset.EngineFeedIntermittent: return "PROP - EXACT ENGINE INTERMITTENT FEED";
+                case InstructorFailurePreset.EngineStartInhibit: return "PROP - EXACT ENGINE START INHIBIT";
+                case InstructorFailurePreset.EngineThrustDecay: return "PROP - EXACT ENGINE THRUST DECAY";
+                case InstructorFailurePreset.EngineThrustUnstable: return "PROP - EXACT ENGINE UNSTABLE THRUST";
+                case InstructorFailurePreset.EngineThrustIndicationFailLow: return "PROP - EXACT ENGINE THRUST IND FAIL LOW";
+                case InstructorFailurePreset.ReactionWheel25: return "GNC - REACTION WHEEL 25% AUTHORITY";
+                default: return preset.ToString();
             }
         }
 
-        public static string GetScenarioName(
-            InstructorScenarioPreset preset)
+        public static string GetScenarioName(InstructorScenarioPreset preset)
         {
             switch (preset)
             {
-                case InstructorScenarioPreset.ASideSystemsCascade:
-                    return "A-SIDE SYSTEMS CASCADE";
-
-                default:
-                    return preset.ToString();
+                case InstructorScenarioPreset.ASideSystemsCascade: return "A-SIDE SYSTEMS CASCADE";
+                default: return preset.ToString();
             }
         }
     }
