@@ -7,7 +7,13 @@ namespace KMC.Shared
         Warp = 0,
         Meco = 1,
         EngineFailure = 2,
-        EngineOverheat = 3
+        EngineOverheat = 3,
+
+        // Build 14.18.3 — append only; preserve existing wire values.
+        LowTwr = 4,
+        HighSlope = 5,
+        GroundProximity = 6,
+        LandingGear = 7
     }
 
     public enum IvaAnnunciatorTestOperation
@@ -18,7 +24,7 @@ namespace KMC.Shared
     }
 
     /// <summary>
-    /// Build 14.18.2 Mission Control -> KSP loopback-only IVA annunciator
+    /// Build 14.18.3 Mission Control -> KSP loopback-only IVA annunciator
     /// test command.
     ///
     /// UDP 5107 is dedicated to IVA test commands. UDP 5106 remains reserved

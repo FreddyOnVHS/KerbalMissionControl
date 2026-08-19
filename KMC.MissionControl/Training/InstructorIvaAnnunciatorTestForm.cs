@@ -12,8 +12,8 @@ namespace KMC.MissionControl.Training
         public InstructorIvaAnnunciatorTestForm()
         {
             Text = "KMC - IVA Annunciator Tests";
-            ClientSize = new Size(620, 360);
-            MinimumSize = new Size(560, 330);
+            ClientSize = new Size(650, 565);
+            MinimumSize = new Size(590, 515);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.SizableToolWindow;
             BackColor = Color.FromArgb(18, 24, 21);
@@ -45,7 +45,7 @@ namespace KMC.MissionControl.Training
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 4,
-                RowCount = 4,
+                RowCount = 8,
                 Margin = Padding.Empty
             };
             tests.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100.0f));
@@ -57,6 +57,10 @@ namespace KMC.MissionControl.Training
             AddTestRow(tests, 1, "MECO", "MAIN B", IvaAnnunciatorTestId.Meco);
             AddTestRow(tests, 2, "ENGINE FLAME OUT", "ESS", IvaAnnunciatorTestId.EngineFailure);
             AddTestRow(tests, 3, "ENGINE OVERHEAT", "ESS", IvaAnnunciatorTestId.EngineOverheat);
+            AddTestRow(tests, 4, "LOW TWR", "MAIN A", IvaAnnunciatorTestId.LowTwr);
+            AddTestRow(tests, 5, "HIGH SLOPE", "ESS", IvaAnnunciatorTestId.HighSlope);
+            AddTestRow(tests, 6, "GROUND PROX", "ESS", IvaAnnunciatorTestId.GroundProximity);
+            AddTestRow(tests, 7, "LANDING GEAR", "MAIN B", IvaAnnunciatorTestId.LandingGear);
             root.Controls.Add(tests, 0, 1);
 
             Button clear = CreateButton("CLEAR ALL IVA TESTS");
@@ -85,7 +89,7 @@ namespace KMC.MissionControl.Training
             string bus,
             IvaAnnunciatorTestId testId)
         {
-            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 25.0f));
+            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 12.5f));
 
             panel.Controls.Add(new Label
             {

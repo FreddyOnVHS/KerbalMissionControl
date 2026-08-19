@@ -25,6 +25,14 @@ namespace KMC.Plugin
                     return Active(vesselId, IvaAnnunciatorTestId.EngineFailure);
                 case "KMC_IVA_TEST_ENG_OVERHEAT":
                     return Active(vesselId, IvaAnnunciatorTestId.EngineOverheat);
+                case "KMC_IVA_TEST_LOW_TWR":
+                    return Active(vesselId, IvaAnnunciatorTestId.LowTwr);
+                case "KMC_IVA_TEST_HIGH_SLOPE":
+                    return Active(vesselId, IvaAnnunciatorTestId.HighSlope);
+                case "KMC_IVA_TEST_GROUND_PROX":
+                    return Active(vesselId, IvaAnnunciatorTestId.GroundProximity);
+                case "KMC_IVA_TEST_LANDING_GEAR":
+                    return Active(vesselId, IvaAnnunciatorTestId.LandingGear);
                 default:
                     return null;
             }
