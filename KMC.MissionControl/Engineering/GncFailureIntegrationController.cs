@@ -5,15 +5,20 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using KMC.Engine.Analysis;
+using KMC.Engine.Models;
 using KMC.Engine.SpacecraftSystems;
 using KMC.Shared;
 
 namespace KMC.MissionControl.Engineering
 {
     /// <summary>
-    /// Build 14.7 bridge from Engine-owned GNC failure truth to the validated
-    /// KSP reaction-wheel authority actuator introduced in Build 14.4.
-    /// Exact part identity is retained for the life of the failure.
+    /// Build 14.18.7
+    ///
+    /// Existing GNC reaction-wheel bridge plus vessel-wide RCS authority
+    /// integration.
+    ///
+    /// Reaction-wheel behavior from Build 14.7 is preserved.
+    /// RCS authority is leased independently over KMC-RCSAUTH1.
     /// </summary>
     internal sealed class GncFailureIntegrationController : IDisposable
     {
@@ -21,197 +26,558 @@ namespace KMC.MissionControl.Engineering
             TimeSpan.FromSeconds(1.0);
 
         private readonly object _syncRoot = new object();
-        private readonly UdpClient _client = new UdpClient();
+
+        private readonly UdpClient _client =
+            new UdpClient();
+
+        private readonly UdpClient _rcsClient =
+            new UdpClient();
+
         private readonly IPEndPoint _endpoint;
+        private readonly IPEndPoint _rcsEndpoint;
+
         private readonly Dictionary<string, BridgeState> _states =
-            new Dictionary<string, BridgeState>(StringComparer.Ordinal);
+            new Dictionary<string, BridgeState>(
+                StringComparer.Ordinal);
+
+        private readonly Dictionary<string, RcsBridgeState> _rcsStates =
+            new Dictionary<string, RcsBridgeState>(
+                StringComparer.Ordinal);
+
         private readonly string _commandSessionId;
         private long _commandSequence;
+        private long _rcsCommandSequence;
 
         public GncFailureIntegrationController()
         {
-            _endpoint = new IPEndPoint(
-                IPAddress.Loopback,
-                FailureEffectPacket.CommandPort);
+            _endpoint =
+                new IPEndPoint(
+                    IPAddress.Loopback,
+                    FailureEffectPacket.CommandPort);
+
+            _rcsEndpoint =
+                new IPEndPoint(
+                    IPAddress.Loopback,
+                    RcsAuthorityPacket.CommandPort);
+
             _commandSessionId =
-                Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant();
+                Guid.NewGuid()
+                    .ToString("N")
+                    .Substring(0, 8)
+                    .ToUpperInvariant();
         }
 
-        public void Evaluate(AnalysisPipelineResult result)
+        public void Evaluate(
+            AnalysisPipelineResult result)
         {
-            if (result == null || result.Snapshot == null ||
+            if (result == null ||
+                result.Snapshot == null ||
                 result.Snapshot.Vessel == null ||
                 result.Snapshot.SpacecraftSystems == null)
             {
                 return;
             }
 
-            string vesselId = result.Snapshot.Vessel.VesselId ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(vesselId)) return;
+            string vesselId =
+                result.Snapshot.Vessel.VesselId ??
+                string.Empty;
+
+            if (string.IsNullOrWhiteSpace(vesselId))
+            {
+                return;
+            }
 
             Dictionary<string, DesiredEffect> desired =
                 ResolveDesiredEffects(
-                    result.Snapshot.SpacecraftSystems.FailureSimulation);
+                    result.Snapshot
+                        .SpacecraftSystems
+                        .FailureSimulation);
 
             lock (_syncRoot)
             {
-                DateTime nowUtc = DateTime.UtcNow;
+                DateTime nowUtc =
+                    DateTime.UtcNow;
 
-                foreach (KeyValuePair<string, DesiredEffect> pair in desired)
+                EvaluateReactionWheels(
+                    vesselId,
+                    desired,
+                    nowUtc);
+
+                EvaluateRcsAuthority(
+                    result,
+                    vesselId,
+                    nowUtc);
+            }
+        }
+
+        private void EvaluateReactionWheels(
+            string vesselId,
+            Dictionary<string, DesiredEffect> desired,
+            DateTime nowUtc)
+        {
+            foreach (
+                KeyValuePair<string, DesiredEffect> pair
+                in desired)
+            {
+                string stateKey =
+                    vesselId + "|" + pair.Key;
+
+                BridgeState state;
+
+                if (!_states.TryGetValue(
+                        stateKey,
+                        out state))
                 {
-                    string stateKey = vesselId + "|" + pair.Key;
-                    BridgeState state;
-                    if (!_states.TryGetValue(stateKey, out state))
-                    {
-                        state = new BridgeState
+                    state =
+                        new BridgeState
                         {
                             VesselId = vesselId,
                             TargetId = pair.Key
                         };
-                        _states[stateKey] = state;
-                    }
 
-                    DesiredEffect effect = pair.Value;
-                    bool changed = !state.Active ||
-                        state.PartId != effect.PartId ||
-                        Math.Abs(state.Magnitude - effect.Magnitude) > 0.0001;
-                    bool refreshDue = state.LastApplyUtc == DateTime.MinValue ||
-                        nowUtc - state.LastApplyUtc >= RefreshInterval;
-
-                    if (changed || refreshDue)
-                    {
-                        Send(vesselId, effect.PartId,
-                            FailureEffectOperation.Apply,
-                            effect.Magnitude,
-                            effect.TargetId,
-                            changed ? "ACTIVE/CHANGED" : "LEASE REFRESH");
-                        state.Active = true;
-                        state.PartId = effect.PartId;
-                        state.Magnitude = effect.Magnitude;
-                        state.LastApplyUtc = nowUtc;
-                    }
+                    _states[stateKey] =
+                        state;
                 }
 
-                List<string> remove = null;
-                foreach (KeyValuePair<string, BridgeState> pair in _states)
+                DesiredEffect effect =
+                    pair.Value;
+
+                bool changed =
+                    !state.Active ||
+                    state.PartId != effect.PartId ||
+                    Math.Abs(
+                        state.Magnitude -
+                        effect.Magnitude) > 0.0001;
+
+                bool refreshDue =
+                    state.LastApplyUtc ==
+                        DateTime.MinValue ||
+                    nowUtc -
+                        state.LastApplyUtc >=
+                    RefreshInterval;
+
+                if (changed || refreshDue)
                 {
-                    BridgeState state = pair.Value;
-                    if (state == null || !state.Active ||
-                        !string.Equals(state.VesselId, vesselId, StringComparison.Ordinal) ||
-                        desired.ContainsKey(state.TargetId))
-                    {
-                        continue;
-                    }
+                    Send(
+                        vesselId,
+                        effect.PartId,
+                        FailureEffectOperation.Apply,
+                        effect.Magnitude,
+                        effect.TargetId,
+                        changed
+                            ? "ACTIVE/CHANGED"
+                            : "LEASE REFRESH");
 
-                    Send(state.VesselId, state.PartId,
-                        FailureEffectOperation.Restore,
-                        1.0, state.TargetId,
-                        "FAILURE CLEARED/INACTIVE");
-                    state.Active = false;
-                    if (remove == null) remove = new List<string>();
-                    remove.Add(pair.Key);
+                    state.Active = true;
+                    state.PartId = effect.PartId;
+                    state.Magnitude =
+                        effect.Magnitude;
+                    state.LastApplyUtc =
+                        nowUtc;
+                }
+            }
+
+            List<string> remove =
+                null;
+
+            foreach (
+                KeyValuePair<string, BridgeState> pair
+                in _states)
+            {
+                BridgeState state =
+                    pair.Value;
+
+                if (state == null ||
+                    !state.Active ||
+                    !string.Equals(
+                        state.VesselId,
+                        vesselId,
+                        StringComparison.Ordinal) ||
+                    desired.ContainsKey(
+                        state.TargetId))
+                {
+                    continue;
                 }
 
-                if (remove != null)
-                    for (int i = 0; i < remove.Count; i++) _states.Remove(remove[i]);
+                Send(
+                    state.VesselId,
+                    state.PartId,
+                    FailureEffectOperation.Restore,
+                    1.0,
+                    state.TargetId,
+                    "FAILURE CLEARED/INACTIVE");
+
+                state.Active = false;
+
+                if (remove == null)
+                {
+                    remove =
+                        new List<string>();
+                }
+
+                remove.Add(
+                    pair.Key);
             }
+
+            if (remove != null)
+            {
+                for (int i = 0;
+                     i < remove.Count;
+                     i++)
+                {
+                    _states.Remove(
+                        remove[i]);
+                }
+            }
+        }
+
+        private void EvaluateRcsAuthority(
+            AnalysisPipelineResult result,
+            string vesselId,
+            DateTime nowUtc)
+        {
+            int rcsPartCount = 0;
+
+            if (result.Snapshot.Capabilities != null)
+            {
+                rcsPartCount =
+                    result.Snapshot.Capabilities
+                        .GetPartCount(
+                            VesselCapabilityType
+                                .ReactionControl);
+            }
+
+            RcsAuthorityStore.PublishHardware(
+                vesselId,
+                rcsPartCount);
+
+            RcsAuthoritySnapshot authority =
+                RcsAuthorityStore.GetSnapshot(
+                    vesselId);
+
+            bool inhibitDesired =
+                rcsPartCount > 0 &&
+                authority.Known &&
+                !authority.AuthorityAvailable;
+
+            RcsBridgeState state;
+
+            if (!_rcsStates.TryGetValue(
+                    vesselId,
+                    out state))
+            {
+                state =
+                    new RcsBridgeState
+                    {
+                        VesselId = vesselId
+                    };
+
+                _rcsStates[vesselId] =
+                    state;
+            }
+
+            if (inhibitDesired)
+            {
+                bool refreshDue =
+                    !state.Active ||
+                    state.LastApplyUtc ==
+                        DateTime.MinValue ||
+                    nowUtc -
+                        state.LastApplyUtc >=
+                    RefreshInterval;
+
+                if (refreshDue)
+                {
+                    SendRcs(
+                        vesselId,
+                        RcsAuthorityOperation.Inhibit,
+                        state.Active
+                            ? "LEASE REFRESH"
+                            : authority.Detail);
+
+                    state.Active = true;
+                    state.LastApplyUtc =
+                        nowUtc;
+                }
+
+                return;
+            }
+
+            if (state.Active)
+            {
+                SendRcs(
+                    vesselId,
+                    RcsAuthorityOperation.Restore,
+                    authority.HardwareDetected
+                        ? "AUTHORITY AVAILABLE"
+                        : "RCS HARDWARE NOT PRESENT");
+
+                state.Active = false;
+            }
+
+            _rcsStates.Remove(
+                vesselId);
         }
 
         public void RestoreAll()
         {
             lock (_syncRoot)
             {
-                foreach (KeyValuePair<string, BridgeState> pair in _states)
+                foreach (
+                    KeyValuePair<string, BridgeState> pair
+                    in _states)
                 {
-                    BridgeState state = pair.Value;
-                    if (state == null || !state.Active) continue;
-                    Send(state.VesselId, state.PartId,
+                    BridgeState state =
+                        pair.Value;
+
+                    if (state == null ||
+                        !state.Active)
+                    {
+                        continue;
+                    }
+
+                    Send(
+                        state.VesselId,
+                        state.PartId,
                         FailureEffectOperation.Restore,
-                        1.0, state.TargetId,
+                        1.0,
+                        state.TargetId,
                         "MISSION CONTROL STOP");
                 }
+
                 _states.Clear();
+
+                foreach (
+                    KeyValuePair<string, RcsBridgeState> pair
+                    in _rcsStates)
+                {
+                    RcsBridgeState state =
+                        pair.Value;
+
+                    if (state == null ||
+                        !state.Active)
+                    {
+                        continue;
+                    }
+
+                    SendRcs(
+                        state.VesselId,
+                        RcsAuthorityOperation.Restore,
+                        "MISSION CONTROL STOP");
+                }
+
+                _rcsStates.Clear();
+
+                /*
+                 * No KMC authority command survives Mission Control shutdown.
+                 * The KSP lease also independently fails open.
+                 */
+                RcsAuthorityStore.ClearAll();
             }
         }
 
-        private static Dictionary<string, DesiredEffect> ResolveDesiredEffects(
-            FailureSimulationSnapshot snapshot)
+        private static Dictionary<string, DesiredEffect>
+            ResolveDesiredEffects(
+                FailureSimulationSnapshot snapshot)
         {
             Dictionary<string, DesiredEffect> desired =
-                new Dictionary<string, DesiredEffect>(StringComparer.Ordinal);
+                new Dictionary<string, DesiredEffect>(
+                    StringComparer.Ordinal);
 
-            if (snapshot == null || snapshot.Mode == FailureSimulationMode.Nominal)
-                return desired;
-
-            for (int i = 0; i < snapshot.Failures.Count; i++)
+            if (snapshot == null ||
+                snapshot.Mode ==
+                    FailureSimulationMode.Nominal)
             {
-                SyntheticFailureRecord failure = snapshot.Failures[i];
-                if (failure == null || !failure.EffectiveNow ||
-                    failure.TargetKind != SyntheticFailureTargetKind.GuidanceEffect)
+                return desired;
+            }
+
+            for (int i = 0;
+                 i < snapshot.Failures.Count;
+                 i++)
+            {
+                SyntheticFailureRecord failure =
+                    snapshot.Failures[i];
+
+                if (failure == null ||
+                    !failure.EffectiveNow ||
+                    failure.TargetKind !=
+                        SyntheticFailureTargetKind
+                            .GuidanceEffect)
+                {
                     continue;
+                }
 
                 uint partId;
-                if (!SyntheticFailureTargets.TryParseGuidanceTarget(
-                        failure.TargetId, out partId))
-                    continue;
 
-                double magnitude = Math.Max(0.0,
-                    Math.Min(1.0, failure.EffectMagnitude));
+                if (!SyntheticFailureTargets
+                        .TryParseGuidanceTarget(
+                            failure.TargetId,
+                            out partId))
+                {
+                    continue;
+                }
+
+                double magnitude =
+                    Math.Max(
+                        0.0,
+                        Math.Min(
+                            1.0,
+                            failure.EffectMagnitude));
 
                 DesiredEffect existing;
-                if (desired.TryGetValue(failure.TargetId, out existing) &&
-                    magnitude >= existing.Magnitude)
-                    continue;
 
-                desired[failure.TargetId] = new DesiredEffect
+                if (desired.TryGetValue(
+                        failure.TargetId,
+                        out existing) &&
+                    magnitude >=
+                        existing.Magnitude)
                 {
-                    TargetId = failure.TargetId,
-                    PartId = partId,
-                    Magnitude = magnitude
-                };
+                    continue;
+                }
+
+                desired[failure.TargetId] =
+                    new DesiredEffect
+                    {
+                        TargetId =
+                            failure.TargetId,
+                        PartId = partId,
+                        Magnitude = magnitude
+                    };
             }
+
             return desired;
         }
 
-        private void Send(string vesselId, uint partId,
-            FailureEffectOperation operation, double magnitude,
-            string targetId, string reason)
+        private void Send(
+            string vesselId,
+            uint partId,
+            FailureEffectOperation operation,
+            double magnitude,
+            string targetId,
+            string reason)
         {
             _commandSequence++;
-            FailureEffectPacket packet = new FailureEffectPacket
-            {
-                VesselId = vesselId,
-                CommandId = "GNC14.7-" + _commandSessionId + "-" +
-                    _commandSequence.ToString("000000"),
-                PartPersistentId = partId,
-                EffectType = FailureEffectType.ReactionWheelAuthority,
-                Operation = operation,
-                Magnitude = magnitude
-            };
+
+            FailureEffectPacket packet =
+                new FailureEffectPacket
+                {
+                    VesselId = vesselId,
+                    CommandId =
+                        "GNC14.7-" +
+                        _commandSessionId +
+                        "-" +
+                        _commandSequence
+                            .ToString("000000"),
+                    PartPersistentId =
+                        partId,
+                    EffectType =
+                        FailureEffectType
+                            .ReactionWheelAuthority,
+                    Operation = operation,
+                    Magnitude = magnitude
+                };
 
             try
             {
-                byte[] data = Encoding.UTF8.GetBytes(packet.Serialize());
-                _client.Send(data, data.Length, _endpoint);
+                byte[] data =
+                    Encoding.UTF8.GetBytes(
+                        packet.Serialize());
+
+                _client.Send(
+                    data,
+                    data.Length,
+                    _endpoint);
+
                 Debug.WriteLine(
                     "KMC.MissionControl GNC FAILURE INTEGRATION" +
-                    " | CommandId=" + packet.CommandId +
-                    " | VesselId=" + vesselId +
-                    " | Target=" + targetId +
-                    " | Part=" + partId.ToString() +
+                    " | CommandId=" +
+                    packet.CommandId +
+                    " | VesselId=" +
+                    vesselId +
+                    " | Target=" +
+                    targetId +
+                    " | Part=" +
+                    partId.ToString() +
                     " | Effect=ReactionWheelAuthority" +
-                    " | Command=" + operation.ToString().ToUpperInvariant() +
-                    " | Magnitude=" + magnitude.ToString("0.00") +
-                    " | Reason=" + reason);
+                    " | Command=" +
+                    operation
+                        .ToString()
+                        .ToUpperInvariant() +
+                    " | Magnitude=" +
+                    magnitude.ToString("0.00") +
+                    " | Reason=" +
+                    reason);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine(
                     "KMC.MissionControl GNC FAILURE INTEGRATION ERROR" +
-                    " | VesselId=" + vesselId +
-                    " | Target=" + targetId +
-                    " | Error=" + ex.GetType().Name +
-                    " | Detail=" + ex.Message);
+                    " | VesselId=" +
+                    vesselId +
+                    " | Target=" +
+                    targetId +
+                    " | Error=" +
+                    ex.GetType().Name +
+                    " | Detail=" +
+                    ex.Message);
+            }
+        }
+
+        private void SendRcs(
+            string vesselId,
+            RcsAuthorityOperation operation,
+            string reason)
+        {
+            _rcsCommandSequence++;
+
+            RcsAuthorityPacket packet =
+                new RcsAuthorityPacket
+                {
+                    VesselId =
+                        vesselId ?? string.Empty,
+                    CommandId =
+                        "RCS14.18.7-" +
+                        _commandSessionId +
+                        "-" +
+                        _rcsCommandSequence
+                            .ToString("000000"),
+                    Operation = operation
+                };
+
+            try
+            {
+                byte[] data =
+                    Encoding.UTF8.GetBytes(
+                        packet.Serialize());
+
+                _rcsClient.Send(
+                    data,
+                    data.Length,
+                    _rcsEndpoint);
+
+                Debug.WriteLine(
+                    "KMC.MissionControl RCS AUTHORITY" +
+                    " | CommandId=" +
+                    packet.CommandId +
+                    " | VesselId=" +
+                    packet.VesselId +
+                    " | Command=" +
+                    operation
+                        .ToString()
+                        .ToUpperInvariant() +
+                    " | Reason=" +
+                    (reason ?? string.Empty));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(
+                    "KMC.MissionControl RCS AUTHORITY ERROR" +
+                    " | VesselId=" +
+                    vesselId +
+                    " | Error=" +
+                    ex.GetType().Name +
+                    " | Detail=" +
+                    ex.Message);
             }
         }
 
@@ -219,23 +585,44 @@ namespace KMC.MissionControl.Engineering
         {
             RestoreAll();
             _client.Close();
+            _rcsClient.Close();
         }
 
         private sealed class BridgeState
         {
-            public string VesselId = string.Empty;
-            public string TargetId = string.Empty;
+            public string VesselId =
+                string.Empty;
+
+            public string TargetId =
+                string.Empty;
+
             public uint PartId;
             public double Magnitude;
-            public DateTime LastApplyUtc = DateTime.MinValue;
+
+            public DateTime LastApplyUtc =
+                DateTime.MinValue;
+
             public bool Active;
         }
 
         private sealed class DesiredEffect
         {
-            public string TargetId = string.Empty;
+            public string TargetId =
+                string.Empty;
+
             public uint PartId;
             public double Magnitude;
+        }
+
+        private sealed class RcsBridgeState
+        {
+            public string VesselId =
+                string.Empty;
+
+            public DateTime LastApplyUtc =
+                DateTime.MinValue;
+
+            public bool Active;
         }
     }
 }

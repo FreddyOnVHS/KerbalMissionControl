@@ -1,6 +1,10 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
+using KMC.Engine.Analysis;
+using KMC.Engine.Models;
+using KMC.Engine.SpacecraftSystems;
+using KMC.MissionControl.Engineering;
 using KMC.Shared;
 
 namespace KMC.MissionControl.Training
@@ -11,9 +15,9 @@ namespace KMC.MissionControl.Training
 
         public InstructorIvaAnnunciatorTestForm()
         {
-            Text = "KMC - IVA Annunciator Tests";
-            ClientSize = new Size(650, 565);
-            MinimumSize = new Size(590, 515);
+            Text = "KMC - IVA / System Tests";
+            ClientSize = new Size(650, 650);
+            MinimumSize = new Size(590, 600);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.SizableToolWindow;
             BackColor = Color.FromArgb(18, 24, 21);
@@ -25,10 +29,11 @@ namespace KMC.MissionControl.Training
                 Dock = DockStyle.Fill,
                 Padding = new Padding(12),
                 ColumnCount = 1,
-                RowCount = 4
+                RowCount = 5
             };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 54.0f));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 62.0f));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100.0f));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76.0f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50.0f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 38.0f));
 
@@ -36,7 +41,9 @@ namespace KMC.MissionControl.Training
             {
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
-                Text = "IVA ANNUNCIATOR TEST INPUTS\nTest only — telemetry and failure truth are not changed.",
+                Text =
+                    "IVA ANNUNCIATOR + RCS AUTHORITY TEST INPUTS\n" +
+                    "Annunciator rows are visual tests. RCS row changes KMC authority state.",
                 ForeColor = Color.FromArgb(220, 255, 220),
                 Font = new Font("Consolas", 10.0f, FontStyle.Bold)
             }, 0, 0);
@@ -63,12 +70,23 @@ namespace KMC.MissionControl.Training
             AddTestRow(tests, 7, "LANDING GEAR", "MAIN B", IvaAnnunciatorTestId.LandingGear);
             root.Controls.Add(tests, 0, 1);
 
-            Button clear = CreateButton("CLEAR ALL IVA TESTS");
+            root.Controls.Add(
+                BuildRcsAuthorityPanel(),
+                0,
+                2);
+
+            Button clear = CreateButton("CLEAR ALL IVA TESTS + RESTORE RCS AUTHORITY");
             clear.Click += delegate
             {
-                Send(IvaAnnunciatorTestId.Warp, IvaAnnunciatorTestOperation.ClearAll);
+                Send(
+                    IvaAnnunciatorTestId.Warp,
+                    IvaAnnunciatorTestOperation.ClearAll);
+
+                SetRcsAuthority(
+                    false,
+                    false);
             };
-            root.Controls.Add(clear, 0, 2);
+            root.Controls.Add(clear, 0, 3);
 
             _status = new Label
             {
@@ -78,8 +96,95 @@ namespace KMC.MissionControl.Training
                 Text = "READY",
                 ForeColor = ForeColor
             };
-            root.Controls.Add(_status, 0, 3);
+            root.Controls.Add(_status, 0, 4);
             Controls.Add(root);
+        }
+
+        private Control BuildRcsAuthorityPanel()
+        {
+            GroupBox box =
+                new GroupBox
+                {
+                    Text = "RCS AUTHORITY / BUILD 14.18.7",
+                    Dock = DockStyle.Fill,
+                    ForeColor = ForeColor,
+                    BackColor = BackColor
+                };
+
+            TableLayoutPanel panel =
+                new TableLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    ColumnCount = 3,
+                    RowCount = 1,
+                    Padding = new Padding(4)
+                };
+
+            panel.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Percent,
+                    100.0f));
+
+            panel.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Absolute,
+                    145.0f));
+
+            panel.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Absolute,
+                    145.0f));
+
+            panel.Controls.Add(
+                new Label
+                {
+                    Dock = DockStyle.Fill,
+                    TextAlign =
+                        ContentAlignment.MiddleLeft,
+                    Text =
+                        "VESSEL-WIDE RCS HARDWARE AUTHORITY"
+                },
+                0,
+                0);
+
+            Button inhibit =
+                CreateButton(
+                    "INHIBIT RCS");
+
+            inhibit.Click +=
+                delegate
+                {
+                    SetRcsAuthority(
+                        true,
+                        true);
+                };
+
+            panel.Controls.Add(
+                inhibit,
+                1,
+                0);
+
+            Button restore =
+                CreateButton(
+                    "RESTORE RCS");
+
+            restore.Click +=
+                delegate
+                {
+                    SetRcsAuthority(
+                        false,
+                        true);
+                };
+
+            panel.Controls.Add(
+                restore,
+                2,
+                0);
+
+            box.Controls.Add(
+                panel);
+
+            return box;
         }
 
         private void AddTestRow(
@@ -146,6 +251,66 @@ namespace KMC.MissionControl.Training
 
             // This transport has no return ACK; do not claim that KSP received it.
             _status.Text = (success ? "SENT  " : "REJECT  ") + result;
+        }
+
+        private void SetRcsAuthority(
+            bool inhibit,
+            bool writeStatus)
+        {
+            AnalysisPipelineResult latest;
+
+            if (!EngineeringSnapshotStore
+                    .TryGetLatest(
+                        out latest) ||
+                latest == null ||
+                latest.Snapshot == null ||
+                latest.Snapshot.Vessel == null ||
+                latest.Snapshot.Capabilities == null ||
+                string.IsNullOrWhiteSpace(
+                    latest.Snapshot.Vessel.VesselId))
+            {
+                if (writeStatus)
+                {
+                    _status.Text =
+                        "REJECT  NO ACTIVE ENGINEERING VESSEL";
+                }
+
+                return;
+            }
+
+            int count =
+                latest.Snapshot.Capabilities
+                    .GetPartCount(
+                        VesselCapabilityType
+                            .ReactionControl);
+
+            if (inhibit &&
+                count <= 0)
+            {
+                if (writeStatus)
+                {
+                    _status.Text =
+                        "REJECT  NO RCS HARDWARE DETECTED";
+                }
+
+                return;
+            }
+
+            string vesselId =
+                latest.Snapshot.Vessel.VesselId;
+
+            RcsAuthorityStore
+                .SetInstructorInhibit(
+                    vesselId,
+                    inhibit);
+
+            if (writeStatus)
+            {
+                _status.Text =
+                    inhibit
+                        ? "KMC STATE  RCS AUTHORITY INHIBITED / AWAIT LEASE CYCLE"
+                        : "KMC STATE  RCS AUTHORITY RESTORED / AWAIT LEASE CYCLE";
+            }
         }
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using KMC.Engine.Models;
 
 namespace KMC.Engine.SpacecraftSystems
@@ -139,15 +140,15 @@ namespace KMC.Engine.SpacecraftSystems
 
     public sealed class ElectricalControlSnapshot
     {
-        private readonly System.Collections.Generic.Dictionary<string, bool>
+        private readonly Dictionary<string, bool>
             _states;
 
         internal ElectricalControlSnapshot(
-            System.Collections.Generic.Dictionary<string, bool> states)
+            Dictionary<string, bool> states)
         {
             _states =
                 states ??
-                new System.Collections.Generic.Dictionary<string, bool>(
+                new Dictionary<string, bool>(
                     StringComparer.Ordinal);
         }
 
@@ -174,14 +175,10 @@ namespace KMC.Engine.SpacecraftSystems
             new object();
 
         private static readonly
-            System.Collections.Generic.Dictionary<
-                string,
-                System.Collections.Generic.Dictionary<string, bool>>
+            Dictionary<string, Dictionary<string, bool>>
             ByVessel =
-                new System.Collections.Generic.Dictionary<
-                    string,
-                    System.Collections.Generic.Dictionary<string, bool>>(
-                        StringComparer.Ordinal);
+                new Dictionary<string, Dictionary<string, bool>>(
+                    StringComparer.Ordinal);
 
         public static void Publish(
             string vesselId,
@@ -196,12 +193,12 @@ namespace KMC.Engine.SpacecraftSystems
 
             lock (SyncRoot)
             {
-                System.Collections.Generic.Dictionary<string, bool> states;
+                Dictionary<string, bool> states;
 
                 if (!ByVessel.TryGetValue(vesselId, out states))
                 {
                     states =
-                        new System.Collections.Generic.Dictionary<string, bool>(
+                        new Dictionary<string, bool>(
                             StringComparer.Ordinal);
 
                     ByVessel[vesselId] = states;
@@ -230,18 +227,17 @@ namespace KMC.Engine.SpacecraftSystems
         {
             lock (SyncRoot)
             {
-                System.Collections.Generic.Dictionary<string, bool> copy =
-                    new System.Collections.Generic.Dictionary<string, bool>(
+                Dictionary<string, bool> copy =
+                    new Dictionary<string, bool>(
                         StringComparer.Ordinal);
 
-                System.Collections.Generic.Dictionary<string, bool> states;
+                Dictionary<string, bool> states;
 
                 if (!string.IsNullOrWhiteSpace(vesselId) &&
                     ByVessel.TryGetValue(vesselId, out states))
                 {
                     foreach (
-                        System.Collections.Generic.KeyValuePair<string, bool>
-                            entry in states)
+                        KeyValuePair<string, bool> entry in states)
                     {
                         copy[entry.Key] = entry.Value;
                     }
@@ -260,4 +256,187 @@ namespace KMC.Engine.SpacecraftSystems
         }
     }
 
+    // ---------------------------------------------------------------------
+    // Build 14.18.7 RCS authority foundation.
+    // Kept in this already-compiled file so no project-file change is needed.
+    // ---------------------------------------------------------------------
+    public sealed class RcsAuthoritySnapshot
+    {
+        public RcsAuthoritySnapshot()
+        {
+            VesselId = string.Empty;
+            Known = false;
+            RcsPartCount = 0;
+            HardwareDetected = false;
+            InstructorInhibited = false;
+            ElectricalUnpowered = false;
+            AuthorityAvailable = false;
+            Detail = "UNKNOWN";
+        }
+
+        public string VesselId { get; internal set; }
+        public bool Known { get; internal set; }
+        public int RcsPartCount { get; internal set; }
+        public bool HardwareDetected { get; internal set; }
+        public bool InstructorInhibited { get; internal set; }
+        public bool ElectricalUnpowered { get; internal set; }
+        public bool AuthorityAvailable { get; internal set; }
+        public string Detail { get; internal set; }
+    }
+
+    public static class RcsAuthorityStore
+    {
+        private static readonly object RcsSyncRoot =
+            new object();
+
+        private static readonly Dictionary<string, MutableRcsAuthorityState>
+            RcsByVessel =
+                new Dictionary<string, MutableRcsAuthorityState>(
+                    StringComparer.Ordinal);
+
+        public static void PublishHardware(
+            string vesselId,
+            int rcsPartCount)
+        {
+            if (string.IsNullOrWhiteSpace(vesselId))
+                return;
+
+            lock (RcsSyncRoot)
+            {
+                MutableRcsAuthorityState state =
+                    GetOrCreateRcs(vesselId);
+
+                state.HardwareKnown = true;
+                state.RcsPartCount =
+                    Math.Max(0, rcsPartCount);
+            }
+        }
+
+        public static void SetInstructorInhibit(
+            string vesselId,
+            bool inhibited)
+        {
+            if (string.IsNullOrWhiteSpace(vesselId))
+                return;
+
+            lock (RcsSyncRoot)
+            {
+                GetOrCreateRcs(vesselId)
+                    .InstructorInhibited = inhibited;
+            }
+        }
+
+        // Reserved for 14.18.8; 14.18.7 does not assert this automatically.
+        public static void SetElectricalUnpowered(
+            string vesselId,
+            bool unpowered)
+        {
+            if (string.IsNullOrWhiteSpace(vesselId))
+                return;
+
+            lock (RcsSyncRoot)
+            {
+                GetOrCreateRcs(vesselId)
+                    .ElectricalUnpowered = unpowered;
+            }
+        }
+
+        public static RcsAuthoritySnapshot GetSnapshot(
+            string vesselId)
+        {
+            if (string.IsNullOrWhiteSpace(vesselId))
+                return new RcsAuthoritySnapshot();
+
+            lock (RcsSyncRoot)
+            {
+                MutableRcsAuthorityState state;
+
+                if (!RcsByVessel.TryGetValue(vesselId, out state) ||
+                    state == null)
+                {
+                    return new RcsAuthoritySnapshot
+                    {
+                        VesselId = vesselId
+                    };
+                }
+
+                bool hardwareDetected =
+                    state.HardwareKnown &&
+                    state.RcsPartCount > 0;
+
+                bool authorityAvailable =
+                    hardwareDetected &&
+                    !state.InstructorInhibited &&
+                    !state.ElectricalUnpowered;
+
+                string detail;
+
+                if (!state.HardwareKnown)
+                    detail = "HARDWARE UNKNOWN";
+                else if (!hardwareDetected)
+                    detail = "NO RCS HARDWARE";
+                else if (state.InstructorInhibited)
+                    detail = "INSTRUCTOR INHIBIT";
+                else if (state.ElectricalUnpowered)
+                    detail = "CONTROL POWER UNAVAILABLE";
+                else
+                    detail = "AVAILABLE";
+
+                return new RcsAuthoritySnapshot
+                {
+                    VesselId = vesselId,
+                    Known = state.HardwareKnown,
+                    RcsPartCount = state.RcsPartCount,
+                    HardwareDetected = hardwareDetected,
+                    InstructorInhibited = state.InstructorInhibited,
+                    ElectricalUnpowered = state.ElectricalUnpowered,
+                    AuthorityAvailable = authorityAvailable,
+                    Detail = detail
+                };
+            }
+        }
+
+        public static void Reset(
+            string vesselId)
+        {
+            if (string.IsNullOrWhiteSpace(vesselId))
+                return;
+
+            lock (RcsSyncRoot)
+            {
+                RcsByVessel.Remove(vesselId);
+            }
+        }
+
+        public static void ClearAll()
+        {
+            lock (RcsSyncRoot)
+            {
+                RcsByVessel.Clear();
+            }
+        }
+
+        private static MutableRcsAuthorityState GetOrCreateRcs(
+            string vesselId)
+        {
+            MutableRcsAuthorityState state;
+
+            if (!RcsByVessel.TryGetValue(vesselId, out state) ||
+                state == null)
+            {
+                state = new MutableRcsAuthorityState();
+                RcsByVessel[vesselId] = state;
+            }
+
+            return state;
+        }
+
+        private sealed class MutableRcsAuthorityState
+        {
+            public bool HardwareKnown;
+            public int RcsPartCount;
+            public bool InstructorInhibited;
+            public bool ElectricalUnpowered;
+        }
+    }
 }
