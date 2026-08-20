@@ -72,6 +72,7 @@
     <Compile Include="KmcRpmVariableHandler.cs" />
     <Compile Include="KmcIvaAnnunciatorTestReceiver.cs" />
     <Compile Include="KmcIvaAnnunciatorTestVariableHandler.cs" />
+    <Compile Include="KmcIvaStateInspector.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Topology\ActivePropellantAnalyzer.cs" />
     <Compile Include="Topology\VesselPartClassifier.cs" />
