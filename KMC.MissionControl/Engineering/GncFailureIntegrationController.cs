@@ -12,13 +12,18 @@ using KMC.Shared;
 namespace KMC.MissionControl.Engineering
 {
     /// <summary>
-    /// Build 14.18.7
+    /// Build 14.18.8
     ///
     /// Existing GNC reaction-wheel bridge plus vessel-wide RCS authority
     /// integration.
     ///
     /// Reaction-wheel behavior from Build 14.7 is preserved.
     /// RCS authority is leased independently over KMC-RCSAUTH1.
+    ///
+    /// Build 14.18.8 derives RCS electrical authority from the actual
+    /// RCS_CONTROL branch on BUS_ESS after real KSP source evidence has been
+    /// applied. Missing electrical evidence fails open rather than inventing
+    /// a power loss.
     /// </summary>
     internal sealed class GncFailureIntegrationController : IDisposable
     {
@@ -251,6 +256,11 @@ namespace KMC.MissionControl.Engineering
                 vesselId,
                 rcsPartCount);
 
+            PublishRcsElectricalPower(
+                result,
+                vesselId,
+                rcsPartCount);
+
             RcsAuthoritySnapshot authority =
                 RcsAuthorityStore.GetSnapshot(
                     vesselId);
@@ -317,6 +327,120 @@ namespace KMC.MissionControl.Engineering
 
             _rcsStates.Remove(
                 vesselId);
+        }
+
+        private static void PublishRcsElectricalPower(
+            AnalysisPipelineResult result,
+            string vesselId,
+            int rcsPartCount)
+        {
+            /*
+             * No RCS hardware means there is no RCS electrical consequence to
+             * enforce. Keep the electrical input non-authoritative rather than
+             * manufacturing a failed system on an RCS-less vehicle.
+             */
+            if (rcsPartCount <= 0)
+            {
+                RcsAuthorityStore.PublishElectricalPower(
+                    vesselId,
+                    false,
+                    true,
+                    "BUS_ESS",
+                    0.0);
+
+                return;
+            }
+
+            SyntheticElectricalDistributionModel distribution =
+                result != null &&
+                result.Snapshot != null &&
+                result.Snapshot.SpacecraftSystems != null
+                    ? result.Snapshot.SpacecraftSystems
+                        .ElectricalDistribution
+                    : null;
+
+            if (distribution == null)
+            {
+                RcsAuthorityStore.PublishElectricalPower(
+                    vesselId,
+                    false,
+                    true,
+                    "BUS_ESS",
+                    0.0);
+
+                return;
+            }
+
+            SyntheticElectricalBus ess =
+                distribution.FindBus(
+                    "BUS_ESS");
+
+            SyntheticElectricalLoad rcsLoad =
+                null;
+
+            for (int index = 0;
+                 index < distribution.Loads.Count;
+                 index++)
+            {
+                SyntheticElectricalLoad candidate =
+                    distribution.Loads[index];
+
+                if (candidate != null &&
+                    string.Equals(
+                        candidate.EquipmentId,
+                        "RCS_CONTROL",
+                        StringComparison.Ordinal))
+                {
+                    rcsLoad =
+                        candidate;
+
+                    break;
+                }
+            }
+
+            SyntheticElectricalSwitch breaker =
+                rcsLoad != null
+                    ? distribution.FindSwitch(
+                        rcsLoad.BreakerId)
+                    : null;
+
+            bool known =
+                ess != null &&
+                rcsLoad != null &&
+                breaker != null;
+
+            if (!known)
+            {
+                RcsAuthorityStore.PublishElectricalPower(
+                    vesselId,
+                    false,
+                    true,
+                    "BUS_ESS",
+                    0.0);
+
+                return;
+            }
+
+            bool busEnergized =
+                ess.State !=
+                    SyntheticElectricalBusState.Unpowered &&
+                ess.State !=
+                    SyntheticElectricalBusState.Failed &&
+                ess.Voltage >
+                    0.000001;
+
+            bool powered =
+                rcsLoad.CommandedOn &&
+                !rcsLoad.AutomaticallyShed &&
+                breaker.Conducting &&
+                busEnergized;
+
+            RcsAuthorityStore.PublishElectricalPower(
+                vesselId,
+                true,
+                powered,
+                "BUS_ESS",
+                ess.Voltage);
         }
 
         public void RestoreAll()
@@ -536,7 +660,7 @@ namespace KMC.MissionControl.Engineering
                     VesselId =
                         vesselId ?? string.Empty,
                     CommandId =
-                        "RCS14.18.7-" +
+                        "RCS14.18.8-" +
                         _commandSessionId +
                         "-" +
                         _rcsCommandSequence

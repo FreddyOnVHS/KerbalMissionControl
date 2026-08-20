@@ -10,7 +10,7 @@ using KMC.MissionControl.Rendering;
 namespace KMC.MissionControl.Pages
 {
     /// <summary>
-    /// KMC Build 14.18.7
+    /// KMC Build 14.18.8
     ///
     /// SYS remains a provisional spacecraft-systems home.
     ///
@@ -20,8 +20,12 @@ namespace KMC.MissionControl.Pages
     /// - vessel-wide monopropellant telemetry from MissionTelemetry.
     ///
     /// Build 14.18.7 adds vessel-wide KMC RCS authority truth and downstream
-    /// enforcement command state. Electrical/control feed, manifold state,
-    /// cluster health and axis-specific authority remain deliberately unmodeled.
+    /// enforcement command state.
+    ///
+    /// Build 14.18.8 assigns RCS controller / valve-solenoid power to BUS_ESS
+    /// and exposes that real synthetic-distribution branch as control-power
+    /// truth. Manifold state, cluster health and axis-specific authority remain
+    /// deliberately unmodeled.
     ///
     /// Existing fault-isolation content remains below the RCS foundation so
     /// potentially useful legacy behavior is not deleted during this
@@ -183,7 +187,7 @@ namespace KMC.MissionControl.Pages
 
             g.DrawString(
                 "VESSEL  " + vessel +
-                "     BUILD 14.18.7 RCS AUTHORITY",
+                "     BUILD 14.18.8 RCS ELECTRICAL",
                 context.SmallFont,
                 dim,
                 bounds.Left + 18,
@@ -289,7 +293,8 @@ namespace KMC.MissionControl.Pages
                 left,
                 installed,
                 rcsPartCount,
-                propellant);
+                propellant,
+                vesselId);
 
             DrawRcsAuthorityColumn(
                 g,
@@ -311,7 +316,8 @@ namespace KMC.MissionControl.Pages
             Rectangle box,
             string installed,
             int rcsPartCount,
-            string propellant)
+            string propellant,
+            string vesselId)
         {
             g.DrawRectangle(
                 p,
@@ -360,13 +366,43 @@ namespace KMC.MissionControl.Pages
                 box.Right - 10,
                 ref y);
 
+            RcsAuthoritySnapshot authority =
+                RcsAuthorityStore.GetSnapshot(
+                    vesselId);
+
+            string controlPower;
+
+            if (rcsPartCount <= 0)
+            {
+                controlPower =
+                    "N/A";
+            }
+            else if (!authority.ElectricalPowerKnown)
+            {
+                controlPower =
+                    "ESS / UNKNOWN";
+            }
+            else if (!authority.ElectricalPowered)
+            {
+                controlPower =
+                    "ESS / UNAVAILABLE";
+            }
+            else
+            {
+                controlPower =
+                    "ESS / " +
+                    authority.ElectricalVoltage
+                        .ToString("0.0") +
+                    " V";
+            }
+
             DrawStatusRow(
                 g,
                 bright,
                 dim,
                 context,
                 "CONTROL POWER",
-                "NOT YET MODELED",
+                controlPower,
                 box.Left + 10,
                 box.Right - 10,
                 ref y);

@@ -71,12 +71,160 @@ namespace KMC.Engine.SpacecraftSystems
                         generatedUtc,
                         controls,
                         failures);
+
+                /*
+                 * Build 14.18.8:
+                 * RCS controller / valve-solenoid power is an essential
+                 * spacecraft load on BUS_ESS.
+                 *
+                 * This is an overlay on the existing 14.11.x distribution
+                 * template so no project-file or base-template rewrite is
+                 * required. The branch is priority 1 and therefore is not
+                 * eligible for automatic priority-3 load shedding.
+                 *
+                 * The external EngineeringEngine pass will recalculate again
+                 * after real KSP generation/storage evidence is applied.
+                 */
+                EnsureRcsElectricalControlLoad(
+                    model.ElectricalDistribution,
+                    controls);
+
+                SyntheticElectricalDistributionSystem.Recalculate(
+                    model.ElectricalDistribution);
             }
 
             lock (_syncRoot)
             {
                 _latest =
                     model;
+            }
+        }
+
+        private static void EnsureRcsElectricalControlLoad(
+            SyntheticElectricalDistributionModel distribution,
+            ElectricalControlSnapshot controls)
+        {
+            if (distribution == null)
+            {
+                return;
+            }
+
+            const string equipmentId =
+                "RCS_CONTROL";
+
+            const string breakerId =
+                "BRK_RCS_CONTROL";
+
+            SyntheticElectricalLoad load =
+                null;
+
+            for (int index = 0;
+                 index < distribution.Loads.Count;
+                 index++)
+            {
+                SyntheticElectricalLoad candidate =
+                    distribution.Loads[index];
+
+                if (candidate != null &&
+                    string.Equals(
+                        candidate.EquipmentId,
+                        equipmentId,
+                        StringComparison.Ordinal))
+                {
+                    load =
+                        candidate;
+
+                    break;
+                }
+            }
+
+            if (load == null)
+            {
+                load =
+                    new SyntheticElectricalLoad
+                    {
+                        EquipmentId =
+                            equipmentId,
+
+                        DisplayName =
+                            "RCS CONTROL / VALVE POWER",
+
+                        BusId =
+                            "BUS_ESS",
+
+                        BreakerId =
+                            breakerId,
+
+                        DemandAmps =
+                            1.0,
+
+                        Priority =
+                            1,
+
+                        CommandedOn =
+                            true
+                    };
+
+                distribution.Loads.Add(
+                    load);
+            }
+
+            SyntheticElectricalSwitch breaker =
+                distribution.FindSwitch(
+                    breakerId);
+
+            if (breaker == null)
+            {
+                breaker =
+                    new SyntheticElectricalSwitch
+                    {
+                        Id =
+                            breakerId,
+
+                        DisplayName =
+                            "RCS CONTROL / VALVE POWER BREAKER",
+
+                        UpstreamId =
+                            "BUS_ESS",
+
+                        DownstreamId =
+                            equipmentId,
+
+                        Kind =
+                            SyntheticElectricalSwitchKind.LoadBreaker,
+
+                        CommandedClosed =
+                            true,
+
+                        ActualClosed =
+                            true,
+
+                        IndicatedClosed =
+                            true,
+
+                        Conducting =
+                            false,
+
+                        Automatic =
+                            false
+                    };
+
+                distribution.Switches.Add(
+                    breaker);
+            }
+
+            bool commandedOn;
+
+            if (controls != null &&
+                controls.TryGet(
+                    equipmentId,
+                    out commandedOn))
+            {
+                load.CommandedOn =
+                    commandedOn;
+
+                breaker.CommandedClosed =
+                    commandedOn;
             }
         }
 
@@ -257,7 +405,7 @@ namespace KMC.Engine.SpacecraftSystems
     }
 
     // ---------------------------------------------------------------------
-    // Build 14.18.7 RCS authority foundation.
+    // Build 14.18.7 / 14.18.8 RCS authority + ESS control-power foundation.
     // Kept in this already-compiled file so no project-file change is needed.
     // ---------------------------------------------------------------------
     public sealed class RcsAuthoritySnapshot
@@ -269,7 +417,11 @@ namespace KMC.Engine.SpacecraftSystems
             RcsPartCount = 0;
             HardwareDetected = false;
             InstructorInhibited = false;
+            ElectricalPowerKnown = false;
+            ElectricalPowered = true;
             ElectricalUnpowered = false;
+            ElectricalBusId = "BUS_ESS";
+            ElectricalVoltage = 0.0;
             AuthorityAvailable = false;
             Detail = "UNKNOWN";
         }
@@ -279,7 +431,11 @@ namespace KMC.Engine.SpacecraftSystems
         public int RcsPartCount { get; internal set; }
         public bool HardwareDetected { get; internal set; }
         public bool InstructorInhibited { get; internal set; }
+        public bool ElectricalPowerKnown { get; internal set; }
+        public bool ElectricalPowered { get; internal set; }
         public bool ElectricalUnpowered { get; internal set; }
+        public string ElectricalBusId { get; internal set; }
+        public double ElectricalVoltage { get; internal set; }
         public bool AuthorityAvailable { get; internal set; }
         public string Detail { get; internal set; }
     }
@@ -326,19 +482,53 @@ namespace KMC.Engine.SpacecraftSystems
             }
         }
 
-        // Reserved for 14.18.8; 14.18.7 does not assert this automatically.
-        public static void SetElectricalUnpowered(
+        // Build 14.18.8 authoritative RCS control-power evidence.
+        public static void PublishElectricalPower(
             string vesselId,
-            bool unpowered)
+            bool known,
+            bool powered,
+            string busId,
+            double voltage)
         {
             if (string.IsNullOrWhiteSpace(vesselId))
                 return;
 
             lock (RcsSyncRoot)
             {
-                GetOrCreateRcs(vesselId)
-                    .ElectricalUnpowered = unpowered;
+                MutableRcsAuthorityState state =
+                    GetOrCreateRcs(vesselId);
+
+                state.ElectricalPowerKnown =
+                    known;
+
+                state.ElectricalPowered =
+                    !known || powered;
+
+                state.ElectricalBusId =
+                    string.IsNullOrWhiteSpace(busId)
+                        ? "BUS_ESS"
+                        : busId;
+
+                state.ElectricalVoltage =
+                    known
+                        ? Math.Max(0.0, voltage)
+                        : 0.0;
             }
+        }
+
+        // Compatibility hook retained for later integrations.
+        public static void SetElectricalUnpowered(
+            string vesselId,
+            bool unpowered)
+        {
+            PublishElectricalPower(
+                vesselId,
+                true,
+                !unpowered,
+                "BUS_ESS",
+                unpowered
+                    ? 0.0
+                    : 28.0);
         }
 
         public static RcsAuthoritySnapshot GetSnapshot(
@@ -364,10 +554,14 @@ namespace KMC.Engine.SpacecraftSystems
                     state.HardwareKnown &&
                     state.RcsPartCount > 0;
 
+                bool electricalUnpowered =
+                    state.ElectricalPowerKnown &&
+                    !state.ElectricalPowered;
+
                 bool authorityAvailable =
                     hardwareDetected &&
                     !state.InstructorInhibited &&
-                    !state.ElectricalUnpowered;
+                    !electricalUnpowered;
 
                 string detail;
 
@@ -377,8 +571,10 @@ namespace KMC.Engine.SpacecraftSystems
                     detail = "NO RCS HARDWARE";
                 else if (state.InstructorInhibited)
                     detail = "INSTRUCTOR INHIBIT";
-                else if (state.ElectricalUnpowered)
+                else if (electricalUnpowered)
                     detail = "CONTROL POWER UNAVAILABLE";
+                else if (!state.ElectricalPowerKnown)
+                    detail = "CONTROL POWER UNKNOWN / FAIL OPEN";
                 else
                     detail = "AVAILABLE";
 
@@ -389,7 +585,11 @@ namespace KMC.Engine.SpacecraftSystems
                     RcsPartCount = state.RcsPartCount,
                     HardwareDetected = hardwareDetected,
                     InstructorInhibited = state.InstructorInhibited,
-                    ElectricalUnpowered = state.ElectricalUnpowered,
+                    ElectricalPowerKnown = state.ElectricalPowerKnown,
+                    ElectricalPowered = state.ElectricalPowered,
+                    ElectricalUnpowered = electricalUnpowered,
+                    ElectricalBusId = state.ElectricalBusId,
+                    ElectricalVoltage = state.ElectricalVoltage,
                     AuthorityAvailable = authorityAvailable,
                     Detail = detail
                 };
@@ -436,7 +636,10 @@ namespace KMC.Engine.SpacecraftSystems
             public bool HardwareKnown;
             public int RcsPartCount;
             public bool InstructorInhibited;
-            public bool ElectricalUnpowered;
+            public bool ElectricalPowerKnown;
+            public bool ElectricalPowered = true;
+            public string ElectricalBusId = "BUS_ESS";
+            public double ElectricalVoltage;
         }
     }
 }
