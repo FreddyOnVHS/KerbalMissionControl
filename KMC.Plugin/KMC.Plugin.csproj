@@ -70,6 +70,7 @@
     <Compile Include="KmcElectricalLoadReceiver.cs" />
     <Compile Include="KmcMfdStatusReceiver.cs" />
     <Compile Include="KmcRpmVariableHandler.cs" />
+    <Compile Include="KmcRpmLightingScopeVariableHandler.cs" />
     <Compile Include="KmcIvaAnnunciatorTestReceiver.cs" />
     <Compile Include="KmcIvaAnnunciatorTestVariableHandler.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
