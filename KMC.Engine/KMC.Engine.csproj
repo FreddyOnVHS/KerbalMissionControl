@@ -123,6 +123,7 @@
     <Compile Include="SpacecraftSystems\ElectricalDistributionModel.cs" />
     <Compile Include="SpacecraftSystems\ElectricalDistributionSystem.cs" />
     <Compile Include="SpacecraftSystems\SpacecraftSystemsSystem.cs" />
+    <Compile Include="SpacecraftSystems\SystemAuthorityModel.cs" />
     <Compile Include="SpacecraftSystems\SpacecraftSystemEnums.cs" />
     <Compile Include="SpacecraftSystems\SpacecraftSystemsModel.cs" />
     <Compile Include="SpacecraftSystems\SpacecraftSystemsFoundationSystem.cs" />

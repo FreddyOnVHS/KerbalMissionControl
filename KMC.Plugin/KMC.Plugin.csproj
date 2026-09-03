@@ -71,6 +71,7 @@
     <Compile Include="KmcMfdStatusReceiver.cs" />
     <Compile Include="KmcRpmVariableHandler.cs" />
     <Compile Include="KmcRpmLightingScopeVariableHandler.cs" />
+    <Compile Include="KmcSystemAuthorityReceiver.cs" />
     <Compile Include="KmcIvaAnnunciatorTestReceiver.cs" />
     <Compile Include="KmcIvaAnnunciatorTestVariableHandler.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -101,7 +102,8 @@
     <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs"><Link>Shared\Topology\VesselTopologyNode.cs</Link></Compile>
     <Compile Include="..\KMC.shared\Topology\VesselTopology.cs"><Link>Shared\Topology\VesselTopology.cs</Link></Compile>
     <Compile Include="..\KMC.shared\Topology\VesselTopologyPacketCodec.cs"><Link>Shared\Topology\VesselTopologyPacketCodec.cs</Link></Compile>
-  <Compile Include="..\KMC.shared\IvaAnnunciatorTestPacket.cs"><Link>Shared\IvaAnnunciatorTestPacket.cs</Link></Compile></ItemGroup>
+  <Compile Include="..\KMC.shared\IvaAnnunciatorTestPacket.cs"><Link>Shared\IvaAnnunciatorTestPacket.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\SystemAuthorityPacket.cs"><Link>Shared\SystemAuthorityPacket.cs</Link></Compile></ItemGroup>
 
   <Target Name="ValidateKspManagedPath" BeforeTargets="ResolveAssemblyReferences">
     <Error Condition="'$(KspManagedPath)' == '' or !Exists('$(KspManagedPath)\Assembly-CSharp.dll')" Text="KSP managed assemblies were not found. Set KSP_DIR and reload Visual Studio." />

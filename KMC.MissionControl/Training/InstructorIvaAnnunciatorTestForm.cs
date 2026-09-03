@@ -16,8 +16,8 @@ namespace KMC.MissionControl.Training
         public InstructorIvaAnnunciatorTestForm()
         {
             Text = "KMC - IVA / System Tests";
-            ClientSize = new Size(650, 650);
-            MinimumSize = new Size(590, 600);
+            ClientSize = new Size(760, 830);
+            MinimumSize = new Size(680, 720);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.SizableToolWindow;
             BackColor = Color.FromArgb(18, 24, 21);
@@ -29,11 +29,12 @@ namespace KMC.MissionControl.Training
                 Dock = DockStyle.Fill,
                 Padding = new Padding(12),
                 ColumnCount = 1,
-                RowCount = 5
+                RowCount = 6
             };
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 62.0f));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100.0f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76.0f));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 190.0f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 50.0f));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 38.0f));
 
@@ -42,8 +43,8 @@ namespace KMC.MissionControl.Training
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Text =
-                    "IVA ANNUNCIATOR + RCS AUTHORITY TEST INPUTS\n" +
-                    "Annunciator rows are visual tests. RCS row changes KMC authority state.",
+                    "IVA ANNUNCIATOR + SYSTEM AUTHORITY TEST INPUTS\n" +
+                    "Authority rows change KMC state; KSP only executes leased consequences.",
                 ForeColor = Color.FromArgb(220, 255, 220),
                 Font = new Font("Consolas", 10.0f, FontStyle.Bold)
             }, 0, 0);
@@ -75,7 +76,12 @@ namespace KMC.MissionControl.Training
                 0,
                 2);
 
-            Button clear = CreateButton("CLEAR ALL IVA TESTS + RESTORE RCS AUTHORITY");
+            root.Controls.Add(
+                BuildSystemAuthorityPanel(),
+                0,
+                3);
+
+            Button clear = CreateButton("CLEAR ALL IVA TESTS + RESTORE ALL AUTHORITY");
             clear.Click += delegate
             {
                 Send(
@@ -85,8 +91,11 @@ namespace KMC.MissionControl.Training
                 SetRcsAuthority(
                     false,
                     false);
+
+                RestoreAllSystemAuthority(
+                    false);
             };
-            root.Controls.Add(clear, 0, 3);
+            root.Controls.Add(clear, 0, 4);
 
             _status = new Label
             {
@@ -96,7 +105,7 @@ namespace KMC.MissionControl.Training
                 Text = "READY",
                 ForeColor = ForeColor
             };
-            root.Controls.Add(_status, 0, 4);
+            root.Controls.Add(_status, 0, 5);
             Controls.Add(root);
         }
 
@@ -185,6 +194,126 @@ namespace KMC.MissionControl.Training
                 panel);
 
             return box;
+        }
+
+        private Control BuildSystemAuthorityPanel()
+        {
+            GroupBox box =
+                new GroupBox
+                {
+                    Text = "SYSTEM COMMAND AUTHORITY / BUILD 14.19.1",
+                    Dock = DockStyle.Fill,
+                    ForeColor = ForeColor,
+                    BackColor = BackColor
+                };
+
+            TableLayoutPanel panel =
+                new TableLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    ColumnCount = 3,
+                    RowCount = 4,
+                    Padding = new Padding(4)
+                };
+
+            panel.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Percent,
+                    100.0f));
+
+            panel.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Absolute,
+                    145.0f));
+
+            panel.ColumnStyles.Add(
+                new ColumnStyle(
+                    SizeType.Absolute,
+                    145.0f));
+
+            AddSystemAuthorityRow(
+                panel,
+                0,
+                "SAS / AUTOPILOT AUTHORITY",
+                SystemAuthorityKind.Sas);
+
+            AddSystemAuthorityRow(
+                panel,
+                1,
+                "LANDING GEAR ACTUATION",
+                SystemAuthorityKind.Gear);
+
+            AddSystemAuthorityRow(
+                panel,
+                2,
+                "WHEEL BRAKE AUTHORITY",
+                SystemAuthorityKind.Brakes);
+
+            AddSystemAuthorityRow(
+                panel,
+                3,
+                "EXTERNAL LIGHT OUTPUT",
+                SystemAuthorityKind.Lights);
+
+            box.Controls.Add(panel);
+            return box;
+        }
+
+        private void AddSystemAuthorityRow(
+            TableLayoutPanel panel,
+            int row,
+            string label,
+            SystemAuthorityKind authority)
+        {
+            panel.RowStyles.Add(
+                new RowStyle(
+                    SizeType.Percent,
+                    25.0f));
+
+            panel.Controls.Add(
+                new Label
+                {
+                    Dock = DockStyle.Fill,
+                    TextAlign =
+                        ContentAlignment.MiddleLeft,
+                    Text = label
+                },
+                0,
+                row);
+
+            Button inhibit =
+                CreateButton("INHIBIT");
+
+            inhibit.Click +=
+                delegate
+                {
+                    SetSystemAuthority(
+                        authority,
+                        true,
+                        true);
+                };
+
+            panel.Controls.Add(
+                inhibit,
+                1,
+                row);
+
+            Button restore =
+                CreateButton("RESTORE");
+
+            restore.Click +=
+                delegate
+                {
+                    SetSystemAuthority(
+                        authority,
+                        false,
+                        true);
+                };
+
+            panel.Controls.Add(
+                restore,
+                2,
+                row);
         }
 
         private void AddTestRow(
@@ -312,5 +441,82 @@ namespace KMC.MissionControl.Training
                         : "KMC STATE  RCS AUTHORITY RESTORED / AWAIT LEASE CYCLE";
             }
         }
+        private void SetSystemAuthority(
+            SystemAuthorityKind authority,
+            bool inhibit,
+            bool writeStatus)
+        {
+            AnalysisPipelineResult latest;
+
+            if (!EngineeringSnapshotStore
+                    .TryGetLatest(
+                        out latest) ||
+                latest == null ||
+                latest.Snapshot == null ||
+                latest.Snapshot.Vessel == null ||
+                string.IsNullOrWhiteSpace(
+                    latest.Snapshot.Vessel.VesselId))
+            {
+                if (writeStatus)
+                {
+                    _status.Text =
+                        "REJECT  NO ACTIVE ENGINEERING VESSEL";
+                }
+
+                return;
+            }
+
+            string vesselId =
+                latest.Snapshot.Vessel.VesselId;
+
+            SystemAuthorityStore
+                .SetInstructorInhibit(
+                    vesselId,
+                    authority,
+                    inhibit);
+
+            if (writeStatus)
+            {
+                _status.Text =
+                    "KMC STATE  " +
+                    authority.ToString().ToUpperInvariant() +
+                    " AUTHORITY " +
+                    (inhibit
+                        ? "INHIBITED"
+                        : "RESTORED") +
+                    " / AWAIT LEASE CYCLE";
+            }
+        }
+
+        private void RestoreAllSystemAuthority(
+            bool writeStatus)
+        {
+            AnalysisPipelineResult latest;
+
+            if (!EngineeringSnapshotStore
+                    .TryGetLatest(
+                        out latest) ||
+                latest == null ||
+                latest.Snapshot == null ||
+                latest.Snapshot.Vessel == null ||
+                string.IsNullOrWhiteSpace(
+                    latest.Snapshot.Vessel.VesselId))
+            {
+                return;
+            }
+
+            string vesselId =
+                latest.Snapshot.Vessel.VesselId;
+
+            SystemAuthorityStore.RestoreAll(
+                vesselId);
+
+            if (writeStatus)
+            {
+                _status.Text =
+                    "KMC STATE  ALL SYSTEM AUTHORITY RESTORED / AWAIT LEASE CYCLE";
+            }
+        }
+
     }
 }

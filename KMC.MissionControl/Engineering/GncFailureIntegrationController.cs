@@ -12,7 +12,7 @@ using KMC.Shared;
 namespace KMC.MissionControl.Engineering
 {
     /// <summary>
-    /// Build 14.18.8
+    /// Build 14.19.1
     ///
     /// Existing GNC reaction-wheel bridge plus vessel-wide RCS authority
     /// integration.
@@ -24,6 +24,11 @@ namespace KMC.MissionControl.Engineering
     /// RCS_CONTROL branch on BUS_ESS after real KSP source evidence has been
     /// applied. Missing electrical evidence fails open rather than inventing
     /// a power loss.
+    ///
+    /// Build 14.19.1 adds one shared vehicle-level authority lease for SAS,
+    /// landing gear, wheel brakes and external lights. The F10 integration
+    /// window writes KMC-owned authority truth; this controller only transports
+    /// that truth to KSP. RCS remains on its proven independent lease.
     /// </summary>
     internal sealed class GncFailureIntegrationController : IDisposable
     {
@@ -38,8 +43,12 @@ namespace KMC.MissionControl.Engineering
         private readonly UdpClient _rcsClient =
             new UdpClient();
 
+        private readonly UdpClient _systemClient =
+            new UdpClient();
+
         private readonly IPEndPoint _endpoint;
         private readonly IPEndPoint _rcsEndpoint;
+        private readonly IPEndPoint _systemEndpoint;
 
         private readonly Dictionary<string, BridgeState> _states =
             new Dictionary<string, BridgeState>(
@@ -49,9 +58,14 @@ namespace KMC.MissionControl.Engineering
             new Dictionary<string, RcsBridgeState>(
                 StringComparer.Ordinal);
 
+        private readonly Dictionary<string, SystemBridgeState> _systemStates =
+            new Dictionary<string, SystemBridgeState>(
+                StringComparer.Ordinal);
+
         private readonly string _commandSessionId;
         private long _commandSequence;
         private long _rcsCommandSequence;
+        private long _systemCommandSequence;
 
         public GncFailureIntegrationController()
         {
@@ -64,6 +78,11 @@ namespace KMC.MissionControl.Engineering
                 new IPEndPoint(
                     IPAddress.Loopback,
                     RcsAuthorityPacket.CommandPort);
+
+            _systemEndpoint =
+                new IPEndPoint(
+                    IPAddress.Loopback,
+                    SystemAuthorityPacket.CommandPort);
 
             _commandSessionId =
                 Guid.NewGuid()
@@ -110,6 +129,10 @@ namespace KMC.MissionControl.Engineering
 
                 EvaluateRcsAuthority(
                     result,
+                    vesselId,
+                    nowUtc);
+
+                EvaluateSystemAuthorities(
                     vesselId,
                     nowUtc);
             }
@@ -329,6 +352,98 @@ namespace KMC.MissionControl.Engineering
                 vesselId);
         }
 
+        private void EvaluateSystemAuthorities(
+            string vesselId,
+            DateTime nowUtc)
+        {
+            SystemAuthorityKind[] authorities =
+                new[]
+                {
+                    SystemAuthorityKind.Sas,
+                    SystemAuthorityKind.Gear,
+                    SystemAuthorityKind.Brakes,
+                    SystemAuthorityKind.Lights
+                };
+
+            for (int index = 0;
+                 index < authorities.Length;
+                 index++)
+            {
+                SystemAuthorityKind authority =
+                    authorities[index];
+
+                string key =
+                    vesselId +
+                    "|" +
+                    authority.ToString();
+
+                SystemBridgeState state;
+
+                if (!_systemStates.TryGetValue(
+                        key,
+                        out state) ||
+                    state == null)
+                {
+                    state =
+                        new SystemBridgeState
+                        {
+                            VesselId = vesselId,
+                            Authority = authority
+                        };
+
+                    _systemStates[key] =
+                        state;
+                }
+
+                bool inhibitDesired =
+                    SystemAuthorityStore.IsInhibited(
+                        vesselId,
+                        authority);
+
+                if (inhibitDesired)
+                {
+                    bool refreshDue =
+                        !state.Active ||
+                        state.LastApplyUtc ==
+                            DateTime.MinValue ||
+                        nowUtc -
+                            state.LastApplyUtc >=
+                        RefreshInterval;
+
+                    if (refreshDue)
+                    {
+                        SendSystemAuthority(
+                            vesselId,
+                            authority,
+                            SystemAuthorityOperation.Inhibit,
+                            state.Active
+                                ? "LEASE REFRESH"
+                                : "KMC AUTHORITY INHIBIT");
+
+                        state.Active = true;
+                        state.LastApplyUtc =
+                            nowUtc;
+                    }
+
+                    continue;
+                }
+
+                if (state.Active)
+                {
+                    SendSystemAuthority(
+                        vesselId,
+                        authority,
+                        SystemAuthorityOperation.Restore,
+                        "KMC AUTHORITY AVAILABLE");
+
+                    state.Active = false;
+                }
+
+                _systemStates.Remove(
+                    key);
+            }
+        }
+
         private static void PublishRcsElectricalPower(
             AnalysisPipelineResult result,
             string vesselId,
@@ -492,11 +607,34 @@ namespace KMC.MissionControl.Engineering
 
                 _rcsStates.Clear();
 
+                foreach (
+                    KeyValuePair<string, SystemBridgeState> pair
+                    in _systemStates)
+                {
+                    SystemBridgeState state =
+                        pair.Value;
+
+                    if (state == null ||
+                        !state.Active)
+                    {
+                        continue;
+                    }
+
+                    SendSystemAuthority(
+                        state.VesselId,
+                        state.Authority,
+                        SystemAuthorityOperation.Restore,
+                        "MISSION CONTROL STOP");
+                }
+
+                _systemStates.Clear();
+
                 /*
                  * No KMC authority command survives Mission Control shutdown.
                  * The KSP lease also independently fails open.
                  */
                 RcsAuthorityStore.ClearAll();
+                SystemAuthorityStore.ClearAll();
             }
         }
 
@@ -705,11 +843,74 @@ namespace KMC.MissionControl.Engineering
             }
         }
 
+        private void SendSystemAuthority(
+            string vesselId,
+            SystemAuthorityKind authority,
+            SystemAuthorityOperation operation,
+            string reason)
+        {
+            _systemCommandSequence++;
+
+            SystemAuthorityPacket packet =
+                new SystemAuthorityPacket
+                {
+                    VesselId =
+                        vesselId ?? string.Empty,
+                    CommandId =
+                        "SYS14.19.1-" +
+                        _commandSessionId +
+                        "-" +
+                        _systemCommandSequence
+                            .ToString("000000"),
+                    Authority = authority,
+                    Operation = operation
+                };
+
+            try
+            {
+                byte[] data =
+                    Encoding.UTF8.GetBytes(
+                        packet.Serialize());
+
+                _systemClient.Send(
+                    data,
+                    data.Length,
+                    _systemEndpoint);
+
+                Debug.WriteLine(
+                    "KMC.MissionControl SYSTEM AUTHORITY" +
+                    " | CommandId=" +
+                    packet.CommandId +
+                    " | VesselId=" +
+                    packet.VesselId +
+                    " | Authority=" +
+                    authority.ToString().ToUpperInvariant() +
+                    " | Command=" +
+                    operation.ToString().ToUpperInvariant() +
+                    " | Reason=" +
+                    (reason ?? string.Empty));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(
+                    "KMC.MissionControl SYSTEM AUTHORITY ERROR" +
+                    " | VesselId=" +
+                    vesselId +
+                    " | Authority=" +
+                    authority.ToString() +
+                    " | Error=" +
+                    ex.GetType().Name +
+                    " | Detail=" +
+                    ex.Message);
+            }
+        }
+
         public void Dispose()
         {
             RestoreAll();
             _client.Close();
             _rcsClient.Close();
+            _systemClient.Close();
         }
 
         private sealed class BridgeState
@@ -736,6 +937,19 @@ namespace KMC.MissionControl.Engineering
 
             public uint PartId;
             public double Magnitude;
+        }
+
+        private sealed class SystemBridgeState
+        {
+            public string VesselId =
+                string.Empty;
+
+            public SystemAuthorityKind Authority;
+
+            public DateTime LastApplyUtc =
+                DateTime.MinValue;
+
+            public bool Active;
         }
 
         private sealed class RcsBridgeState
