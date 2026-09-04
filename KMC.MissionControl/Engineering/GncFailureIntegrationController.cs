@@ -133,6 +133,7 @@ namespace KMC.MissionControl.Engineering
                     nowUtc);
 
                 EvaluateSystemAuthorities(
+                    result,
                     vesselId,
                     nowUtc);
             }
@@ -353,9 +354,14 @@ namespace KMC.MissionControl.Engineering
         }
 
         private void EvaluateSystemAuthorities(
+            AnalysisPipelineResult result,
             string vesselId,
             DateTime nowUtc)
         {
+            bool? essPowered =
+                ResolveEssElectricalPower(
+                    result);
+
             SystemAuthorityKind[] authorities =
                 new[]
                 {
@@ -395,10 +401,20 @@ namespace KMC.MissionControl.Engineering
                         state;
                 }
 
-                bool inhibitDesired =
+                bool explicitInhibit =
                     SystemAuthorityStore.IsInhibited(
                         vesselId,
                         authority);
+
+                bool electricalLightsInhibit =
+                    authority ==
+                        SystemAuthorityKind.Lights &&
+                    essPowered.HasValue &&
+                    !essPowered.Value;
+
+                bool inhibitDesired =
+                    explicitInhibit ||
+                    electricalLightsInhibit;
 
                 if (inhibitDesired)
                 {
@@ -412,13 +428,19 @@ namespace KMC.MissionControl.Engineering
 
                     if (refreshDue)
                     {
+                        string reason =
+                            state.Active
+                                ? "LEASE REFRESH"
+                                : electricalLightsInhibit &&
+                                  !explicitInhibit
+                                    ? "ESS ELECTRICAL POWER LOST"
+                                    : "KMC AUTHORITY INHIBIT";
+
                         SendSystemAuthority(
                             vesselId,
                             authority,
                             SystemAuthorityOperation.Inhibit,
-                            state.Active
-                                ? "LEASE REFRESH"
-                                : "KMC AUTHORITY INHIBIT");
+                            reason);
 
                         state.Active = true;
                         state.LastApplyUtc =
@@ -442,6 +464,46 @@ namespace KMC.MissionControl.Engineering
                 _systemStates.Remove(
                     key);
             }
+        }
+
+        private static bool? ResolveEssElectricalPower(
+            AnalysisPipelineResult result)
+        {
+            SyntheticElectricalDistributionModel distribution =
+                result != null &&
+                result.Snapshot != null &&
+                result.Snapshot.SpacecraftSystems != null
+                    ? result.Snapshot.SpacecraftSystems
+                        .ElectricalDistribution
+                    : null;
+
+            if (distribution == null)
+            {
+                return null;
+            }
+
+            SyntheticElectricalBus ess =
+                distribution.FindBus(
+                    "BUS_ESS");
+
+            if (ess == null ||
+                double.IsNaN(
+                    ess.Voltage) ||
+                double.IsInfinity(
+                    ess.Voltage))
+            {
+                return null;
+            }
+
+            bool powered =
+                ess.State !=
+                    SyntheticElectricalBusState.Unpowered &&
+                ess.State !=
+                    SyntheticElectricalBusState.Failed &&
+                ess.Voltage >=
+                    18.0;
+
+            return powered;
         }
 
         private static void PublishRcsElectricalPower(

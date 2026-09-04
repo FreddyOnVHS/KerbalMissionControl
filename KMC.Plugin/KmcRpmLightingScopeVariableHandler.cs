@@ -5,20 +5,22 @@ using KMC.Shared;
 namespace KMC.Plugin
 {
     /// <summary>
-    /// KMC Build 14.18.10 production cockpit-lighting scope.
+    /// KMC Build 14.20.6 supported-DE-IVA cockpit-lighting scope.
     ///
-    /// Exposes one RasterPropMonitor external variable:
+    /// Exposes RasterPropMonitor external variables:
     ///
-    ///     KMC_MK1_BACKLIGHT_ALLOW
+    ///     KMC_DE_IVA_BACKLIGHT_ALLOW
+    ///     KMC_MK1_BACKLIGHT_ALLOW (legacy alias)
     ///
-    /// It returns real KMC ESS power truth only when KMC can positively
-    /// identify the current IVA as DE_mk1CockpitInternal.
+    /// Both return real KMC ESS power truth only when KMC can positively
+    /// identify the current IVA as one of the supported DE_IVAExtension
+    /// interiors brought to Mk1-reference electrical parity through 14.20.5.
     ///
     /// Every unsupported / unknown cockpit and every KMC-link-loss case returns
     /// 1.0 (ALLOW), preserving native ASET backlighting.
     ///
-    /// This keeps the successful Rev-C ASET output gate behaviorally scoped to
-    /// the Mk1 reference cockpit without modifying ASET props individually.
+    /// KMC never changes the crew's PERSISTENT_BackLight command and never
+    /// manipulates Unity renderers, materials, textures, meshes, or Light objects.
     /// </summary>
     public sealed class KmcRpmLightingScopeVariableHandler :
         PartModule
@@ -26,16 +28,43 @@ namespace KMC.Plugin
         private const double MinimumPoweredBusVoltage =
             18.0;
 
-        private const string ReferenceInternalName =
-            "DE_mk1CockpitInternal";
+        private static readonly string[] SupportedInternalNames =
+            new[]
+            {
+                "DE_mk1CockpitInternal",
+                "DE_mk1pod_IVA",
+                "DE_mk1InlineInternal",
+                "DE_Mk1-3",
+                "DE_landerCabinSmallInternal",
+                "DE_mk2LanderCanInternal",
+                "DE_cupolaInternal",
+                "DE_KV1_ASET_IVA_Internal",
+                "DE_KV2_ASET_IVA_Internal",
+                "DE_KV3_ASET_IVA_Internal",
+                "DE_MEM_ASET_IVA_Internal",
+                "DE_MK2POD_ASET_IVA_Internal",
+                "DE_mk2CockpitStandardInternals",
+                "DE_mk2InlineInternal",
+                "DE_MK3_Cockpit_Int"
+            };
 
         public object ProcessVariable(
             string variableName)
         {
-            if (!string.Equals(
+            bool generalizedVariable =
+                string.Equals(
+                    variableName,
+                    "KMC_DE_IVA_BACKLIGHT_ALLOW",
+                    StringComparison.Ordinal);
+
+            bool legacyMk1Variable =
+                string.Equals(
                     variableName,
                     "KMC_MK1_BACKLIGHT_ALLOW",
-                    StringComparison.Ordinal))
+                    StringComparison.Ordinal);
+
+            if (!generalizedVariable &&
+                !legacyMk1Variable)
             {
                 return null;
             }
@@ -46,7 +75,7 @@ namespace KMC.Plugin
              *
              * Unknown profile => fail open.
              */
-            if (!IsReferenceMk1Iva())
+            if (!IsSupportedDeIva())
             {
                 return 1.0;
             }
@@ -87,7 +116,7 @@ namespace KMC.Plugin
                     out status);
         }
 
-        private bool IsReferenceMk1Iva()
+        private bool IsSupportedDeIva()
         {
             if (part == null)
             {
@@ -113,7 +142,7 @@ namespace KMC.Plugin
                     "internalName",
                     "InternalName");
 
-            if (IsReferenceName(
+            if (IsSupportedName(
                     directName))
             {
                 return true;
@@ -141,18 +170,30 @@ namespace KMC.Plugin
                     "Name");
 
             return
-                IsReferenceName(
+                IsSupportedName(
                     modelName);
         }
 
-        private static bool IsReferenceName(
+        private static bool IsSupportedName(
             string value)
         {
-            return
-                string.Equals(
-                    (value ?? string.Empty).Trim(),
-                    ReferenceInternalName,
-                    StringComparison.Ordinal);
+            string normalized =
+                (value ?? string.Empty).Trim();
+
+            for (int i = 0;
+                 i < SupportedInternalNames.Length;
+                 ++i)
+            {
+                if (string.Equals(
+                        normalized,
+                        SupportedInternalNames[i],
+                        StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static string ReadStringMember(
