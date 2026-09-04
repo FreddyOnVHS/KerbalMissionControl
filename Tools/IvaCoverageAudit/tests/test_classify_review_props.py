@@ -82,7 +82,7 @@ class PropClassificationTests(unittest.TestCase):
 
     def test_packaged_decision_table_is_complete_and_unique(self):
         packaged = load_classifications(TOOL_DIR / 'prop_classifications.csv')
-        self.assertEqual(181, len(packaged))
+        self.assertEqual(180, len(packaged))
 
         # 14.20.7 closes the three former SPECIAL_REVIEW decisions.
         self.assertEqual('IGNORE_STATIC', packaged['ASET_Flashlight']['category'])

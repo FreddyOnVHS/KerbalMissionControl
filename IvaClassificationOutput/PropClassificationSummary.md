@@ -1,6 +1,6 @@
 # KMC 14.20.2 Prop Classification Summary
 
-Unique REVIEW props classified: **181**
+Unique REVIEW props classified: **180**
 
 | Category | Unique props |
 |---|---:|
@@ -9,7 +9,7 @@ Unique REVIEW props classified: **181**
 | REFERENCE_BASELINE | 105 |
 | REUSE_ANNUNCIATOR | 24 |
 | REUSE_DIGITAL | 6 |
-| REUSE_DISPLAY | 1 |
+| REUSE_DISPLAY | 0 |
 | REUSE_PASSIVE | 6 |
 | SPECIAL_REVIEW | 0 |
 

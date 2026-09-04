@@ -3,7 +3,6 @@ Alarm_Ablation,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candid
 Alarm_GEAR_BROKEN,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
 Alarm_HighQ,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
 AlarmShieldOverHeat,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
-ALCORMFD60x30,REUSE_DISPLAY,RPM-MFD,Powered display; use the proven RPM MFD power-domain architecture rather than renderer/material hacks.
 ASET_ALT_WARN_Dial,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
 ASET_Flashlight,IGNORE_STATIC,independent-device,Intentional KMC exception: handheld flashlight is modeled as a self-contained battery-powered device independent of spacecraft buses.
 ASET_Internal_EVA_Hatch,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."

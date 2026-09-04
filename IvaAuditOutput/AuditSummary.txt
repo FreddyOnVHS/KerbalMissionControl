@@ -1,8 +1,8 @@
 KMC 14.20.1 IVA COVERAGE AUDIT SUMMARY
 =====================================
 IVAs scanned: 16
-Supported unique PROP occurrences by IVA: 591
-Review unique PROP occurrences by IVA: 1779
+Supported unique PROP occurrences by IVA: 601
+Review unique PROP occurrences by IVA: 1769
 Ignored unique PROP occurrences by IVA: 0
 IVAs ready with no review props: 0
 Suggested review batches: 1
