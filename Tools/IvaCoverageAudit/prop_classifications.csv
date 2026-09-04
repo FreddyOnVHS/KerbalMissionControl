@@ -1,0 +1,182 @@
+prop_name,category,family,rationale
+Alarm_Ablation,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+Alarm_GEAR_BROKEN,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+Alarm_HighQ,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+AlarmShieldOverHeat,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+ALCORMFD60x30,REUSE_DISPLAY,RPM-MFD,Powered display; use the proven RPM MFD power-domain architecture rather than renderer/material hacks.
+ASET_ALT_WARN_Dial,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+ASET_Flashlight,SPECIAL_REVIEW,special-display-or-light,Electrically relevant prop without a direct Mk1-reference equivalent; inspect its native module before assigning a KMC power family.
+ASET_Internal_EVA_Hatch,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+ASET_RecoveryBeacon,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+AxisIndicatorPitch,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+AxisIndicatorRoll,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+AxisIndicatorYaw,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+BeveragePackage_OrangeJuice,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+CargoBagA,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+CargoBagB,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+CargoBagC,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+DI_Chatterer_RECV_Level,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+DI_Chatterer_XMIT_Level,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+DI_CommNet_Signal_Strength,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+DigitalIndicator_DELTAVTOTAL,REUSE_DIGITAL,digital-indicator,Powered numeric/digital display; candidate for the proven KMC powered-digital-indicator family.
+DigitalIndicator_DockingMulti01,REUSE_DIGITAL,digital-indicator,Powered numeric/digital display; candidate for the proven KMC powered-digital-indicator family.
+DigitalIndicator_MISSION_TIMER_Basic,REUSE_DIGITAL,digital-indicator,Powered numeric/digital display; candidate for the proven KMC powered-digital-indicator family.
+DigitalIndicator_Multi01,REUSE_DIGITAL,digital-indicator,Powered numeric/digital display; candidate for the proven KMC powered-digital-indicator family.
+DigitalIndicator_TWR,REUSE_DIGITAL,digital-indicator,Powered numeric/digital display; candidate for the proven KMC powered-digital-indicator family.
+EPGindicator,REUSE_PASSIVE,passive-instrument,Powered gauge/indicator; candidate for the proven KMC passive-instrument blackout family.
+genericClusterSwitches02,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+Hatch_Plane,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+Hatch_Plane_Curve90,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+IndicatorADV_Ablator,REUSE_PASSIVE,passive-instrument,Powered gauge/indicator; candidate for the proven KMC passive-instrument blackout family.
+IndicatorADV_EngineTemp,REUSE_PASSIVE,passive-instrument,Powered gauge/indicator; candidate for the proven KMC passive-instrument blackout family.
+IndicatorADV_HEAT,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+IndicatorADV_PodTemp,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+IndicatorADV_ShieldTemp,REUSE_PASSIVE,passive-instrument,Powered gauge/indicator; candidate for the proven KMC passive-instrument blackout family.
+IndicatorADV_THRUST,REUSE_PASSIVE,passive-instrument,Powered gauge/indicator; candidate for the proven KMC passive-instrument blackout family.
+IndicatorADV_THRUSTLIMIT,REUSE_PASSIVE,passive-instrument,Powered gauge/indicator; candidate for the proven KMC passive-instrument blackout family.
+IndicatorPanel,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+JSIMainCompUnit,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+KanonDSLR600,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+kOSTerminal,SPECIAL_REVIEW,special-display-or-light,Electrically relevant prop without a direct Mk1-reference equivalent; inspect its native module before assigning a KMC power family.
+Lable_ACTIONS,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+Lable_Atmosphere,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+Lable_ATTITUDE,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+Lable_COMMNET,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+Lable_ENVIRONMENT,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+Lable_EPG,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+Lable_IntLight,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+Lable_LSS_STATUS,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+Lable_PARACHUTE,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+Lable_PowerSupply,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+Lable_PROTECTION,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+Lable_StabMode,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+Lable_Staging,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+Lable_Temperature,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+ledPanelSpeed,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+LifeSupportMonitor,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+LowChargeIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+LowOxidizerIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+LowXenonGasIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+MasterAlarm,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+MonitorDockingMode,SPECIAL_REVIEW,special-display-or-light,Electrically relevant prop without a direct Mk1-reference equivalent; inspect its native module before assigning a KMC power family.
+NavBall,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+On_Aircraft_LIMITED_THRUST,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+On_CHATTERER_ON,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+On_CHATTERER_RECV,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+On_CHATTERER_STBY,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+On_CHATTERER_XMIT,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+On_CHUTE_SAFE_TO_DEPLOY,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+On_COMMNET_CONNECTED,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+On_DOCKING_MODE_UI,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+On_DOCKPORT_ISREF,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+On_NO_SIGNAL,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+On_STAGING_MODE_UI,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+onALTERNATOR_ACTIVE_ONIndicator,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+onAPPROACHIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+OnBrakesIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+onDEAPRTIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+onFUELCELL_ACTIVE_ONIndicator,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+onGENERATOR_ACTIVE_ONIndicator,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+OnGIMBAL_LOCKED,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+onLIGHTIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+onLLEGSIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+OnPREC_MODE,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+onRCSACTIVEIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+onRCSIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+onSASIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+onSOLARARRAY_ACTIVE_ONIndicator,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+onSOLARARRAY_BROKEN_ONIndicator,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+onSOLARARRAY_DEPLOYED_ONIndicator,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+onSOLARARRAY_RETRACTED_ONIndicator,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+onStageLockedIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+onStageReadyIndicator,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+OnTGT_DOCKPORT_SELECTED,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+onVESSEL_DOCKED_ONIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
+PanelDivider,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_AG01-F03-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_AG02-F03-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_AG03-F03-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_AG04-F03-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_AG05-F03-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_AG06-F03-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_AG07-F03-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_AG08-F03-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_AG09-F03-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_AG10-F03-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_AVAS_ON-OFF-FT-B2,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_BRAKE_SET-F01-B2,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_CHATTERER_PTT-F03-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_CHUTE_CUT-F01-B6-C2,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_CHUTE_DEPLOY-F02-B6-C2,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_CLEAR_MNVR_NODE-F01-B1-G1,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+pb_CLEAR_TARGET-F01-B1-G1,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+pb_ENGINE_GIMBAL-SH01-B6-C2,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+pb_EXT_LIGHT-SH02-B2,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_FAKE03-F02,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_FAKE06-F02,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_FAKE07-F02,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_GEAR_DN_AUTO-SH01-B6-C2,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_GPWS_ON-OFF-SH01-B6-C2,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_INPUT_CTRL-SH02-B5,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_PANEL_LIGHT-FD4,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_PITCH_INDICATOR-SHI01,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+pb_RCS-SH02-B6-C2,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_RESET_THRUST_LIMIT-F01-B1-G1,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+pb_ROLL_INDICATOR-SVI01,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+pb_SAS-FT-B2,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+pb_sas_ANTINORMAL-FD2-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_sas_ANTITARGET-FD2-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_sas_MANEUVER-FD2-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_sas_NORMAL-FD2-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_SAS_ON-FD1-B2,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_sas_PROGRADE-FD2-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_sas_RADIALIN-FD2-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_sas_RADIALOUT-FD2-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_sas_RETROGRADE-FD2-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_sas_STAB-FD2-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_sas_TARGET-FD2-G1,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_THRTL_CUT-FT-G1,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+pb_THRTL_FULL-FT-G1,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+pb_WARN_HIGH_G_ON-OFF-FT-B2,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_WARN_SLOPE_ON-OFF-FT-B2,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_WARN_TUMBLE_ON-OFF-FT-B2,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_Warp_Dec,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_Warp_Inc,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_Warp_Kill,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+pb_Warp_Next,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+pb_YAW_INDICATOR-SVI01,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+PortableTimer,REUSE_DIGITAL,digital-indicator,Powered numeric/digital display; candidate for the proven KMC powered-digital-indicator family.
+Primitive_BOX_Beveled_Black,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+Primitive_BOX_Black,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+Primitive_BOX_Carbon,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+Primitive_BOX_DarkGray,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+Primitive_BOX_MidGray,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+RasterPropMonitorBasicHUD,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+RCS_Stick_ADV,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+Seat_Pilot,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+SideStick,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+SmallExtinguisher,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+SmallPlate_CAUTIONS_and_WARNINGS,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+StageSwitch,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+SwitchFlatPanel_CommNet,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+SwitchFlatPanel_VoiceComm,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+SwitchFlatPanelLongClear,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+SwitchFlatPanelShortClear,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+SwitchPanelLong02,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+SwitchRotary-5pos-ElecOutput_Selector,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+switchRotary_ResLock,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+SwitchRotary_SAS_SpeedMode_Selector-01,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+switchTumbleClear,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
+swToggleEngines,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+swTumble_SOLAR_DEPLOY,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+swTumbleEPG,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+swTumbleFUELCELL,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+tggl_ABORT_T1-G3-B15-C1Y-S,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+tggl_ABORT_T1-G3-B4-C1Y-S,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+tggl_CHUTE_ARM_T1_G1-B2-S,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+tggl_GEAR_CTRL_T5W-B14-S,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+tggl_STAGE_LOCK_T4W-B14-S,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
+tggl_UNDOCK_T1-G3-B4-C1Y-S,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+throttle,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+THRUST_LIMIT_Selector,CONTROL_NO_BLACKOUT,command-control,Command control stays movable/usable; downstream hardware authority is modeled separately rather than blacking out the control itself.
+VelcroPad,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."

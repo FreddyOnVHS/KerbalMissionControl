@@ -1,0 +1,8 @@
+# KMC IVA Coverage Audit explicit IGNORE list
+#
+# One exact PROP name per line. Keep this conservative.
+# A prop belongs here only after we have confirmed it is decorative,
+# mechanical, or otherwise outside the current basic electrical model.
+#
+# Example (commented out, not active):
+# Seat_Pilot
