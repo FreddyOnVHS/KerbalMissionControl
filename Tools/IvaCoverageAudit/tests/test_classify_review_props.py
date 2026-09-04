@@ -83,9 +83,14 @@ class PropClassificationTests(unittest.TestCase):
     def test_packaged_decision_table_is_complete_and_unique(self):
         packaged = load_classifications(TOOL_DIR / 'prop_classifications.csv')
         self.assertEqual(181, len(packaged))
-        self.assertEqual('SPECIAL_REVIEW', packaged['ASET_Flashlight']['category'])
-        self.assertEqual('SPECIAL_REVIEW', packaged['kOSTerminal']['category'])
-        self.assertEqual('SPECIAL_REVIEW', packaged['MonitorDockingMode']['category'])
+
+        # 14.20.7 closes the three former SPECIAL_REVIEW decisions.
+        self.assertEqual('IGNORE_STATIC', packaged['ASET_Flashlight']['category'])
+        self.assertEqual('independent-device', packaged['ASET_Flashlight']['family'])
+        self.assertEqual('IGNORE_STATIC', packaged['kOSTerminal']['category'])
+        self.assertEqual('optional-mod-exception', packaged['kOSTerminal']['family'])
+        self.assertEqual('IGNORE_STATIC', packaged['MonitorDockingMode']['category'])
+        self.assertEqual('stock-exception', packaged['MonitorDockingMode']['family'])
 
     def test_special_review_report_contains_only_special(self):
         rows = [

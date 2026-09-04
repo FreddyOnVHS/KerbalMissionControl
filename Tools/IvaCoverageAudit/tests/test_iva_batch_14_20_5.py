@@ -4,7 +4,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 PROFILES = ROOT / "GameData" / "KMC" / "IVA" / "Profiles" / "DE_IVAExtension"
-
 REFERENCE_RENAMES = {
     "OnWARP": "KMC_OnWARP_MAIN_A",
     "onMECOIndicator": "KMC_onMECOIndicator_MAIN_B",
@@ -46,13 +45,13 @@ REFERENCE_RENAMES = {
     "IndicatorADV_STAGE": "KMC_IndicatorADV_STAGE_ESS",
     "IndicatorADV_THROTTLE": "KMC_IndicatorADV_THROTTLE_ESS",
 }
-
 TARGETS = {
     "KmcProfile_DE_Mk1Inline.cfg": ("DE_mk1InlineInternal", ["MAIN_A", "MAIN_B"], False),
     "KmcProfile_DE_Mk2Cockpit.cfg": ("DE_mk2CockpitStandardInternals", ["MAIN_A", "MAIN_B", "MAIN_A", "MAIN_B"], False),
     "KmcProfile_DE_Mk2Inline.cfg": ("DE_mk2InlineInternal", ["MAIN_A", "MAIN_B", "MAIN_A", "MAIN_B"], True),
     "KmcProfile_DE_Mk3Cockpit.cfg": ("DE_MK3_Cockpit_Int", ["MAIN_A", "MAIN_B", "MAIN_A", "MAIN_B"], True),
 }
+
 
 class IvaBatch14205Tests(unittest.TestCase):
     def read(self, filename):
@@ -87,8 +86,11 @@ class IvaBatch14205Tests(unittest.TestCase):
             for token in forbidden:
                 self.assertNotIn(token, text)
 
-    def test_aircraft_batch_does_not_touch_mission_control_exception(self):
-        self.assertFalse((PROFILES / "KmcProfile_DE_MissionControl.cfg").exists())
+    def test_aircraft_batch_does_not_include_mission_control_exception(self):
+        # 14.20.5 must remain scoped only to the aircraft profiles it introduced.
+        # A later milestone (14.20.7) is allowed to add a Mission Control profile.
+        self.assertNotIn("KmcProfile_DE_MissionControl.cfg", TARGETS)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,1 @@
 prop_name,category,family,iva_count,instance_count,ivas,rationale
-ASET_Flashlight,SPECIAL_REVIEW,special-display-or-light,4,4,DE_cupolaInternal; DE_landerCabinSmallInternal; DE_Mk1-3; DE_mk2CockpitStandardInternals,Electrically relevant prop without a direct Mk1-reference equivalent; inspect its native module before assigning a KMC power family.
-kOSTerminal,SPECIAL_REVIEW,special-display-or-light,1,1,DE_MissionControl,Electrically relevant prop without a direct Mk1-reference equivalent; inspect its native module before assigning a KMC power family.
-MonitorDockingMode,SPECIAL_REVIEW,special-display-or-light,1,1,DE_mk2InlineInternal,Electrically relevant prop without a direct Mk1-reference equivalent; inspect its native module before assigning a KMC power family.

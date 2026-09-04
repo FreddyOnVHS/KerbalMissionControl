@@ -5,7 +5,7 @@ Alarm_HighQ,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate
 AlarmShieldOverHeat,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
 ALCORMFD60x30,REUSE_DISPLAY,RPM-MFD,Powered display; use the proven RPM MFD power-domain architecture rather than renderer/material hacks.
 ASET_ALT_WARN_Dial,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
-ASET_Flashlight,SPECIAL_REVIEW,special-display-or-light,Electrically relevant prop without a direct Mk1-reference equivalent; inspect its native module before assigning a KMC power family.
+ASET_Flashlight,IGNORE_STATIC,independent-device,Intentional KMC exception: handheld flashlight is modeled as a self-contained battery-powered device independent of spacecraft buses.
 ASET_Internal_EVA_Hatch,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
 ASET_RecoveryBeacon,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
 AxisIndicatorPitch,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
@@ -37,7 +37,7 @@ IndicatorADV_THRUSTLIMIT,REUSE_PASSIVE,passive-instrument,Powered gauge/indicato
 IndicatorPanel,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
 JSIMainCompUnit,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
 KanonDSLR600,IGNORE_STATIC,static/mechanical,"Decorative, structural, storage, hatch, or non-display prop; no electrical blackout behavior is required for Mk1-level parity."
-kOSTerminal,SPECIAL_REVIEW,special-display-or-light,Electrically relevant prop without a direct Mk1-reference equivalent; inspect its native module before assigning a KMC power family.
+kOSTerminal,IGNORE_STATIC,optional-mod-exception,Intentional KMC optional mod exception: kOSTerminal belongs to the optional Probe Control Room / kOSPropMonitor integration; KMC core leaves it native.
 Lable_ACTIONS,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
 Lable_Atmosphere,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
 Lable_ATTITUDE,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
@@ -58,7 +58,7 @@ LowChargeIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; ca
 LowOxidizerIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
 LowXenonGasIndicator,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
 MasterAlarm,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
-MonitorDockingMode,SPECIAL_REVIEW,special-display-or-light,Electrically relevant prop without a direct Mk1-reference equivalent; inspect its native module before assigning a KMC power family.
+MonitorDockingMode,IGNORE_STATIC,stock-exception,Intentional KMC exception: stock internalGeneric docking monitor exposes no safe supported electrical-power API; leave native behavior untouched.
 NavBall,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
 On_Aircraft_LIMITED_THRUST,REUSE_ANNUNCIATOR,annunciator,Powered warning/status lamp; candidate for the proven KMC powered-annunciator family.
 On_CHATTERER_ON,REFERENCE_BASELINE,mk1-reference,Present in the completed Mk1 reference cockpit REVIEW set; no new work is required for Mk1-level parity.
