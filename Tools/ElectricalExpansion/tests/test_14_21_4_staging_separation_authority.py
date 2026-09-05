@@ -99,7 +99,7 @@ class StagingSeparationAuthority14214Tests(unittest.TestCase):
         )
 
     def test_later_breakers_remain_unwired(self):
-        for token in ('"BRAKE_CONTROL"', '"GEAR_CONTROL"', '"LIGHTING_ESS"'):
+        for token in ('"LIGHTING_ESS"',):
             self.assertNotIn(token, GNC)
 
 if __name__ == "__main__":

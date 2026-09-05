@@ -377,6 +377,14 @@ namespace KMC.MissionControl.Engineering
                 ResolveElectricalLoadPower(
                     result,
                     "STAGING_CONTROL");
+            bool? gearControlPowered =
+                ResolveElectricalLoadPower(
+                    result,
+                    "GEAR_CONTROL");
+            bool? brakeControlPowered =
+                ResolveElectricalLoadPower(
+                    result,
+                    "BRAKE_CONTROL");
 
             SystemAuthorityKind[] authorities =
                 new[]
@@ -449,6 +457,18 @@ namespace KMC.MissionControl.Engineering
                     stagingControlPowered.HasValue &&
                     !stagingControlPowered.Value;
 
+                bool electricalGearControlInhibit =
+                    authority ==
+                        SystemAuthorityKind.Gear &&
+                    gearControlPowered.HasValue &&
+                    !gearControlPowered.Value;
+
+                bool electricalBrakeControlInhibit =
+                    authority ==
+                        SystemAuthorityKind.Brakes &&
+                    brakeControlPowered.HasValue &&
+                    !brakeControlPowered.Value;
+
                 bool electricalLightsInhibit =
                     authority ==
                         SystemAuthorityKind.Lights &&
@@ -461,6 +481,8 @@ namespace KMC.MissionControl.Engineering
                     electricalReactionWheelInhibit ||
                     electricalEngineControlInhibit ||
                     electricalStagingControlInhibit ||
+                    electricalGearControlInhibit ||
+                    electricalBrakeControlInhibit ||
                     electricalLightsInhibit;
 
                 if (inhibitDesired)
@@ -508,6 +530,20 @@ namespace KMC.MissionControl.Engineering
                         {
                             reason =
                                 "STAGING / SEPARATION ELECTRICAL POWER LOST";
+                        }
+                        else if (
+                            electricalGearControlInhibit &&
+                            !explicitInhibit)
+                        {
+                            reason =
+                                "GEAR CONTROL ELECTRICAL POWER LOST";
+                        }
+                        else if (
+                            electricalBrakeControlInhibit &&
+                            !explicitInhibit)
+                        {
+                            reason =
+                                "BRAKE CONTROL ELECTRICAL POWER LOST";
                         }
                         else if (
                             electricalLightsInhibit &&
