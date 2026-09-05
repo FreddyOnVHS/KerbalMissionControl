@@ -314,6 +314,15 @@ namespace KMC.Plugin
                     {
                         continue;
                     }
+                    if (state.Authority ==
+                            SystemAuthorityKind.EngineControl &&
+                        TryInhibitEngine(
+                            module,
+                            state))
+                    {
+                        continue;
+                    }
+
 
                     if (!state.PriorEnabled
                             .ContainsKey(module))
@@ -426,6 +435,133 @@ namespace KMC.Plugin
                         "LightOff",
                         "TurnOff");
                 }
+            }
+        }
+
+        private static bool IsEngineModule(
+            PartModule module)
+        {
+            return
+                module is ModuleEngines;
+        }
+
+        private static bool TryInhibitEngine(
+            PartModule module,
+            LeaseState state)
+        {
+            ModuleEngines engine =
+                module as ModuleEngines;
+
+            if (engine == null ||
+                state == null)
+            {
+                return false;
+            }
+
+            GateEngineStartCommands(
+                engine,
+                state);
+
+            try
+            {
+                if (engine.EngineIgnited)
+                {
+                    engine.Shutdown();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning(
+                    "[KMC] Engine-control shutdown failed: " +
+                    ex.GetType().Name);
+            }
+
+            return true;
+        }
+
+        private static void GateEngineStartCommands(
+            ModuleEngines engine,
+            LeaseState state)
+        {
+            if (engine == null ||
+                state == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (engine.Actions != null)
+                {
+                    foreach (BaseAction action in
+                        engine.Actions)
+                    {
+                        if (action == null)
+                            continue;
+
+                        bool isStartAction =
+                            string.Equals(
+                                action.name,
+                                "ActivateAction",
+                                StringComparison.Ordinal) ||
+                            string.Equals(
+                                action.name,
+                                "OnAction",
+                                StringComparison.Ordinal);
+
+                        if (!isStartAction)
+                            continue;
+
+                        if (!state.PriorActionActive
+                                .ContainsKey(action))
+                        {
+                            state.PriorActionActive[action] =
+                                action.active;
+                        }
+
+                        action.active = false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning(
+                    "[KMC] Engine-control action gate failed: " +
+                    ex.GetType().Name);
+            }
+
+            try
+            {
+                if (engine.Events != null)
+                {
+                    foreach (BaseEvent evt in
+                        engine.Events)
+                    {
+                        if (evt == null ||
+                            !string.Equals(
+                                evt.name,
+                                "Activate",
+                                StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        if (!state.PriorEventActive
+                                .ContainsKey(evt))
+                        {
+                            state.PriorEventActive[evt] =
+                                evt.active;
+                        }
+
+                        evt.active = false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning(
+                    "[KMC] Engine-control event gate failed: " +
+                    ex.GetType().Name);
             }
         }
 
@@ -572,6 +708,10 @@ namespace KMC.Plugin
                             moduleName,
                             typeName,
                             "ModuleReactionWheel");
+                case SystemAuthorityKind.EngineControl:
+                    return
+                        IsEngineModule(
+                            module);
 
                 case SystemAuthorityKind.Gear:
                     return

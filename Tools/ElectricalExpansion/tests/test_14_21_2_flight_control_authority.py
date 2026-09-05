@@ -130,7 +130,6 @@ class FlightControlElectricalAuthority14212Tests(unittest.TestCase):
 
     def test_other_14211_breakers_are_not_wired_yet(self):
         for token in (
-            '"ENGINE_CONTROL"',
             '"STAGING_CONTROL"',
             '"BRAKE_CONTROL"',
             '"GEAR_CONTROL"',

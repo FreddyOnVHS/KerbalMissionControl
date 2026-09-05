@@ -369,12 +369,17 @@ namespace KMC.MissionControl.Engineering
                 ResolveElectricalLoadPower(
                     result,
                     "REACTION_WHEEL");
+            bool? engineControlPowered =
+                ResolveElectricalLoadPower(
+                    result,
+                    "ENGINE_CONTROL");
 
             SystemAuthorityKind[] authorities =
                 new[]
                 {
                     SystemAuthorityKind.Sas,
                     SystemAuthorityKind.ReactionWheels,
+                    SystemAuthorityKind.EngineControl,
                     SystemAuthorityKind.Gear,
                     SystemAuthorityKind.Brakes,
                     SystemAuthorityKind.Lights
@@ -427,6 +432,12 @@ namespace KMC.MissionControl.Engineering
                     reactionWheelPowered.HasValue &&
                     !reactionWheelPowered.Value;
 
+                bool electricalEngineControlInhibit =
+                    authority ==
+                        SystemAuthorityKind.EngineControl &&
+                    engineControlPowered.HasValue &&
+                    !engineControlPowered.Value;
+
                 bool electricalLightsInhibit =
                     authority ==
                         SystemAuthorityKind.Lights &&
@@ -437,6 +448,7 @@ namespace KMC.MissionControl.Engineering
                     explicitInhibit ||
                     electricalSasInhibit ||
                     electricalReactionWheelInhibit ||
+                    electricalEngineControlInhibit ||
                     electricalLightsInhibit;
 
                 if (inhibitDesired)
@@ -470,6 +482,13 @@ namespace KMC.MissionControl.Engineering
                         {
                             reason =
                                 "REACTION WHEEL ELECTRICAL POWER LOST";
+                        }
+                        else if (
+                            electricalEngineControlInhibit &&
+                            !explicitInhibit)
+                        {
+                            reason =
+                                "ENGINE CONTROL ELECTRICAL POWER LOST";
                         }
                         else if (
                             electricalLightsInhibit &&
