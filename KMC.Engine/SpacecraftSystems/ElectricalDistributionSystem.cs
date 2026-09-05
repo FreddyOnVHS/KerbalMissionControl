@@ -1202,7 +1202,7 @@ namespace KMC.Engine.SpacecraftSystems
                 "BUS_ESS",
                 "BUS_MAIN_A",
                 SyntheticElectricalSourceKind.BusFeed,
-                6.0,
+                12.0,
                 "CONT_ESS_A");
 
             AddSource(
@@ -1212,7 +1212,7 @@ namespace KMC.Engine.SpacecraftSystems
                 "BUS_ESS",
                 "BUS_MAIN_B",
                 SyntheticElectricalSourceKind.BusFeed,
-                6.0,
+                12.0,
                 "CONT_ESS_B");
 
             AddSwitch(
@@ -1390,6 +1390,55 @@ namespace KMC.Engine.SpacecraftSystems
                 "ESS INSTRUMENTATION",
                 "BUS_ESS",
                 1.0,
+                1);
+            AddLoad(
+                distribution,
+                "FLIGHT_CONTROL",
+                "SAS / FLIGHT CONTROL ELECTRONICS",
+                "BUS_ESS",
+                1.0,
+                1);
+            AddLoad(
+                distribution,
+                "REACTION_WHEEL",
+                "REACTION WHEEL POWER",
+                "BUS_ESS",
+                1.0,
+                1);
+            AddLoad(
+                distribution,
+                "ENGINE_CONTROL",
+                "ENGINE CONTROL / IGNITION",
+                "BUS_ESS",
+                0.75,
+                1);
+            AddLoad(
+                distribution,
+                "STAGING_CONTROL",
+                "STAGING / SEPARATION",
+                "BUS_ESS",
+                0.25,
+                1);
+            AddLoad(
+                distribution,
+                "BRAKE_CONTROL",
+                "BRAKE CONTROL",
+                "BUS_ESS",
+                0.5,
+                1);
+            AddLoad(
+                distribution,
+                "GEAR_CONTROL",
+                "GEAR CONTROL / ACTUATION",
+                "BUS_ESS",
+                0.5,
+                1);
+            AddLoad(
+                distribution,
+                "LIGHTING_ESS",
+                "EXTERNAL / EMERGENCY LIGHTING",
+                "BUS_ESS",
+                0.5,
                 1);
 
             return distribution;

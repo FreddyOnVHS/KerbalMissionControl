@@ -153,6 +153,41 @@ namespace KMC.Engine.SpacecraftSystems
                 "FLIGHT_COMPUTER",
                 "PRIMARY FLIGHT COMPUTER",
                 SpacecraftSystemCategory.Guidance);
+            AddComponent(
+                model,
+                "FLIGHT_CONTROL",
+                "SAS / FLIGHT CONTROL ELECTRONICS",
+                SpacecraftSystemCategory.Guidance);
+            AddComponent(
+                model,
+                "REACTION_WHEEL",
+                "REACTION WHEEL POWER",
+                SpacecraftSystemCategory.Guidance);
+            AddComponent(
+                model,
+                "ENGINE_CONTROL",
+                "ENGINE CONTROL / IGNITION",
+                SpacecraftSystemCategory.Propulsion);
+            AddComponent(
+                model,
+                "STAGING_CONTROL",
+                "STAGING / SEPARATION",
+                SpacecraftSystemCategory.Propulsion);
+            AddComponent(
+                model,
+                "BRAKE_CONTROL",
+                "BRAKE CONTROL",
+                SpacecraftSystemCategory.Guidance);
+            AddComponent(
+                model,
+                "GEAR_CONTROL",
+                "GEAR CONTROL / ACTUATION",
+                SpacecraftSystemCategory.Guidance);
+            AddComponent(
+                model,
+                "LIGHTING_ESS",
+                "EXTERNAL / EMERGENCY LIGHTING",
+                SpacecraftSystemCategory.Electrical);
 
             AddPowerDependency(
                 model,
@@ -188,6 +223,34 @@ namespace KMC.Engine.SpacecraftSystems
                 model,
                 "BUS_ESS",
                 "FLIGHT_COMPUTER");
+            AddPowerDependency(
+                model,
+                "BUS_ESS",
+                "FLIGHT_CONTROL");
+            AddPowerDependency(
+                model,
+                "BUS_ESS",
+                "REACTION_WHEEL");
+            AddPowerDependency(
+                model,
+                "BUS_ESS",
+                "ENGINE_CONTROL");
+            AddPowerDependency(
+                model,
+                "BUS_ESS",
+                "STAGING_CONTROL");
+            AddPowerDependency(
+                model,
+                "BUS_ESS",
+                "BRAKE_CONTROL");
+            AddPowerDependency(
+                model,
+                "BUS_ESS",
+                "GEAR_CONTROL");
+            AddPowerDependency(
+                model,
+                "BUS_ESS",
+                "LIGHTING_ESS");
 
             model.Recalculate();
 
