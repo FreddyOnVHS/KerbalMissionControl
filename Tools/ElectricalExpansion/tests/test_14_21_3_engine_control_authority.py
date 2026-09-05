@@ -86,7 +86,6 @@ class EngineControlAuthority14213Tests(unittest.TestCase):
 
     def test_later_breakers_remain_unwired(self):
         for token in (
-            '"STAGING_CONTROL"',
             '"BRAKE_CONTROL"',
             '"GEAR_CONTROL"',
             '"LIGHTING_ESS"',

@@ -9,7 +9,8 @@ namespace KMC.Shared
         Brakes = 2,
         Lights = 3,
         ReactionWheels = 4,
-        EngineControl = 5
+        EngineControl = 5,
+        StagingControl = 6
     }
 
     public enum SystemAuthorityOperation

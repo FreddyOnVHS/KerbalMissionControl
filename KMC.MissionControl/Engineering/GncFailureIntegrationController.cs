@@ -373,6 +373,10 @@ namespace KMC.MissionControl.Engineering
                 ResolveElectricalLoadPower(
                     result,
                     "ENGINE_CONTROL");
+            bool? stagingControlPowered =
+                ResolveElectricalLoadPower(
+                    result,
+                    "STAGING_CONTROL");
 
             SystemAuthorityKind[] authorities =
                 new[]
@@ -380,6 +384,7 @@ namespace KMC.MissionControl.Engineering
                     SystemAuthorityKind.Sas,
                     SystemAuthorityKind.ReactionWheels,
                     SystemAuthorityKind.EngineControl,
+                    SystemAuthorityKind.StagingControl,
                     SystemAuthorityKind.Gear,
                     SystemAuthorityKind.Brakes,
                     SystemAuthorityKind.Lights
@@ -438,6 +443,12 @@ namespace KMC.MissionControl.Engineering
                     engineControlPowered.HasValue &&
                     !engineControlPowered.Value;
 
+                bool electricalStagingControlInhibit =
+                    authority ==
+                        SystemAuthorityKind.StagingControl &&
+                    stagingControlPowered.HasValue &&
+                    !stagingControlPowered.Value;
+
                 bool electricalLightsInhibit =
                     authority ==
                         SystemAuthorityKind.Lights &&
@@ -449,6 +460,7 @@ namespace KMC.MissionControl.Engineering
                     electricalSasInhibit ||
                     electricalReactionWheelInhibit ||
                     electricalEngineControlInhibit ||
+                    electricalStagingControlInhibit ||
                     electricalLightsInhibit;
 
                 if (inhibitDesired)
@@ -489,6 +501,13 @@ namespace KMC.MissionControl.Engineering
                         {
                             reason =
                                 "ENGINE CONTROL ELECTRICAL POWER LOST";
+                        }
+                        else if (
+                            electricalStagingControlInhibit &&
+                            !explicitInhibit)
+                        {
+                            reason =
+                                "STAGING / SEPARATION ELECTRICAL POWER LOST";
                         }
                         else if (
                             electricalLightsInhibit &&

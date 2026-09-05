@@ -45,6 +45,9 @@ namespace KMC.Plugin
     {
         private const float LeaseSeconds =
             2.50f;
+        private const string StagingInputLockId =
+            "KMC.SYSTEM_AUTHORITY.STAGING";
+
 
         private readonly object _syncRoot =
             new object();
@@ -291,6 +294,12 @@ namespace KMC.Plugin
             Vessel vessel,
             LeaseState state)
         {
+            if (state != null &&
+                state.Authority == SystemAuthorityKind.StagingControl)
+            {
+                SetStagingInputLock(true);
+            }
+
             if (vessel == null ||
                 state == null ||
                 vessel.parts == null)
@@ -320,6 +329,15 @@ namespace KMC.Plugin
                             module,
                             state))
                     {
+                        continue;
+                    }
+
+                    if (state.Authority ==
+                            SystemAuthorityKind.StagingControl)
+                    {
+                        GateSeparationCommands(
+                            module,
+                            state);
                         continue;
                     }
 
@@ -443,6 +461,122 @@ namespace KMC.Plugin
         {
             return
                 module is ModuleEngines;
+        }
+
+        private static bool IsSeparationModule(
+            PartModule module)
+        {
+            if (module == null)
+            {
+                return false;
+            }
+
+            return
+                module is ModuleDecouplerBase ||
+                module is ModuleAnchoredDecoupler ||
+                module is ModuleDockingNode;
+        }
+
+        private static void SetStagingInputLock(bool locked)
+        {
+            try
+            {
+                if (locked)
+                {
+                    InputLockManager.SetControlLock(
+                        ControlTypes.STAGING,
+                        StagingInputLockId);
+                }
+                else
+                {
+                    InputLockManager.RemoveControlLock(
+                        StagingInputLockId);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning(
+                    "[KMC] Staging input lock update failed: " +
+                    ex.GetType().Name);
+            }
+        }
+
+        private static void GateSeparationCommands(
+            PartModule module,
+            LeaseState state)
+        {
+            if (module == null || state == null)
+            {
+                return;
+            }
+
+            if (!state.PriorStagingEnabled.ContainsKey(module))
+            {
+                state.PriorStagingEnabled[module] =
+                    module.stagingEnabled;
+            }
+
+            module.stagingEnabled = false;
+
+            if (module.Actions != null)
+            {
+                foreach (BaseAction action in module.Actions)
+                {
+                    if (action == null)
+                        continue;
+
+                    bool separationAction =
+                        string.Equals(
+                            action.name,
+                            "DecoupleAction",
+                            StringComparison.Ordinal) ||
+                        string.Equals(
+                            action.name,
+                            "UndockAction",
+                            StringComparison.Ordinal);
+
+                    if (!separationAction)
+                        continue;
+
+                    if (!state.PriorActionActive.ContainsKey(action))
+                    {
+                        state.PriorActionActive[action] =
+                            action.active;
+                    }
+
+                    action.active = false;
+                }
+            }
+
+            if (module.Events != null)
+            {
+                foreach (BaseEvent evt in module.Events)
+                {
+                    if (evt == null)
+                        continue;
+
+                    bool separationEvent =
+                        string.Equals(
+                            evt.name,
+                            "Decouple",
+                            StringComparison.Ordinal) ||
+                        string.Equals(
+                            evt.name,
+                            "Undock",
+                            StringComparison.Ordinal);
+
+                    if (!separationEvent)
+                        continue;
+
+                    if (!state.PriorEventActive.ContainsKey(evt))
+                    {
+                        state.PriorEventActive[evt] =
+                            evt.active;
+                    }
+
+                    evt.active = false;
+                }
+            }
         }
 
         private static bool TryInhibitEngine(
@@ -711,6 +845,10 @@ namespace KMC.Plugin
                 case SystemAuthorityKind.EngineControl:
                     return
                         IsEngineModule(
+                            module);
+                case SystemAuthorityKind.StagingControl:
+                    return
+                        IsSeparationModule(
                             module);
 
                 case SystemAuthorityKind.Gear:
@@ -1032,6 +1170,18 @@ namespace KMC.Plugin
         private static void RestoreState(
             LeaseState state)
         {
+            SetStagingInputLock(false);
+
+            foreach (KeyValuePair<PartModule, bool> pair in
+                state.PriorStagingEnabled)
+            {
+                PartModule module = pair.Key;
+                if (module != null)
+                {
+                    module.stagingEnabled = pair.Value;
+                }
+            }
+
             if (state == null)
                 return;
 
@@ -1422,6 +1572,10 @@ namespace KMC.Plugin
 
         private sealed class LeaseState
         {
+            public readonly Dictionary<PartModule, bool>
+                PriorStagingEnabled =
+                    new Dictionary<PartModule, bool>();
+
             public string VesselId =
                 string.Empty;
 
