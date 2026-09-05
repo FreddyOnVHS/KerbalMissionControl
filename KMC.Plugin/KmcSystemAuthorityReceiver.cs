@@ -566,6 +566,12 @@ namespace KMC.Plugin
                             moduleName,
                             typeName,
                             "ModuleSAS");
+                case SystemAuthorityKind.ReactionWheels:
+                    return
+                        IsName(
+                            moduleName,
+                            typeName,
+                            "ModuleReactionWheel");
 
                 case SystemAuthorityKind.Gear:
                     return

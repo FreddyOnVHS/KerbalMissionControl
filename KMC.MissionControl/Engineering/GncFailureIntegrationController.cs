@@ -361,11 +361,20 @@ namespace KMC.MissionControl.Engineering
             bool? essPowered =
                 ResolveEssElectricalPower(
                     result);
+            bool? flightControlPowered =
+                ResolveElectricalLoadPower(
+                    result,
+                    "FLIGHT_CONTROL");
+            bool? reactionWheelPowered =
+                ResolveElectricalLoadPower(
+                    result,
+                    "REACTION_WHEEL");
 
             SystemAuthorityKind[] authorities =
                 new[]
                 {
                     SystemAuthorityKind.Sas,
+                    SystemAuthorityKind.ReactionWheels,
                     SystemAuthorityKind.Gear,
                     SystemAuthorityKind.Brakes,
                     SystemAuthorityKind.Lights
@@ -406,6 +415,18 @@ namespace KMC.MissionControl.Engineering
                         vesselId,
                         authority);
 
+                bool electricalSasInhibit =
+                    authority ==
+                        SystemAuthorityKind.Sas &&
+                    flightControlPowered.HasValue &&
+                    !flightControlPowered.Value;
+
+                bool electricalReactionWheelInhibit =
+                    authority ==
+                        SystemAuthorityKind.ReactionWheels &&
+                    reactionWheelPowered.HasValue &&
+                    !reactionWheelPowered.Value;
+
                 bool electricalLightsInhibit =
                     authority ==
                         SystemAuthorityKind.Lights &&
@@ -414,6 +435,8 @@ namespace KMC.MissionControl.Engineering
 
                 bool inhibitDesired =
                     explicitInhibit ||
+                    electricalSasInhibit ||
+                    electricalReactionWheelInhibit ||
                     electricalLightsInhibit;
 
                 if (inhibitDesired)
@@ -428,13 +451,38 @@ namespace KMC.MissionControl.Engineering
 
                     if (refreshDue)
                     {
-                        string reason =
-                            state.Active
-                                ? "LEASE REFRESH"
-                                : electricalLightsInhibit &&
-                                  !explicitInhibit
-                                    ? "ESS ELECTRICAL POWER LOST"
-                                    : "KMC AUTHORITY INHIBIT";
+                        string reason;
+                        if (state.Active)
+                        {
+                            reason =
+                                "LEASE REFRESH";
+                        }
+                        else if (
+                            electricalSasInhibit &&
+                            !explicitInhibit)
+                        {
+                            reason =
+                                "FLIGHT CONTROL ELECTRICAL POWER LOST";
+                        }
+                        else if (
+                            electricalReactionWheelInhibit &&
+                            !explicitInhibit)
+                        {
+                            reason =
+                                "REACTION WHEEL ELECTRICAL POWER LOST";
+                        }
+                        else if (
+                            electricalLightsInhibit &&
+                            !explicitInhibit)
+                        {
+                            reason =
+                                "ESS ELECTRICAL POWER LOST";
+                        }
+                        else
+                        {
+                            reason =
+                                "KMC AUTHORITY INHIBIT";
+                        }
 
                         SendSystemAuthority(
                             vesselId,
@@ -464,6 +512,84 @@ namespace KMC.MissionControl.Engineering
                 _systemStates.Remove(
                     key);
             }
+        }
+
+        private static bool? ResolveElectricalLoadPower(
+            AnalysisPipelineResult result,
+            string equipmentId)
+        {
+            bool? essPowered =
+                ResolveEssElectricalPower(
+                    result);
+            if (!essPowered.HasValue)
+            {
+                return null;
+            }
+
+            SyntheticElectricalDistributionModel distribution =
+                result != null &&
+                result.Snapshot != null &&
+                result.Snapshot.SpacecraftSystems != null
+                    ? result.Snapshot.SpacecraftSystems
+                        .ElectricalDistribution
+                    : null;
+
+            if (distribution == null ||
+                string.IsNullOrWhiteSpace(
+                    equipmentId))
+            {
+                return null;
+            }
+
+            SyntheticElectricalLoad load =
+                null;
+
+            for (int index = 0;
+                 index < distribution.Loads.Count;
+                 index++)
+            {
+                SyntheticElectricalLoad candidate =
+                    distribution.Loads[index];
+
+                if (candidate != null &&
+                    string.Equals(
+                        candidate.EquipmentId,
+                        equipmentId,
+                        StringComparison.Ordinal))
+                {
+                    load =
+                        candidate;
+                    break;
+                }
+            }
+
+            if (load == null ||
+                !string.Equals(
+                    load.BusId,
+                    "BUS_ESS",
+                    StringComparison.Ordinal) ||
+                string.IsNullOrWhiteSpace(
+                    load.BreakerId))
+            {
+                return null;
+            }
+
+            SyntheticElectricalSwitch breaker =
+                distribution.FindSwitch(
+                    load.BreakerId);
+
+            if (breaker == null)
+            {
+                return null;
+            }
+
+            bool powered =
+                load.CommandedOn &&
+                !load.AutomaticallyShed &&
+                breaker.Conducting &&
+                essPowered.Value;
+
+            return powered;
         }
 
         private static bool? ResolveEssElectricalPower(

@@ -50,7 +50,11 @@ class LightingAuthority14206Tests(unittest.TestCase):
         self.assertIn("bool explicitInhibit =", text)
         self.assertIn("SystemAuthorityStore.IsInhibited", text)
         self.assertIn("SystemAuthorityKind.Lights", text)
-        self.assertIn("bool inhibitDesired =\n                    explicitInhibit ||\n                    electricalLightsInhibit;", text)
+        self.assertIn("bool inhibitDesired =", text)
+        self.assertIn("explicitInhibit ||", text)
+        self.assertIn("electricalSasInhibit ||", text)
+        self.assertIn("electricalReactionWheelInhibit ||", text)
+        self.assertIn("electricalLightsInhibit;", text)
         self.assertIn("ESS ELECTRICAL POWER LOST", text)
 
     def test_bridge_registers_generalized_and_legacy_variables(self):

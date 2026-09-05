@@ -7,7 +7,8 @@ namespace KMC.Shared
         Sas = 0,
         Gear = 1,
         Brakes = 2,
-        Lights = 3
+        Lights = 3,
+        ReactionWheels = 4
     }
 
     public enum SystemAuthorityOperation
