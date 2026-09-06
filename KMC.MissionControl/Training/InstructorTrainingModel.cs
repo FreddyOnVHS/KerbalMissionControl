@@ -42,7 +42,14 @@ namespace KMC.MissionControl.Training
         EssFeedBContactorFailedOpen = 35,
         CommABreakerTripped = 36,
         CommBBreakerTripped = 37,
-        GenBContactorFalseOpenIndication = 38
+        GenBContactorFalseOpenIndication = 38,
+        FlightControlBreakerTripped = 39,
+        ReactionWheelBreakerTripped = 40,
+        EngineControlBreakerTripped = 41,
+        StagingControlBreakerTripped = 42,
+        BrakeControlBreakerTripped = 43,
+        GearControlBreakerTripped = 44,
+        LightingEssBreakerTripped = 45
     }
 
     public enum InstructorScenarioPreset
@@ -78,6 +85,13 @@ namespace KMC.MissionControl.Training
                 case InstructorFailurePreset.MainBusAFailed: return "POWER - MAIN BUS A FAILED";
                 case InstructorFailurePreset.MainBusBFailed: return "POWER - MAIN BUS B FAILED";
                 case InstructorFailurePreset.GuidABreakerTripped: return "POWER - GUID A BREAKER TRIPPED";
+                case InstructorFailurePreset.FlightControlBreakerTripped: return "POWER - FLIGHT CONTROL BREAKER TRIPPED";
+                case InstructorFailurePreset.ReactionWheelBreakerTripped: return "POWER - REACTION WHEEL BREAKER TRIPPED";
+                case InstructorFailurePreset.EngineControlBreakerTripped: return "POWER - ENGINE CONTROL BREAKER TRIPPED";
+                case InstructorFailurePreset.StagingControlBreakerTripped: return "POWER - STAGING CONTROL BREAKER TRIPPED";
+                case InstructorFailurePreset.BrakeControlBreakerTripped: return "POWER - BRAKE CONTROL BREAKER TRIPPED";
+                case InstructorFailurePreset.GearControlBreakerTripped: return "POWER - GEAR CONTROL BREAKER TRIPPED";
+                case InstructorFailurePreset.LightingEssBreakerTripped: return "POWER - LIGHTING ESS BREAKER TRIPPED";
                 case InstructorFailurePreset.CommABreakerTripped: return "POWER - COMM A BREAKER TRIPPED";
                 case InstructorFailurePreset.CommBBreakerTripped: return "POWER - COMM B BREAKER TRIPPED";
                 case InstructorFailurePreset.GenAContactorFalseOpenIndication: return "POWER - GEN A CONTACTOR FALSE OPEN IND";

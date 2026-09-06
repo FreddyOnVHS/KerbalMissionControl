@@ -939,6 +939,20 @@ namespace KMC.MissionControl.Training
                         preset ==
                             InstructorFailurePreset.GuidABreakerTripped ||
                         preset ==
+                            InstructorFailurePreset.FlightControlBreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.ReactionWheelBreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.EngineControlBreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.StagingControlBreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.BrakeControlBreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.GearControlBreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.LightingEssBreakerTripped ||
+                        preset ==
                             InstructorFailurePreset.CommABreakerTripped ||
                         preset ==
                             InstructorFailurePreset.CommBBreakerTripped ||
@@ -988,6 +1002,41 @@ namespace KMC.MissionControl.Training
                                 switchId = "CONT_ESS_B";
                                 switchMode =
                                     SyntheticElectricalSwitchFailureMode.FailedOpen;
+                                break;
+                            case InstructorFailurePreset.FlightControlBreakerTripped:
+                                switchId = "BRK_FLIGHT_CONTROL";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.ReactionWheelBreakerTripped:
+                                switchId = "BRK_REACTION_WHEEL";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.EngineControlBreakerTripped:
+                                switchId = "BRK_ENGINE_CONTROL";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.StagingControlBreakerTripped:
+                                switchId = "BRK_STAGING_CONTROL";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.BrakeControlBreakerTripped:
+                                switchId = "BRK_BRAKE_CONTROL";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.GearControlBreakerTripped:
+                                switchId = "BRK_GEAR_CONTROL";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.LightingEssBreakerTripped:
+                                switchId = "BRK_LIGHTING_ESS";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
                                 break;
 
                             case InstructorFailurePreset.GuidABreakerTripped:
