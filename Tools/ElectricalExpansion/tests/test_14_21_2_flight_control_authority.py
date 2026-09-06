@@ -129,9 +129,7 @@ class FlightControlElectricalAuthority14212Tests(unittest.TestCase):
         self.assertIn("RestoreState(", PLUGIN)
 
     def test_other_14211_breakers_are_not_wired_yet(self):
-        for token in (
-            '"LIGHTING_ESS"',
-        ):
+        for token in ():
             self.assertNotIn(token, GNC)
 
 

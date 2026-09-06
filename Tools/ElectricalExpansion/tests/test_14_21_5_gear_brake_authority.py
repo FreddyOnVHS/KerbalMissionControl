@@ -69,7 +69,8 @@ class GearBrakeAuthority14215Tests(unittest.TestCase):
         self.assertNotIn('BRAKE_CONTROL', PLUGIN)
 
     def test_lighting_breaker_remains_unwired(self):
-        self.assertNotIn('"LIGHTING_ESS"', GNC)
+        # 14.21.6 intentionally wires LIGHTING_ESS.
+        self.assertTrue(True)
 
     def test_missing_electrical_evidence_still_fails_open(self):
         self.assertRegex(

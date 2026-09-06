@@ -47,6 +47,8 @@ namespace KMC.Plugin
             2.50f;
         private const string StagingInputLockId =
             "KMC.SYSTEM_AUTHORITY.STAGING";
+        private static KmcSystemAuthorityReceiver _activeInstance;
+
 
 
         private readonly object _syncRoot =
@@ -65,7 +67,9 @@ namespace KMC.Plugin
 
         public void Start()
         {
-            try
+            _activeInstance = this;
+
+try
             {
                 _receiveClient =
                     new UdpClient(
@@ -106,6 +110,45 @@ namespace KMC.Plugin
             ProcessPending();
             MaintainLeases();
         }
+
+        /// <summary>
+        /// Read-only view of the live KMC system-authority lease for an active vessel.
+        /// Missing receiver state, a missing lease, a vessel mismatch, or a stale lease
+        /// all return false so callers fail open.
+        /// </summary>
+        public static bool IsAuthorityInhibited(
+            Vessel vessel,
+            SystemAuthorityKind authority)
+        {
+            KmcSystemAuthorityReceiver instance =
+                _activeInstance;
+
+            if (instance == null ||
+                vessel == null)
+            {
+                return false;
+            }
+
+            string key =
+                BuildKey(
+                    vessel.id.ToString(),
+                    authority);
+
+            LeaseState state;
+            if (!instance._leases.TryGetValue(
+                    key,
+                    out state) ||
+                state == null)
+            {
+                return false;
+            }
+
+            return
+                Time.realtimeSinceStartup -
+                state.LastRefreshRealtime <=
+                LeaseSeconds;
+        }
+
 
         private void ProcessPending()
         {

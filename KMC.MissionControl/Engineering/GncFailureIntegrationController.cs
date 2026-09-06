@@ -358,10 +358,7 @@ namespace KMC.MissionControl.Engineering
             string vesselId,
             DateTime nowUtc)
         {
-            bool? essPowered =
-                ResolveEssElectricalPower(
-                    result);
-            bool? flightControlPowered =
+bool? flightControlPowered =
                 ResolveElectricalLoadPower(
                     result,
                     "FLIGHT_CONTROL");
@@ -385,6 +382,10 @@ namespace KMC.MissionControl.Engineering
                 ResolveElectricalLoadPower(
                     result,
                     "BRAKE_CONTROL");
+            bool? lightingEssPowered =
+                ResolveElectricalLoadPower(
+                    result,
+                    "LIGHTING_ESS");
 
             SystemAuthorityKind[] authorities =
                 new[]
@@ -472,8 +473,8 @@ namespace KMC.MissionControl.Engineering
                 bool electricalLightsInhibit =
                     authority ==
                         SystemAuthorityKind.Lights &&
-                    essPowered.HasValue &&
-                    !essPowered.Value;
+                    lightingEssPowered.HasValue &&
+                    !lightingEssPowered.Value;
 
                 bool inhibitDesired =
                     explicitInhibit ||
@@ -550,7 +551,7 @@ namespace KMC.MissionControl.Engineering
                             !explicitInhibit)
                         {
                             reason =
-                                "ESS ELECTRICAL POWER LOST";
+                                "LIGHTING ESS ELECTRICAL POWER LOST";
                         }
                         else
                         {

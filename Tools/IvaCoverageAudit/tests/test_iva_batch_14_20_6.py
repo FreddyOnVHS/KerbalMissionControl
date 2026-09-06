@@ -30,10 +30,10 @@ class LightingAuthority14206Tests(unittest.TestCase):
     def read(self, path):
         return path.read_text(encoding="utf-8")
 
-    def test_external_lights_derive_from_actual_ess_truth(self):
+    def test_external_lights_derive_from_lighting_ess_truth(self):
         text = self.read(GNC)
         self.assertIn("EvaluateSystemAuthorities(\n                    result,", text)
-        self.assertIn("ResolveEssElectricalPower", text)
+        self.assertIn('"LIGHTING_ESS"', text)
         self.assertIn('distribution.FindBus(\n                    "BUS_ESS")', text)
         self.assertIn("SyntheticElectricalBusState.Unpowered", text)
         self.assertIn("SyntheticElectricalBusState.Failed", text)
@@ -41,10 +41,8 @@ class LightingAuthority14206Tests(unittest.TestCase):
 
     def test_unknown_ess_evidence_fails_open(self):
         text = self.read(GNC)
-        self.assertIn("private static bool? ResolveEssElectricalPower", text)
-        self.assertGreaterEqual(text.count("return null;"), 2)
-        self.assertIn("essPowered.HasValue &&\n                    !essPowered.Value", text)
-
+        self.assertIn("lightingEssPowered.HasValue", text)
+        self.assertIn("!lightingEssPowered.Value", text)
     def test_explicit_and_electrical_light_inhibits_are_combined(self):
         text = self.read(GNC)
         self.assertIn("bool explicitInhibit =", text)

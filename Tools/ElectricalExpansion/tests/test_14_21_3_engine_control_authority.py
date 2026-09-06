@@ -85,9 +85,7 @@ class EngineControlAuthority14213Tests(unittest.TestCase):
         )
 
     def test_later_breakers_remain_unwired(self):
-        for token in (
-            '"LIGHTING_ESS"',
-        ):
+        for token in ():
             self.assertNotIn(token, GNC)
 
 if __name__ == "__main__":

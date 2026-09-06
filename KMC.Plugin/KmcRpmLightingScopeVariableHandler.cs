@@ -91,12 +91,30 @@ namespace KMC.Plugin
                 return 1.0;
             }
 
-            return
+            bool essPowered =
                 IsBusPowered(
                     status.EssentialVoltage,
-                    status.EssentialState)
-                    ? 1.0
-                    : 0.0;
+                    status.EssentialState);
+
+            if (!essPowered)
+            {
+                return 0.0;
+            }
+
+            /*
+             * ESS can remain energized while BRK_LIGHTING_ESS is
+             * tripped. The system-authority lease is the existing
+             * breaker-specific lighting truth used by exterior lights.
+             * Missing / stale authority evidence fails open.
+             */
+            if (KmcSystemAuthorityReceiver.IsAuthorityInhibited(
+                    vessel,
+                    SystemAuthorityKind.Lights))
+            {
+                return 0.0;
+            }
+
+            return 1.0;
         }
 
         private bool TryGetStatus(
