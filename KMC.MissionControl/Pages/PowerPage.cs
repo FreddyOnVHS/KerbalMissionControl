@@ -1,4 +1,4 @@
-﻿﻿using System;
+using System;
 using System.Drawing;
 using KMC.Engine.Analysis;
 using KMC.Engine.Electrical;
@@ -23,12 +23,17 @@ namespace KMC.MissionControl.Pages
         IMissionPageCanvasProvider,
         IMessageFilter
     {
+        // POWER RESERVED NAV RAIL
+        private const int NavRailWidth = 220;
+        private const int NavRailGap = 18;
+
         private const int WmLeftButtonDown =
             0x0201;
 
         private int _subpage = 1;
 
         private Rectangle _oneLineTab;
+        private Rectangle _breakerTab;
         private Rectangle _detailTab;
 
         private int _sourceInventoryPage;
@@ -136,12 +141,17 @@ namespace KMC.MissionControl.Pages
             {
                 _subpage = 1;
             }
-            else if (_detailTab.Contains(
+            else if (_breakerTab.Contains(
                          point))
             {
                 _subpage = 2;
             }
-            else if (_subpage == 2 &&
+            else if (_detailTab.Contains(
+                         point))
+            {
+                _subpage = 3;
+            }
+            else if (_subpage == 3 &&
                      _sourcePreviousButton.Contains(
                          point) &&
                      _sourceInventoryPage > 0)
@@ -150,7 +160,7 @@ namespace KMC.MissionControl.Pages
                 display.RequestRender();
                 return false;
             }
-            else if (_subpage == 2 &&
+            else if (_subpage == 3 &&
                      _sourceNextButton.Contains(
                          point) &&
                      _sourceInventoryPage <
@@ -188,7 +198,38 @@ namespace KMC.MissionControl.Pages
             EngineeringSnapshotStore.TryGetLatest(
                 out engineering);
 
+            Rectangle pageBounds =
+                new Rectangle(
+                    context.ContentBounds.Left,
+                    context.ContentBounds.Top,
+                    Math.Max(
+                        1,
+                        context.ContentBounds.Width -
+                        NavRailWidth -
+                        NavRailGap),
+                    context.ContentBounds.Height);
+
+            MissionRenderContext pageContext =
+                new MissionRenderContext(
+                    context.Graphics,
+                    pageBounds,
+                    context.LargeFont,
+                    context.SmallFont,
+                    context.PhosphorColor,
+                    context.DimPhosphorColor,
+                    context.VirtualCanvasSize);
+
             if (_subpage == 2)
+            {
+                PowerBreakerPanelRenderer.Draw(
+                    pageContext,
+                    engineering);
+
+                DrawDistributionEventHeader(
+                    pageContext,
+                    engineering);
+            }
+            else if (_subpage == 3)
             {
                 /*
                  * Build 14.14.2C:
@@ -199,7 +240,7 @@ namespace KMC.MissionControl.Pages
                 int effectivePage;
 
                 PowerDetailConsolidatedRenderer.Draw(
-                    context,
+                    pageContext,
                     engineering,
                     _sourceInventoryPage,
                     out _sourcePreviousButton,
@@ -216,13 +257,13 @@ namespace KMC.MissionControl.Pages
                  * space. This does not alter the consolidated panel geometry.
                  */
                 DrawDistributionEventHeader(
-                    context,
+                    pageContext,
                     engineering);
             }
             else
             {
                 PowerSchematicRenderer.Draw(
-                    context,
+                    pageContext,
                     telemetry,
                     engineering);
             }
@@ -346,20 +387,19 @@ namespace KMC.MissionControl.Pages
             Rectangle content =
                 context.ContentBounds;
 
+            // VERTICAL POWER SUBPAGE NAV
+            // POWER RESERVED NAV RAIL
             const int gap = 8;
             const int tabWidth = 180;
             const int tabHeight = 36;
 
-            int totalWidth =
-                tabWidth * 2 +
-                gap;
-
             int x =
                 content.Right -
-                totalWidth;
+                NavRailWidth +
+                (NavRailWidth - tabWidth) / 2;
 
             int y =
-                content.Top + 44;
+                content.Top + 54;
 
             _oneLineTab =
                 new Rectangle(
@@ -368,24 +408,37 @@ namespace KMC.MissionControl.Pages
                     tabWidth,
                     tabHeight);
 
+            _breakerTab =
+                new Rectangle(
+                    x,
+                    _oneLineTab.Bottom + gap,
+                    tabWidth,
+                    tabHeight);
+
             _detailTab =
                 new Rectangle(
-                    _oneLineTab.Right + gap,
-                    y,
+                    x,
+                    _breakerTab.Bottom + gap,
                     tabWidth,
                     tabHeight);
 
             DrawTab(
                 context,
                 _oneLineTab,
-                "1/2 ONE-LINE",
+                "1/3 ONE-LINE",
                 _subpage == 1);
 
             DrawTab(
                 context,
-                _detailTab,
-                "2/2 DETAIL",
+                _breakerTab,
+                "2/3 BREAKERS",
                 _subpage == 2);
+
+            DrawTab(
+                context,
+                _detailTab,
+                "3/3 DETAIL",
+                _subpage == 3);
         }
 
         private static void DrawTab(
