@@ -953,6 +953,26 @@ namespace KMC.MissionControl.Training
                         preset ==
                             InstructorFailurePreset.LightingEssBreakerTripped ||
                         preset ==
+                            InstructorFailurePreset.PumpABreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.CabinFanABreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.ThermalHeaterABreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.FlightComputerBreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.InstrumentationEssBreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.RcsControlBreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.GuidBBreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.PumpBBreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.CabinFanBBreakerTripped ||
+                        preset ==
+                            InstructorFailurePreset.ThermalHeaterBBreakerTripped ||
+                        preset ==
                             InstructorFailurePreset.CommABreakerTripped ||
                         preset ==
                             InstructorFailurePreset.CommBBreakerTripped ||
@@ -1035,6 +1055,56 @@ namespace KMC.MissionControl.Training
                                 break;
                             case InstructorFailurePreset.LightingEssBreakerTripped:
                                 switchId = "BRK_LIGHTING_ESS";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.PumpABreakerTripped:
+                                switchId = "BRK_PUMP_A";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.CabinFanABreakerTripped:
+                                switchId = "BRK_CABIN_FAN_A";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.ThermalHeaterABreakerTripped:
+                                switchId = "BRK_THERMAL_HEATER_A";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.FlightComputerBreakerTripped:
+                                switchId = "BRK_FLIGHT_COMPUTER";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.InstrumentationEssBreakerTripped:
+                                switchId = "BRK_INSTRUMENTATION_ESS";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.RcsControlBreakerTripped:
+                                switchId = "BRK_RCS_CONTROL";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.GuidBBreakerTripped:
+                                switchId = "BRK_GUID_B";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.PumpBBreakerTripped:
+                                switchId = "BRK_PUMP_B";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.CabinFanBBreakerTripped:
+                                switchId = "BRK_CABIN_FAN_B";
+                                switchMode =
+                                    SyntheticElectricalSwitchFailureMode.TrippedOpen;
+                                break;
+                            case InstructorFailurePreset.ThermalHeaterBBreakerTripped:
+                                switchId = "BRK_THERMAL_HEATER_B";
                                 switchMode =
                                     SyntheticElectricalSwitchFailureMode.TrippedOpen;
                                 break;

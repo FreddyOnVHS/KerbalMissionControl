@@ -49,7 +49,17 @@ namespace KMC.MissionControl.Training
         StagingControlBreakerTripped = 42,
         BrakeControlBreakerTripped = 43,
         GearControlBreakerTripped = 44,
-        LightingEssBreakerTripped = 45
+        LightingEssBreakerTripped = 45,
+        PumpABreakerTripped = 46,
+        CabinFanABreakerTripped = 47,
+        ThermalHeaterABreakerTripped = 48,
+        FlightComputerBreakerTripped = 49,
+        InstrumentationEssBreakerTripped = 50,
+        RcsControlBreakerTripped = 51,
+        GuidBBreakerTripped = 52,
+        PumpBBreakerTripped = 53,
+        CabinFanBBreakerTripped = 54,
+        ThermalHeaterBBreakerTripped = 55
     }
 
     public enum InstructorScenarioPreset
@@ -92,6 +102,16 @@ namespace KMC.MissionControl.Training
                 case InstructorFailurePreset.BrakeControlBreakerTripped: return "POWER - BRAKE CONTROL BREAKER TRIPPED";
                 case InstructorFailurePreset.GearControlBreakerTripped: return "POWER - GEAR CONTROL BREAKER TRIPPED";
                 case InstructorFailurePreset.LightingEssBreakerTripped: return "POWER - LIGHTING ESS BREAKER TRIPPED";
+                case InstructorFailurePreset.PumpABreakerTripped: return "POWER - PUMP A BREAKER TRIPPED";
+                case InstructorFailurePreset.CabinFanABreakerTripped: return "POWER - CABIN FAN A BREAKER TRIPPED";
+                case InstructorFailurePreset.ThermalHeaterABreakerTripped: return "POWER - THERMAL HEATER A BREAKER TRIPPED";
+                case InstructorFailurePreset.FlightComputerBreakerTripped: return "POWER - FLIGHT COMPUTER BREAKER TRIPPED";
+                case InstructorFailurePreset.InstrumentationEssBreakerTripped: return "POWER - INSTRUMENTATION ESS BREAKER TRIPPED";
+                case InstructorFailurePreset.RcsControlBreakerTripped: return "POWER - RCS CONTROL BREAKER TRIPPED";
+                case InstructorFailurePreset.GuidBBreakerTripped: return "POWER - GUID B BREAKER TRIPPED";
+                case InstructorFailurePreset.PumpBBreakerTripped: return "POWER - PUMP B BREAKER TRIPPED";
+                case InstructorFailurePreset.CabinFanBBreakerTripped: return "POWER - CABIN FAN B BREAKER TRIPPED";
+                case InstructorFailurePreset.ThermalHeaterBBreakerTripped: return "POWER - THERMAL HEATER B BREAKER TRIPPED";
                 case InstructorFailurePreset.CommABreakerTripped: return "POWER - COMM A BREAKER TRIPPED";
                 case InstructorFailurePreset.CommBBreakerTripped: return "POWER - COMM B BREAKER TRIPPED";
                 case InstructorFailurePreset.GenAContactorFalseOpenIndication: return "POWER - GEN A CONTACTOR FALSE OPEN IND";
