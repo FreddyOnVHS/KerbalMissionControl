@@ -1441,6 +1441,21 @@ namespace KMC.Engine.SpacecraftSystems
                 0.5,
                 1);
 
+            /*
+             * Build 14.21.10:
+             * Promote the existing RCS_CONTROL overlay into the nominal
+             * distribution before crew controls and electrical switch failures
+             * are applied. This makes BRK_RCS_CONTROL visible to the same
+             * authoritative switch-failure pass as every other load breaker.
+             */
+            AddLoad(
+                distribution,
+                "RCS_CONTROL",
+                "RCS CONTROL / VALVE POWER",
+                "BUS_ESS",
+                1.0,
+                1);
+
             return distribution;
         }
 
