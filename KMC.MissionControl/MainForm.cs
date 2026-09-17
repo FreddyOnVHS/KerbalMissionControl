@@ -48,6 +48,8 @@ namespace KMC.MissionControl
         private readonly MissionControlReceiver _receiver;
         private readonly OrbitNormalTelemetryReceiver _orbitNormalReceiver;
         private readonly RadialTelemetryReceiver _radialReceiver;
+        private readonly OrbitMapTelemetryReceiver _orbitMapReceiver;
+        private readonly MapPage _mapPage;
         private readonly LatestTelemetryBuffer _telemetryBuffer;
         private readonly FormsTimer _connectionTimer;
         private readonly FormsTimer _displayRefreshTimer;
@@ -82,6 +84,7 @@ namespace KMC.MissionControl
         private long _displayedPacketCount;
         private DateTime _lastPerformanceReportUtc;
         private bool _isMovingOrResizing;
+        private bool _mapPageActive;
 
         public MainForm()
         {
@@ -146,6 +149,8 @@ namespace KMC.MissionControl
                     Height = NavigationHeight,
                     Margin = Padding.Empty
                 };
+
+            _mapPage = new MapPage();
 
             ConfigureNavigation();
 
@@ -218,11 +223,17 @@ namespace KMC.MissionControl
             _radialReceiver =
                 new RadialTelemetryReceiver();
 
+            _orbitMapReceiver =
+                new OrbitMapTelemetryReceiver();
+
             _orbitNormalReceiver.SampleReceived +=
                 OnOrbitNormalTelemetryReceived;
 
             _radialReceiver.SampleReceived +=
                 OnRadialTelemetryReceived;
+
+            _orbitMapReceiver.SnapshotReceived +=
+                OnOrbitMapSnapshotReceived;
 
             _receiver.TelemetryReceived += OnTelemetryReceived;
             _receiver.ManeuverAcknowledgmentReceived += OnManeuverAcknowledgmentReceived;
@@ -780,8 +791,7 @@ namespace KMC.MissionControl
 
             _navigationBar.AddPage(
                 "MAP",
-                new AscentPage(),
-                enabled: false);
+                _mapPage);
 
             _navigationBar.PageChanged +=
                 OnPageChanged;
@@ -794,6 +804,17 @@ namespace KMC.MissionControl
             _missionDisplay.SetPage(page);
             _missionDisplay.ScreenTitle = title + " DATA";
             _displayPanel.PanelTitle = title + " DISPLAY";
+
+            _mapPageActive =
+                string.Equals(
+                    title,
+                    "MAP",
+                    StringComparison.OrdinalIgnoreCase);
+
+            if (_mapPageActive)
+            {
+                _missionDisplay.RequestRender();
+            }
 
             bool maneuverPage =
                 string.Equals(
@@ -1717,8 +1738,10 @@ namespace KMC.MissionControl
                 ManeuverPlanPromotionStore.Clear();
                 OrbitNormalTelemetryStore.Clear();
                 RadialTelemetryStore.Clear();
+            OrbitMapSnapshotStore.Clear();
                 _orbitNormalReceiver.Start();
                 _radialReceiver.Start();
+                _orbitMapReceiver.Start();
                 _maneuverQueueTransport.Start();
                 _electricalControlReceiver.Start();
                 _failureEffectAckReceiver.Start();
@@ -1792,6 +1815,24 @@ namespace KMC.MissionControl
 
                     ReferenceForwardComponent =
                         sample.ReferenceForwardComponent
+                });
+        }
+
+        private void OnOrbitMapSnapshotReceived(
+            OrbitMapPacket packet)
+        {
+            if (!_mapPageActive || IsDisposed || !IsHandleCreated)
+            {
+                return;
+            }
+
+            BeginInvoke(
+                (MethodInvoker)delegate
+                {
+                    if (_mapPageActive && !_missionDisplay.IsDisposed)
+                    {
+                        _missionDisplay.RequestRender();
+                    }
                 });
         }
 
@@ -2242,10 +2283,15 @@ namespace KMC.MissionControl
             _radialReceiver.SampleReceived -=
                 OnRadialTelemetryReceived;
 
+            _orbitMapReceiver.SnapshotReceived -=
+                OnOrbitMapSnapshotReceived;
+
             _orbitNormalReceiver.Dispose();
             _radialReceiver.Dispose();
+            _orbitMapReceiver.Dispose();
             OrbitNormalTelemetryStore.Clear();
             RadialTelemetryStore.Clear();
+            OrbitMapSnapshotStore.Clear();
             ManeuverInventoryStore.Clear();
             KmcManeuverPlanStore.Clear();
             ManeuverPlanPromotionStore.Clear();

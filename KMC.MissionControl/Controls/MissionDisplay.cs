@@ -544,6 +544,43 @@ namespace KMC.MissionControl.Controls
                     _paintCount);
         }
 
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            IMissionPagePointerInput input = _missionPage as IMissionPagePointerInput;
+            PointF virtualPoint;
+            if (input != null && TryClientToVirtual(e.Location, out virtualPoint) && input.PointerDown(virtualPoint, e.Button))
+            {
+                Capture = true;
+                RequestRender();
+            }
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            IMissionPagePointerInput input = _missionPage as IMissionPagePointerInput;
+            PointF virtualPoint;
+            if (input != null && TryClientToVirtual(e.Location, out virtualPoint) && input.PointerMove(virtualPoint, e.Button)) RequestRender();
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            IMissionPagePointerInput input = _missionPage as IMissionPagePointerInput;
+            PointF virtualPoint;
+            if (input != null && TryClientToVirtual(e.Location, out virtualPoint) && input.PointerUp(virtualPoint, e.Button)) RequestRender();
+            Capture = false;
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            IMissionPagePointerInput input = _missionPage as IMissionPagePointerInput;
+            PointF virtualPoint;
+            if (input != null && TryClientToVirtual(e.Location, out virtualPoint) && input.PointerWheel(virtualPoint, e.Delta)) RequestRender();
+        }
+
         protected override void Dispose(
             bool disposing)
         {

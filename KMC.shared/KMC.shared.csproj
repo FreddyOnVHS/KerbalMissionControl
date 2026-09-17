@@ -41,6 +41,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="OrbitMapPacket.cs" />
     <Compile Include="TelemetryPacket.cs" />
     <Compile Include="ManeuverEpochPacket.cs" />
     <Compile Include="ManeuverUplinkPacket.cs" />
