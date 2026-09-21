@@ -136,37 +136,52 @@ namespace KMC.Plugin
         private static void BuildBodies(Vessel vessel, OrbitMapPacket packet, double ut)
         {
             CelestialBody primary = vessel.mainBody;
-            if (primary == null) return;
+            if (primary == null || FlightGlobals.Bodies == null) return;
 
-            OrbitMapBody root = new OrbitMapBody();
-            root.Name = primary.bodyName ?? string.Empty;
-            root.ParentName = primary.referenceBody != null && primary.referenceBody != primary ? primary.referenceBody.bodyName ?? string.Empty : string.Empty;
-            root.RadiusMeters = primary.Radius;
-            root.SoiRadiusMeters = IsFinite(primary.sphereOfInfluence) ? primary.sphereOfInfluence : 0.0;
-            root.GravParameter = primary.gravParameter;
-            root.PositionX = 0.0;
-            root.PositionY = 0.0;
-            root.PositionZ = 0.0;
-            packet.Bodies.Add(root);
-
-            if (FlightGlobals.Bodies == null) return;
+            // 14.22.27: populate the transfer-planner catalog from KSP's real
+            // celestial-body list rather than hard-coding the stock Kerbol system.
+            // The existing packet limit remains authoritative. In the stock game,
+            // the sixteen orbiting bodies fit exactly; the central star is omitted
+            // unless it is the vessel's current reference body.
             for (int i = 0; i < FlightGlobals.Bodies.Count; i++)
             {
                 if (packet.Bodies.Count >= OrbitMapPacket.MaxBodies) break;
-                CelestialBody candidate = FlightGlobals.Bodies[i];
-                if (candidate == null || candidate == primary || candidate.referenceBody != primary || candidate.orbit == null) continue;
 
-                Vector3d position = CanonicalPositionAtTrueAnomaly(candidate.orbit, candidate.orbit.trueAnomaly);
+                CelestialBody candidate = FlightGlobals.Bodies[i];
+                if (candidate == null) continue;
+
+                bool isPrimary = candidate == primary;
+                if (candidate.orbit == null && !isPrimary) continue;
+
                 OrbitMapBody body = new OrbitMapBody();
                 body.Name = candidate.bodyName ?? string.Empty;
-                body.ParentName = primary.bodyName ?? string.Empty;
+                body.ParentName = candidate.referenceBody != null && candidate.referenceBody != candidate
+                    ? candidate.referenceBody.bodyName ?? string.Empty
+                    : string.Empty;
                 body.RadiusMeters = candidate.Radius;
                 body.SoiRadiusMeters = IsFinite(candidate.sphereOfInfluence) ? candidate.sphereOfInfluence : 0.0;
                 body.GravParameter = candidate.gravParameter;
-                body.Orbit = BuildOrbit(candidate.orbit, position);
-                body.PositionX = position.x;
-                body.PositionY = position.y;
-                body.PositionZ = position.z;
+
+                if (candidate.orbit != null)
+                {
+                    Vector3d position = CanonicalPositionAtTrueAnomaly(candidate.orbit, candidate.orbit.trueAnomaly);
+                    body.Orbit = BuildOrbit(candidate.orbit, position);
+
+                    // Keep the active reference body's packet position at the local
+                    // map origin. All other body positions are relative to their
+                    // own parent and are used only when that parent is the local
+                    // reference body (or by the transfer-planner catalog).
+                    body.PositionX = isPrimary ? 0.0 : position.x;
+                    body.PositionY = isPrimary ? 0.0 : position.y;
+                    body.PositionZ = isPrimary ? 0.0 : position.z;
+                }
+                else
+                {
+                    body.PositionX = 0.0;
+                    body.PositionY = 0.0;
+                    body.PositionZ = 0.0;
+                }
+
                 packet.Bodies.Add(body);
             }
         }
@@ -366,7 +381,6 @@ namespace KMC.Plugin
             }
         }
 
-
         private static void BuildAuthoritativePatchSamples(Orbit patch, OrbitMapPatch item, string primaryBodyName, ref int remainingSamples)
         {
             if (patch == null || item == null || patch.referenceBody == null || remainingSamples < 4) return;
@@ -458,8 +472,6 @@ namespace KMC.Plugin
             orbit.GetOrbitalStateVectorsAtTrueAnomaly(trueAnomaly, ut, false, out position, out velocity);
             return Planetarium.Zup.WorldToLocal(position);
         }
-
-
 
         private static void LogEncounterClearanceDiagnostics(Orbit patch, OrbitMapPatch item, string primaryBodyName, List<OrbitMapPatchSample> samples)
         {
