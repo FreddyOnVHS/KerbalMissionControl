@@ -263,6 +263,29 @@ namespace KMC.MissionControl.Rendering.OrbitMap
             OrbitMapSceneEncounterBody encounter = FindEncounterBody(s, p.Index);
             if (encounter != null && !double.IsNaN(encounter.EncounterUniversalTimeSeconds) && !double.IsInfinity(encounter.EncounterUniversalTimeSeconds))
                 text += "\nCLOSEST " + FormatEventOffset(encounter.EncounterUniversalTimeSeconds - s.UniversalTimeSeconds);
+
+            string patchEnd = FormatPatchEndText(p, s.UniversalTimeSeconds);
+            if (!string.IsNullOrEmpty(patchEnd)) text += "\n" + patchEnd;
+            return text;
+        }
+
+        private static string FormatPatchEndText(OrbitMapPatch p, double currentUniversalTimeSeconds)
+        {
+            if (p == null || double.IsNaN(p.EndUniversalTimeSeconds) || double.IsInfinity(p.EndUniversalTimeSeconds)) return string.Empty;
+
+            string offset = FormatEventOffset(p.EndUniversalTimeSeconds - currentUniversalTimeSeconds);
+            string transition = (p.TransitionType ?? string.Empty).Trim();
+            string nextBody = (p.NextBodyName ?? string.Empty).Trim();
+            string text;
+
+            if (string.Equals(transition, "ESCAPE", StringComparison.OrdinalIgnoreCase))
+                text = "EXIT " + offset;
+            else if (!string.IsNullOrEmpty(transition))
+                text = "END " + transition.ToUpperInvariant() + " " + offset;
+            else
+                text = "END " + offset;
+
+            if (!string.IsNullOrEmpty(nextBody)) text += " -> " + nextBody;
             return text;
         }
 
