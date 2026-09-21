@@ -253,10 +253,42 @@ namespace KMC.MissionControl.Rendering.OrbitMap
             OrbitMapPatch p = FindEncounterPatch(s);
             if (p == null || p.Orbit == null) return "NO ENCOUNTER";
 
-            string text = "SOI: " + p.Orbit.ReferenceBodyName + "\nENCOUNTER";
+            string text = "SOI: " + p.Orbit.ReferenceBodyName;
+            if (!double.IsNaN(p.StartUniversalTimeSeconds) && !double.IsInfinity(p.StartUniversalTimeSeconds))
+                text += "\nENTRY " + FormatEventOffset(p.StartUniversalTimeSeconds - s.UniversalTimeSeconds);
+
             if (!double.IsNaN(p.Orbit.PeriapsisMeters) && !double.IsInfinity(p.Orbit.PeriapsisMeters))
                 text += "\nPE " + D(p.Orbit.PeriapsisMeters);
+
+            OrbitMapSceneEncounterBody encounter = FindEncounterBody(s, p.Index);
+            if (encounter != null && !double.IsNaN(encounter.EncounterUniversalTimeSeconds) && !double.IsInfinity(encounter.EncounterUniversalTimeSeconds))
+                text += "\nCLOSEST " + FormatEventOffset(encounter.EncounterUniversalTimeSeconds - s.UniversalTimeSeconds);
             return text;
+        }
+
+        private static OrbitMapSceneEncounterBody FindEncounterBody(OrbitMapSceneSnapshot s, int patchIndex)
+        {
+            if (s == null || s.EncounterBodies == null) return null;
+            for (int i = 0; i < s.EncounterBodies.Count; i++)
+            {
+                OrbitMapSceneEncounterBody encounter = s.EncounterBodies[i];
+                if (encounter != null && encounter.PatchIndex == patchIndex) return encounter;
+            }
+            return null;
+        }
+
+        private static string FormatEventOffset(double seconds)
+        {
+            string prefix = seconds >= 0.0 ? "T-" : "T+";
+            double magnitude = Math.Abs(seconds);
+            long wholeSeconds = (long)Math.Floor(magnitude + 0.5);
+            long days = wholeSeconds / 86400;
+            long hours = (wholeSeconds % 86400) / 3600;
+            long minutes = (wholeSeconds % 3600) / 60;
+            long secs = wholeSeconds % 60;
+            return days > 0
+                ? string.Format("{0}{1}d {2:00}:{3:00}:{4:00}", prefix, days, hours, minutes, secs)
+                : string.Format("{0}{1:00}:{2:00}:{3:00}", prefix, hours, minutes, secs);
         }
 
         private static OrbitMapPatch FindEncounterPatch(OrbitMapSceneSnapshot s)
