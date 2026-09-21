@@ -24,16 +24,35 @@ namespace KMC.MissionControl.Rendering.OrbitMap
             Color activeColor = freshness == OrbitMapFreshness.Stale ? context.DimPhosphorColor : context.PhosphorColor;
             Color targetColor = Color.FromArgb(freshness == OrbitMapFreshness.Stale ? 110 : 190, 150, 220, 255);
             Color patchColor = Color.FromArgb(freshness == OrbitMapFreshness.Stale ? 100 : 210, 255, 190, 90);
+            Color greenPatchColor = Color.FromArgb(freshness == OrbitMapFreshness.Stale ? 100 : 210, 140, 255, 90);
+            Color encounterPatchColor = Color.FromArgb(freshness == OrbitMapFreshness.Stale ? 100 : 210, 190, 120, 255);
 
             DrawChildBodyOrbits(context, viewport, scene, camera);
             DrawBody(context, viewport, scene, camera, activeColor);
             DrawChildBodies(context, viewport, scene, camera);
             using (Pen targetPen = new Pen(targetColor, 1.2f)) DrawPolyline(g, viewport, scene.TargetOrbitPoints, camera, targetPen, scene.BodyRadiusMeters);
             using (Pen activePen = new Pen(activeColor, 2.0f)) DrawPolyline(g, viewport, scene.ActiveOrbitPoints, camera, activePen, scene.BodyRadiusMeters);
-            using (Pen patchPen = new Pen(patchColor, 1.6f))
-                for (int i = 0; i < scene.PatchPoints.Count; i++) DrawPolyline(g, viewport, scene.PatchPoints[i], camera, patchPen, scene.BodyRadiusMeters);
+            for (int i = 0; i < scene.PatchPoints.Count; i++)
+            {
+                OrbitMapPatchRenderKind kind = i < scene.PatchRenderKinds.Count
+                    ? scene.PatchRenderKinds[i]
+                    : OrbitMapPatchRenderKind.PrimaryInitial;
+                Color color = patchColor;
+                switch (kind)
+                {
+                    case OrbitMapPatchRenderKind.PrimaryLater:
+                        color = greenPatchColor;
+                        break;
+                    case OrbitMapPatchRenderKind.Encounter:
+                        color = encounterPatchColor;
+                        break;
+                }
 
-            DrawEncounterBodies(context, viewport, scene, camera, patchColor);
+                using (Pen patchPen = new Pen(color, 1.6f))
+                    DrawPolyline(g, viewport, scene.PatchPoints[i], camera, patchPen, scene.BodyRadiusMeters);
+            }
+
+            DrawEncounterBodies(context, viewport, scene, camera, encounterPatchColor);
 
             DrawMarker(context, viewport, camera, scene.VesselPosition, "VSL", activeColor, 5, scene.BodyRadiusMeters);
             DrawMarker(context, viewport, camera, scene.ApoapsisPosition, "AP", activeColor, 4, scene.BodyRadiusMeters);
@@ -230,16 +249,37 @@ namespace KMC.MissionControl.Rendering.OrbitMap
         private static string BuildEncounterText(OrbitMapSceneSnapshot s, OrbitMapFreshness f)
         {
             if (s == null || f == OrbitMapFreshness.Unavailable) return "UNAVAILABLE";
+
+            OrbitMapPatch p = FindEncounterPatch(s);
+            if (p == null || p.Orbit == null) return "NO ENCOUNTER";
+
+            string text = "SOI: " + p.Orbit.ReferenceBodyName + "\nENCOUNTER";
+            if (!double.IsNaN(p.Orbit.PeriapsisMeters) && !double.IsInfinity(p.Orbit.PeriapsisMeters))
+                text += "\nPE " + D(p.Orbit.PeriapsisMeters);
+            return text;
+        }
+
+        private static OrbitMapPatch FindEncounterPatch(OrbitMapSceneSnapshot s)
+        {
+            if (s == null) return null;
+
+            if (s.EncounterBodies != null && s.EncounterBodies.Count > 0)
+            {
+                int patchIndex = s.EncounterBodies[0].PatchIndex;
+                for (int i = 0; i < s.Patches.Count; i++)
+                    if (s.Patches[i] != null && s.Patches[i].Index == patchIndex)
+                        return s.Patches[i];
+            }
+
             for (int i = 0; i < s.Patches.Count; i++)
             {
                 OrbitMapPatch p = s.Patches[i];
-                if (string.IsNullOrWhiteSpace(p.NextBodyName) && (p.Orbit == null || string.Equals(p.Orbit.ReferenceBodyName, s.BodyName, StringComparison.OrdinalIgnoreCase))) continue;
-                string body = !string.IsNullOrWhiteSpace(p.NextBodyName) ? p.NextBodyName : p.Orbit.ReferenceBodyName;
-                string text = "SOI: " + body + "\n" + (p.TransitionType ?? string.Empty);
-                if (p.Orbit != null && !double.IsNaN(p.Orbit.PeriapsisMeters) && !double.IsInfinity(p.Orbit.PeriapsisMeters)) text += "\nPE " + D(p.Orbit.PeriapsisMeters);
-                return text;
+                if (p == null || p.Orbit == null) continue;
+                if (!string.Equals(p.Orbit.ReferenceBodyName, s.BodyName, StringComparison.OrdinalIgnoreCase))
+                    return p;
             }
-            return "NO ENCOUNTER";
+
+            return null;
         }
         private static string D(double meters) { double a = Math.Abs(meters); return a >= 1000000 ? (meters / 1000000.0).ToString("0.00") + " Mm" : (meters / 1000.0).ToString("0.0") + " km"; }
     }

@@ -6,6 +6,13 @@ using KMC.Shared;
 
 namespace KMC.MissionControl.Rendering.OrbitMap
 {
+    public enum OrbitMapPatchRenderKind
+    {
+        PrimaryInitial,
+        Encounter,
+        PrimaryLater
+    }
+
     public sealed class OrbitMapSceneBody
     {
         public OrbitMapBody Body { get; internal set; }
@@ -32,6 +39,7 @@ namespace KMC.MissionControl.Rendering.OrbitMap
         public OrbitMapVector3[] ActiveOrbitPoints { get; internal set; }
         public OrbitMapVector3[] TargetOrbitPoints { get; internal set; }
         public List<OrbitMapVector3[]> PatchPoints { get; internal set; }
+        public List<OrbitMapPatchRenderKind> PatchRenderKinds { get; internal set; }
         public List<OrbitMapManeuverNode> ManeuverNodes { get; internal set; }
         public List<OrbitMapPatch> Patches { get; internal set; }
         public List<OrbitMapSceneBody> ChildBodies { get; internal set; }
@@ -50,6 +58,7 @@ namespace KMC.MissionControl.Rendering.OrbitMap
             ActiveOrbitPoints = new OrbitMapVector3[0];
             TargetOrbitPoints = new OrbitMapVector3[0];
             PatchPoints = new List<OrbitMapVector3[]>();
+            PatchRenderKinds = new List<OrbitMapPatchRenderKind>();
             ManeuverNodes = new List<OrbitMapManeuverNode>();
             Patches = new List<OrbitMapPatch>();
             ChildBodies = new List<OrbitMapSceneBody>();
@@ -105,6 +114,7 @@ namespace KMC.MissionControl.Rendering.OrbitMap
                 }
 
                 OrbitMapBody primaryBody = FindBody(packet.Bodies, packet.ReferenceBodyName);
+                int primaryPassCount = 0;
                 for (int i = 0; i < packet.Patches.Count; i++)
                 {
                     OrbitMapPatch patch = packet.Patches[i];
@@ -117,6 +127,9 @@ namespace KMC.MissionControl.Rendering.OrbitMap
                         if (sampled.Length > 0)
                         {
                             scene.PatchPoints.Add(sampled);
+                            scene.PatchRenderKinds.Add(
+                                primaryPassCount == 0 ? OrbitMapPatchRenderKind.PrimaryInitial : OrbitMapPatchRenderKind.PrimaryLater);
+                            primaryPassCount++;
                         }
                         continue;
                     }
@@ -128,6 +141,7 @@ namespace KMC.MissionControl.Rendering.OrbitMap
                         {
                             OrbitMapVector3[] authoritative = OrbitMapSystemTransform.AuthoritativePatchPoints(patch);
                             scene.PatchPoints.Add(authoritative);
+                            scene.PatchRenderKinds.Add(OrbitMapPatchRenderKind.Encounter);
 
                             OrbitMapPatchSample closest = FindClosestApproachSample(patch);
                             OrbitMapSceneEncounterBody encounterBody = new OrbitMapSceneEncounterBody();
@@ -151,6 +165,7 @@ namespace KMC.MissionControl.Rendering.OrbitMap
                 scene.ActiveOrbitPoints = _current.ActiveOrbitPoints;
                 scene.TargetOrbitPoints = _current.TargetOrbitPoints;
                 scene.PatchPoints = _current.PatchPoints;
+                scene.PatchRenderKinds = _current.PatchRenderKinds;
                 scene.ChildBodies = _current.ChildBodies;
                 scene.EncounterBodies = _current.EncounterBodies;
                 for (int i = 0; i < scene.ChildBodies.Count; i++)
