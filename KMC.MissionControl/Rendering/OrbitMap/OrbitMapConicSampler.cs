@@ -19,17 +19,38 @@ namespace KMC.MissionControl.Rendering.OrbitMap
 
         public static OrbitMapVector3[] SamplePatch(OrbitMapPatch patch, int sampleCount)
         {
+            return SamplePatch(patch, sampleCount, 0.0);
+        }
+
+        public static OrbitMapVector3[] SamplePatch(OrbitMapPatch patch, int sampleCount, double gravParameter)
+        {
             if (patch == null || patch.Orbit == null || sampleCount < 4) return new OrbitMapVector3[0];
+
+            double startUt = patch.StartUniversalTimeSeconds;
+            double endUt = patch.EndUniversalTimeSeconds;
+            bool timeBounded = !double.IsNaN(endUt) && !double.IsInfinity(endUt) && endUt > startUt;
+
+            // KSP's patched-conic StartUT/EndUT are authoritative. When a finite
+            // interval exists, sample every conic (elliptic or hyperbolic) in
+            // universal time. This keeps child-body translation synchronized with
+            // the exact local point being transformed into the primary frame.
+            if (timeBounded && gravParameter > 0.0 && !double.IsNaN(gravParameter) && !double.IsInfinity(gravParameter))
+            {
+                OrbitMapVector3[] timed = new OrbitMapVector3[sampleCount + 1];
+                for (int i = 0; i <= sampleCount; i++)
+                {
+                    double ut = startUt + (endUt - startUt) * i / sampleCount;
+                    timed[i] = PositionAtUniversalTime(patch.Orbit, ut, gravParameter);
+                }
+                return timed;
+            }
 
             if (patch.Orbit.Eccentricity < 1.0 &&
                 !double.IsNaN(patch.Orbit.PeriodSeconds) && !double.IsInfinity(patch.Orbit.PeriodSeconds) &&
                 patch.Orbit.PeriodSeconds > 0.0)
             {
-                double startUt = patch.StartUniversalTimeSeconds;
                 double duration = patch.Orbit.PeriodSeconds;
-                double endUt = patch.EndUniversalTimeSeconds;
-                if (!double.IsNaN(endUt) && !double.IsInfinity(endUt) && endUt > startUt)
-                    duration = Math.Min(duration, endUt - startUt);
+                if (timeBounded) duration = Math.Min(duration, endUt - startUt);
 
                 OrbitMapVector3[] bounded = new OrbitMapVector3[sampleCount + 1];
                 for (int i = 0; i <= sampleCount; i++)
@@ -40,10 +61,10 @@ namespace KMC.MissionControl.Rendering.OrbitMap
                 return bounded;
             }
 
-            // Open conics are intentionally bounded. KSP owns the exact patch
-            // time limits; this display samples the physically useful branch
-            // around periapsis and never loops a hyperbola through 2*pi.
+            // Fallback for an open conic with no finite KSP time interval. Keep the
+            // mathematical branch bounded around periapsis rather than looping it.
             double e = patch.Orbit.Eccentricity;
+            if (e <= 1.0) return new OrbitMapVector3[0];
             double limit = Math.Acos(-1.0 / e) - 0.02;
             if (double.IsNaN(limit) || double.IsInfinity(limit) || limit <= 0.0) limit = 2.5;
             OrbitMapVector3[] points = new OrbitMapVector3[sampleCount + 1];
@@ -57,17 +78,49 @@ namespace KMC.MissionControl.Rendering.OrbitMap
 
         public static OrbitMapVector3 PositionAtUniversalTime(OrbitMapOrbit orbit, double universalTimeSeconds)
         {
-            if (orbit == null || orbit.Eccentricity >= 1.0 ||
-                double.IsNaN(orbit.PeriodSeconds) || double.IsInfinity(orbit.PeriodSeconds) || orbit.PeriodSeconds <= 0.0)
-                return new OrbitMapVector3();
+            return PositionAtUniversalTime(orbit, universalTimeSeconds, 0.0);
+        }
 
-            double meanMotion = 2.0 * Math.PI / orbit.PeriodSeconds;
-            double meanAnomaly = NormalizeRadians(orbit.MeanAnomalyAtEpochRadians + meanMotion * (universalTimeSeconds - orbit.EpochUniversalTimeSeconds));
-            double eccentricAnomaly = SolveEccentricAnomaly(meanAnomaly, orbit.Eccentricity);
-            double sinHalf = Math.Sqrt(1.0 + orbit.Eccentricity) * Math.Sin(eccentricAnomaly * 0.5);
-            double cosHalf = Math.Sqrt(1.0 - orbit.Eccentricity) * Math.Cos(eccentricAnomaly * 0.5);
-            double trueAnomaly = NormalizeRadians(2.0 * Math.Atan2(sinHalf, cosHalf));
-            return PositionAtTrueAnomaly(orbit, trueAnomaly);
+        public static OrbitMapVector3 PositionAtUniversalTime(OrbitMapOrbit orbit, double universalTimeSeconds, double gravParameter)
+        {
+            if (orbit == null) return new OrbitMapVector3();
+
+            double e = orbit.Eccentricity;
+            double meanMotion;
+            if (gravParameter > 0.0 && !double.IsNaN(gravParameter) && !double.IsInfinity(gravParameter) &&
+                orbit.SemiMajorAxisMeters != 0.0 && !double.IsNaN(orbit.SemiMajorAxisMeters) && !double.IsInfinity(orbit.SemiMajorAxisMeters))
+            {
+                meanMotion = Math.Sqrt(gravParameter / Math.Pow(Math.Abs(orbit.SemiMajorAxisMeters), 3.0));
+            }
+            else if (e < 1.0 && !double.IsNaN(orbit.PeriodSeconds) && !double.IsInfinity(orbit.PeriodSeconds) && orbit.PeriodSeconds > 0.0)
+            {
+                meanMotion = 2.0 * Math.PI / orbit.PeriodSeconds;
+            }
+            else
+            {
+                return new OrbitMapVector3();
+            }
+
+            double meanAnomaly = orbit.MeanAnomalyAtEpochRadians + meanMotion * (universalTimeSeconds - orbit.EpochUniversalTimeSeconds);
+            if (e < 1.0)
+            {
+                meanAnomaly = NormalizeRadians(meanAnomaly);
+                double eccentricAnomaly = SolveEccentricAnomaly(meanAnomaly, e);
+                double sinHalf = Math.Sqrt(1.0 + e) * Math.Sin(eccentricAnomaly * 0.5);
+                double cosHalf = Math.Sqrt(1.0 - e) * Math.Cos(eccentricAnomaly * 0.5);
+                double trueAnomaly = NormalizeRadians(2.0 * Math.Atan2(sinHalf, cosHalf));
+                return PositionAtTrueAnomaly(orbit, trueAnomaly);
+            }
+
+            if (e > 1.0)
+            {
+                double hyperbolicAnomaly = SolveHyperbolicAnomaly(meanAnomaly, e);
+                double factor = Math.Sqrt((e + 1.0) / (e - 1.0));
+                double trueAnomaly = 2.0 * Math.Atan(factor * Math.Tanh(hyperbolicAnomaly * 0.5));
+                return PositionAtTrueAnomaly(orbit, trueAnomaly);
+            }
+
+            return new OrbitMapVector3();
         }
 
         public static OrbitMapVector3 PositionAtTrueAnomaly(OrbitMapOrbit orbit, double trueAnomalyRadians)
@@ -108,6 +161,24 @@ namespace KMC.MissionControl.Rendering.OrbitMap
             {
                 double f = value - eccentricity * Math.Sin(value) - meanAnomaly;
                 double fp = 1.0 - eccentricity * Math.Cos(value);
+                if (Math.Abs(fp) < 1e-12) break;
+                double delta = f / fp;
+                value -= delta;
+                if (Math.Abs(delta) < 1e-12) break;
+            }
+            return value;
+        }
+
+        private static double SolveHyperbolicAnomaly(double meanAnomaly, double eccentricity)
+        {
+            double value = Math.Log((2.0 * Math.Abs(meanAnomaly) / eccentricity) + 1.8);
+            if (meanAnomaly < 0.0) value = -value;
+            for (int i = 0; i < 16; i++)
+            {
+                double sinh = Math.Sinh(value);
+                double cosh = Math.Cosh(value);
+                double f = eccentricity * sinh - value - meanAnomaly;
+                double fp = eccentricity * cosh - 1.0;
                 if (Math.Abs(fp) < 1e-12) break;
                 double delta = f / fp;
                 value -= delta;

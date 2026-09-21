@@ -25,11 +25,15 @@ namespace KMC.MissionControl.Rendering.OrbitMap
             Color targetColor = Color.FromArgb(freshness == OrbitMapFreshness.Stale ? 110 : 190, 150, 220, 255);
             Color patchColor = Color.FromArgb(freshness == OrbitMapFreshness.Stale ? 100 : 210, 255, 190, 90);
 
+            DrawChildBodyOrbits(context, viewport, scene, camera);
             DrawBody(context, viewport, scene, camera, activeColor);
+            DrawChildBodies(context, viewport, scene, camera);
             using (Pen targetPen = new Pen(targetColor, 1.2f)) DrawPolyline(g, viewport, scene.TargetOrbitPoints, camera, targetPen, scene.BodyRadiusMeters);
             using (Pen activePen = new Pen(activeColor, 2.0f)) DrawPolyline(g, viewport, scene.ActiveOrbitPoints, camera, activePen, scene.BodyRadiusMeters);
             using (Pen patchPen = new Pen(patchColor, 1.6f))
                 for (int i = 0; i < scene.PatchPoints.Count; i++) DrawPolyline(g, viewport, scene.PatchPoints[i], camera, patchPen, scene.BodyRadiusMeters);
+
+            DrawEncounterBodies(context, viewport, scene, camera, patchColor);
 
             DrawMarker(context, viewport, camera, scene.VesselPosition, "VSL", activeColor, 5, scene.BodyRadiusMeters);
             DrawMarker(context, viewport, camera, scene.ApoapsisPosition, "AP", activeColor, 4, scene.BodyRadiusMeters);
@@ -44,6 +48,68 @@ namespace KMC.MissionControl.Rendering.OrbitMap
             DrawViewIndicator(context, viewport, camera);
             if (freshness == OrbitMapFreshness.Stale) DrawStatus(context, viewport, "ORBIT DATA STALE", Color.Orange);
             DrawPanels(context, viewport, scene, freshness);
+        }
+
+        private static void DrawChildBodyOrbits(MissionRenderContext context, Rectangle viewport, OrbitMapSceneSnapshot scene, OrbitMapCamera camera)
+        {
+            Color color = Color.FromArgb(105, context.DimPhosphorColor);
+            using (Pen pen = new Pen(color, 1.0f))
+            {
+                for (int i = 0; i < scene.ChildBodies.Count; i++)
+                {
+                    OrbitMapSceneBody body = scene.ChildBodies[i];
+                    if (body != null) DrawPolyline(context.Graphics, viewport, body.OrbitPoints, camera, pen, scene.BodyRadiusMeters);
+                }
+            }
+        }
+
+        private static void DrawChildBodies(MissionRenderContext context, Rectangle viewport, OrbitMapSceneSnapshot scene, OrbitMapCamera camera)
+        {
+            for (int i = 0; i < scene.ChildBodies.Count; i++)
+            {
+                OrbitMapSceneBody entry = scene.ChildBodies[i];
+                if (entry == null || entry.Body == null) continue;
+                if (camera.IsOccludedBySphere(entry.Position, scene.BodyRadiusMeters)) continue;
+                PointF center; double depth;
+                if (!camera.TryProject(entry.Position, viewport, out center, out depth)) continue;
+                double focal = (viewport.Height * 0.5) / Math.Tan(45.0 * Math.PI / 360.0);
+                float radius = (float)Math.Max(3.0, entry.Body.RadiusMeters * focal / depth);
+                using (SolidBrush fill = new SolidBrush(Color.FromArgb(45, context.PhosphorColor))) context.Graphics.FillEllipse(fill, center.X - radius, center.Y - radius, radius * 2, radius * 2);
+                using (Pen pen = new Pen(context.DimPhosphorColor, 1.0f)) context.Graphics.DrawEllipse(pen, center.X - radius, center.Y - radius, radius * 2, radius * 2);
+                using (SolidBrush brush = new SolidBrush(context.PhosphorColor)) context.Graphics.DrawString(entry.Body.Name ?? string.Empty, context.SmallFont, brush, center.X + radius + 4, center.Y - 7);
+            }
+        }
+
+        private static void DrawEncounterBodies(MissionRenderContext context, Rectangle viewport, OrbitMapSceneSnapshot scene, OrbitMapCamera camera, Color color)
+        {
+            for (int i = 0; i < scene.EncounterBodies.Count; i++)
+            {
+                OrbitMapSceneEncounterBody entry = scene.EncounterBodies[i];
+                if (entry == null || entry.Body == null) continue;
+                if (camera.IsOccludedBySphere(entry.Position, scene.BodyRadiusMeters)) continue;
+
+                PointF center; double depth;
+                if (!camera.TryProject(entry.Position, viewport, out center, out depth)) continue;
+                double focal = (viewport.Height * 0.5) / Math.Tan(45.0 * Math.PI / 360.0);
+
+                if (entry.Body.SoiRadiusMeters > 0.0)
+                {
+                    float soiRadius = (float)(entry.Body.SoiRadiusMeters * focal / depth);
+                    if (soiRadius >= 8.0f && soiRadius <= Math.Max(viewport.Width, viewport.Height))
+                    {
+                        using (Pen soiPen = new Pen(Color.FromArgb(90, color), 1.0f))
+                            context.Graphics.DrawEllipse(soiPen, center.X - soiRadius, center.Y - soiRadius, soiRadius * 2, soiRadius * 2);
+                    }
+                }
+
+                float radius = (float)Math.Max(6.0, entry.Body.RadiusMeters * focal / depth);
+                using (SolidBrush fill = new SolidBrush(Color.FromArgb(30, color)))
+                    context.Graphics.FillEllipse(fill, center.X - radius, center.Y - radius, radius * 2, radius * 2);
+                using (Pen bodyPen = new Pen(color, 1.6f))
+                    context.Graphics.DrawEllipse(bodyPen, center.X - radius, center.Y - radius, radius * 2, radius * 2);
+                using (SolidBrush brush = new SolidBrush(color))
+                    context.Graphics.DrawString((entry.Body.Name ?? string.Empty) + " ENC", context.SmallFont, brush, center.X + radius + 4, center.Y - 7);
+            }
         }
 
         private static void DrawBody(MissionRenderContext context, Rectangle viewport, OrbitMapSceneSnapshot scene, OrbitMapCamera camera, Color color)
@@ -164,7 +230,15 @@ namespace KMC.MissionControl.Rendering.OrbitMap
         private static string BuildEncounterText(OrbitMapSceneSnapshot s, OrbitMapFreshness f)
         {
             if (s == null || f == OrbitMapFreshness.Unavailable) return "UNAVAILABLE";
-            for (int i = 0; i < s.Patches.Count; i++) if (!string.IsNullOrWhiteSpace(s.Patches[i].NextBodyName)) return "SOI: " + s.Patches[i].NextBodyName + "\n" + s.Patches[i].TransitionType;
+            for (int i = 0; i < s.Patches.Count; i++)
+            {
+                OrbitMapPatch p = s.Patches[i];
+                if (string.IsNullOrWhiteSpace(p.NextBodyName) && (p.Orbit == null || string.Equals(p.Orbit.ReferenceBodyName, s.BodyName, StringComparison.OrdinalIgnoreCase))) continue;
+                string body = !string.IsNullOrWhiteSpace(p.NextBodyName) ? p.NextBodyName : p.Orbit.ReferenceBodyName;
+                string text = "SOI: " + body + "\n" + (p.TransitionType ?? string.Empty);
+                if (p.Orbit != null && !double.IsNaN(p.Orbit.PeriapsisMeters) && !double.IsInfinity(p.Orbit.PeriapsisMeters)) text += "\nPE " + D(p.Orbit.PeriapsisMeters);
+                return text;
+            }
             return "NO ENCOUNTER";
         }
         private static string D(double meters) { double a = Math.Abs(meters); return a >= 1000000 ? (meters / 1000000.0).ToString("0.00") + " Mm" : (meters / 1000.0).ToString("0.0") + " km"; }

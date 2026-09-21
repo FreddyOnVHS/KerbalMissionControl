@@ -10,6 +10,9 @@ namespace KMC.Shared
         public const int TelemetryPort = 5110;
         public const int MaxManeuverNodes = 8;
         public const int MaxPatches = 12;
+        public const int MaxPatchSamples = 64;
+        public const int MaxTotalPatchSamples = 128;
+        public const int MaxBodies = 16;
 
         public long Sequence { get; set; }
         public DateTime TimestampUtc { get; set; }
@@ -23,6 +26,7 @@ namespace KMC.Shared
         public OrbitMapTarget Target { get; set; }
         public List<OrbitMapManeuverNode> ManeuverNodes { get; private set; }
         public List<OrbitMapPatch> Patches { get; private set; }
+        public List<OrbitMapBody> Bodies { get; private set; }
 
         public OrbitMapPacket()
         {
@@ -32,12 +36,16 @@ namespace KMC.Shared
             ReferenceBodyName = string.Empty;
             ManeuverNodes = new List<OrbitMapManeuverNode>();
             Patches = new List<OrbitMapPatch>();
+            Bodies = new List<OrbitMapBody>();
         }
 
         public string Serialize()
         {
-            if (ManeuverNodes.Count > MaxManeuverNodes || Patches.Count > MaxPatches)
+            if (ManeuverNodes.Count > MaxManeuverNodes || Patches.Count > MaxPatches || Bodies.Count > MaxBodies)
                 throw new InvalidOperationException("Orbit map collection exceeds protocol bounds.");
+            int totalPatchSamples = 0;
+            for (int i = 0; i < Patches.Count; i++) totalPatchSamples += Patches[i] != null ? Patches[i].Samples.Count : 0;
+            if (totalPatchSamples > MaxTotalPatchSamples) throw new InvalidOperationException("Orbit map total patch sample collection exceeds protocol bounds.");
 
             List<string> fields = new List<string>();
             fields.Add(ProtocolId);
@@ -51,6 +59,8 @@ namespace KMC.Shared
             fields.Add(F(ReferenceBodySoiRadiusMeters));
             fields.Add(SerializeOrbit(ActiveOrbit));
             fields.Add(SerializeTarget(Target));
+            fields.Add(Bodies.Count.ToString(CultureInfo.InvariantCulture));
+            for (int i = 0; i < Bodies.Count; i++) fields.Add(SerializeBody(Bodies[i]));
             fields.Add(ManeuverNodes.Count.ToString(CultureInfo.InvariantCulture));
             for (int i = 0; i < ManeuverNodes.Count; i++) fields.Add(SerializeNode(ManeuverNodes[i]));
             fields.Add(Patches.Count.ToString(CultureInfo.InvariantCulture));
@@ -99,6 +109,17 @@ namespace KMC.Shared
                 if (!TryParseTarget(fields[p++], out target)) return false;
                 value.Target = target;
 
+                int bodyCount;
+                if (p >= fields.Length || !int.TryParse(fields[p++], NumberStyles.Integer, CultureInfo.InvariantCulture, out bodyCount) || bodyCount < 0 || bodyCount > MaxBodies) return false;
+                HashSet<string> bodyNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < bodyCount; i++)
+                {
+                    OrbitMapBody body;
+                    if (p >= fields.Length || !TryParseBody(fields[p++], out body) || body == null || string.IsNullOrWhiteSpace(body.Name)) return false;
+                    if (!bodyNames.Add(body.Name)) return false;
+                    value.Bodies.Add(body);
+                }
+
                 int nodeCount;
                 if (p >= fields.Length || !int.TryParse(fields[p++], NumberStyles.Integer, CultureInfo.InvariantCulture, out nodeCount) || nodeCount < 0 || nodeCount > MaxManeuverNodes) return false;
                 for (int i = 0; i < nodeCount; i++)
@@ -111,11 +132,14 @@ namespace KMC.Shared
                 int patchCount;
                 if (p >= fields.Length || !int.TryParse(fields[p++], NumberStyles.Integer, CultureInfo.InvariantCulture, out patchCount) || patchCount < 0 || patchCount > MaxPatches) return false;
                 int previousIndex = -1;
+                int totalPatchSamples = 0;
                 for (int i = 0; i < patchCount; i++)
                 {
                     OrbitMapPatch patch;
                     if (p >= fields.Length || !TryParsePatch(fields[p++], out patch) || patch.Index <= previousIndex) return false;
                     previousIndex = patch.Index;
+                    totalPatchSamples += patch.Samples.Count;
+                    if (totalPatchSamples > MaxTotalPatchSamples) return false;
                     value.Patches.Add(patch);
                 }
                 if (p != fields.Length) return false;
@@ -132,7 +156,7 @@ namespace KMC.Shared
         private static string SerializeOrbit(OrbitMapOrbit orbit)
         {
             if (orbit == null) return string.Empty;
-            return string.Join("~", new[] { Escape(orbit.ReferenceBodyName), F(orbit.SemiMajorAxisMeters), F(orbit.Eccentricity), F(orbit.InclinationDegrees), F(orbit.LongitudeOfAscendingNodeDegrees), F(orbit.ArgumentOfPeriapsisDegrees), F(orbit.EpochUniversalTimeSeconds), F(orbit.MeanAnomalyAtEpochRadians), F(orbit.ApoapsisMeters), F(orbit.PeriapsisMeters), FO(orbit.PeriodSeconds), F(orbit.PositionX), F(orbit.PositionY), F(orbit.PositionZ) });
+            return string.Join("~", new[] { Escape(orbit.ReferenceBodyName), F(orbit.SemiMajorAxisMeters), F(orbit.Eccentricity), F(orbit.InclinationDegrees), F(orbit.LongitudeOfAscendingNodeDegrees), F(orbit.ArgumentOfPeriapsisDegrees), F(orbit.EpochUniversalTimeSeconds), F(orbit.MeanAnomalyAtEpochRadians), FO(orbit.ApoapsisMeters), F(orbit.PeriapsisMeters), FO(orbit.PeriodSeconds), F(orbit.PositionX), F(orbit.PositionY), F(orbit.PositionZ) });
         }
 
         private static bool TryParseOrbit(string text, out OrbitMapOrbit orbit)
@@ -151,7 +175,7 @@ namespace KMC.Shared
             if (!TryFinite(f[5], out d)) return false; o.ArgumentOfPeriapsisDegrees = d;
             if (!TryFinite(f[6], out d)) return false; o.EpochUniversalTimeSeconds = d;
             if (!TryFinite(f[7], out d)) return false; o.MeanAnomalyAtEpochRadians = d;
-            if (!TryFinite(f[8], out d)) return false; o.ApoapsisMeters = d;
+            if (!TryOptionalFinite(f[8], out d)) return false; o.ApoapsisMeters = d;
             if (!TryFinite(f[9], out d)) return false; o.PeriapsisMeters = d;
             if (!TryOptionalFinite(f[10], out d)) return false; o.PeriodSeconds = d;
             if (!TryFinite(f[11], out d)) return false; o.PositionX = d;
@@ -187,6 +211,58 @@ namespace KMC.Shared
             return true;
         }
 
+        private static string SerializeBody(OrbitMapBody body)
+        {
+            if (body == null) throw new InvalidOperationException("Null orbit map body.");
+            List<string> f = new List<string>();
+            f.Add(Escape(body.Name));
+            f.Add(Escape(body.ParentName));
+            f.Add(F(body.RadiusMeters));
+            f.Add(F(body.SoiRadiusMeters));
+            f.Add(F(body.GravParameter));
+            if (body.Orbit == null)
+            {
+                f.Add("0");
+                for (int i = 0; i < 14; i++) f.Add(string.Empty);
+            }
+            else
+            {
+                f.Add("1");
+                string[] orbitFields = SerializeOrbit(body.Orbit).Split('~');
+                for (int i = 0; i < orbitFields.Length; i++) f.Add(orbitFields[i]);
+            }
+            f.Add(F(body.PositionX));
+            f.Add(F(body.PositionY));
+            f.Add(F(body.PositionZ));
+            return string.Join("~", f.ToArray());
+        }
+
+        private static bool TryParseBody(string text, out OrbitMapBody body)
+        {
+            body = null;
+            string[] f = text.Split('~');
+            if (f.Length != 23) return false;
+            double d;
+            OrbitMapBody value = new OrbitMapBody();
+            value.Name = Unescape(f[0]);
+            value.ParentName = Unescape(f[1]);
+            if (!TryFinite(f[2], out d) || d <= 0.0) return false; value.RadiusMeters = d;
+            if (!TryFinite(f[3], out d) || d < 0.0) return false; value.SoiRadiusMeters = d;
+            if (!TryFinite(f[4], out d) || d <= 0.0) return false; value.GravParameter = d;
+            if (f[5] == "1")
+            {
+                OrbitMapOrbit orbit;
+                if (!TryParseOrbit(string.Join("~", f, 6, 14), out orbit) || orbit == null) return false;
+                value.Orbit = orbit;
+            }
+            else if (f[5] != "0") return false;
+            if (!TryFinite(f[20], out d)) return false; value.PositionX = d;
+            if (!TryFinite(f[21], out d)) return false; value.PositionY = d;
+            if (!TryFinite(f[22], out d)) return false; value.PositionZ = d;
+            body = value;
+            return true;
+        }
+
         private static string SerializeNode(OrbitMapManeuverNode n)
         {
             return string.Join("~", new[] { n.Index.ToString(CultureInfo.InvariantCulture), F(n.UniversalTimeSeconds), F(n.ProgradeDeltaVMetersPerSecond), F(n.NormalDeltaVMetersPerSecond), F(n.RadialDeltaVMetersPerSecond), F(n.TotalDeltaVMetersPerSecond), F(n.PositionX), F(n.PositionY), F(n.PositionZ), n.PatchIndex.ToString(CultureInfo.InvariantCulture) });
@@ -217,7 +293,26 @@ namespace KMC.Shared
 
         private static string SerializePatch(OrbitMapPatch patch)
         {
-            return string.Join("~", new[] { patch.Index.ToString(CultureInfo.InvariantCulture), F(patch.StartUniversalTimeSeconds), FO(patch.EndUniversalTimeSeconds), Escape(patch.TransitionType), Escape(patch.NextBodyName), SerializeOrbit(patch.Orbit) });
+            if (patch == null) throw new InvalidOperationException("Orbit map patch is required.");
+            if (patch.Samples.Count > MaxPatchSamples) throw new InvalidOperationException("Orbit map patch sample collection exceeds protocol bounds.");
+            List<string> fields = new List<string>();
+            fields.Add(patch.Index.ToString(CultureInfo.InvariantCulture));
+            fields.Add(F(patch.StartUniversalTimeSeconds));
+            fields.Add(FO(patch.EndUniversalTimeSeconds));
+            fields.Add(Escape(patch.TransitionType));
+            fields.Add(Escape(patch.NextBodyName));
+            string orbit = SerializeOrbit(patch.Orbit);
+            string[] orbitFields = orbit.Split('~');
+            for (int i = 0; i < orbitFields.Length; i++) fields.Add(orbitFields[i]);
+            fields.Add(patch.Samples.Count.ToString(CultureInfo.InvariantCulture));
+            for (int i = 0; i < patch.Samples.Count; i++) fields.Add(SerializePatchSample(patch.Samples[i]));
+            return string.Join("~", fields.ToArray());
+        }
+
+        private static string SerializePatchSample(OrbitMapPatchSample sample)
+        {
+            if (sample == null) throw new InvalidOperationException("Orbit map patch sample is required.");
+            return string.Join(",", new[] { F(sample.UniversalTimeSeconds), F(sample.PositionX), F(sample.PositionY), F(sample.PositionZ), F(sample.ReferenceBodyPositionX), F(sample.ReferenceBodyPositionY), F(sample.ReferenceBodyPositionZ) });
         }
 
         private static bool TryParsePatch(string text, out OrbitMapPatch patch)
@@ -225,7 +320,7 @@ namespace KMC.Shared
             patch = null;
             string[] f = text.Split('~');
             int index;
-            if (f.Length != 19 || !int.TryParse(f[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out index)) return false;
+            if (f.Length < 19 || !int.TryParse(f[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out index)) return false;
             double d;
             OrbitMapPatch v = new OrbitMapPatch();
             v.Index = index;
@@ -236,7 +331,42 @@ namespace KMC.Shared
             OrbitMapOrbit orbit;
             if (!TryParseOrbit(string.Join("~", f, 5, 14), out orbit) || orbit == null) return false;
             v.Orbit = orbit;
+
+            // Backward compatibility: 14.22.8-14.22.12 packets ended after the orbit.
+            if (f.Length == 19)
+            {
+                patch = v;
+                return true;
+            }
+
+            int sampleCount;
+            if (!int.TryParse(f[19], NumberStyles.Integer, CultureInfo.InvariantCulture, out sampleCount) ||
+                sampleCount < 0 || sampleCount > MaxPatchSamples || f.Length != 20 + sampleCount) return false;
+            for (int i = 0; i < sampleCount; i++)
+            {
+                OrbitMapPatchSample sample;
+                if (!TryParsePatchSample(f[20 + i], out sample)) return false;
+                v.Samples.Add(sample);
+            }
             patch = v;
+            return true;
+        }
+
+        private static bool TryParsePatchSample(string text, out OrbitMapPatchSample sample)
+        {
+            sample = null;
+            string[] f = text.Split(',');
+            if (f.Length != 7) return false;
+            double d;
+            OrbitMapPatchSample v = new OrbitMapPatchSample();
+            if (!TryFinite(f[0], out d)) return false; v.UniversalTimeSeconds = d;
+            if (!TryFinite(f[1], out d)) return false; v.PositionX = d;
+            if (!TryFinite(f[2], out d)) return false; v.PositionY = d;
+            if (!TryFinite(f[3], out d)) return false; v.PositionZ = d;
+            if (!TryFinite(f[4], out d)) return false; v.ReferenceBodyPositionX = d;
+            if (!TryFinite(f[5], out d)) return false; v.ReferenceBodyPositionY = d;
+            if (!TryFinite(f[6], out d)) return false; v.ReferenceBodyPositionZ = d;
+            sample = v;
             return true;
         }
 
@@ -280,6 +410,20 @@ namespace KMC.Shared
         public OrbitMapTarget() { TargetType = string.Empty; TargetId = string.Empty; TargetName = string.Empty; }
     }
 
+    public sealed class OrbitMapBody
+    {
+        public string Name { get; set; }
+        public string ParentName { get; set; }
+        public double RadiusMeters { get; set; }
+        public double SoiRadiusMeters { get; set; }
+        public double GravParameter { get; set; }
+        public OrbitMapOrbit Orbit { get; set; }
+        public double PositionX { get; set; }
+        public double PositionY { get; set; }
+        public double PositionZ { get; set; }
+        public OrbitMapBody() { Name = string.Empty; ParentName = string.Empty; }
+    }
+
     public sealed class OrbitMapManeuverNode
     {
         public int Index { get; set; }
@@ -302,6 +446,18 @@ namespace KMC.Shared
         public string TransitionType { get; set; }
         public string NextBodyName { get; set; }
         public OrbitMapOrbit Orbit { get; set; }
-        public OrbitMapPatch() { TransitionType = string.Empty; NextBodyName = string.Empty; }
+        public List<OrbitMapPatchSample> Samples { get; private set; }
+        public OrbitMapPatch() { TransitionType = string.Empty; NextBodyName = string.Empty; Samples = new List<OrbitMapPatchSample>(); }
+    }
+
+    public sealed class OrbitMapPatchSample
+    {
+        public double UniversalTimeSeconds { get; set; }
+        public double PositionX { get; set; }
+        public double PositionY { get; set; }
+        public double PositionZ { get; set; }
+        public double ReferenceBodyPositionX { get; set; }
+        public double ReferenceBodyPositionY { get; set; }
+        public double ReferenceBodyPositionZ { get; set; }
     }
 }

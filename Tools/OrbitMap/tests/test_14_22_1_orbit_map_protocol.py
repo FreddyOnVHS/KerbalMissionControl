@@ -34,6 +34,7 @@ def test_plugin_sender_is_5hz_and_uses_ksp_authoritative_sources():
 
 def test_patch_builder_does_not_propagate_ksp_orbit_at_patch_start():
     sender = (ROOT / 'KMC.Plugin/OrbitMapTelemetrySender.cs').read_text(encoding='utf-8')
-    build_patches = sender.split('private static void BuildPatches', 1)[1].split('public void OnDestroy', 1)[0]
+    build_patches = sender.split('private static void BuildPatches', 1)[1].split('private static void BuildAuthoritativePatchSamples', 1)[0]
     assert 'getRelativePositionAtUT' not in build_patches
     assert 'new Vector3d(0.0, 0.0, 0.0)' in build_patches
+    assert 'BuildAuthoritativePatchSamples' in build_patches

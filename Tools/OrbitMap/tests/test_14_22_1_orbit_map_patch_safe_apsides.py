@@ -24,6 +24,7 @@ def test_build_orbit_derives_apsides_from_elements_and_reference_body_radius():
 def test_future_patch_build_still_avoids_ksp_position_propagation():
     text = SENDER.read_text(encoding="utf-8")
     start = text.index("private static void BuildPatches")
-    end = text.index("public void OnDestroy", start)
+    end = text.index("private static void BuildAuthoritativePatchSamples", start)
     body = text[start:end]
     assert "getRelativePositionAtUT" not in body
+    assert "BuildAuthoritativePatchSamples" in body
