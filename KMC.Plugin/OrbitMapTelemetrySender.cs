@@ -398,19 +398,6 @@ namespace KMC.Plugin
                     lastUt = end;
                 }
 
-                // Child-SOI encounter geometry is displayed in a body-centered
-                // frame anchored at SOI entry. Do not move the body center under
-                // each local hyperbola sample.
-                double encounterAnchorUt = firstUt;
-                Vector3d encounterBodyAnchor = new Vector3d(0.0, 0.0, 0.0);
-                if (!primaryReferenced && referenceBody.orbit != null)
-                {
-                    double anchorTrueAnomaly =
-                        referenceBody.orbit.TrueAnomalyAtT(referenceBody.orbit.getObtAtUT(encounterAnchorUt));
-                    encounterBodyAnchor =
-                        CanonicalPositionAtTrueAnomaly(referenceBody.orbit, anchorTrueAnomaly);
-                }
-
                 List<OrbitMapPatchSample> samples = new List<OrbitMapPatchSample>(sampleCount);
                 for (int i = 0; i < sampleCount; i++)
                 {
@@ -426,8 +413,11 @@ namespace KMC.Plugin
 
                     if (!primaryReferenced && referenceBody.orbit != null)
                     {
-                        canonicalBody = encounterBodyAnchor;
-                        canonicalParent = canonicalLocal + encounterBodyAnchor;
+                        double bodyTrueAnomaly =
+                            referenceBody.orbit.TrueAnomalyAtT(referenceBody.orbit.getObtAtUT(ut));
+                        canonicalBody =
+                            CanonicalPositionAtTrueAnomaly(referenceBody.orbit, bodyTrueAnomaly);
+                        canonicalParent = canonicalLocal + canonicalBody;
                     }
 
                     if (!IsFinite(canonicalParent.x) || !IsFinite(canonicalParent.y) || !IsFinite(canonicalParent.z) ||

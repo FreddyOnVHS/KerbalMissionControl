@@ -120,26 +120,29 @@ namespace KMC.MissionControl.Rendering.OrbitMap
                         }
                         continue;
                     }
+
                     OrbitMapBody child = FindBody(packet.Bodies, patch.Orbit.ReferenceBodyName);
                     if (child != null && string.Equals(child.ParentName, packet.ReferenceBodyName, StringComparison.OrdinalIgnoreCase))
                     {
-                        // Cross-SOI patches are no longer reconstructed from future
-                        // patched-conic elements. KSP supplies the authoritative
-                        // parent-frame polyline and child-body center samples.
                         if (patch.Samples.Count > 1)
                         {
                             OrbitMapVector3[] authoritative = OrbitMapSystemTransform.AuthoritativePatchPoints(patch);
                             scene.PatchPoints.Add(authoritative);
 
+                            OrbitMapPatchSample closest = FindClosestApproachSample(patch);
                             OrbitMapSceneEncounterBody encounterBody = new OrbitMapSceneEncounterBody();
                             encounterBody.Body = child;
-                            encounterBody.Position = OrbitMapSystemTransform.AuthoritativeReferenceBodyPosition(patch);
+                            encounterBody.Position = new OrbitMapVector3(
+                                closest.ReferenceBodyPositionX,
+                                closest.ReferenceBodyPositionY,
+                                closest.ReferenceBodyPositionZ);
                             encounterBody.PatchIndex = patch.Index;
-                            encounterBody.EncounterUniversalTimeSeconds = patch.Samples[0].UniversalTimeSeconds;
+                            encounterBody.EncounterUniversalTimeSeconds = closest.UniversalTimeSeconds;
                             scene.EncounterBodies.Add(encounterBody);
                         }
                     }
                 }
+
                 GeometryRebuildCount++;
                 _trajectoryFingerprint = fingerprint;
             }
@@ -159,6 +162,33 @@ namespace KMC.MissionControl.Rendering.OrbitMap
 
             _current = scene;
             return scene;
+        }
+
+        private static OrbitMapPatchSample FindClosestApproachSample(OrbitMapPatch patch)
+        {
+            OrbitMapPatchSample best = patch.Samples[0];
+            double bestDistanceSquared = DistanceToReferenceBodySquared(best);
+
+            for (int i = 1; i < patch.Samples.Count; i++)
+            {
+                OrbitMapPatchSample candidate = patch.Samples[i];
+                double candidateDistanceSquared = DistanceToReferenceBodySquared(candidate);
+                if (candidateDistanceSquared < bestDistanceSquared)
+                {
+                    best = candidate;
+                    bestDistanceSquared = candidateDistanceSquared;
+                }
+            }
+
+            return best;
+        }
+
+        private static double DistanceToReferenceBodySquared(OrbitMapPatchSample sample)
+        {
+            double dx = sample.PositionX - sample.ReferenceBodyPositionX;
+            double dy = sample.PositionY - sample.ReferenceBodyPositionY;
+            double dz = sample.PositionZ - sample.ReferenceBodyPositionZ;
+            return dx * dx + dy * dy + dz * dz;
         }
 
         private static string TrajectoryFingerprint(OrbitMapPacket packet)
