@@ -367,7 +367,8 @@ namespace KMC.MissionControl.Pages
                                         NodeUniversalTimeSeconds = ejection.BurnUniversalTimeSeconds,
                                         ProgradeDeltaVMetersPerSecond = ejection.EjectionDeltaVMetersPerSecond,
                                         NormalDeltaVMetersPerSecond = 0.0,
-                                        RadialDeltaVMetersPerSecond = 0.0
+                                        RadialDeltaVMetersPerSecond = 0.0,
+                                        TargetBodyName = destination.Name
                                     };
                             }
 
@@ -480,13 +481,52 @@ namespace KMC.MissionControl.Pages
             using (SolidBrush dim = new SolidBrush(context.DimPhosphorColor))
             using (SolidBrush bright = new SolidBrush(context.PhosphorColor))
             {
-                int statusY = buttonTop - 42;
+                int statusFontHeight =
+                    (int)Math.Ceiling(
+                        context.SmallFont.GetHeight(
+                            context.Graphics));
+                int statusLineSpacing =
+                    statusFontHeight + 6;
+                const int statusButtonGap = 10;
+
+                int detailLineCount =
+                    string.IsNullOrWhiteSpace(detail)
+                        ? 0
+                        : 1;
+                int assessmentLineCount = 0;
+
+                if (status != null &&
+                    status.TransferAssessmentAvailable)
+                {
+                    assessmentLineCount =
+                        status.TargetEncounter
+                            ? 4
+                            : 5;
+                }
+
+                int totalLineCount =
+                    1 +
+                    detailLineCount +
+                    assessmentLineCount;
+
+                int statusBlockBottom =
+                    buttonTop -
+                    statusButtonGap;
+                int statusBlockHeight =
+                    (totalLineCount - 1) * statusLineSpacing +
+                    statusFontHeight;
+                int statusY =
+                    statusBlockBottom -
+                    statusBlockHeight;
+                int nextLineY = statusY;
+
                 context.Graphics.DrawString(
                     "NODE STATUS  " + (string.IsNullOrWhiteSpace(state) ? "---" : state),
                     context.SmallFont,
                     bright,
                     left,
-                    statusY);
+                    nextLineY);
+                nextLineY += statusLineSpacing;
 
                 if (!string.IsNullOrWhiteSpace(detail))
                 {
@@ -495,7 +535,73 @@ namespace KMC.MissionControl.Pages
                         context.SmallFont,
                         dim,
                         left,
-                        statusY + 20);
+                        nextLineY);
+                    nextLineY += statusLineSpacing;
+                }
+
+                if (status != null &&
+                    status.TransferAssessmentAvailable)
+                {
+                    string targetName =
+                        string.IsNullOrWhiteSpace(status.TargetBodyName)
+                            ? _selectedTransferBodyName
+                            : status.TargetBodyName;
+
+                    context.Graphics.DrawString(
+                        "KSP TRANSFER ASSESSMENT  " + targetName,
+                        context.SmallFont,
+                        bright,
+                        left,
+                        nextLineY);
+                    nextLineY += statusLineSpacing;
+
+                    context.Graphics.DrawString(
+                        "ENCOUNTER       " +
+                        (status.TargetEncounter ? "YES" : "NO"),
+                        context.SmallFont,
+                        dim,
+                        left,
+                        nextLineY);
+                    nextLineY += statusLineSpacing;
+
+                    context.Graphics.DrawString(
+                        "CLOSEST APPROACH " +
+                        FormatSystemDistance(status.ClosestApproachMeters) +
+                        "  @ UT " +
+                        status.ClosestApproachUniversalTimeSeconds.ToString("0"),
+                        context.SmallFont,
+                        dim,
+                        left,
+                        nextLineY);
+                    nextLineY += statusLineSpacing;
+
+                    context.Graphics.DrawString(
+                        "TARGET SOI       " +
+                        FormatSystemDistance(status.TargetSoiRadiusMeters),
+                        context.SmallFont,
+                        dim,
+                        left,
+                        nextLineY);
+                    nextLineY += statusLineSpacing;
+
+                    if (!status.TargetEncounter &&
+                        IsFinitePositive(status.ClosestApproachMeters) &&
+                        IsFinitePositive(status.TargetSoiRadiusMeters))
+                    {
+                        double outside =
+                            Math.Max(
+                                0.0,
+                                status.ClosestApproachMeters -
+                                status.TargetSoiRadiusMeters);
+
+                        context.Graphics.DrawString(
+                            "OUTSIDE SOI      " +
+                            FormatSystemDistance(outside),
+                            context.SmallFont,
+                            bright,
+                            left,
+                            nextLineY);
+                    }
                 }
             }
         }
@@ -572,7 +678,9 @@ namespace KMC.MissionControl.Pages
                     ProgradeDeltaVMetersPerSecond =
                         _transferNodeCandidate.ProgradeDeltaVMetersPerSecond,
                     NormalDeltaVMetersPerSecond = 0.0,
-                    RadialDeltaVMetersPerSecond = 0.0
+                    RadialDeltaVMetersPerSecond = 0.0,
+                    TargetBodyName =
+                        _transferNodeCandidate.TargetBodyName
                 };
 
             string resultText;
