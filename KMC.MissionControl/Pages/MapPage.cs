@@ -40,6 +40,19 @@ namespace KMC.MissionControl.Pages
             public double ParentFrameDeltaVMetersPerSecond;
         }
 
+        private sealed class ParkingOrbitEjectionSolution
+        {
+            public double ParkingAltitudeMeters;
+            public double ParkingSpeedMetersPerSecond;
+            public double HyperbolicPeriapsisSpeedMetersPerSecond;
+            public double HyperbolicExcessSpeedMetersPerSecond;
+            public double EjectionDeltaVMetersPerSecond;
+            public double AsymptoteAngleDegrees;
+            public double BurnUniversalTimeSeconds;
+            public double WindowOffsetSeconds;
+            public string ExcessDirection;
+        }
+
         public string Name { get { return "ORBIT MAP"; } }
         public Size PreferredVirtualCanvasSize { get { return Size.Empty; } }
         public MissionPageContentProfile ContentProfile { get { return MissionPageContentProfile.DenseEngineering; } }
@@ -298,8 +311,35 @@ namespace KMC.MissionControl.Pages
                         context.Graphics.DrawString("TRANSFER TIME  " + FormatTransferInterval(solution.TransferTimeSeconds), context.SmallFont, dim, x, y);
                         y += 20;
                         context.Graphics.DrawString("PARENT DV      " + solution.ParentFrameDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") + " m/s", context.SmallFont, dim, x, y);
-                        y += 28;
-                        context.Graphics.DrawString("WINDOW ONLY - NO MANEUVER NODE CREATED", context.SmallFont, bright, x, y);
+                        y += 26;
+
+                        ParkingOrbitEjectionSolution ejection;
+                        if (TryCalculateParkingOrbitEjection(packet, originBody, solution, out ejection))
+                        {
+                            context.Graphics.DrawString("PARKING EJECTION  CIRCULAR / PROGRADE APPROX", context.SmallFont, bright, x, y);
+                            y += 22;
+                            context.Graphics.DrawString("PARK ALT       " + FormatSystemDistance(ejection.ParkingAltitudeMeters), context.SmallFont, dim, x, y);
+                            y += 20;
+                            context.Graphics.DrawString("VINF           " + ejection.HyperbolicExcessSpeedMetersPerSecond.ToString("0.0") + " m/s  " + ejection.ExcessDirection, context.SmallFont, dim, x, y);
+                            y += 20;
+                            context.Graphics.DrawString("PARK SPEED     " + ejection.ParkingSpeedMetersPerSecond.ToString("0.0") + " m/s", context.SmallFont, dim, x, y);
+                            y += 20;
+                            context.Graphics.DrawString("EJECT SPEED    " + ejection.HyperbolicPeriapsisSpeedMetersPerSecond.ToString("0.0") + " m/s", context.SmallFont, dim, x, y);
+                            y += 20;
+                            context.Graphics.DrawString("VESSEL DV      +" + ejection.EjectionDeltaVMetersPerSecond.ToString("0.0") + " m/s", context.SmallFont, dim, x, y);
+                            y += 20;
+                            context.Graphics.DrawString("BURN RADIUS    " + ejection.AsymptoteAngleDegrees.ToString("0.00") + " deg BEHIND VINF", context.SmallFont, dim, x, y);
+                            y += 20;
+                            context.Graphics.DrawString("BURN UT        " + ejection.BurnUniversalTimeSeconds.ToString("0") + "  (" + FormatSignedMinutes(ejection.WindowOffsetSeconds) + " WINDOW)", context.SmallFont, dim, x, y);
+                            y += 26;
+                            context.Graphics.DrawString("SOLUTION ONLY - NO MANEUVER NODE CREATED", context.SmallFont, bright, x, y);
+                        }
+                        else
+                        {
+                            context.Graphics.DrawString("PARKING EJECTION REQUIRES NEAR-CIRCULAR PROGRADE ORBIT", context.SmallFont, bright, x, y);
+                            y += 22;
+                            context.Graphics.DrawString("WINDOW ONLY - NO MANEUVER NODE CREATED", context.SmallFont, dim, x, y);
+                        }
                     }
                     else
                     {
@@ -370,6 +410,84 @@ namespace KMC.MissionControl.Pages
             return true;
         }
 
+
+        private static bool TryCalculateParkingOrbitEjection(
+            OrbitMapPacket packet,
+            OrbitMapBody originBody,
+            TransferWindowSolution transfer,
+            out ParkingOrbitEjectionSolution solution)
+        {
+            solution = null;
+            if (packet == null || packet.ActiveOrbit == null || originBody == null || transfer == null) return false;
+            if (!IsFinitePositive(originBody.GravParameter) || !IsFinitePositive(packet.ReferenceBodyRadiusMeters)) return false;
+
+            OrbitMapOrbit parkingOrbit = packet.ActiveOrbit;
+            if (parkingOrbit.Eccentricity < 0.0 || parkingOrbit.Eccentricity > 0.05) return false;
+
+            double normalizedInclination = Math.Abs(parkingOrbit.InclinationDegrees) % 360.0;
+            if (normalizedInclination > 180.0) normalizedInclination = 360.0 - normalizedInclination;
+            if (normalizedInclination > 10.0) return false;
+
+            double parkingRadius = Math.Abs(parkingOrbit.SemiMajorAxisMeters);
+            if (!IsFinitePositive(parkingRadius) || parkingRadius <= packet.ReferenceBodyRadiusMeters) return false;
+
+            double mu = originBody.GravParameter;
+            double vinf = Math.Abs(transfer.ParentFrameDeltaVMetersPerSecond);
+            if (!IsFinitePositive(vinf)) return false;
+
+            double parkingSpeed = Math.Sqrt(mu / parkingRadius);
+            double hyperbolicPeriapsisSpeed = Math.Sqrt((vinf * vinf) + (2.0 * mu / parkingRadius));
+            double ejectionDeltaV = hyperbolicPeriapsisSpeed - parkingSpeed;
+            double hyperbolicEccentricity = 1.0 + ((parkingRadius * vinf * vinf) / mu);
+            if (hyperbolicEccentricity <= 1.0) return false;
+
+            double asymptoteAngle = Math.Acos(-1.0 / hyperbolicEccentricity);
+            double parentMu = DeriveParentGravParameter(originBody.Orbit, Math.Abs(originBody.Orbit.SemiMajorAxisMeters));
+            if (!IsFinitePositive(parentMu)) return false;
+
+            double originLongitudeAtWindow = OrbitalLongitudeAtUniversalTime(
+                originBody.Orbit,
+                transfer.DepartureUniversalTimeSeconds,
+                parentMu);
+            double vesselLongitudeAtWindow = OrbitalLongitudeAtUniversalTime(
+                parkingOrbit,
+                transfer.DepartureUniversalTimeSeconds,
+                mu);
+            if (double.IsNaN(originLongitudeAtWindow) || double.IsNaN(vesselLongitudeAtWindow)) return false;
+
+            double parentTangentDirection = NormalizeRadians(
+                originLongitudeAtWindow +
+                (transfer.ParentFrameDeltaVMetersPerSecond >= 0.0 ? Math.PI * 0.5 : -Math.PI * 0.5));
+            double targetBurnRadiusDirection = NormalizeRadians(parentTangentDirection - asymptoteAngle);
+
+            double vesselMeanMotion = Math.Sqrt(mu / (parkingRadius * parkingRadius * parkingRadius));
+            double originParentRadius = Math.Abs(originBody.Orbit.SemiMajorAxisMeters);
+            double originMeanMotion = Math.Sqrt(parentMu / (originParentRadius * originParentRadius * originParentRadius));
+            double relativeRate = vesselMeanMotion - originMeanMotion;
+            if (relativeRate <= 0.0) return false;
+
+            double forwardAngle = NormalizeRadians(targetBurnRadiusDirection - vesselLongitudeAtWindow);
+            double forwardSeconds = forwardAngle / relativeRate;
+            double backwardSeconds = (forwardAngle - (2.0 * Math.PI)) / relativeRate;
+            double windowOffset = Math.Abs(backwardSeconds) < Math.Abs(forwardSeconds)
+                ? backwardSeconds
+                : forwardSeconds;
+
+            solution = new ParkingOrbitEjectionSolution();
+            solution.ParkingAltitudeMeters = parkingRadius - packet.ReferenceBodyRadiusMeters;
+            solution.ParkingSpeedMetersPerSecond = parkingSpeed;
+            solution.HyperbolicPeriapsisSpeedMetersPerSecond = hyperbolicPeriapsisSpeed;
+            solution.HyperbolicExcessSpeedMetersPerSecond = vinf;
+            solution.EjectionDeltaVMetersPerSecond = ejectionDeltaV;
+            solution.AsymptoteAngleDegrees = asymptoteAngle * 180.0 / Math.PI;
+            solution.BurnUniversalTimeSeconds = transfer.DepartureUniversalTimeSeconds + windowOffset;
+            solution.WindowOffsetSeconds = windowOffset;
+            solution.ExcessDirection = transfer.ParentFrameDeltaVMetersPerSecond >= 0.0
+                ? "+PARENT TANGENT"
+                : "-PARENT TANGENT";
+            return true;
+        }
+
         private static double DeriveParentGravParameter(OrbitMapOrbit orbit, double semiMajorAxisMeters)
         {
             if (orbit == null || !IsFinitePositive(orbit.PeriodSeconds) || !IsFinitePositive(semiMajorAxisMeters))
@@ -430,6 +548,17 @@ namespace KMC.MissionControl.Pages
         private static bool IsFinitePositive(double value)
         {
             return !double.IsNaN(value) && !double.IsInfinity(value) && value > 0.0;
+        }
+
+
+        private static string FormatSignedMinutes(double seconds)
+        {
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds)) return "---";
+            string sign = seconds >= 0.0 ? "+" : "-";
+            long totalSeconds = (long)Math.Floor(Math.Abs(seconds) + 0.5);
+            long minutes = totalSeconds / 60;
+            long secs = totalSeconds % 60;
+            return string.Format("{0}{1}m {2:00}s", sign, minutes, secs);
         }
 
         private static string FormatTransferInterval(double seconds)
