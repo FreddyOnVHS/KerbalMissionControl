@@ -18,6 +18,11 @@ namespace KMC.Plugin
         private const int AssessmentSamplesPerPatch = 160;
         private const int AssessmentRefineIterations = 24;
         private const int AssessmentMaxPatches = 12;
+        private const int RefinementRounds = 6;
+        private const double InitialRefinementUtStepSeconds = 1800.0;
+        private const double InitialRefinementProgradeStepMetersPerSecond = 40.0;
+        private const double MinimumRefinementUtStepSeconds = 45.0;
+        private const double MinimumRefinementProgradeStepMetersPerSecond = 1.0;
 
         private sealed class TrackedManeuver
         {
@@ -144,7 +149,24 @@ namespace KMC.Plugin
                 return;
             }
 
+            string operation =
+                string.IsNullOrWhiteSpace(packet.Operation)
+                    ? "CREATE"
+                    : packet.Operation.Trim().ToUpperInvariant();
+
             TrackedManeuver existing;
+            if (string.Equals(operation, "REFINE", StringComparison.Ordinal))
+            {
+                if (!_trackedPlans.TryGetValue(packet.PlanId, out existing))
+                {
+                    SendAck(packet, "REJECTED", "REFINEMENT PLAN IS NOT TRACKED", double.NaN);
+                    return;
+                }
+
+                RefineTrackedManeuver(packet, vessel, existing);
+                return;
+            }
+
             if (_trackedPlans.TryGetValue(packet.PlanId, out existing))
             {
                 SendAck(packet, "NODE LOADED", "PLAN ALREADY TRACKED - DUPLICATE SUPPRESSED", existing.PlannedNodeUt);
@@ -228,6 +250,182 @@ namespace KMC.Plugin
             {
                 SendAck(packet, "REJECTED", "KSP NODE CREATION FAILED: " + ex.GetType().Name, double.NaN);
                 Debug.LogError("[KMC] Maneuver node creation failed: " + ex);
+            }
+        }
+
+        private void RefineTrackedManeuver(
+            ManeuverUplinkPacket packet,
+            Vessel vessel,
+            TrackedManeuver tracked)
+        {
+            if (tracked == null || tracked.Node == null || vessel == null ||
+                vessel.patchedConicSolver == null)
+            {
+                SendAck(packet, "REJECTED", "TRACKED NODE IS UNAVAILABLE FOR REFINEMENT", double.NaN);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(tracked.TargetBodyName))
+            {
+                SendAck(packet, "REJECTED", "REFINEMENT TARGET BODY IS UNAVAILABLE", tracked.Node.UT);
+                return;
+            }
+
+            double currentUt = Planetarium.GetUniversalTime();
+            if (!IsFinite(tracked.Node.UT) || tracked.Node.UT <= currentUt + 1.0)
+            {
+                SendAck(packet, "REJECTED", "TRACKED NODE IS NO LONGER IN THE FUTURE", tracked.Node.UT);
+                return;
+            }
+
+            try
+            {
+                UpdateTransferAssessment(tracked);
+                if (!tracked.TransferAssessmentAvailable)
+                {
+                    SendAck(packet, "REJECTED", "KSP TRANSFER ASSESSMENT IS UNAVAILABLE", tracked.Node.UT);
+                    return;
+                }
+
+                if (tracked.TargetEncounter)
+                {
+                    SendAck(packet, "NODE REFINED", "TARGET ENCOUNTER ALREADY EXISTS", tracked.Node.UT);
+                    PublishTrackedNodeState(vessel, tracked);
+                    return;
+                }
+
+                double originalDistance = tracked.ClosestApproachMeters;
+                double bestDistance = originalDistance;
+                double bestUt = tracked.Node.UT;
+                Vector3d bestDeltaV = tracked.Node.DeltaV;
+                bool bestEncounter = tracked.TargetEncounter;
+
+                double utStep = InitialRefinementUtStepSeconds;
+                double progradeStep = InitialRefinementProgradeStepMetersPerSecond;
+
+                for (int round = 0; round < RefinementRounds; round++)
+                {
+                    bool improved = false;
+
+                    double[] candidateUtOffsets = new[] { -utStep, utStep, 0.0, 0.0 };
+                    double[] candidateProgradeOffsets = new[] { 0.0, 0.0, -progradeStep, progradeStep };
+
+                    for (int i = 0; i < candidateUtOffsets.Length; i++)
+                    {
+                        double candidateUt = bestUt + candidateUtOffsets[i];
+                        double candidatePrograde = bestDeltaV.z + candidateProgradeOffsets[i];
+
+                        if (candidateUt <= currentUt + 1.0 || candidatePrograde <= 0.0)
+                            continue;
+
+                        tracked.Node.UT = candidateUt;
+                        tracked.Node.DeltaV = new Vector3d(
+                            bestDeltaV.x,
+                            bestDeltaV.y,
+                            candidatePrograde);
+
+                        vessel.patchedConicSolver.UpdateFlightPlan();
+                        UpdateTransferAssessment(tracked);
+
+                        if (!tracked.TransferAssessmentAvailable ||
+                            !IsFinite(tracked.ClosestApproachMeters))
+                            continue;
+
+                        bool candidateEncounter = tracked.TargetEncounter;
+                        double candidateDistance = tracked.ClosestApproachMeters;
+                        bool isBetter =
+                            candidateEncounter && !bestEncounter ||
+                            candidateEncounter == bestEncounter &&
+                            candidateDistance + 1.0 < bestDistance;
+
+                        if (isBetter)
+                        {
+                            bestEncounter = candidateEncounter;
+                            bestDistance = candidateDistance;
+                            bestUt = candidateUt;
+                            bestDeltaV = tracked.Node.DeltaV;
+                            improved = true;
+                        }
+
+                        if (bestEncounter)
+                            break;
+                    }
+
+                    tracked.Node.UT = bestUt;
+                    tracked.Node.DeltaV = bestDeltaV;
+                    vessel.patchedConicSolver.UpdateFlightPlan();
+                    UpdateTransferAssessment(tracked);
+
+                    if (bestEncounter)
+                        break;
+
+                    utStep = Math.Max(MinimumRefinementUtStepSeconds, utStep * 0.5);
+                    progradeStep = Math.Max(MinimumRefinementProgradeStepMetersPerSecond, progradeStep * 0.5);
+
+                    if (!improved &&
+                        utStep <= MinimumRefinementUtStepSeconds &&
+                        progradeStep <= MinimumRefinementProgradeStepMetersPerSecond)
+                        break;
+                }
+
+                tracked.Node.UT = bestUt;
+                tracked.Node.DeltaV = bestDeltaV;
+                vessel.patchedConicSolver.UpdateFlightPlan();
+                UpdateTransferAssessment(tracked);
+
+                tracked.PlannedNodeUt = tracked.Node.UT;
+                tracked.PlannedRadial = tracked.Node.DeltaV.x;
+                tracked.PlannedNormal = tracked.Node.DeltaV.y;
+                tracked.PlannedPrograde = tracked.Node.DeltaV.z;
+
+                bool improvedFinal =
+                    tracked.TransferAssessmentAvailable &&
+                    IsFinite(tracked.ClosestApproachMeters) &&
+                    tracked.ClosestApproachMeters + 1.0 < originalDistance;
+
+                string detail;
+                if (tracked.TargetEncounter)
+                {
+                    detail = "KSP REFINEMENT ACHIEVED TARGET ENCOUNTER";
+                }
+                else if (improvedFinal)
+                {
+                    detail =
+                        "KSP REFINEMENT REDUCED CLOSEST APPROACH TO " +
+                        tracked.ClosestApproachMeters.ToString("0.0") +
+                        " M";
+                }
+                else
+                {
+                    detail = "KSP REFINEMENT FOUND NO BETTER UT/PROGRADE SOLUTION";
+                }
+
+                SendAck(packet, "NODE REFINED", detail, tracked.Node.UT);
+                PublishTrackedNodeState(vessel, tracked);
+
+                ScreenMessages.PostScreenMessage(
+                    tracked.TargetEncounter
+                        ? "KMC transfer refinement found target encounter"
+                        : improvedFinal
+                            ? "KMC transfer refinement improved closest approach"
+                            : "KMC transfer refinement found no improvement",
+                    4f,
+                    ScreenMessageStyle.UPPER_CENTER);
+
+                Debug.Log(
+                    "[KMC] TRANSFER REFINEMENT" +
+                    " | PlanId=" + tracked.PlanId +
+                    " | Target=" + tracked.TargetBodyName +
+                    " | OriginalClosestM=" + originalDistance.ToString("0.0") +
+                    " | FinalClosestM=" + tracked.ClosestApproachMeters.ToString("0.0") +
+                    " | Encounter=" + tracked.TargetEncounter +
+                    " | NodeUT=" + tracked.Node.UT.ToString("0.0") +
+                    " | ProgradeDV=" + tracked.Node.DeltaV.z.ToString("0.00"));
+            }
+            catch (Exception ex)
+            {
+                SendAck(packet, "REJECTED", "KSP NODE REFINEMENT FAILED: " + ex.GetType().Name, tracked.Node.UT);
+                Debug.LogError("[KMC] Transfer node refinement failed: " + ex);
             }
         }
 

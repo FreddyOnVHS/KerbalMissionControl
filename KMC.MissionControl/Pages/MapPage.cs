@@ -23,6 +23,7 @@ namespace KMC.MissionControl.Pages
         private Rectangle _resetButton, _fitOrbitButton, _fitManeuverButton, _targetButton;
         private Rectangle _localTab, _transferTab;
         private Rectangle _createTransferNodeButton;
+        private Rectangle _refineTransferNodeButton;
         private const int ButtonGap = 16;
         private const int ButtonHorizontalPadding = 14;
         private const int ButtonHeight = 24;
@@ -153,6 +154,13 @@ namespace KMC.MissionControl.Pages
                     return true;
                 }
 
+                if (!_refineTransferNodeButton.IsEmpty &&
+                    _refineTransferNodeButton.Contains(q))
+                {
+                    RefineTransferNode();
+                    return true;
+                }
+
                 for (int i = 0; i < _transferBodyButtons.Count && i < _transferBodyNames.Count; i++)
                 {
                     if (_transferBodyButtons[i].Contains(q))
@@ -230,6 +238,7 @@ namespace KMC.MissionControl.Pages
             _transferBodyNames.Clear();
             _transferNodeCandidate = null;
             _createTransferNodeButton = Rectangle.Empty;
+            _refineTransferNodeButton = Rectangle.Empty;
 
             int top = bounds.Top + 84;
             Rectangle systemPanel = new Rectangle(bounds.Left, top, Math.Max(420, (int)(bounds.Width * 0.58)), bounds.Bottom - top);
@@ -368,7 +377,8 @@ namespace KMC.MissionControl.Pages
                                         ProgradeDeltaVMetersPerSecond = ejection.EjectionDeltaVMetersPerSecond,
                                         NormalDeltaVMetersPerSecond = 0.0,
                                         RadialDeltaVMetersPerSecond = 0.0,
-                                        TargetBodyName = destination.Name
+                                        TargetBodyName = destination.Name,
+                                        Operation = "CREATE"
                                     };
                             }
 
@@ -446,11 +456,75 @@ namespace KMC.MissionControl.Pages
 
             if (_transferNodeCandidate != null)
             {
-                Rectangle button =
+                const int controlGap = 12;
+                int singleButtonWidth =
+                    Math.Min(
+                        width,
+                        Math.Max(
+                            250,
+                            MeasureButtonWidth(
+                                context.Graphics,
+                                context.SmallFont,
+                                "CREATE KSP NODE")));
+
+                int primaryRequiredWidth =
+                    Math.Max(
+                        MeasureButtonWidth(
+                            context.Graphics,
+                            context.SmallFont,
+                            "NODE CREATED"),
+                        MeasureButtonWidth(
+                            context.Graphics,
+                            context.SmallFont,
+                            "NODE UPLINKED"));
+
+                int secondaryRequiredWidth =
+                    Math.Max(
+                        MeasureButtonWidth(
+                            context.Graphics,
+                            context.SmallFont,
+                            "REFINE KSP NODE"),
+                        MeasureButtonWidth(
+                            context.Graphics,
+                            context.SmallFont,
+                            "ENCOUNTER ACHIEVED"));
+
+                int pairedAvailableWidth =
+                    Math.Max(
+                        2,
+                        width - controlGap);
+
+                int primaryButtonWidth =
+                    primaryRequiredWidth;
+                int secondaryButtonWidth =
+                    secondaryRequiredWidth;
+
+                if (primaryButtonWidth + secondaryButtonWidth > pairedAvailableWidth)
+                {
+                    double requestedTotal =
+                        Math.Max(
+                            1.0,
+                            primaryButtonWidth + secondaryButtonWidth);
+
+                    primaryButtonWidth =
+                        Math.Max(
+                            1,
+                            (int)Math.Floor(
+                                pairedAvailableWidth *
+                                (primaryButtonWidth / requestedTotal)));
+
+                    secondaryButtonWidth =
+                        Math.Max(
+                            1,
+                            pairedAvailableWidth -
+                            primaryButtonWidth);
+                }
+
+                Rectangle primaryButton =
                     new Rectangle(
                         left,
                         buttonTop,
-                        Math.Min(250, width),
+                        candidateLocked ? primaryButtonWidth : singleButtonWidth,
                         buttonHeight);
 
                 if (candidateLocked)
@@ -464,12 +538,44 @@ namespace KMC.MissionControl.Pages
 
                     DrawInactiveButton(
                         context,
-                        button,
+                        primaryButton,
                         label);
+
+                    bool assessmentReady =
+                        status != null &&
+                        status.NodeExists &&
+                        status.TransferAssessmentAvailable;
+
+                    if (assessmentReady)
+                    {
+                        Rectangle secondaryButton =
+                            new Rectangle(
+                                primaryButton.Right + controlGap,
+                                buttonTop,
+                                secondaryButtonWidth,
+                                buttonHeight);
+
+                        if (status.TargetEncounter)
+                        {
+                            _refineTransferNodeButton = Rectangle.Empty;
+                            DrawInactiveButton(
+                                context,
+                                secondaryButton,
+                                "ENCOUNTER ACHIEVED");
+                        }
+                        else
+                        {
+                            _refineTransferNodeButton = secondaryButton;
+                            DrawButton(
+                                context,
+                                _refineTransferNodeButton,
+                                "REFINE KSP NODE");
+                        }
+                    }
                 }
                 else
                 {
-                    _createTransferNodeButton = button;
+                    _createTransferNodeButton = primaryButton;
 
                     DrawButton(
                         context,
@@ -680,7 +786,8 @@ namespace KMC.MissionControl.Pages
                     NormalDeltaVMetersPerSecond = 0.0,
                     RadialDeltaVMetersPerSecond = 0.0,
                     TargetBodyName =
-                        _transferNodeCandidate.TargetBodyName
+                        _transferNodeCandidate.TargetBodyName,
+                    Operation = "CREATE"
                 };
 
             string resultText;
@@ -705,6 +812,71 @@ namespace KMC.MissionControl.Pages
             _transferNodeActionText =
                 string.IsNullOrWhiteSpace(resultText)
                     ? (sent ? "UPLINK SENT" : "UPLINK FAILED")
+                    : resultText;
+        }
+
+        private void RefineTransferNode()
+        {
+            if (string.IsNullOrWhiteSpace(_lastTransferPlanId))
+            {
+                _transferNodeActionText = "NO TRACKED NODE TO REFINE";
+                return;
+            }
+
+            ManeuverUplinkStatusSnapshot status =
+                ManeuverUplinkStatusStore.GetForPlan(
+                    _lastTransferPlanId);
+
+            if (status == null ||
+                !status.NodeExists ||
+                !status.TransferAssessmentAvailable)
+            {
+                _transferNodeActionText = "KSP ASSESSMENT NOT READY";
+                return;
+            }
+
+            if (status.TargetEncounter)
+            {
+                _transferNodeActionText = "TARGET ENCOUNTER ALREADY ACHIEVED";
+                return;
+            }
+
+            if (!IsFinitePositive(status.NodeUniversalTimeSeconds) ||
+                double.IsNaN(status.ProgradeDeltaVMetersPerSecond) ||
+                double.IsInfinity(status.ProgradeDeltaVMetersPerSecond))
+            {
+                _transferNodeActionText = "LIVE KSP NODE STATE INVALID";
+                return;
+            }
+
+            ManeuverUplinkPacket packet =
+                new ManeuverUplinkPacket
+                {
+                    VesselId =
+                        _transferNodeCandidate != null
+                            ? _transferNodeCandidate.VesselId
+                            : string.Empty,
+                    PlanId = _lastTransferPlanId,
+                    NodeUniversalTimeSeconds = status.NodeUniversalTimeSeconds,
+                    ProgradeDeltaVMetersPerSecond = status.ProgradeDeltaVMetersPerSecond,
+                    NormalDeltaVMetersPerSecond = status.NormalDeltaVMetersPerSecond,
+                    RadialDeltaVMetersPerSecond = status.RadialDeltaVMetersPerSecond,
+                    TargetBodyName =
+                        string.IsNullOrWhiteSpace(status.TargetBodyName)
+                            ? _selectedTransferBodyName
+                            : status.TargetBodyName,
+                    Operation = "REFINE"
+                };
+
+            string resultText;
+            bool sent =
+                TransferPlannerManeuverUplink.Send(
+                    packet,
+                    out resultText);
+
+            _transferNodeActionText =
+                string.IsNullOrWhiteSpace(resultText)
+                    ? (sent ? "REFINEMENT SENT" : "REFINEMENT FAILED")
                     : resultText;
         }
 

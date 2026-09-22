@@ -24,12 +24,14 @@ namespace KMC.Shared
         public double NormalDeltaVMetersPerSecond { get; set; }
         public double RadialDeltaVMetersPerSecond { get; set; }
         public string TargetBodyName { get; set; }
+        public string Operation { get; set; }
 
         public ManeuverUplinkPacket()
         {
             VesselId = string.Empty;
             PlanId = string.Empty;
             TargetBodyName = string.Empty;
+            Operation = "CREATE";
         }
 
         public string Serialize()
@@ -45,7 +47,8 @@ namespace KMC.Shared
                     Format(ProgradeDeltaVMetersPerSecond),
                     Format(NormalDeltaVMetersPerSecond),
                     Format(RadialDeltaVMetersPerSecond),
-                    Uri.EscapeDataString(TargetBodyName ?? string.Empty)
+                    Uri.EscapeDataString(TargetBodyName ?? string.Empty),
+                    Uri.EscapeDataString(string.IsNullOrWhiteSpace(Operation) ? "CREATE" : Operation)
                 });
         }
 
@@ -55,7 +58,7 @@ namespace KMC.Shared
             if (string.IsNullOrWhiteSpace(message)) return false;
 
             string[] fields = message.Split('|');
-            if ((fields.Length != 7 && fields.Length != 8) ||
+            if ((fields.Length != 7 && fields.Length != 8 && fields.Length != 9) ||
                 !string.Equals(fields[0], ProtocolId, StringComparison.Ordinal))
                 return false;
 
@@ -76,7 +79,10 @@ namespace KMC.Shared
                 RadialDeltaVMetersPerSecond = radial,
                 TargetBodyName = fields.Length >= 8
                     ? Uri.UnescapeDataString(fields[7])
-                    : string.Empty
+                    : string.Empty,
+                Operation = fields.Length >= 9
+                    ? Uri.UnescapeDataString(fields[8])
+                    : "CREATE"
             };
 
             return !string.IsNullOrWhiteSpace(packet.VesselId) &&
