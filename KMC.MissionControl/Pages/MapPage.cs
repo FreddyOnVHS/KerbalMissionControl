@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using KMC.MissionControl.Models;
+using KMC.MissionControl.Engineering;
+using KMC.MissionControl.Transport;
 using KMC.MissionControl.Rendering;
 using KMC.MissionControl.Rendering.OrbitMap;
 using KMC.MissionControl.Telemetry;
@@ -20,6 +22,7 @@ namespace KMC.MissionControl.Pages
         private Rectangle _viewport;
         private Rectangle _resetButton, _fitOrbitButton, _fitManeuverButton, _targetButton;
         private Rectangle _localTab, _transferTab;
+        private Rectangle _createTransferNodeButton;
         private const int ButtonGap = 16;
         private const int ButtonHorizontalPadding = 14;
         private const int ButtonHeight = 24;
@@ -28,6 +31,12 @@ namespace KMC.MissionControl.Pages
         private bool _initialFitDone;
         private int _subpage;
         private string _selectedTransferBodyName = string.Empty;
+        private ManeuverUplinkPacket _transferNodeCandidate;
+        private string _lastTransferPlanId = string.Empty;
+        private string _transferNodeActionText = "NO NODE REQUEST";
+        private string _submittedTransferDestinationName = string.Empty;
+        private double _submittedTransferNodeUt = double.NaN;
+        private double _submittedTransferProgradeDv = double.NaN;
 
         private sealed class TransferWindowSolution
         {
@@ -136,11 +145,24 @@ namespace KMC.MissionControl.Pages
 
             if (_subpage == 1)
             {
+                if (_transferNodeCandidate != null &&
+                    !_createTransferNodeButton.IsEmpty &&
+                    _createTransferNodeButton.Contains(q))
+                {
+                    UploadTransferNode();
+                    return true;
+                }
+
                 for (int i = 0; i < _transferBodyButtons.Count && i < _transferBodyNames.Count; i++)
                 {
                     if (_transferBodyButtons[i].Contains(q))
                     {
                         _selectedTransferBodyName = _transferBodyNames[i];
+                        _lastTransferPlanId = string.Empty;
+                        _transferNodeActionText = "NO NODE REQUEST";
+                        _submittedTransferDestinationName = string.Empty;
+                        _submittedTransferNodeUt = double.NaN;
+                        _submittedTransferProgradeDv = double.NaN;
                         return true;
                     }
                 }
@@ -206,6 +228,8 @@ namespace KMC.MissionControl.Pages
         {
             _transferBodyButtons.Clear();
             _transferBodyNames.Clear();
+            _transferNodeCandidate = null;
+            _createTransferNodeButton = Rectangle.Empty;
 
             int top = bounds.Top + 84;
             Rectangle systemPanel = new Rectangle(bounds.Left, top, Math.Max(420, (int)(bounds.Width * 0.58)), bounds.Bottom - top);
@@ -332,7 +356,22 @@ namespace KMC.MissionControl.Pages
                             y += 20;
                             context.Graphics.DrawString("BURN UT        " + ejection.BurnUniversalTimeSeconds.ToString("0") + "  (" + FormatSignedMinutes(ejection.WindowOffsetSeconds) + " WINDOW)", context.SmallFont, dim, x, y);
                             y += 26;
-                            context.Graphics.DrawString("SOLUTION ONLY - NO MANEUVER NODE CREATED", context.SmallFont, bright, x, y);
+                            if (ejection.BurnUniversalTimeSeconds > packet.UniversalTimeSeconds + 0.25 &&
+                                !string.IsNullOrWhiteSpace(packet.VesselId))
+                            {
+                                _transferNodeCandidate =
+                                    new ManeuverUplinkPacket
+                                    {
+                                        VesselId = packet.VesselId,
+                                        PlanId = string.Empty,
+                                        NodeUniversalTimeSeconds = ejection.BurnUniversalTimeSeconds,
+                                        ProgradeDeltaVMetersPerSecond = ejection.EjectionDeltaVMetersPerSecond,
+                                        NormalDeltaVMetersPerSecond = 0.0,
+                                        RadialDeltaVMetersPerSecond = 0.0
+                                    };
+                            }
+
+                            context.Graphics.DrawString("NODE CANDIDATE READY - KSP WILL BE AUTHORITATIVE", context.SmallFont, bright, x, y);
                         }
                         else
                         {
@@ -352,7 +391,226 @@ namespace KMC.MissionControl.Pages
                             context.SmallFont, dim, x, y);
                     }
                 }
+
+                DrawTransferNodeControls(context, plannerPanel);
             }
+        }
+
+        private void DrawTransferNodeControls(
+            MissionRenderContext context,
+            Rectangle plannerPanel)
+        {
+            int left = plannerPanel.Left + 12;
+            int width = Math.Max(1, plannerPanel.Width - 24);
+            int buttonHeight = 30;
+            int buttonTop = plannerPanel.Bottom - 42;
+
+            string state = _transferNodeActionText;
+            string detail = string.Empty;
+            bool sameSubmittedCandidate =
+                IsSameAsSubmittedTransferCandidate();
+
+            ManeuverUplinkStatusSnapshot status = null;
+
+            if (sameSubmittedCandidate &&
+                !string.IsNullOrWhiteSpace(_lastTransferPlanId))
+            {
+                status =
+                    ManeuverUplinkStatusStore.GetForPlan(
+                        _lastTransferPlanId);
+
+                if (status != null &&
+                    status.UpdatedUtc != DateTime.MinValue)
+                {
+                    state = status.State ?? string.Empty;
+                    detail = status.Detail ?? string.Empty;
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(_lastTransferPlanId) &&
+                     _transferNodeCandidate != null)
+            {
+                state = "NEW SOLUTION READY";
+                detail = "PREVIOUS NODE DOES NOT MATCH CURRENT CANDIDATE";
+            }
+
+            bool rejected =
+                string.Equals(state, "REJECTED", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(state, "NOT SENT", StringComparison.OrdinalIgnoreCase) ||
+                state.StartsWith("UPLINK FAILED", StringComparison.OrdinalIgnoreCase);
+
+            bool candidateLocked =
+                sameSubmittedCandidate &&
+                !string.IsNullOrWhiteSpace(_lastTransferPlanId) &&
+                !rejected;
+
+            if (_transferNodeCandidate != null)
+            {
+                Rectangle button =
+                    new Rectangle(
+                        left,
+                        buttonTop,
+                        Math.Min(250, width),
+                        buttonHeight);
+
+                if (candidateLocked)
+                {
+                    _createTransferNodeButton = Rectangle.Empty;
+
+                    string label =
+                        string.Equals(state, "NODE VERIFIED", StringComparison.OrdinalIgnoreCase)
+                            ? "NODE CREATED"
+                            : "NODE UPLINKED";
+
+                    DrawInactiveButton(
+                        context,
+                        button,
+                        label);
+                }
+                else
+                {
+                    _createTransferNodeButton = button;
+
+                    DrawButton(
+                        context,
+                        _createTransferNodeButton,
+                        "CREATE KSP NODE");
+                }
+            }
+
+            using (SolidBrush dim = new SolidBrush(context.DimPhosphorColor))
+            using (SolidBrush bright = new SolidBrush(context.PhosphorColor))
+            {
+                int statusY = buttonTop - 42;
+                context.Graphics.DrawString(
+                    "NODE STATUS  " + (string.IsNullOrWhiteSpace(state) ? "---" : state),
+                    context.SmallFont,
+                    bright,
+                    left,
+                    statusY);
+
+                if (!string.IsNullOrWhiteSpace(detail))
+                {
+                    context.Graphics.DrawString(
+                        detail,
+                        context.SmallFont,
+                        dim,
+                        left,
+                        statusY + 20);
+                }
+            }
+        }
+
+        private bool IsSameAsSubmittedTransferCandidate()
+        {
+            if (_transferNodeCandidate == null ||
+                string.IsNullOrWhiteSpace(_submittedTransferDestinationName) ||
+                !string.Equals(
+                    _submittedTransferDestinationName,
+                    _selectedTransferBodyName,
+                    StringComparison.OrdinalIgnoreCase) ||
+                double.IsNaN(_submittedTransferNodeUt) ||
+                double.IsNaN(_submittedTransferProgradeDv))
+            {
+                return false;
+            }
+
+            /*
+             * Keep the already-created node locked across tiny live-planner
+             * drift while still allowing a materially changed solution to
+             * expose CREATE KSP NODE again.
+             */
+            return
+                Math.Abs(
+                    _transferNodeCandidate.NodeUniversalTimeSeconds -
+                    _submittedTransferNodeUt) <= 120.0 &&
+                Math.Abs(
+                    _transferNodeCandidate.ProgradeDeltaVMetersPerSecond -
+                    _submittedTransferProgradeDv) <= 5.0;
+        }
+
+        private static void DrawInactiveButton(
+            MissionRenderContext context,
+            Rectangle r,
+            string text)
+        {
+            using (Pen pen = new Pen(context.DimPhosphorColor))
+                context.Graphics.DrawRectangle(pen, r);
+
+            using (SolidBrush brush = new SolidBrush(context.DimPhosphorColor))
+            using (StringFormat format = new StringFormat())
+            {
+                format.Alignment = StringAlignment.Center;
+                format.LineAlignment = StringAlignment.Center;
+                context.Graphics.DrawString(
+                    text,
+                    context.SmallFont,
+                    brush,
+                    r,
+                    format);
+            }
+        }
+
+        private void UploadTransferNode()
+        {
+            if (_transferNodeCandidate == null)
+            {
+                _transferNodeActionText = "NO VALID NODE CANDIDATE";
+                return;
+            }
+
+            ManeuverUplinkPacket packet =
+                new ManeuverUplinkPacket
+                {
+                    VesselId = _transferNodeCandidate.VesselId,
+                    PlanId =
+                        "MAP-XFER-" +
+                        SanitizePlanToken(_selectedTransferBodyName) +
+                        "-" +
+                        Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant(),
+                    NodeUniversalTimeSeconds =
+                        _transferNodeCandidate.NodeUniversalTimeSeconds,
+                    ProgradeDeltaVMetersPerSecond =
+                        _transferNodeCandidate.ProgradeDeltaVMetersPerSecond,
+                    NormalDeltaVMetersPerSecond = 0.0,
+                    RadialDeltaVMetersPerSecond = 0.0
+                };
+
+            string resultText;
+            bool sent =
+                TransferPlannerManeuverUplink.Send(
+                    packet,
+                    out resultText);
+
+            _lastTransferPlanId =
+                packet.PlanId;
+
+            if (sent)
+            {
+                _submittedTransferDestinationName =
+                    _selectedTransferBodyName ?? string.Empty;
+                _submittedTransferNodeUt =
+                    packet.NodeUniversalTimeSeconds;
+                _submittedTransferProgradeDv =
+                    packet.ProgradeDeltaVMetersPerSecond;
+            }
+
+            _transferNodeActionText =
+                string.IsNullOrWhiteSpace(resultText)
+                    ? (sent ? "UPLINK SENT" : "UPLINK FAILED")
+                    : resultText;
+        }
+
+        private static string SanitizePlanToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return "BODY";
+            char[] chars = value.Trim().ToUpperInvariant().ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+            {
+                char c = chars[i];
+                if (!char.IsLetterOrDigit(c))
+                    chars[i] = '-';
+            }
+            return new string(chars);
         }
 
 
