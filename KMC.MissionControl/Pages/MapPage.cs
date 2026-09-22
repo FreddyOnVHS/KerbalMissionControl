@@ -29,6 +29,17 @@ namespace KMC.MissionControl.Pages
         private int _subpage;
         private string _selectedTransferBodyName = string.Empty;
 
+        private sealed class TransferWindowSolution
+        {
+            public string ParentName;
+            public double CurrentPhaseDegrees;
+            public double RequiredPhaseDegrees;
+            public double WaitSeconds;
+            public double DepartureUniversalTimeSeconds;
+            public double TransferTimeSeconds;
+            public double ParentFrameDeltaVMetersPerSecond;
+        }
+
         public string Name { get { return "ORBIT MAP"; } }
         public Size PreferredVirtualCanvasSize { get { return Size.Empty; } }
         public MissionPageContentProfile ContentProfile { get { return MissionPageContentProfile.DenseEngineering; } }
@@ -267,15 +278,167 @@ namespace KMC.MissionControl.Pages
                         ? "SAME PARENT"
                         : "HIERARCHY CHANGE";
                     context.Graphics.DrawString("ROUTE CLASS  " + relation, context.SmallFont, dim, x, y);
-                    y += 34;
-                }
+                    y += 30;
 
-                context.Graphics.DrawString("CALCULATION NOT ENABLED IN 14.22.27", context.SmallFont, bright, x, y);
-                y += 22;
-                context.Graphics.DrawString("FOUNDATION ONLY: BODY CATALOG + DESTINATION SELECTION", context.SmallFont, dim, x, y);
-                y += 20;
-                context.Graphics.DrawString("NEXT: TRANSFER WINDOW / MANEUVER SOLUTION", context.SmallFont, dim, x, y);
+                    TransferWindowSolution solution;
+                    if (TryCalculateTransferWindow(originBody, destination, packet.UniversalTimeSeconds, out solution))
+                    {
+                        context.Graphics.DrawString("HOHMANN WINDOW  CIRCULAR / COPLANAR APPROX", context.SmallFont, bright, x, y);
+                        y += 22;
+                        context.Graphics.DrawString("PARENT         " + solution.ParentName, context.SmallFont, dim, x, y);
+                        y += 20;
+                        context.Graphics.DrawString("CURRENT PHASE  " + solution.CurrentPhaseDegrees.ToString("0.00") + " deg", context.SmallFont, dim, x, y);
+                        y += 20;
+                        context.Graphics.DrawString("REQ PHASE      " + solution.RequiredPhaseDegrees.ToString("0.00") + " deg", context.SmallFont, dim, x, y);
+                        y += 20;
+                        context.Graphics.DrawString("WINDOW IN      " + FormatTransferInterval(solution.WaitSeconds), context.SmallFont, dim, x, y);
+                        y += 20;
+                        context.Graphics.DrawString("DEPARTURE UT   " + solution.DepartureUniversalTimeSeconds.ToString("0"), context.SmallFont, dim, x, y);
+                        y += 20;
+                        context.Graphics.DrawString("TRANSFER TIME  " + FormatTransferInterval(solution.TransferTimeSeconds), context.SmallFont, dim, x, y);
+                        y += 20;
+                        context.Graphics.DrawString("PARENT DV      " + solution.ParentFrameDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") + " m/s", context.SmallFont, dim, x, y);
+                        y += 28;
+                        context.Graphics.DrawString("WINDOW ONLY - NO MANEUVER NODE CREATED", context.SmallFont, bright, x, y);
+                    }
+                    else
+                    {
+                        context.Graphics.DrawString("WINDOW SOLUTION NOT AVAILABLE IN 14.22.28", context.SmallFont, bright, x, y);
+                        y += 22;
+                        context.Graphics.DrawString(
+                            relation == "HIERARCHY CHANGE"
+                                ? "REQUIRES HIERARCHY-CHANGE PLANNING"
+                                : "REQUIRES VALID ELLIPTIC BODY ORBITS",
+                            context.SmallFont, dim, x, y);
+                    }
+                }
             }
+        }
+
+
+        private static bool TryCalculateTransferWindow(
+            OrbitMapBody origin,
+            OrbitMapBody destination,
+            double currentUniversalTimeSeconds,
+            out TransferWindowSolution solution)
+        {
+            solution = null;
+            if (origin == null || destination == null || origin.Orbit == null || destination.Orbit == null) return false;
+            if (string.IsNullOrWhiteSpace(origin.ParentName) ||
+                !string.Equals(origin.ParentName, destination.ParentName, StringComparison.OrdinalIgnoreCase)) return false;
+            if (origin.Orbit.Eccentricity >= 1.0 || destination.Orbit.Eccentricity >= 1.0) return false;
+
+            double r1 = Math.Abs(origin.Orbit.SemiMajorAxisMeters);
+            double r2 = Math.Abs(destination.Orbit.SemiMajorAxisMeters);
+            if (!IsFinitePositive(r1) || !IsFinitePositive(r2) || Math.Abs(r1 - r2) < 1.0) return false;
+
+            double parentMu = DeriveParentGravParameter(origin.Orbit, r1);
+            if (!IsFinitePositive(parentMu))
+                parentMu = DeriveParentGravParameter(destination.Orbit, r2);
+            if (!IsFinitePositive(parentMu)) return false;
+
+            double transferSemiMajorAxis = 0.5 * (r1 + r2);
+            double transferTime = Math.PI * Math.Sqrt(
+                (transferSemiMajorAxis * transferSemiMajorAxis * transferSemiMajorAxis) / parentMu);
+            double originMeanMotion = Math.Sqrt(parentMu / (r1 * r1 * r1));
+            double destinationMeanMotion = Math.Sqrt(parentMu / (r2 * r2 * r2));
+
+            double originLongitude = OrbitalLongitudeAtUniversalTime(origin.Orbit, currentUniversalTimeSeconds, parentMu);
+            double destinationLongitude = OrbitalLongitudeAtUniversalTime(destination.Orbit, currentUniversalTimeSeconds, parentMu);
+            if (double.IsNaN(originLongitude) || double.IsNaN(destinationLongitude)) return false;
+
+            double currentPhase = NormalizeRadians(destinationLongitude - originLongitude);
+            double requiredPhase = NormalizeRadians(Math.PI - (destinationMeanMotion * transferTime));
+            double relativeRate = destinationMeanMotion - originMeanMotion;
+            if (Math.Abs(relativeRate) < 1e-15) return false;
+
+            double waitSeconds = relativeRate > 0.0
+                ? NormalizeRadians(requiredPhase - currentPhase) / relativeRate
+                : NormalizeRadians(currentPhase - requiredPhase) / (-relativeRate);
+
+            double circularSpeed = Math.Sqrt(parentMu / r1);
+            double transferSpeedAtOrigin = Math.Sqrt(parentMu * ((2.0 / r1) - (1.0 / transferSemiMajorAxis)));
+
+            solution = new TransferWindowSolution();
+            solution.ParentName = origin.ParentName;
+            solution.CurrentPhaseDegrees = currentPhase * 180.0 / Math.PI;
+            solution.RequiredPhaseDegrees = requiredPhase * 180.0 / Math.PI;
+            solution.WaitSeconds = waitSeconds;
+            solution.DepartureUniversalTimeSeconds = currentUniversalTimeSeconds + waitSeconds;
+            solution.TransferTimeSeconds = transferTime;
+            solution.ParentFrameDeltaVMetersPerSecond = transferSpeedAtOrigin - circularSpeed;
+            return true;
+        }
+
+        private static double DeriveParentGravParameter(OrbitMapOrbit orbit, double semiMajorAxisMeters)
+        {
+            if (orbit == null || !IsFinitePositive(orbit.PeriodSeconds) || !IsFinitePositive(semiMajorAxisMeters))
+                return double.NaN;
+            double twoPi = 2.0 * Math.PI;
+            return (twoPi * twoPi * semiMajorAxisMeters * semiMajorAxisMeters * semiMajorAxisMeters) /
+                   (orbit.PeriodSeconds * orbit.PeriodSeconds);
+        }
+
+        private static double OrbitalLongitudeAtUniversalTime(
+            OrbitMapOrbit orbit,
+            double universalTimeSeconds,
+            double parentGravParameter)
+        {
+            if (orbit == null || orbit.Eccentricity < 0.0 || orbit.Eccentricity >= 1.0) return double.NaN;
+            double a = Math.Abs(orbit.SemiMajorAxisMeters);
+            if (!IsFinitePositive(a) || !IsFinitePositive(parentGravParameter)) return double.NaN;
+
+            double meanMotion = Math.Sqrt(parentGravParameter / (a * a * a));
+            double meanAnomaly = NormalizeRadians(
+                orbit.MeanAnomalyAtEpochRadians +
+                meanMotion * (universalTimeSeconds - orbit.EpochUniversalTimeSeconds));
+            double eccentricAnomaly = SolveEllipticEccentricAnomaly(meanAnomaly, orbit.Eccentricity);
+
+            double sinHalf = Math.Sqrt(1.0 + orbit.Eccentricity) * Math.Sin(eccentricAnomaly * 0.5);
+            double cosHalf = Math.Sqrt(1.0 - orbit.Eccentricity) * Math.Cos(eccentricAnomaly * 0.5);
+            double trueAnomaly = 2.0 * Math.Atan2(sinHalf, cosHalf);
+
+            double orientation =
+                (orbit.LongitudeOfAscendingNodeDegrees + orbit.ArgumentOfPeriapsisDegrees) *
+                Math.PI / 180.0;
+            return NormalizeRadians(orientation + trueAnomaly);
+        }
+
+        private static double SolveEllipticEccentricAnomaly(double meanAnomaly, double eccentricity)
+        {
+            double value = eccentricity < 0.8 ? meanAnomaly : Math.PI;
+            for (int i = 0; i < 16; i++)
+            {
+                double f = value - eccentricity * Math.Sin(value) - meanAnomaly;
+                double fp = 1.0 - eccentricity * Math.Cos(value);
+                if (Math.Abs(fp) < 1e-12) break;
+                double delta = f / fp;
+                value -= delta;
+                if (Math.Abs(delta) < 1e-12) break;
+            }
+            return value;
+        }
+
+        private static double NormalizeRadians(double radians)
+        {
+            double twoPi = 2.0 * Math.PI;
+            radians %= twoPi;
+            if (radians < 0.0) radians += twoPi;
+            return radians;
+        }
+
+        private static bool IsFinitePositive(double value)
+        {
+            return !double.IsNaN(value) && !double.IsInfinity(value) && value > 0.0;
+        }
+
+        private static string FormatTransferInterval(double seconds)
+        {
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0.0) return "---";
+            long totalMinutes = (long)Math.Floor((seconds / 60.0) + 0.5);
+            long hours = totalMinutes / 60;
+            long minutes = totalMinutes % 60;
+            return string.Format("{0}h {1:00}m", hours, minutes);
         }
 
         private void EnsureTransferSelection(OrbitMapPacket packet, string origin)
