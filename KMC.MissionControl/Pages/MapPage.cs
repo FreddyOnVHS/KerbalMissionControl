@@ -40,6 +40,12 @@ namespace KMC.MissionControl.Pages
         private string _submittedTransferDestinationName = string.Empty;
         private double _submittedTransferNodeUt = double.NaN;
         private double _submittedTransferProgradeDv = double.NaN;
+        private TransferSearchSolution _lambertPreview;
+        private bool _lambertPreviewAttempted;
+        private string _lambertPreviewOriginName = string.Empty;
+        private string _lambertPreviewDestinationName = string.Empty;
+        private string _lambertPreviewMuSource = string.Empty;
+        private double _lambertPreviewHohmannDepartureUt = double.NaN;
 
         public string Name { get { return "ORBIT MAP"; } }
         public Size PreferredVirtualCanvasSize { get { return Size.Empty; } }
@@ -149,6 +155,7 @@ namespace KMC.MissionControl.Pages
                         _submittedTransferDestinationName = string.Empty;
                         _submittedTransferNodeUt = double.NaN;
                         _submittedTransferProgradeDv = double.NaN;
+                        ResetLambertPreview();
                         return true;
                     }
                 }
@@ -324,6 +331,49 @@ namespace KMC.MissionControl.Pages
                         context.Graphics.DrawString("PARENT DV      " + solution.ParentFrameDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") + " m/s", context.SmallFont, dim, x, y);
                         y += 26;
 
+                        EnsureLambertPreview(packet, originBody, destination, solution);
+
+                        context.Graphics.DrawString(
+                            "LAMBERT PREVIEW  COARSE 9x9 / NO NODE AUTHORITY",
+                            context.SmallFont, bright, x, y);
+                        y += 22;
+
+                        if (_lambertPreview != null)
+                        {
+                            context.Graphics.DrawString(
+                                "PATH           " + _lambertPreview.Path.ToString().ToUpperInvariant(),
+                                context.SmallFont, dim, x, y);
+                            y += 20;
+                            context.Graphics.DrawString(
+                                "DEPARTURE UT   " + _lambertPreview.DepartureUniversalTimeSeconds.ToString("0"),
+                                context.SmallFont, dim, x, y);
+                            y += 20;
+                            context.Graphics.DrawString(
+                                "FLIGHT TIME    " + FormatTransferInterval(_lambertPreview.TimeOfFlightSeconds),
+                                context.SmallFont, dim, x, y);
+                            y += 20;
+                            context.Graphics.DrawString(
+                                "DEP VINF       " + _lambertPreview.DepartureExcessSpeedMetersPerSecond.ToString("0.0") + " m/s",
+                                context.SmallFont, dim, x, y);
+                            y += 20;
+                            context.Graphics.DrawString(
+                                "ARR VINF       " + _lambertPreview.ArrivalExcessSpeedMetersPerSecond.ToString("0.0") + " m/s",
+                                context.SmallFont, dim, x, y);
+                            y += 20;
+                            context.Graphics.DrawString(
+                                "SCORE          " + _lambertPreview.CombinedExcessSpeedMetersPerSecond.ToString("0.0") +
+                                " m/s  MU " + _lambertPreviewMuSource,
+                                context.SmallFont, dim, x, y);
+                            y += 26;
+                        }
+                        else
+                        {
+                            context.Graphics.DrawString(
+                                "NO SUPPORTED SAME-PARENT LAMBERT SAMPLE",
+                                context.SmallFont, dim, x, y);
+                            y += 26;
+                        }
+
                         ParkingOrbitEjectionSolution ejection;
                         if (OrbitMapNavigationAdapter.TryCalculateParkingOrbitEjection(packet, originBody, solution, out ejection))
                         {
@@ -382,6 +432,80 @@ namespace KMC.MissionControl.Pages
                 }
 
                 DrawTransferNodeControls(context, plannerPanel);
+            }
+        }
+
+        private void ResetLambertPreview()
+        {
+            _lambertPreview = null;
+            _lambertPreviewAttempted = false;
+            _lambertPreviewOriginName = string.Empty;
+            _lambertPreviewDestinationName = string.Empty;
+            _lambertPreviewMuSource = string.Empty;
+            _lambertPreviewHohmannDepartureUt = double.NaN;
+        }
+
+        private void EnsureLambertPreview(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            OrbitMapBody destination,
+            TransferWindowSolution hohmann)
+        {
+            if (packet == null || origin == null ||
+                destination == null || hohmann == null)
+            {
+                ResetLambertPreview();
+                return;
+            }
+
+            bool sameIdentity =
+                _lambertPreviewAttempted &&
+                string.Equals(
+                    _lambertPreviewOriginName,
+                    origin.Name,
+                    StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(
+                    _lambertPreviewDestinationName,
+                    destination.Name,
+                    StringComparison.OrdinalIgnoreCase);
+
+            bool sameAnchor =
+                sameIdentity &&
+                !double.IsNaN(_lambertPreviewHohmannDepartureUt) &&
+                Math.Abs(
+                    _lambertPreviewHohmannDepartureUt -
+                    hohmann.DepartureUniversalTimeSeconds) <= 60.0;
+
+            bool previewStillFuture =
+                _lambertPreview == null ||
+                _lambertPreview.DepartureUniversalTimeSeconds >
+                    packet.UniversalTimeSeconds + 1.0;
+
+            if (sameAnchor && previewStillFuture)
+                return;
+
+            _lambertPreview = null;
+            _lambertPreviewAttempted = true;
+            _lambertPreviewOriginName = origin.Name ?? string.Empty;
+            _lambertPreviewDestinationName =
+                destination.Name ?? string.Empty;
+            _lambertPreviewHohmannDepartureUt =
+                hohmann.DepartureUniversalTimeSeconds;
+            _lambertPreviewMuSource = string.Empty;
+
+            TransferSearchSolution preview;
+            string muSource;
+
+            if (OrbitMapNavigationAdapter.TryCalculateLambertPreview(
+                    packet,
+                    origin,
+                    destination,
+                    hohmann,
+                    out preview,
+                    out muSource))
+            {
+                _lambertPreview = preview;
+                _lambertPreviewMuSource = muSource ?? string.Empty;
             }
         }
 

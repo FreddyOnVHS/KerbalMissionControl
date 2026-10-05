@@ -54,5 +54,186 @@ namespace KMC.MissionControl.Navigation
             return packet != null && HohmannTransferPlanner.TryCalculateParkingOrbitEjection(
                 ToElements(packet.ActiveOrbit), packet.ReferenceBodyRadiusMeters, ToBody(origin), transfer, out solution);
         }
+
+        /// <summary>
+        /// Creates a coarse Lambert comparison from the real OrbitMap celestial
+        /// catalog. Preview only: no maneuver packet is created here.
+        /// </summary>
+        public static bool TryCalculateLambertPreview(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            OrbitMapBody destination,
+            TransferWindowSolution hohmann,
+            out TransferSearchSolution solution,
+            out string parentMuSource)
+        {
+            solution = null;
+            parentMuSource = string.Empty;
+
+            if (packet == null || origin == null || destination == null ||
+                hohmann == null || origin.Orbit == null || destination.Orbit == null)
+                return false;
+
+            if (!string.Equals(
+                    origin.ParentName,
+                    destination.ParentName,
+                    StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            double parentMu;
+            if (!TryResolveParentGravParameter(
+                    packet,
+                    origin,
+                    destination,
+                    out parentMu,
+                    out parentMuSource))
+                return false;
+
+            double synodicSeconds =
+                CalculateSynodicPeriodSeconds(
+                    origin.Orbit.PeriodSeconds,
+                    destination.Orbit.PeriodSeconds);
+
+            double departureHalfSpan =
+                IsFinitePositive(synodicSeconds)
+                    ? synodicSeconds * 0.08
+                    : hohmann.TransferTimeSeconds * 0.35;
+
+            if (!IsFinitePositive(departureHalfSpan))
+                return false;
+
+            double earliestDeparture =
+                Math.Max(
+                    packet.UniversalTimeSeconds,
+                    hohmann.DepartureUniversalTimeSeconds -
+                    departureHalfSpan);
+
+            double latestDeparture =
+                hohmann.DepartureUniversalTimeSeconds +
+                departureHalfSpan;
+
+            double minimumFlightTime =
+                hohmann.TransferTimeSeconds * 0.70;
+
+            double maximumFlightTime =
+                hohmann.TransferTimeSeconds * 1.30;
+
+            if (!IsFinitePositive(minimumFlightTime) ||
+                !IsFinitePositive(maximumFlightTime) ||
+                latestDeparture < earliestDeparture)
+                return false;
+
+            TransferSearchRequest request =
+                new TransferSearchRequest
+                {
+                    OriginBody = ToBody(origin),
+                    DestinationBody = ToBody(destination),
+                    ParentGravParameter = parentMu,
+                    EarliestDepartureUniversalTimeSeconds = earliestDeparture,
+                    LatestDepartureUniversalTimeSeconds = latestDeparture,
+                    MinimumTimeOfFlightSeconds = minimumFlightTime,
+                    MaximumTimeOfFlightSeconds = maximumFlightTime,
+                    DepartureSamples = 9,
+                    TimeOfFlightSamples = 9,
+                    SearchShortWay = true,
+                    SearchLongWay = true
+                };
+
+            return LambertTransferSearch.TryFindBest(
+                request,
+                out solution);
+        }
+
+        private static bool TryResolveParentGravParameter(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            OrbitMapBody destination,
+            out double parentMu,
+            out string source)
+        {
+            parentMu = double.NaN;
+            source = string.Empty;
+
+            if (packet == null || origin == null || destination == null ||
+                string.IsNullOrWhiteSpace(origin.ParentName))
+                return false;
+
+            for (int i = 0; i < packet.Bodies.Count; i++)
+            {
+                OrbitMapBody body = packet.Bodies[i];
+                if (body == null) continue;
+
+                if (string.Equals(
+                        body.Name,
+                        origin.ParentName,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    IsFinitePositive(body.GravParameter))
+                {
+                    parentMu = body.GravParameter;
+                    source = "PARENT BODY TELEMETRY";
+                    return true;
+                }
+            }
+
+            parentMu =
+                DeriveGravParameterFromOrbit(
+                    origin.Orbit);
+
+            if (!IsFinitePositive(parentMu))
+            {
+                parentMu =
+                    DeriveGravParameterFromOrbit(
+                        destination.Orbit);
+            }
+
+            if (!IsFinitePositive(parentMu))
+                return false;
+
+            source = "ORBIT PERIOD";
+            return true;
+        }
+
+        private static double DeriveGravParameterFromOrbit(
+            OrbitMapOrbit orbit)
+        {
+            if (orbit == null ||
+                !IsFinitePositive(orbit.SemiMajorAxisMeters) ||
+                !IsFinitePositive(orbit.PeriodSeconds))
+                return double.NaN;
+
+            double a = orbit.SemiMajorAxisMeters;
+            double twoPi = 2.0 * Math.PI;
+
+            return
+                (twoPi * twoPi * a * a * a) /
+                (orbit.PeriodSeconds * orbit.PeriodSeconds);
+        }
+
+        private static double CalculateSynodicPeriodSeconds(
+            double firstPeriodSeconds,
+            double secondPeriodSeconds)
+        {
+            if (!IsFinitePositive(firstPeriodSeconds) ||
+                !IsFinitePositive(secondPeriodSeconds))
+                return double.NaN;
+
+            double relativeFrequency =
+                Math.Abs(
+                    (1.0 / firstPeriodSeconds) -
+                    (1.0 / secondPeriodSeconds));
+
+            if (relativeFrequency <= 1e-15)
+                return double.NaN;
+
+            return 1.0 / relativeFrequency;
+        }
+
+        private static bool IsFinitePositive(double value)
+        {
+            return
+                !double.IsNaN(value) &&
+                !double.IsInfinity(value) &&
+                value > 0.0;
+        }
     }
 }

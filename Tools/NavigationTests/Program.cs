@@ -34,6 +34,7 @@ internal static class Program
         Run("Lambert canonical short/long zero-revolution arcs", LambertCanonical);
         Run("Lambert Vallado 3D reference case", LambertVallado);
         Run("Lambert rejects invalid and degenerate boundary data", LambertInvalid);
+        Run("MAP adapter builds Lambert preview from body telemetry", LambertMapPreviewAdapter);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
@@ -386,6 +387,76 @@ internal static class Program
             "nonfinite endpoint accepted");
         Check(!LambertSolver.TrySolve(x, y, double.PositiveInfinity, 1, LambertTransferPath.ShortWay, out solution) && solution == null,
             "nonfinite time accepted");
+    }
+
+    private static void LambertMapPreviewAdapter()
+    {
+        OrbitMapBody origin, destination;
+        OrbitMapPacket packet;
+        Fixture(0, out origin, out destination, out packet);
+
+        origin.Orbit.ReferenceBodyName = origin.ParentName;
+        destination.Orbit.ReferenceBodyName = destination.ParentName;
+
+        packet.Bodies.Add(origin);
+        packet.Bodies.Add(destination);
+
+        TransferWindowSolution hohmann;
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateTransferWindow(
+                origin,
+                destination,
+                packet.UniversalTimeSeconds,
+                out hohmann),
+            "Hohmann seed unavailable");
+
+        TransferSearchSolution preview;
+        string muSource;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateLambertPreview(
+                packet,
+                origin,
+                destination,
+                hohmann,
+                out preview,
+                out muSource),
+            "period-fallback Lambert preview unavailable");
+
+        Check(preview != null, "preview is null");
+        Check(
+            preview.DepartureUniversalTimeSeconds >=
+                packet.UniversalTimeSeconds,
+            "preview departure is in the past");
+        Check(
+            muSource == "ORBIT PERIOD",
+            "period-derived parent mu source not reported");
+
+        OrbitMapBody parent =
+            new OrbitMapBody
+            {
+                Name = origin.ParentName,
+                ParentName = string.Empty,
+                RadiusMeters = 1000000.0,
+                SoiRadiusMeters = 0.0,
+                GravParameter = 1e12
+            };
+
+        packet.Bodies.Insert(0, parent);
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateLambertPreview(
+                packet,
+                origin,
+                destination,
+                hohmann,
+                out preview,
+                out muSource),
+            "parent-body Lambert preview unavailable");
+
+        Check(
+            muSource == "PARENT BODY TELEMETRY",
+            "authoritative parent body mu was not preferred");
     }
 
 }
