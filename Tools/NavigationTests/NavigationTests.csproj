@@ -1,0 +1,20 @@
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" />
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <AssemblyName>NavigationTests</AssemblyName>
+    <OutputPath>bin\Release\</OutputPath>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <LangVersion>7.3</LangVersion>
+  </PropertyGroup>
+  <ItemGroup><Reference Include="System" /><Reference Include="System.Core" /><Reference Include="System.Drawing" /><Reference Include="System.Windows.Forms" /></ItemGroup>
+  <ItemGroup><Compile Include="Program.cs" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\KMC.Engine\KMC.Engine.csproj"><Name>KMC.Engine</Name></ProjectReference>
+    <ProjectReference Include="..\..\KMC.shared\KMC.shared.csproj"><Name>KMC.shared</Name></ProjectReference>
+    <ProjectReference Include="..\..\KMC.MissionControl\KMC.MissionControl.csproj"><Name>KMC.MissionControl</Name></ProjectReference>
+    <None Include="Fixtures\legacy-14.22.32.csv"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
