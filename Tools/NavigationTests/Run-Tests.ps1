@@ -7,7 +7,15 @@ if (!$MSBuildPath) {
     }
 }
 if (!$MSBuildPath -or !(Test-Path $MSBuildPath)) { throw 'Pass -MSBuildPath with the Visual Studio MSBuild.exe location.' }
+
 & $MSBuildPath "$PSScriptRoot/NavigationTests.csproj" /p:Configuration=Release /v:minimal /nologo
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 & "$PSScriptRoot/bin/Release/NavigationTests.exe"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& $MSBuildPath "$PSScriptRoot/TransferSearchTests.csproj" /p:Configuration=Release /v:minimal /nologo
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& "$PSScriptRoot/bin/Release/TransferSearchTests.exe"
 exit $LASTEXITCODE
