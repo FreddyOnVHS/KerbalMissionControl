@@ -31,6 +31,9 @@ internal static class Program
         Run("MAP draws both tabs and constructs the preserved maneuver", MapIntegration);
         Run("planner rejects negative elliptic axes", NegativeEllipticAxes);
         Run("planner rejects conflicting reference frames", ConflictingFrames);
+        Run("Lambert canonical short/long zero-revolution arcs", LambertCanonical);
+        Run("Lambert Vallado 3D reference case", LambertVallado);
+        Run("Lambert rejects invalid and degenerate boundary data", LambertInvalid);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
@@ -294,4 +297,95 @@ internal static class Program
         packet.ReferenceBodyName = "Another origin";
         Check(!OrbitMapNavigationAdapter.TryCalculateParkingOrbitEjection(packet, a, w, out p), "packet in wrong frame accepted");
     }
+    private static void LambertCanonical()
+    {
+        LambertSolution solution;
+        Vector3d r1 = new Vector3d(1, 0, 0);
+        Vector3d r2 = new Vector3d(0, 1, 0);
+
+        Check(LambertSolver.TrySolve(
+            r1, r2, Math.PI / 2.0, 1.0,
+            LambertTransferPath.ShortWay, out solution),
+            "short-way circular Lambert case rejected");
+        Vec(solution.DepartureVelocity, 0, 1, 0, 2e-9);
+        Vec(solution.ArrivalVelocity, -1, 0, 0, 2e-9);
+        Near(solution.TimeOfFlightSeconds, Math.PI / 2.0);
+        Near(solution.GravParameter, 1.0);
+        Check(solution.Path == LambertTransferPath.ShortWay, "short-way path identity lost");
+        Check(Vector3d.Cross(r1, solution.DepartureVelocity).Z > 0,
+            "short-way transfer used wrong plane sense");
+
+        Check(LambertSolver.TrySolve(
+            r1, r2, 3.0 * Math.PI / 2.0, 1.0,
+            LambertTransferPath.LongWay, out solution),
+            "long-way circular Lambert case rejected");
+        Vec(solution.DepartureVelocity, 0, -1, 0, 2e-9);
+        Vec(solution.ArrivalVelocity, 1, 0, 0, 2e-9);
+        Check(solution.Path == LambertTransferPath.LongWay, "long-way path identity lost");
+        Check(Vector3d.Cross(r1, solution.DepartureVelocity).Z < 0,
+            "long-way transfer used wrong plane sense");
+    }
+
+    private static void LambertVallado()
+    {
+        // Standard 3D Lambert reference example used in orbital-mechanics texts.
+        // Units are km and km^3/s^2 here; the solver itself is unit-consistent.
+        // Production KMC supplies SI metres and m^3/s^2.
+        LambertSolution solution;
+        Check(LambertSolver.TrySolve(
+            new Vector3d(5000, 10000, 2100),
+            new Vector3d(-14600, 2500, 7000),
+            3600.0,
+            398600.0,
+            LambertTransferPath.ShortWay,
+            out solution),
+            "Vallado reference Lambert case rejected");
+
+        Vec(solution.DepartureVelocity,
+            -5.99249463966639,
+             1.92536341566345,
+             3.24563652849053,
+             2e-8);
+        Vec(solution.ArrivalVelocity,
+            -3.31246031093682,
+            -4.19661730794498,
+            -0.38528761712990,
+             2e-8);
+
+        // Boundary states must describe one two-body conic: specific energy
+        // and angular momentum magnitude agree at both ends.
+        Vector3d r1 = new Vector3d(5000, 10000, 2100);
+        Vector3d r2 = new Vector3d(-14600, 2500, 7000);
+        double e1 = .5 * Vector3d.Dot(solution.DepartureVelocity, solution.DepartureVelocity) - 398600.0 / r1.Magnitude;
+        double e2 = .5 * Vector3d.Dot(solution.ArrivalVelocity, solution.ArrivalVelocity) - 398600.0 / r2.Magnitude;
+        Near(e1, e2, 2e-9);
+        Near(Vector3d.Cross(r1, solution.DepartureVelocity).Magnitude,
+             Vector3d.Cross(r2, solution.ArrivalVelocity).Magnitude,
+             2e-8);
+    }
+
+    private static void LambertInvalid()
+    {
+        LambertSolution solution;
+        Vector3d x = new Vector3d(1, 0, 0);
+        Vector3d y = new Vector3d(0, 1, 0);
+
+        Check(!LambertSolver.TrySolve(x, y, 0, 1, LambertTransferPath.ShortWay, out solution) && solution == null,
+            "zero time of flight accepted");
+        Check(!LambertSolver.TrySolve(x, y, -1, 1, LambertTransferPath.ShortWay, out solution) && solution == null,
+            "negative time of flight accepted");
+        Check(!LambertSolver.TrySolve(x, y, 1, 0, LambertTransferPath.ShortWay, out solution) && solution == null,
+            "zero mu accepted");
+        Check(!LambertSolver.TrySolve(new Vector3d(), y, 1, 1, LambertTransferPath.ShortWay, out solution) && solution == null,
+            "zero departure radius accepted");
+        Check(!LambertSolver.TrySolve(x, new Vector3d(2, 0, 0), 1, 1, LambertTransferPath.ShortWay, out solution) && solution == null,
+            "collinear same-direction endpoints accepted");
+        Check(!LambertSolver.TrySolve(x, new Vector3d(-1, 0, 0), 1, 1, LambertTransferPath.ShortWay, out solution) && solution == null,
+            "collinear opposite endpoints accepted without a plane normal");
+        Check(!LambertSolver.TrySolve(new Vector3d(double.NaN, 0, 0), y, 1, 1, LambertTransferPath.ShortWay, out solution) && solution == null,
+            "nonfinite endpoint accepted");
+        Check(!LambertSolver.TrySolve(x, y, double.PositiveInfinity, 1, LambertTransferPath.ShortWay, out solution) && solution == null,
+            "nonfinite time accepted");
+    }
+
 }

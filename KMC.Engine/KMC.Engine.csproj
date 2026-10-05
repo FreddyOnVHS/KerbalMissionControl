@@ -38,6 +38,9 @@
   <ItemGroup>
     <Compile Include="CelestialMechanics\CelestialBodyState.cs" />
     <Compile Include="CelestialMechanics\KeplerPropagator.cs" />
+    <Compile Include="CelestialMechanics\LambertSolution.cs" />
+    <Compile Include="CelestialMechanics\LambertSolver.cs" />
+    <Compile Include="CelestialMechanics\LambertTransferPath.cs" />
     <Compile Include="CelestialMechanics\OrbitalElements.cs" />
     <Compile Include="CelestialMechanics\StateVector.cs" />
     <Compile Include="CelestialMechanics\Vector3d.cs" />

@@ -7,3 +7,6 @@ Run `./Tools/NavigationTests/Run-Tests.ps1` from PowerShell on Windows with Visu
 Baseline Python regressions (`python -m pytest -q` at repository root): 359 passed, 10 skipped, 31 failures. The recorded failure identities in `Fixtures/baseline-python-failures.txt` let the verification report distinguish existing failures from new ones. They are not skip/xfail configuration; the Python suite still reports them as failures. Two existing math source-inspection tests now read Engine/Navigation or the adapter where the tested expressions moved. New numerical tests exercise production behavior instead of looking for source strings.
 
 The element-to-state API is independent of KSP, Unity, telemetry and graphics. Numerical tests use synthetic units/bodies and analytical values. Renderer agreement checks frame compatibility, not independent physical correctness. Live KSP acceptance is documented in the build README.
+
+
+14.22.34 adds zero-revolution Lambert behavioral checks: canonical short/long circular arcs, the standard Vallado 3D reference case, two-body invariant agreement, and rejection of invalid/degenerate boundary geometry. MAP does not consume the Lambert solver in this build.
