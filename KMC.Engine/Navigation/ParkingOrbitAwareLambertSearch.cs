@@ -149,13 +149,28 @@ namespace KMC.Engine.Navigation
                     out ejection))
                 return;
 
+            FiniteSoiDepartureAssessment finiteSoiAssessment;
+
+            if (!FiniteSoiDepartureEvaluator.TryEvaluate(
+                    transfer,
+                    ejection,
+                    parkingOrbit,
+                    request.OriginBody,
+                    request.ParentGravParameter,
+                    out finiteSoiAssessment))
+                return;
+
             ParkingOrbitAwareTransferSolution candidate =
                 new ParkingOrbitAwareTransferSolution(
                     transfer,
-                    ejection);
+                    ejection,
+                    finiteSoiAssessment);
 
             if (!Vector3d.Finite(candidate.EjectionScoreMetersPerSecond) ||
-                candidate.EjectionScoreMetersPerSecond <= 0.0)
+                candidate.EjectionScoreMetersPerSecond <= 0.0 ||
+                candidate.FiniteSoiAssessment == null ||
+                !Vector3d.Finite(
+                    candidate.FiniteSoiAssessment.NormalizedStateError))
                 return;
 
             if (IsBetter(candidate, best))
@@ -169,34 +184,59 @@ namespace KMC.Engine.Navigation
             if (best == null)
                 return true;
 
-            double scale =
+            double stateScale =
+                Math.Max(
+                    1.0,
+                    Math.Max(
+                        candidate.FiniteSoiAssessment.NormalizedStateError,
+                        best.FiniteSoiAssessment.NormalizedStateError));
+
+            double stateTolerance =
+                ScoreTieRelativeTolerance *
+                stateScale;
+
+            double stateDifference =
+                candidate.FiniteSoiAssessment.NormalizedStateError -
+                best.FiniteSoiAssessment.NormalizedStateError;
+
+            if (stateDifference < -stateTolerance)
+                return true;
+
+            if (Math.Abs(stateDifference) >
+                stateTolerance)
+                return false;
+
+            double dvScale =
                 Math.Max(
                     1.0,
                     Math.Max(
                         candidate.EjectionScoreMetersPerSecond,
                         best.EjectionScoreMetersPerSecond));
 
-            double tolerance =
-                ScoreTieRelativeTolerance * scale;
+            double dvTolerance =
+                ScoreTieRelativeTolerance *
+                dvScale;
 
-            double scoreDifference =
+            double dvDifference =
                 candidate.EjectionScoreMetersPerSecond -
                 best.EjectionScoreMetersPerSecond;
 
-            if (scoreDifference < -tolerance)
+            if (dvDifference < -dvTolerance)
                 return true;
 
-            if (Math.Abs(scoreDifference) > tolerance)
+            if (Math.Abs(dvDifference) >
+                dvTolerance)
                 return false;
 
             double arrivalDifference =
                 candidate.ArrivalExcessSpeedMetersPerSecond -
                 best.ArrivalExcessSpeedMetersPerSecond;
 
-            if (arrivalDifference < -tolerance)
+            if (arrivalDifference < -dvTolerance)
                 return true;
 
-            if (Math.Abs(arrivalDifference) > tolerance)
+            if (Math.Abs(arrivalDifference) >
+                dvTolerance)
                 return false;
 
             if (candidate.Transfer.DepartureUniversalTimeSeconds <
@@ -207,16 +247,11 @@ namespace KMC.Engine.Navigation
                 best.Transfer.DepartureUniversalTimeSeconds)
                 return false;
 
-            if (candidate.Transfer.TimeOfFlightSeconds <
-                best.Transfer.TimeOfFlightSeconds)
-                return true;
-
-            if (candidate.Transfer.TimeOfFlightSeconds >
-                best.Transfer.TimeOfFlightSeconds)
-                return false;
-
-            return candidate.Transfer.Path == LambertTransferPath.ShortWay &&
-                   best.Transfer.Path == LambertTransferPath.LongWay;
+            return
+                candidate.Transfer.Path ==
+                    LambertTransferPath.ShortWay &&
+                best.Transfer.Path ==
+                    LambertTransferPath.LongWay;
         }
 
         private static bool IsValidRequest(
@@ -253,6 +288,10 @@ namespace KMC.Engine.Navigation
                 !MatchesOptionalFrame(
                     parkingOrbit.ReferenceBodyName,
                     request.OriginBody.Name))
+                return false;
+
+            if (!Vector3d.Finite(request.OriginBody.SoiRadiusMeters) ||
+                request.OriginBody.SoiRadiusMeters <= 0.0)
                 return false;
 
             if (!Vector3d.Finite(request.ParentGravParameter) ||

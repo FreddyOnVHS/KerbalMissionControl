@@ -25,6 +25,7 @@ namespace KMC.MissionControl.Pages
         private Rectangle _resetButton, _fitOrbitButton, _fitManeuverButton, _targetButton;
         private Rectangle _localTab, _transferTab;
         private Rectangle _createTransferNodeButton;
+        private Rectangle _createLambertTestNodeButton;
         private Rectangle _refineTransferNodeButton;
         private const int ButtonGap = 16;
         private const int ButtonHorizontalPadding = 14;
@@ -40,6 +41,9 @@ namespace KMC.MissionControl.Pages
         private string _submittedTransferDestinationName = string.Empty;
         private double _submittedTransferNodeUt = double.NaN;
         private double _submittedTransferProgradeDv = double.NaN;
+        private double _submittedTransferNormalDv = double.NaN;
+        private double _submittedTransferRadialDv = double.NaN;
+        private bool _submittedTransferWasLambertTest;
         private TransferSearchSolution _lambertPreview;
         private LambertParkingOrbitEjectionSolution _lambertEjectionPreview;
         private ParkingOrbitAwareTransferSolution _parkingAwareLambertPreview;
@@ -140,6 +144,14 @@ namespace KMC.MissionControl.Pages
                     return true;
                 }
 
+                if (_parkingAwareLambertPreview != null &&
+                    !_createLambertTestNodeButton.IsEmpty &&
+                    _createLambertTestNodeButton.Contains(q))
+                {
+                    UploadLambertTestNode();
+                    return true;
+                }
+
                 if (!_refineTransferNodeButton.IsEmpty &&
                     _refineTransferNodeButton.Contains(q))
                 {
@@ -157,6 +169,9 @@ namespace KMC.MissionControl.Pages
                         _submittedTransferDestinationName = string.Empty;
                         _submittedTransferNodeUt = double.NaN;
                         _submittedTransferProgradeDv = double.NaN;
+                        _submittedTransferNormalDv = double.NaN;
+                        _submittedTransferRadialDv = double.NaN;
+                        _submittedTransferWasLambertTest = false;
                         ResetLambertPreview();
                         return true;
                     }
@@ -225,6 +240,7 @@ namespace KMC.MissionControl.Pages
             _transferBodyNames.Clear();
             _transferNodeCandidate = null;
             _createTransferNodeButton = Rectangle.Empty;
+            _createLambertTestNodeButton = Rectangle.Empty;
             _refineTransferNodeButton = Rectangle.Empty;
 
             int top = bounds.Top + 84;
@@ -280,202 +296,425 @@ namespace KMC.MissionControl.Pages
 
             int x = plannerPanel.Left + 12;
             int y = plannerPanel.Top + 36;
+
+            int transferFontHeight =
+                (int)Math.Ceiling(
+                    context.SmallFont.GetHeight(
+                        context.Graphics));
+
+            int transferLineHeight =
+                Math.Max(
+                    24,
+                    transferFontHeight + 5);
+
+            int transferSectionGap =
+                Math.Max(
+                    4,
+                    transferFontHeight / 4);
+
+            /*
+             * NODE STATUS is bottom anchored and can occupy roughly 220 px
+             * with a full KSP assessment. Keep all planner diagnostics above
+             * this hard boundary so the two regions can never collide.
+             */
+            int transferContentBottom =
+                plannerPanel.Bottom - 235;
+
             using (SolidBrush bright = new SolidBrush(context.PhosphorColor))
             using (SolidBrush dim = new SolidBrush(context.DimPhosphorColor))
             {
-                context.Graphics.DrawString("ORIGIN", context.SmallFont, dim, x, y);
-                context.Graphics.DrawString(string.IsNullOrWhiteSpace(origin) ? "---" : origin, context.LargeFont, bright, x, y + 18);
-                y += 60;
-                context.Graphics.DrawString("DESTINATION", context.SmallFont, dim, x, y);
-                context.Graphics.DrawString(destination != null ? destination.Name : "SELECT BODY", context.LargeFont, bright, x, y + 18);
-                y += 64;
+                context.Graphics.DrawString(
+                    "ORIGIN  " +
+                    (string.IsNullOrWhiteSpace(origin)
+                        ? "---"
+                        : origin),
+                    context.SmallFont,
+                    bright,
+                    x,
+                    y);
+                y += transferLineHeight;
+
+                context.Graphics.DrawString(
+                    "DESTINATION  " +
+                    (destination != null
+                        ? destination.Name
+                        : "SELECT BODY"),
+                    context.SmallFont,
+                    bright,
+                    x,
+                    y);
+                y += transferLineHeight + transferSectionGap;
 
                 if (destination != null)
                 {
-                    context.Graphics.DrawString("PARENT  " + (string.IsNullOrWhiteSpace(destination.ParentName) ? "---" : destination.ParentName), context.SmallFont, dim, x, y);
-                    y += 20;
                     if (destination.Orbit != null)
                     {
-                        context.Graphics.DrawString("SMA     " + FormatSystemDistance(destination.Orbit.SemiMajorAxisMeters), context.SmallFont, dim, x, y);
-                        y += 20;
-                        context.Graphics.DrawString("ECC     " + destination.Orbit.Eccentricity.ToString("0.0000"), context.SmallFont, dim, x, y);
-                        y += 20;
-                        context.Graphics.DrawString("INC     " + destination.Orbit.InclinationDegrees.ToString("0.00") + " deg", context.SmallFont, dim, x, y);
-                        y += 20;
-                        context.Graphics.DrawString("PERIOD  " + FormatDuration(destination.Orbit.PeriodSeconds), context.SmallFont, dim, x, y);
-                        y += 28;
-                    }
-
-                    string relation = originBody != null &&
-                                      string.Equals(originBody.ParentName, destination.ParentName, StringComparison.OrdinalIgnoreCase)
-                        ? "SAME PARENT"
-                        : "HIERARCHY CHANGE";
-                    context.Graphics.DrawString("ROUTE CLASS  " + relation, context.SmallFont, dim, x, y);
-                    y += 30;
-
-                    TransferWindowSolution solution;
-                    if (OrbitMapNavigationAdapter.TryCalculateTransferWindow(originBody, destination, packet.UniversalTimeSeconds, out solution))
-                    {
-                        context.Graphics.DrawString("HOHMANN WINDOW  CIRCULAR / COPLANAR APPROX", context.SmallFont, bright, x, y);
-                        y += 22;
-                        context.Graphics.DrawString("PARENT         " + solution.ParentName, context.SmallFont, dim, x, y);
-                        y += 20;
-                        context.Graphics.DrawString("CURRENT PHASE  " + solution.CurrentPhaseDegrees.ToString("0.00") + " deg", context.SmallFont, dim, x, y);
-                        y += 20;
-                        context.Graphics.DrawString("REQ PHASE      " + solution.RequiredPhaseDegrees.ToString("0.00") + " deg", context.SmallFont, dim, x, y);
-                        y += 20;
-                        context.Graphics.DrawString("WINDOW IN      " + FormatTransferInterval(solution.WaitSeconds), context.SmallFont, dim, x, y);
-                        y += 20;
-                        context.Graphics.DrawString("DEPARTURE UT   " + solution.DepartureUniversalTimeSeconds.ToString("0"), context.SmallFont, dim, x, y);
-                        y += 20;
-                        context.Graphics.DrawString("TRANSFER TIME  " + FormatTransferInterval(solution.TransferTimeSeconds), context.SmallFont, dim, x, y);
-                        y += 20;
-                        context.Graphics.DrawString("PARENT DV      " + solution.ParentFrameDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") + " m/s", context.SmallFont, dim, x, y);
-                        y += 26;
-
-                        EnsureLambertPreview(packet, originBody, destination, solution);
+                        context.Graphics.DrawString(
+                            "PARENT " +
+                            (string.IsNullOrWhiteSpace(destination.ParentName)
+                                ? "---"
+                                : destination.ParentName) +
+                            "  SMA " +
+                            FormatSystemDistance(destination.Orbit.SemiMajorAxisMeters) +
+                            "  ECC " +
+                            destination.Orbit.Eccentricity.ToString("0.0000"),
+                            context.SmallFont,
+                            dim,
+                            x,
+                            y);
+                        y += transferLineHeight;
 
                         context.Graphics.DrawString(
-                            "LAMBERT PREVIEW  COARSE 9x9 / NO NODE AUTHORITY",
-                            context.SmallFont, bright, x, y);
-                        y += 22;
+                            "INC " +
+                            destination.Orbit.InclinationDegrees.ToString("0.00") +
+                            " deg  PERIOD " +
+                            FormatDuration(destination.Orbit.PeriodSeconds),
+                            context.SmallFont,
+                            dim,
+                            x,
+                            y);
+                        y += transferLineHeight + transferSectionGap;
+                    }
 
-                        if (_lambertPreview != null)
+                    string relation =
+                        originBody != null &&
+                        string.Equals(
+                            originBody.ParentName,
+                            destination.ParentName,
+                            StringComparison.OrdinalIgnoreCase)
+                            ? "SAME PARENT"
+                            : "HIERARCHY CHANGE";
+
+                    context.Graphics.DrawString(
+                        "ROUTE CLASS  " + relation,
+                        context.SmallFont,
+                        dim,
+                        x,
+                        y);
+                    y += transferLineHeight + transferSectionGap;
+
+                    TransferWindowSolution solution;
+
+                    if (OrbitMapNavigationAdapter.TryCalculateTransferWindow(
+                            originBody,
+                            destination,
+                            packet.UniversalTimeSeconds,
+                            out solution))
+                    {
+                        context.Graphics.DrawString(
+                            "HOHMANN WINDOW  CIRCULAR / COPLANAR APPROX",
+                            context.SmallFont,
+                            bright,
+                            x,
+                            y);
+                        y += transferLineHeight;
+
+                        context.Graphics.DrawString(
+                            "PHASE " +
+                            solution.CurrentPhaseDegrees.ToString("0.00") +
+                            " / REQ " +
+                            solution.RequiredPhaseDegrees.ToString("0.00") +
+                            " deg  WINDOW " +
+                            FormatTransferInterval(solution.WaitSeconds),
+                            context.SmallFont,
+                            dim,
+                            x,
+                            y);
+                        y += transferLineHeight;
+
+                        context.Graphics.DrawString(
+                            "DEP UT " +
+                            solution.DepartureUniversalTimeSeconds.ToString("0") +
+                            "  TOF " +
+                            FormatTransferInterval(solution.TransferTimeSeconds) +
+                            "  PARENT DV " +
+                            solution.ParentFrameDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") +
+                            " m/s",
+                            context.SmallFont,
+                            dim,
+                            x,
+                            y);
+                        y += transferLineHeight + transferSectionGap;
+
+                        EnsureLambertPreview(
+                            packet,
+                            originBody,
+                            destination,
+                            solution);
+
+                        if (y + transferLineHeight * 3 <
+                            transferContentBottom)
                         {
                             context.Graphics.DrawString(
-                                "PATH           " + _lambertPreview.Path.ToString().ToUpperInvariant(),
-                                context.SmallFont, dim, x, y);
-                            y += 20;
-                            context.Graphics.DrawString(
-                                "DEPARTURE UT   " + _lambertPreview.DepartureUniversalTimeSeconds.ToString("0"),
-                                context.SmallFont, dim, x, y);
-                            y += 20;
-                            context.Graphics.DrawString(
-                                "FLIGHT TIME    " + FormatTransferInterval(_lambertPreview.TimeOfFlightSeconds),
-                                context.SmallFont, dim, x, y);
-                            y += 20;
-                            context.Graphics.DrawString(
-                                "DEP VINF       " + _lambertPreview.DepartureExcessSpeedMetersPerSecond.ToString("0.0") + " m/s",
-                                context.SmallFont, dim, x, y);
-                            y += 20;
-                            context.Graphics.DrawString(
-                                "ARR VINF       " + _lambertPreview.ArrivalExcessSpeedMetersPerSecond.ToString("0.0") + " m/s",
-                                context.SmallFont, dim, x, y);
-                            y += 20;
-                            context.Graphics.DrawString(
-                                "SCORE          " + _lambertPreview.CombinedExcessSpeedMetersPerSecond.ToString("0.0") +
-                                " m/s  MU " + _lambertPreviewMuSource,
-                                context.SmallFont, dim, x, y);
-                            y += 24;
+                                "LAMBERT PREVIEW  COARSE 9x9 / NO NODE AUTHORITY",
+                                context.SmallFont,
+                                bright,
+                                x,
+                                y);
+                            y += transferLineHeight;
 
-                            context.Graphics.DrawString(
-                                "PARKING-AWARE LAMBERT / NO NODE AUTHORITY",
-                                context.SmallFont, bright, x, y);
-                            y += 18;
-
-                            if (_lambertEjectionPreview != null)
+                            if (_lambertPreview != null)
                             {
-                                if (_parkingAwareLambertPreview != null)
-                                {
-                                    context.Graphics.DrawString(
-                                        "SELECT " + _parkingAwareLambertPreview.Transfer.Path.ToString().ToUpperInvariant() +
-                                        "  DEP UT " + _parkingAwareLambertPreview.Transfer.DepartureUniversalTimeSeconds.ToString("0") +
-                                        "  ARR VINF " + _parkingAwareLambertPreview.ArrivalExcessSpeedMetersPerSecond.ToString("0.0"),
-                                        context.SmallFont, dim, x, y);
-                                    y += 18;
-                                }
+                                context.Graphics.DrawString(
+                                    "PATH " +
+                                    _lambertPreview.Path.ToString().ToUpperInvariant() +
+                                    "  DEP UT " +
+                                    _lambertPreview.DepartureUniversalTimeSeconds.ToString("0") +
+                                    "  TOF " +
+                                    FormatTransferInterval(_lambertPreview.TimeOfFlightSeconds),
+                                    context.SmallFont,
+                                    dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight;
 
                                 context.Graphics.DrawString(
-                                    "BURN UT " + _lambertEjectionPreview.BurnUniversalTimeSeconds.ToString("0") +
-                                    "  OFF " + FormatSignedMinutes(_lambertEjectionPreview.WindowOffsetSeconds),
-                                    context.SmallFont, dim, x, y);
-                                y += 18;
-                                context.Graphics.DrawString(
-                                    "DV P " + _lambertEjectionPreview.ProgradeDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") +
-                                    "  N " + _lambertEjectionPreview.NormalDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") +
-                                    "  R " + _lambertEjectionPreview.RadialDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") + " m/s",
-                                    context.SmallFont, dim, x, y);
-                                y += 18;
-                                context.Graphics.DrawString(
-                                    "EJECT SCORE " + _lambertEjectionPreview.TotalDeltaVMetersPerSecond.ToString("0.0") +
-                                    " m/s  GEOM RES " + _lambertEjectionPreview.GeometryResidualDegrees.ToString("0.0000") + " deg",
-                                    context.SmallFont, dim, x, y);
-                                y += 24;
+                                    "VINF DEP " +
+                                    _lambertPreview.DepartureExcessSpeedMetersPerSecond.ToString("0.0") +
+                                    "  ARR " +
+                                    _lambertPreview.ArrivalExcessSpeedMetersPerSecond.ToString("0.0") +
+                                    "  SCORE " +
+                                    _lambertPreview.CombinedExcessSpeedMetersPerSecond.ToString("0.0") +
+                                    " m/s",
+                                    context.SmallFont,
+                                    dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight + transferSectionGap;
                             }
                             else
                             {
                                 context.Graphics.DrawString(
-                                    "EJECTION PREVIEW UNAVAILABLE FOR CURRENT PARKING GEOMETRY",
-                                    context.SmallFont, dim, x, y);
-                                y += 24;
+                                    "NO SUPPORTED SAME-PARENT LAMBERT SAMPLE",
+                                    context.SmallFont,
+                                    dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight + transferSectionGap;
                             }
                         }
-                        else
+
+                        if (_lambertEjectionPreview != null &&
+                            y + transferLineHeight * 4 <
+                                transferContentBottom)
                         {
                             context.Graphics.DrawString(
-                                "NO SUPPORTED SAME-PARENT LAMBERT SAMPLE",
-                                context.SmallFont, dim, x, y);
-                            y += 26;
+                                "PARKING-AWARE LAMBERT / NO NODE AUTHORITY",
+                                context.SmallFont,
+                                bright,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            if (_parkingAwareLambertPreview != null)
+                            {
+                                context.Graphics.DrawString(
+                                    "SELECT " +
+                                    _parkingAwareLambertPreview.Transfer.Path.ToString().ToUpperInvariant() +
+                                    "  DEP UT " +
+                                    _parkingAwareLambertPreview.Transfer.DepartureUniversalTimeSeconds.ToString("0") +
+                                    "  ARR VINF " +
+                                    _parkingAwareLambertPreview.ArrivalExcessSpeedMetersPerSecond.ToString("0.0"),
+                                    context.SmallFont,
+                                    dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight;
+                            }
+
+                            context.Graphics.DrawString(
+                                "BURN UT " +
+                                _lambertEjectionPreview.BurnUniversalTimeSeconds.ToString("0") +
+                                "  OFF " +
+                                FormatSignedMinutes(_lambertEjectionPreview.WindowOffsetSeconds),
+                                context.SmallFont,
+                                dim,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            context.Graphics.DrawString(
+                                "DV P/N/R " +
+                                _lambertEjectionPreview.ProgradeDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") +
+                                " / " +
+                                _lambertEjectionPreview.NormalDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") +
+                                " / " +
+                                _lambertEjectionPreview.RadialDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") +
+                                "  TOTAL " +
+                                _lambertEjectionPreview.TotalDeltaVMetersPerSecond.ToString("0.0"),
+                                context.SmallFont,
+                                dim,
+                                x,
+                                y);
+                            y += transferLineHeight + transferSectionGap;
                         }
 
-                        ParkingOrbitEjectionSolution ejection;
-                        if (OrbitMapNavigationAdapter.TryCalculateParkingOrbitEjection(packet, originBody, solution, out ejection))
+                        if (_parkingAwareLambertPreview != null &&
+                            _parkingAwareLambertPreview.FiniteSoiAssessment != null &&
+                            y + transferLineHeight * 3 <
+                                transferContentBottom)
                         {
-                            context.Graphics.DrawString("PARKING EJECTION  CIRCULAR / PROGRADE APPROX", context.SmallFont, bright, x, y);
-                            y += 22;
-                            context.Graphics.DrawString("PARK ALT       " + FormatSystemDistance(ejection.ParkingAltitudeMeters), context.SmallFont, dim, x, y);
-                            y += 20;
-                            context.Graphics.DrawString("VINF           " + ejection.HyperbolicExcessSpeedMetersPerSecond.ToString("0.0") + " m/s  " + ejection.ExcessDirection, context.SmallFont, dim, x, y);
-                            y += 20;
-                            context.Graphics.DrawString("PARK SPEED     " + ejection.ParkingSpeedMetersPerSecond.ToString("0.0") + " m/s", context.SmallFont, dim, x, y);
-                            y += 20;
-                            context.Graphics.DrawString("EJECT SPEED    " + ejection.HyperbolicPeriapsisSpeedMetersPerSecond.ToString("0.0") + " m/s", context.SmallFont, dim, x, y);
-                            y += 20;
-                            context.Graphics.DrawString("VESSEL DV      +" + ejection.EjectionDeltaVMetersPerSecond.ToString("0.0") + " m/s", context.SmallFont, dim, x, y);
-                            y += 20;
-                            context.Graphics.DrawString("BURN RADIUS    " + ejection.AsymptoteAngleDegrees.ToString("0.00") + " deg BEHIND VINF", context.SmallFont, dim, x, y);
-                            y += 20;
-                            context.Graphics.DrawString("BURN UT        " + ejection.BurnUniversalTimeSeconds.ToString("0") + "  (" + FormatSignedMinutes(ejection.WindowOffsetSeconds) + " WINDOW)", context.SmallFont, dim, x, y);
-                            y += 26;
-                            if (ejection.BurnUniversalTimeSeconds > packet.UniversalTimeSeconds + 0.25 &&
-                                !string.IsNullOrWhiteSpace(packet.VesselId))
+                            FiniteSoiDepartureAssessment finiteSoi =
+                                _parkingAwareLambertPreview.FiniteSoiAssessment;
+
+                            context.Graphics.DrawString(
+                                "FINITE-SOI MATCH / TEST NODE SOURCE",
+                                context.SmallFont,
+                                bright,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            context.Graphics.DrawString(
+                                "EXIT UT " +
+                                finiteSoi.ExitUniversalTimeSeconds.ToString("0") +
+                                "  TO EXIT " +
+                                FormatTransferInterval(
+                                    finiteSoi.TimeFromBurnToExitSeconds),
+                                context.SmallFont,
+                                dim,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            context.Graphics.DrawString(
+                                "POS ERR " +
+                                FormatSystemDistance(
+                                    finiteSoi.PositionErrorMeters) +
+                                "  VEL ERR " +
+                                finiteSoi.VelocityErrorMetersPerSecond.ToString("0.0") +
+                                " m/s  SCORE " +
+                                finiteSoi.NormalizedStateError.ToString("0.000000"),
+                                context.SmallFont,
+                                dim,
+                                x,
+                                y);
+                            y += transferLineHeight + transferSectionGap;
+                        }
+
+                        /*
+                         * Always calculate the legacy candidate because the
+                         * production CREATE KSP NODE path still depends on it.
+                         * Its text is optional if vertical space is exhausted.
+                         */
+                        ParkingOrbitEjectionSolution ejection;
+
+                        if (OrbitMapNavigationAdapter.TryCalculateParkingOrbitEjection(
+                                packet,
+                                originBody,
+                                solution,
+                                out ejection))
+                        {
+                            if (ejection.BurnUniversalTimeSeconds >
+                                    packet.UniversalTimeSeconds + 0.25 &&
+                                !string.IsNullOrWhiteSpace(
+                                    packet.VesselId))
                             {
                                 _transferNodeCandidate =
                                     new ManeuverUplinkPacket
                                     {
-                                        VesselId = packet.VesselId,
-                                        PlanId = string.Empty,
-                                        NodeUniversalTimeSeconds = ejection.BurnUniversalTimeSeconds,
-                                        ProgradeDeltaVMetersPerSecond = ejection.EjectionDeltaVMetersPerSecond,
-                                        NormalDeltaVMetersPerSecond = 0.0,
-                                        RadialDeltaVMetersPerSecond = 0.0,
-                                        TargetBodyName = destination.Name,
-                                        Operation = "CREATE"
+                                        VesselId =
+                                            packet.VesselId,
+                                        PlanId =
+                                            string.Empty,
+                                        NodeUniversalTimeSeconds =
+                                            ejection.BurnUniversalTimeSeconds,
+                                        ProgradeDeltaVMetersPerSecond =
+                                            ejection.EjectionDeltaVMetersPerSecond,
+                                        NormalDeltaVMetersPerSecond =
+                                            0.0,
+                                        RadialDeltaVMetersPerSecond =
+                                            0.0,
+                                        TargetBodyName =
+                                            destination.Name,
+                                        Operation =
+                                            "CREATE"
                                     };
                             }
 
-                            context.Graphics.DrawString("NODE CANDIDATE READY - KSP WILL BE AUTHORITATIVE", context.SmallFont, bright, x, y);
+                            if (y + transferLineHeight * 3 <
+                                transferContentBottom)
+                            {
+                                context.Graphics.DrawString(
+                                    "LEGACY EJECTION / CREATE KSP NODE",
+                                    context.SmallFont,
+                                    bright,
+                                    x,
+                                    y);
+                                y += transferLineHeight;
+
+                                context.Graphics.DrawString(
+                                    "ALT " +
+                                    FormatSystemDistance(
+                                        ejection.ParkingAltitudeMeters) +
+                                    "  VINF " +
+                                    ejection.HyperbolicExcessSpeedMetersPerSecond.ToString("0.0") +
+                                    "  DV +" +
+                                    ejection.EjectionDeltaVMetersPerSecond.ToString("0.0") +
+                                    " m/s",
+                                    context.SmallFont,
+                                    dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight;
+
+                                context.Graphics.DrawString(
+                                    "BURN UT " +
+                                    ejection.BurnUniversalTimeSeconds.ToString("0") +
+                                    "  " +
+                                    FormatSignedMinutes(
+                                        ejection.WindowOffsetSeconds) +
+                                    " WINDOW",
+                                    context.SmallFont,
+                                    dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight;
+                            }
                         }
-                        else
+                        else if (y + transferLineHeight * 2 <
+                            transferContentBottom)
                         {
-                            context.Graphics.DrawString("PARKING EJECTION REQUIRES NEAR-CIRCULAR PROGRADE ORBIT", context.SmallFont, bright, x, y);
-                            y += 22;
-                            context.Graphics.DrawString("WINDOW ONLY - NO MANEUVER NODE CREATED", context.SmallFont, dim, x, y);
+                            context.Graphics.DrawString(
+                                "PARKING EJECTION REQUIRES NEAR-CIRCULAR PROGRADE ORBIT",
+                                context.SmallFont,
+                                bright,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            context.Graphics.DrawString(
+                                "WINDOW ONLY - NO MANEUVER NODE CREATED",
+                                context.SmallFont,
+                                dim,
+                                x,
+                                y);
                         }
                     }
                     else
                     {
-                        context.Graphics.DrawString("WINDOW SOLUTION NOT AVAILABLE IN 14.22.28", context.SmallFont, bright, x, y);
-                        y += 22;
+                        context.Graphics.DrawString(
+                            "WINDOW SOLUTION NOT AVAILABLE",
+                            context.SmallFont,
+                            bright,
+                            x,
+                            y);
+                        y += transferLineHeight;
+
                         context.Graphics.DrawString(
                             relation == "HIERARCHY CHANGE"
                                 ? "REQUIRES HIERARCHY-CHANGE PLANNING"
                                 : "REQUIRES VALID ELLIPTIC BODY ORBITS",
-                            context.SmallFont, dim, x, y);
+                            context.SmallFont,
+                            dim,
+                            x,
+                            y);
                     }
                 }
 
-                DrawTransferNodeControls(context, plannerPanel);
+                DrawTransferNodeControls(
+                    context,
+                    plannerPanel);
             }
         }
 
@@ -739,6 +978,14 @@ namespace KMC.MissionControl.Pages
                                 secondaryButton,
                                 "ENCOUNTER ACHIEVED");
                         }
+                        else if (_submittedTransferWasLambertTest)
+                        {
+                            _refineTransferNodeButton = Rectangle.Empty;
+                            DrawInactiveButton(
+                                context,
+                                secondaryButton,
+                                "LAMBERT TEST - NO REFINE");
+                        }
                         else
                         {
                             _refineTransferNodeButton = secondaryButton;
@@ -751,12 +998,73 @@ namespace KMC.MissionControl.Pages
                 }
                 else
                 {
-                    _createTransferNodeButton = primaryButton;
+                    if (_parkingAwareLambertPreview != null &&
+                        _parkingAwareLambertPreview.Ejection != null)
+                    {
+                        int legacyRequiredWidth =
+                            MeasureButtonWidth(
+                                context.Graphics,
+                                context.SmallFont,
+                                "CREATE KSP NODE");
 
-                    DrawButton(
-                        context,
-                        _createTransferNodeButton,
-                        "CREATE KSP NODE");
+                        int lambertRequiredWidth =
+                            MeasureButtonWidth(
+                                context.Graphics,
+                                context.SmallFont,
+                                "CREATE LAMBERT TEST NODE");
+
+                        int available =
+                            Math.Max(
+                                2,
+                                width - controlGap);
+
+                        int legacyWidth =
+                            Math.Min(
+                                legacyRequiredWidth,
+                                available / 2);
+
+                        int lambertWidth =
+                            Math.Max(
+                                1,
+                                available - legacyWidth);
+
+                        if (legacyWidth < 1)
+                            legacyWidth = 1;
+
+                        _createTransferNodeButton =
+                            new Rectangle(
+                                left,
+                                buttonTop,
+                                legacyWidth,
+                                buttonHeight);
+
+                        _createLambertTestNodeButton =
+                            new Rectangle(
+                                _createTransferNodeButton.Right + controlGap,
+                                buttonTop,
+                                lambertWidth,
+                                buttonHeight);
+
+                        DrawButton(
+                            context,
+                            _createTransferNodeButton,
+                            "CREATE KSP NODE");
+
+                        DrawButton(
+                            context,
+                            _createLambertTestNodeButton,
+                            "CREATE LAMBERT TEST NODE");
+                    }
+                    else
+                    {
+                        _createTransferNodeButton = primaryButton;
+                        _createLambertTestNodeButton = Rectangle.Empty;
+
+                        DrawButton(
+                            context,
+                            _createTransferNodeButton,
+                            "CREATE KSP NODE");
+                    }
                 }
             }
 
@@ -801,6 +1109,20 @@ namespace KMC.MissionControl.Pages
                     statusBlockBottom -
                     statusBlockHeight;
                 int nextLineY = statusY;
+
+                using (Pen separatorPen =
+                    new Pen(context.DimPhosphorColor))
+                {
+                    int separatorY =
+                        statusY - 10;
+
+                    context.Graphics.DrawLine(
+                        separatorPen,
+                        left,
+                        separatorY,
+                        left + width,
+                        separatorY);
+                }
 
                 context.Graphics.DrawString(
                     "NODE STATUS  " + (string.IsNullOrWhiteSpace(state) ? "---" : state),
@@ -890,22 +1212,51 @@ namespace KMC.MissionControl.Pages
 
         private bool IsSameAsSubmittedTransferCandidate()
         {
-            if (_transferNodeCandidate == null ||
-                string.IsNullOrWhiteSpace(_submittedTransferDestinationName) ||
+            if (string.IsNullOrWhiteSpace(_submittedTransferDestinationName) ||
                 !string.Equals(
                     _submittedTransferDestinationName,
                     _selectedTransferBodyName,
                     StringComparison.OrdinalIgnoreCase) ||
                 double.IsNaN(_submittedTransferNodeUt) ||
-                double.IsNaN(_submittedTransferProgradeDv))
+                double.IsNaN(_submittedTransferProgradeDv) ||
+                double.IsNaN(_submittedTransferNormalDv) ||
+                double.IsNaN(_submittedTransferRadialDv))
             {
                 return false;
             }
 
+            if (_submittedTransferWasLambertTest)
+            {
+                LambertParkingOrbitEjectionSolution ejection =
+                    _parkingAwareLambertPreview != null
+                        ? _parkingAwareLambertPreview.Ejection
+                        : null;
+
+                if (ejection == null)
+                    return false;
+
+                return
+                    Math.Abs(
+                        ejection.BurnUniversalTimeSeconds -
+                        _submittedTransferNodeUt) <= 120.0 &&
+                    Math.Abs(
+                        ejection.ProgradeDeltaVMetersPerSecond -
+                        _submittedTransferProgradeDv) <= 5.0 &&
+                    Math.Abs(
+                        ejection.NormalDeltaVMetersPerSecond -
+                        _submittedTransferNormalDv) <= 5.0 &&
+                    Math.Abs(
+                        ejection.RadialDeltaVMetersPerSecond -
+                        _submittedTransferRadialDv) <= 5.0;
+            }
+
+            if (_transferNodeCandidate == null)
+                return false;
+
             /*
-             * Keep the already-created node locked across tiny live-planner
-             * drift while still allowing a materially changed solution to
-             * expose CREATE KSP NODE again.
+             * Keep the already-created legacy node locked across tiny
+             * live-planner drift while still allowing a materially changed
+             * solution to expose CREATE KSP NODE again.
              */
             return
                 Math.Abs(
@@ -913,7 +1264,9 @@ namespace KMC.MissionControl.Pages
                     _submittedTransferNodeUt) <= 120.0 &&
                 Math.Abs(
                     _transferNodeCandidate.ProgradeDeltaVMetersPerSecond -
-                    _submittedTransferProgradeDv) <= 5.0;
+                    _submittedTransferProgradeDv) <= 5.0 &&
+                Math.Abs(_submittedTransferNormalDv) <= 5.0 &&
+                Math.Abs(_submittedTransferRadialDv) <= 5.0;
         }
 
         private static void DrawInactiveButton(
@@ -983,11 +1336,110 @@ namespace KMC.MissionControl.Pages
                     packet.NodeUniversalTimeSeconds;
                 _submittedTransferProgradeDv =
                     packet.ProgradeDeltaVMetersPerSecond;
+                _submittedTransferNormalDv =
+                    packet.NormalDeltaVMetersPerSecond;
+                _submittedTransferRadialDv =
+                    packet.RadialDeltaVMetersPerSecond;
+                _submittedTransferWasLambertTest = false;
             }
 
             _transferNodeActionText =
                 string.IsNullOrWhiteSpace(resultText)
                     ? (sent ? "UPLINK SENT" : "UPLINK FAILED")
+                    : resultText;
+        }
+
+        private static ManeuverUplinkPacket BuildLambertTestNodePacket(
+            string vesselId,
+            string destinationBodyName,
+            LambertParkingOrbitEjectionSolution ejection,
+            string planId)
+        {
+            if (ejection == null)
+                return null;
+
+            return
+                new ManeuverUplinkPacket
+                {
+                    VesselId = vesselId ?? string.Empty,
+                    PlanId = planId ?? string.Empty,
+                    NodeUniversalTimeSeconds =
+                        ejection.BurnUniversalTimeSeconds,
+                    ProgradeDeltaVMetersPerSecond =
+                        ejection.ProgradeDeltaVMetersPerSecond,
+                    NormalDeltaVMetersPerSecond =
+                        ejection.NormalDeltaVMetersPerSecond,
+                    RadialDeltaVMetersPerSecond =
+                        ejection.RadialDeltaVMetersPerSecond,
+                    TargetBodyName =
+                        destinationBodyName ?? string.Empty,
+                    Operation = "CREATE"
+                };
+        }
+
+        private void UploadLambertTestNode()
+        {
+            LambertParkingOrbitEjectionSolution ejection =
+                _parkingAwareLambertPreview != null
+                    ? _parkingAwareLambertPreview.Ejection
+                    : null;
+
+            if (ejection == null || _transferNodeCandidate == null)
+            {
+                _transferNodeActionText =
+                    "NO VALID LAMBERT TEST CANDIDATE";
+                return;
+            }
+
+            string planId =
+                "MAP-LAMBERT-TEST-" +
+                SanitizePlanToken(_selectedTransferBodyName) +
+                "-" +
+                Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant();
+
+            ManeuverUplinkPacket packet =
+                BuildLambertTestNodePacket(
+                    _transferNodeCandidate.VesselId,
+                    _selectedTransferBodyName,
+                    ejection,
+                    planId);
+
+            if (packet == null)
+            {
+                _transferNodeActionText =
+                    "NO VALID LAMBERT TEST CANDIDATE";
+                return;
+            }
+
+            string resultText;
+            bool sent =
+                TransferPlannerManeuverUplink.Send(
+                    packet,
+                    out resultText);
+
+            _lastTransferPlanId =
+                packet.PlanId;
+
+            if (sent)
+            {
+                _submittedTransferDestinationName =
+                    _selectedTransferBodyName ?? string.Empty;
+                _submittedTransferNodeUt =
+                    packet.NodeUniversalTimeSeconds;
+                _submittedTransferProgradeDv =
+                    packet.ProgradeDeltaVMetersPerSecond;
+                _submittedTransferNormalDv =
+                    packet.NormalDeltaVMetersPerSecond;
+                _submittedTransferRadialDv =
+                    packet.RadialDeltaVMetersPerSecond;
+                _submittedTransferWasLambertTest = true;
+            }
+
+            _transferNodeActionText =
+                string.IsNullOrWhiteSpace(resultText)
+                    ? (sent
+                        ? "LAMBERT TEST UPLINK SENT"
+                        : "LAMBERT TEST UPLINK FAILED")
                     : resultText;
         }
 

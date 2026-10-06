@@ -33,6 +33,7 @@ internal static class ParkingAwareSearchProgram
             Name = name,
             ParentName = "Primary",
             GravParameter = name == "Origin" ? 1.0 : 0.0,
+            SoiRadiusMeters = name == "Origin" ? 4.0 : 0.0,
             Orbit = new OrbitalElements
             {
                 ReferenceBodyName = "Primary",

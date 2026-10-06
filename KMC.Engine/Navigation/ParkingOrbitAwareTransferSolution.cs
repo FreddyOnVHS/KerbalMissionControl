@@ -8,15 +8,19 @@ namespace KMC.Engine.Navigation
     {
         internal ParkingOrbitAwareTransferSolution(
             TransferSearchSolution transfer,
-            LambertParkingOrbitEjectionSolution ejection)
+            LambertParkingOrbitEjectionSolution ejection,
+            FiniteSoiDepartureAssessment finiteSoiAssessment)
         {
             Transfer = transfer;
             Ejection = ejection;
+            FiniteSoiAssessment = finiteSoiAssessment;
         }
 
         public TransferSearchSolution Transfer { get; private set; }
 
         public LambertParkingOrbitEjectionSolution Ejection { get; private set; }
+
+        public FiniteSoiDepartureAssessment FiniteSoiAssessment { get; private set; }
 
         public double EjectionScoreMetersPerSecond
         {

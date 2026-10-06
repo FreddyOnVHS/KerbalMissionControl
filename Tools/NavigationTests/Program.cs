@@ -37,6 +37,8 @@ internal static class Program
         Run("MAP adapter builds Lambert preview from body telemetry", LambertMapPreviewAdapter);
         Run("MAP adapter builds Lambert parking-ejection preview", LambertMapEjectionPreviewAdapter);
         Run("MAP adapter ranks Lambert candidates by parking ejection DV", ParkingAwareLambertAdapter);
+        Run("MAP Lambert test packet preserves full PNR vector", LambertTestPacket);
+        Run("finite SOI assessment returns a real boundary state", FiniteSoiBoundaryAssessment);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
@@ -470,6 +472,7 @@ internal static class Program
         packet.ReferenceBodyName = origin.Name;
         packet.ActiveOrbit.ReferenceBodyName = origin.Name;
         origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
+        origin.SoiRadiusMeters = 500000.0;
         origin.Orbit.ReferenceBodyName = origin.ParentName;
         destination.Orbit.ReferenceBodyName = destination.ParentName;
 
@@ -544,6 +547,7 @@ internal static class Program
         packet.ReferenceBodyName = origin.Name;
         packet.ActiveOrbit.ReferenceBodyName = origin.Name;
         origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
+        origin.SoiRadiusMeters = 500000.0;
         origin.Orbit.ReferenceBodyName = origin.ParentName;
         destination.Orbit.ReferenceBodyName = destination.ParentName;
 
@@ -575,6 +579,10 @@ internal static class Program
         Check(solution != null, "parking-aware solution is null");
         Check(solution.Transfer != null, "transfer child is null");
         Check(solution.Ejection != null, "ejection child is null");
+        Check(solution.FiniteSoiAssessment != null, "finite-SOI assessment is null");
+        Check(
+            solution.FiniteSoiAssessment.NormalizedStateError >= 0.0,
+            "finite-SOI state score is invalid");
         Check(
             solution.EjectionScoreMetersPerSecond > 0.0,
             "ejection score is not positive");
@@ -595,6 +603,135 @@ internal static class Program
             componentMagnitude,
             solution.EjectionScoreMetersPerSecond,
             1e-6);
+    }
+
+    private static void LambertTestPacket()
+    {
+        OrbitMapBody origin, destination;
+        OrbitMapPacket packet;
+        Fixture(0, out origin, out destination, out packet);
+
+        packet.ReferenceBodyName = origin.Name;
+        packet.ActiveOrbit.ReferenceBodyName = origin.Name;
+        origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
+        origin.SoiRadiusMeters = 500000.0;
+        origin.Orbit.ReferenceBodyName = origin.ParentName;
+        destination.Orbit.ReferenceBodyName = destination.ParentName;
+        packet.Bodies.Add(origin);
+        packet.Bodies.Add(destination);
+
+        TransferWindowSolution hohmann;
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateTransferWindow(
+                origin,
+                destination,
+                packet.UniversalTimeSeconds,
+                out hohmann),
+            "Hohmann seed unavailable");
+
+        ParkingOrbitAwareTransferSolution parkingAware;
+        string muSource;
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateParkingAwareLambertPreview(
+                packet,
+                origin,
+                destination,
+                hohmann,
+                out parkingAware,
+                out muSource),
+            "parking-aware Lambert preview unavailable");
+
+        var method =
+            typeof(MapPage).GetMethod(
+                "BuildLambertTestNodePacket",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+        Check(method != null, "Lambert test packet builder missing");
+
+        ManeuverUplinkPacket uplink =
+            (ManeuverUplinkPacket)method.Invoke(
+                null,
+                new object[]
+                {
+                    "TEST-VESSEL",
+                    destination.Name,
+                    parkingAware.Ejection,
+                    "MAP-LAMBERT-TEST-UNIT"
+                });
+
+        Check(uplink != null, "Lambert test packet is null");
+        Check(uplink.VesselId == "TEST-VESSEL", "vessel ID lost");
+        Check(uplink.TargetBodyName == destination.Name, "target lost");
+        Check(uplink.PlanId == "MAP-LAMBERT-TEST-UNIT", "plan ID lost");
+        Check(uplink.Operation == "CREATE", "operation is not CREATE");
+
+        Near(
+            uplink.NodeUniversalTimeSeconds,
+            parkingAware.Ejection.BurnUniversalTimeSeconds,
+            1e-9);
+        Near(
+            uplink.ProgradeDeltaVMetersPerSecond,
+            parkingAware.Ejection.ProgradeDeltaVMetersPerSecond,
+            1e-9);
+        Near(
+            uplink.NormalDeltaVMetersPerSecond,
+            parkingAware.Ejection.NormalDeltaVMetersPerSecond,
+            1e-9);
+        Near(
+            uplink.RadialDeltaVMetersPerSecond,
+            parkingAware.Ejection.RadialDeltaVMetersPerSecond,
+            1e-9);
+    }
+
+    private static void FiniteSoiBoundaryAssessment()
+    {
+        OrbitMapBody origin, destination;
+        OrbitMapPacket packet;
+        Fixture(0, out origin, out destination, out packet);
+
+        packet.ReferenceBodyName = origin.Name;
+        packet.ActiveOrbit.ReferenceBodyName = origin.Name;
+        origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
+        origin.SoiRadiusMeters = 500000.0;
+        origin.Orbit.ReferenceBodyName = origin.ParentName;
+        destination.Orbit.ReferenceBodyName = destination.ParentName;
+
+        packet.Bodies.Add(origin);
+        packet.Bodies.Add(destination);
+
+        TransferWindowSolution hohmann;
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateTransferWindow(
+                origin,
+                destination,
+                packet.UniversalTimeSeconds,
+                out hohmann),
+            "Hohmann seed unavailable");
+
+        ParkingOrbitAwareTransferSolution solution;
+        string muSource;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateParkingAwareLambertPreview(
+                packet,
+                origin,
+                destination,
+                hohmann,
+                out solution,
+                out muSource),
+            "finite-SOI-ranked preview unavailable");
+
+        Check(solution.FiniteSoiAssessment != null, "assessment is null");
+        Check(
+            solution.FiniteSoiAssessment.ExitUniversalTimeSeconds >
+            solution.Ejection.BurnUniversalTimeSeconds,
+            "SOI exit is not after burn");
+        Check(
+            solution.FiniteSoiAssessment.PositionErrorMeters >= 0.0,
+            "position error invalid");
+        Check(
+            solution.FiniteSoiAssessment.VelocityErrorMetersPerSecond >= 0.0,
+            "velocity error invalid");
     }
 
 }

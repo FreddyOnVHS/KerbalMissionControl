@@ -30,4 +30,10 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & "$PSScriptRoot/bin/Release/ParkingAwareSearchTests.exe"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& $MSBuildPath "$PSScriptRoot/StateVectorPropagationTests.csproj" /p:Configuration=Release /v:minimal /nologo
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& "$PSScriptRoot/bin/Release/StateVectorPropagationTests.exe"
 exit $LASTEXITCODE
