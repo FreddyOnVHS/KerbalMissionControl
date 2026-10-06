@@ -40,7 +40,8 @@ internal static class Program
         Run("MAP production cleanup removes temporary Lambert test path", ProductionCleanup);
         Run("finite SOI assessment returns a real boundary state", FiniteSoiBoundaryAssessment);
         Run("finite SOI local correction never worsens boundary state", FiniteSoiLocalCorrection);
-        Run("target SOI shooting never worsens propagated miss distance", TargetSoiShooting);
+        Run("target SOI shooting establishes encounter or improves miss distance", TargetSoiShooting);
+        Run("target SOI shooting shapes a safe target periapsis", TargetSoiSafePeriapsis);
         Run("MAP production node prefers Lambert PNR and retains legacy fallback", ProductionAuthorityPacket);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
@@ -803,13 +804,105 @@ internal static class Program
         Check(shooting.Evaluations > 0, "shooting made no evaluations");
 
         Check(
+            shooting.CorrectedAssessment.PredictedEncounter ||
             shooting.CorrectedAssessment.MissDistanceMeters <=
-            shooting.InitialAssessment.MissDistanceMeters + 1e-6,
-            "target shooting worsened propagated miss distance");
+                shooting.InitialAssessment.MissDistanceMeters + 1e-6,
+            "target shooting neither established encounter nor improved miss distance");
 
         Check(
             shooting.CorrectedAssessment.MissFractionOfTargetSoi >= 0.0,
             "invalid target SOI miss fraction");
+    }
+
+
+    private static void TargetSoiSafePeriapsis()
+    {
+        OrbitMapBody origin, destination;
+        OrbitMapPacket packet;
+        Fixture(0, out origin, out destination, out packet);
+
+        packet.ReferenceBodyName = origin.Name;
+        packet.ActiveOrbit.ReferenceBodyName = origin.Name;
+
+        origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
+        origin.SoiRadiusMeters = 500000.0;
+
+        destination.RadiusMeters = 100000.0;
+        destination.SoiRadiusMeters = 5000000.0;
+        destination.GravParameter = 2.5e8;
+
+        origin.Orbit.ReferenceBodyName = origin.ParentName;
+        destination.Orbit.ReferenceBodyName = destination.ParentName;
+
+        packet.Bodies.Add(origin);
+        packet.Bodies.Add(destination);
+
+        TransferWindowSolution hohmann;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateTransferWindow(
+                origin,
+                destination,
+                packet.UniversalTimeSeconds,
+                out hohmann),
+            "Hohmann seed unavailable");
+
+        ParkingOrbitAwareTransferSolution coarse;
+        string muSource;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateParkingAwareLambertPreview(
+                packet,
+                origin,
+                destination,
+                hohmann,
+                out coarse,
+                out muSource),
+            "parking-aware seed unavailable");
+
+        TargetSoiShootingResult shooting;
+
+        Check(
+            TargetSoiShootingSolver.TrySolve(
+                coarse.Transfer,
+                coarse.Ejection,
+                OrbitMapNavigationAdapter.ToElements(
+                    packet.ActiveOrbit),
+                OrbitMapNavigationAdapter.ToBody(
+                    origin),
+                OrbitMapNavigationAdapter.ToBody(
+                    destination),
+                1e12,
+                out shooting),
+            "safe-periapsis shooting failed");
+
+        Check(shooting != null, "safe-periapsis result is null");
+
+        TargetSoiShootingAssessment shot =
+            shooting.CorrectedAssessment;
+
+        Check(shot != null, "safe-periapsis assessment missing");
+
+        if (shot.PredictedEncounter)
+        {
+            Check(
+                shot.DesiredPeriapsisRadiusMeters >
+                    destination.RadiusMeters,
+                "desired periapsis is inside body");
+
+            Check(
+                shot.DesiredPeriapsisRadiusMeters <
+                    destination.SoiRadiusMeters,
+                "desired periapsis is outside SOI");
+
+            Check(
+                shot.TargetPeriapsisRadiusMeters > 0.0,
+                "predicted periapsis invalid");
+
+            Check(
+                !shot.PredictedCollision,
+                "corrected shooting still predicts collision");
+        }
     }
 
     private static void ProductionAuthorityPacket()

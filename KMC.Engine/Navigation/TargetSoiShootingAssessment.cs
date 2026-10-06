@@ -17,6 +17,18 @@ namespace KMC.Engine.Navigation
 
         public double RelativeSpeedAtArrivalMetersPerSecond { get; internal set; }
 
+        public double TargetSoiEntryUniversalTimeSeconds { get; internal set; }
+
+        public double DesiredPeriapsisRadiusMeters { get; internal set; }
+
+        public double TargetPeriapsisRadiusMeters { get; internal set; }
+
+        public double TargetPeriapsisAltitudeMeters { get; internal set; }
+
+        public double TargetPeriapsisErrorMeters { get; internal set; }
+
+        public bool PredictedCollision { get; internal set; }
+
         public double SourceLambertVelocityMismatchMetersPerSecond
         {
             get;

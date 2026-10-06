@@ -10,13 +10,16 @@ namespace KMC.Engine.Navigation
     /// parking-orbit -> source-SOI -> parent-frame trajectory against the live
     /// target orbit and searches burn UT, P/N/R, and arrival epoch.
     ///
-    /// The primary objective is actual target miss distance. A secondary
-    /// source-SOI Lambert velocity mismatch is used only as a tie breaker.
+    /// The solver first establishes an actual target-SOI encounter. Once an
+    /// encounter exists, it shapes the target-relative hyperbola toward a safe
+    /// generic periapsis radius instead of driving the trajectory through the
+    /// target center. Source-SOI Lambert mismatch and DV are tie breakers.
     /// </summary>
     public static class TargetSoiShootingSolver
     {
         private const int ExitBracketExpansions = 80;
         private const int ExitBisectionIterations = 64;
+        private const int TargetEntryBisectionIterations = 56;
         private const int MaximumIterations = 72;
 
         private const double MinimumBurnUtStepSeconds = 0.25;
@@ -288,6 +291,13 @@ namespace KMC.Engine.Navigation
                     ref evaluations);
 
                 if (bestAssessment.PredictedEncounter &&
+                    Vector3d.Finite(
+                        bestAssessment.TargetPeriapsisErrorMeters) &&
+                    bestAssessment.TargetPeriapsisErrorMeters <=
+                        Math.Max(
+                            1000.0,
+                            bestAssessment.DesiredPeriapsisRadiusMeters *
+                                0.0025) &&
                     burnUtStep <= 2.0 &&
                     dvStep <= 0.10 &&
                     arrivalStep <= 30.0)
@@ -577,6 +587,77 @@ namespace KMC.Engine.Navigation
                 velocityMismatch =
                     1e300;
 
+            bool predictedEncounter =
+                missDistance <=
+                destinationBody.SoiRadiusMeters;
+
+            double desiredPeriapsis =
+                ComputeDesiredPeriapsisRadius(
+                    destinationBody);
+
+            double entryUt =
+                double.NaN;
+
+            double periapsisRadius =
+                double.NaN;
+
+            double periapsisAltitude =
+                double.NaN;
+
+            double periapsisError =
+                double.PositiveInfinity;
+
+            bool collision =
+                false;
+
+            if (predictedEncounter &&
+                FinitePositive(destinationBody.GravParameter) &&
+                FinitePositive(destinationBody.RadiusMeters) &&
+                FinitePositive(desiredPeriapsis))
+            {
+                StateVector spacecraftEntry;
+                StateVector destinationEntry;
+
+                if (TryFindTargetSoiEntry(
+                        actualExit,
+                        destinationBody,
+                        parentMu,
+                        exitUt,
+                        arrivalUt,
+                        out entryUt,
+                        out spacecraftEntry,
+                        out destinationEntry))
+                {
+                    Vector3d relativeEntryPosition =
+                        spacecraftEntry.Position -
+                        destinationEntry.Position;
+
+                    Vector3d relativeEntryVelocity =
+                        spacecraftEntry.Velocity -
+                        destinationEntry.Velocity;
+
+                    if (TryCalculatePeriapsisRadius(
+                            relativeEntryPosition,
+                            relativeEntryVelocity,
+                            destinationBody.GravParameter,
+                            out periapsisRadius))
+                    {
+                        periapsisAltitude =
+                            periapsisRadius -
+                            destinationBody.RadiusMeters;
+
+                        periapsisError =
+                            Math.Abs(
+                                periapsisRadius -
+                                desiredPeriapsis);
+
+                        collision =
+                            periapsisRadius <=
+                            destinationBody.RadiusMeters;
+                    }
+                }
+            }
+
             assessment =
                 new TargetSoiShootingAssessment
                 {
@@ -591,11 +672,22 @@ namespace KMC.Engine.Navigation
                         destinationBody.SoiRadiusMeters,
                     RelativeSpeedAtArrivalMetersPerSecond =
                         relativeSpeed,
+                    TargetSoiEntryUniversalTimeSeconds =
+                        entryUt,
+                    DesiredPeriapsisRadiusMeters =
+                        desiredPeriapsis,
+                    TargetPeriapsisRadiusMeters =
+                        periapsisRadius,
+                    TargetPeriapsisAltitudeMeters =
+                        periapsisAltitude,
+                    TargetPeriapsisErrorMeters =
+                        periapsisError,
+                    PredictedCollision =
+                        collision,
                     SourceLambertVelocityMismatchMetersPerSecond =
                         velocityMismatch,
                     PredictedEncounter =
-                        missDistance <=
-                        destinationBody.SoiRadiusMeters
+                        predictedEncounter
                 };
 
             return true;
@@ -613,24 +705,83 @@ namespace KMC.Engine.Navigation
             if (best == null)
                 return true;
 
-            double missTolerance =
-                Math.Max(
-                    1e-3,
+            /*
+             * Stage 1: establish an encounter.
+             *
+             * Until both candidates enter the target SOI, lower parent-frame
+             * miss distance remains the objective.
+             */
+            if (candidate.PredictedEncounter !=
+                best.PredictedEncounter)
+            {
+                return
+                    candidate.PredictedEncounter;
+            }
+
+            if (!candidate.PredictedEncounter)
+            {
+                double missTolerance =
                     Math.Max(
-                        candidate.MissDistanceMeters,
-                        best.MissDistanceMeters) *
-                    1e-12);
+                        1e-3,
+                        Math.Max(
+                            candidate.MissDistanceMeters,
+                            best.MissDistanceMeters) *
+                        1e-12);
 
-            double missDifference =
-                candidate.MissDistanceMeters -
-                best.MissDistanceMeters;
+                double missDifference =
+                    candidate.MissDistanceMeters -
+                    best.MissDistanceMeters;
 
-            if (missDifference < -missTolerance)
-                return true;
+                if (missDifference < -missTolerance)
+                    return true;
 
-            if (Math.Abs(missDifference) >
-                missTolerance)
-                return false;
+                if (Math.Abs(missDifference) >
+                    missTolerance)
+                    return false;
+            }
+            else
+            {
+                /*
+                 * Stage 2: once both trajectories enter the SOI, stop aiming
+                 * at the body center. Shape the target-relative hyperbola
+                 * toward the desired periapsis radius.
+                 */
+                double candidatePeError =
+                    candidate.TargetPeriapsisErrorMeters;
+
+                double bestPeError =
+                    best.TargetPeriapsisErrorMeters;
+
+                if (Vector3d.Finite(candidatePeError) &&
+                    Vector3d.Finite(bestPeError))
+                {
+                    double peTolerance =
+                        Math.Max(
+                            0.10,
+                            Math.Max(
+                                candidate.DesiredPeriapsisRadiusMeters,
+                                best.DesiredPeriapsisRadiusMeters) *
+                            1e-10);
+
+                    double peDifference =
+                        candidatePeError -
+                        bestPeError;
+
+                    if (peDifference < -peTolerance)
+                        return true;
+
+                    if (Math.Abs(peDifference) >
+                        peTolerance)
+                        return false;
+                }
+
+                if (candidate.PredictedCollision !=
+                    best.PredictedCollision)
+                {
+                    return
+                        !candidate.PredictedCollision;
+                }
+            }
 
             if (candidate.SourceLambertVelocityMismatchMetersPerSecond <
                 best.SourceLambertVelocityMismatchMetersPerSecond - 1e-9)
@@ -643,6 +794,272 @@ namespace KMC.Engine.Navigation
             return
                 candidateEjection.TotalDeltaVMetersPerSecond <
                 bestEjection.TotalDeltaVMetersPerSecond;
+        }
+
+        private static double ComputeDesiredPeriapsisRadius(
+            CelestialBodyState destinationBody)
+        {
+            double soi =
+                destinationBody.SoiRadiusMeters;
+
+            double bodyRadius =
+                destinationBody.RadiusMeters;
+
+            if (!FinitePositive(soi))
+                return double.NaN;
+
+            double desired =
+                soi * 0.01;
+
+            if (FinitePositive(bodyRadius))
+            {
+                desired =
+                    Math.Max(
+                        desired,
+                        bodyRadius * 2.0);
+            }
+
+            /*
+             * Keep the default aim point comfortably inside the SOI. If a
+             * modded body has unusually little room between surface and SOI,
+             * prefer the deepest still-useful generic encounter we can express
+             * without stock atmosphere assumptions.
+             */
+            double maximum =
+                soi * 0.25;
+
+            desired =
+                Math.Min(
+                    desired,
+                    maximum);
+
+            if (FinitePositive(bodyRadius) &&
+                desired <= bodyRadius)
+            {
+                double fallback =
+                    bodyRadius * 1.10;
+
+                if (fallback >= soi)
+                    return double.NaN;
+
+                desired =
+                    Math.Min(
+                        fallback,
+                        maximum);
+            }
+
+            return
+                FinitePositive(desired)
+                    ? desired
+                    : double.NaN;
+        }
+
+        private static bool TryFindTargetSoiEntry(
+            StateVector spacecraftExit,
+            CelestialBodyState destinationBody,
+            double parentMu,
+            double lowUt,
+            double highUt,
+            out double entryUt,
+            out StateVector spacecraftEntry,
+            out StateVector destinationEntry)
+        {
+            entryUt = double.NaN;
+            spacecraftEntry = null;
+            destinationEntry = null;
+
+            if (spacecraftExit == null ||
+                destinationBody == null ||
+                destinationBody.Orbit == null ||
+                !FinitePositive(destinationBody.SoiRadiusMeters) ||
+                !Vector3d.Finite(lowUt) ||
+                !Vector3d.Finite(highUt) ||
+                highUt <= lowUt)
+                return false;
+
+            double lowDistance;
+
+            if (!TryRelativeDistance(
+                    spacecraftExit,
+                    destinationBody,
+                    parentMu,
+                    lowUt,
+                    out lowDistance,
+                    out spacecraftEntry,
+                    out destinationEntry))
+                return false;
+
+            double highDistance;
+            StateVector highSpacecraft;
+            StateVector highDestination;
+
+            if (!TryRelativeDistance(
+                    spacecraftExit,
+                    destinationBody,
+                    parentMu,
+                    highUt,
+                    out highDistance,
+                    out highSpacecraft,
+                    out highDestination))
+                return false;
+
+            if (highDistance >
+                destinationBody.SoiRadiusMeters)
+                return false;
+
+            if (lowDistance <=
+                destinationBody.SoiRadiusMeters)
+            {
+                entryUt = lowUt;
+                return true;
+            }
+
+            double low =
+                lowUt;
+
+            double high =
+                highUt;
+
+            for (int i = 0;
+                i < TargetEntryBisectionIterations;
+                i++)
+            {
+                double mid =
+                    0.5 *
+                    (low + high);
+
+                double midDistance;
+                StateVector midSpacecraft;
+                StateVector midDestination;
+
+                if (!TryRelativeDistance(
+                        spacecraftExit,
+                        destinationBody,
+                        parentMu,
+                        mid,
+                        out midDistance,
+                        out midSpacecraft,
+                        out midDestination))
+                    return false;
+
+                if (midDistance >
+                    destinationBody.SoiRadiusMeters)
+                    low = mid;
+                else
+                    high = mid;
+            }
+
+            entryUt =
+                high;
+
+            double finalDistance;
+
+            return
+                TryRelativeDistance(
+                    spacecraftExit,
+                    destinationBody,
+                    parentMu,
+                    entryUt,
+                    out finalDistance,
+                    out spacecraftEntry,
+                    out destinationEntry);
+        }
+
+        private static bool TryRelativeDistance(
+            StateVector spacecraftExit,
+            CelestialBodyState destinationBody,
+            double parentMu,
+            double ut,
+            out double distance,
+            out StateVector spacecraft,
+            out StateVector destination)
+        {
+            distance = double.NaN;
+            spacecraft = null;
+            destination = null;
+
+            if (!StateVectorPropagator.TryPropagate(
+                    spacecraftExit,
+                    ut,
+                    out spacecraft))
+                return false;
+
+            if (!KeplerPropagator.TryPropagate(
+                    destinationBody.Orbit,
+                    parentMu,
+                    ut,
+                    out destination))
+                return false;
+
+            distance =
+                (spacecraft.Position -
+                 destination.Position).Magnitude;
+
+            return
+                Vector3d.Finite(distance);
+        }
+
+        private static bool TryCalculatePeriapsisRadius(
+            Vector3d position,
+            Vector3d velocity,
+            double mu,
+            out double periapsisRadius)
+        {
+            periapsisRadius = double.NaN;
+
+            double r =
+                position.Magnitude;
+
+            if (!FinitePositive(r) ||
+                !FinitePositive(mu) ||
+                !position.IsFinite ||
+                !velocity.IsFinite)
+                return false;
+
+            Vector3d hVector =
+                Vector3d.Cross(
+                    position,
+                    velocity);
+
+            double h =
+                hVector.Magnitude;
+
+            if (!FinitePositive(h))
+                return false;
+
+            double v2 =
+                Vector3d.Dot(
+                    velocity,
+                    velocity);
+
+            double rv =
+                Vector3d.Dot(
+                    position,
+                    velocity);
+
+            Vector3d eccentricityVector =
+                position *
+                    ((v2 - mu / r) / mu) -
+                velocity *
+                    (rv / mu);
+
+            double eccentricity =
+                eccentricityVector.Magnitude;
+
+            if (!Vector3d.Finite(eccentricity))
+                return false;
+
+            double p =
+                h * h /
+                mu;
+
+            periapsisRadius =
+                p /
+                (1.0 + eccentricity);
+
+            return
+                FinitePositive(
+                    periapsisRadius);
         }
 
         private static bool TryFindSoiExit(

@@ -548,7 +548,8 @@ namespace KMC.MissionControl.Pages
                                     ? _parkingAwareLambertPreview.FiniteSoiAssessment
                                     : null);
 
-                        if (finiteSoi != null &&
+                        if (_targetSoiShooting == null &&
+                            finiteSoi != null &&
                             y + transferLineHeight * 4 <
                                 transferContentBottom)
                         {
@@ -609,7 +610,7 @@ namespace KMC.MissionControl.Pages
 
                         if (_targetSoiShooting != null &&
                             _targetSoiShooting.CorrectedAssessment != null &&
-                            y + transferLineHeight * 4 <
+                            y + transferLineHeight * 6 <=
                                 transferContentBottom)
                         {
                             TargetSoiShootingAssessment shot =
@@ -655,6 +656,40 @@ namespace KMC.MissionControl.Pages
                                 x,
                                 y);
                             y += transferLineHeight;
+
+                            if (shot.PredictedEncounter &&
+                                IsFinitePositive(
+                                    shot.TargetPeriapsisRadiusMeters))
+                            {
+                                context.Graphics.DrawString(
+                                    "TARGET PE R " +
+                                    FormatSystemDistance(
+                                        shot.DesiredPeriapsisRadiusMeters) +
+                                    "  PRED PE R " +
+                                    FormatSystemDistance(
+                                        shot.TargetPeriapsisRadiusMeters),
+                                    context.SmallFont,
+                                    dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight;
+
+                                context.Graphics.DrawString(
+                                    "PRED PE ALT " +
+                                    FormatSystemDistance(
+                                        shot.TargetPeriapsisAltitudeMeters) +
+                                    "  " +
+                                    (shot.PredictedCollision
+                                        ? "COLLISION RISK"
+                                        : "SAFE FLYBY"),
+                                    context.SmallFont,
+                                    shot.PredictedCollision
+                                        ? bright
+                                        : dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight;
+                            }
 
                             context.Graphics.DrawString(
                                 "ITER " +
