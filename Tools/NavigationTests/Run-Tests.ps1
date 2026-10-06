@@ -18,4 +18,10 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & "$PSScriptRoot/bin/Release/TransferSearchTests.exe"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& $MSBuildPath "$PSScriptRoot/LambertEjectionTests.csproj" /p:Configuration=Release /v:minimal /nologo
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& "$PSScriptRoot/bin/Release/LambertEjectionTests.exe"
 exit $LASTEXITCODE

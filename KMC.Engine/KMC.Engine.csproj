@@ -46,6 +46,8 @@
     <Compile Include="CelestialMechanics\Vector3d.cs" />
     <Compile Include="Navigation\HohmannTransferPlanner.cs" />
     <Compile Include="Navigation\LambertTransferSearch.cs" />
+    <Compile Include="Navigation\LambertParkingOrbitEjectionPlanner.cs" />
+    <Compile Include="Navigation\LambertParkingOrbitEjectionSolution.cs" />
     <Compile Include="Navigation\ParkingOrbitEjectionSolution.cs" />
     <Compile Include="Navigation\TransferSearchRequest.cs" />
     <Compile Include="Navigation\TransferSearchSolution.cs" />
