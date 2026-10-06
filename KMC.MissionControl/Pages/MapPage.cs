@@ -44,6 +44,7 @@ namespace KMC.MissionControl.Pages
         private double _submittedTransferNormalDv = double.NaN;
         private double _submittedTransferRadialDv = double.NaN;
         private bool _submittedTransferWasLambertTest;
+        private bool _submittedTransferUsedLambertAuthority;
         private TransferSearchSolution _lambertPreview;
         private LambertParkingOrbitEjectionSolution _lambertEjectionPreview;
         private ParkingOrbitAwareTransferSolution _parkingAwareLambertPreview;
@@ -172,6 +173,7 @@ namespace KMC.MissionControl.Pages
                         _submittedTransferNormalDv = double.NaN;
                         _submittedTransferRadialDv = double.NaN;
                         _submittedTransferWasLambertTest = false;
+                        _submittedTransferUsedLambertAuthority = false;
                         ResetLambertPreview();
                         return true;
                     }
@@ -558,7 +560,7 @@ namespace KMC.MissionControl.Pages
                                 _parkingAwareLambertPreview.FiniteSoiAssessment;
 
                             context.Graphics.DrawString(
-                                "FINITE-SOI MATCH / TEST NODE SOURCE",
+                                "FINITE-SOI MATCH / PRODUCTION SOURCE",
                                 context.SmallFont,
                                 bright,
                                 x,
@@ -978,13 +980,16 @@ namespace KMC.MissionControl.Pages
                                 secondaryButton,
                                 "ENCOUNTER ACHIEVED");
                         }
-                        else if (_submittedTransferWasLambertTest)
+                        else if (_submittedTransferWasLambertTest ||
+                                 _submittedTransferUsedLambertAuthority)
                         {
                             _refineTransferNodeButton = Rectangle.Empty;
                             DrawInactiveButton(
                                 context,
                                 secondaryButton,
-                                "LAMBERT TEST - NO REFINE");
+                                _submittedTransferWasLambertTest
+                                    ? "LAMBERT TEST - NO REFINE"
+                                    : "LAMBERT AUTHORITY - NO REFINE");
                         }
                         else
                         {
@@ -1225,7 +1230,8 @@ namespace KMC.MissionControl.Pages
                 return false;
             }
 
-            if (_submittedTransferWasLambertTest)
+            if (_submittedTransferWasLambertTest ||
+                _submittedTransferUsedLambertAuthority)
             {
                 LambertParkingOrbitEjectionSolution ejection =
                     _parkingAwareLambertPreview != null
@@ -1291,33 +1297,107 @@ namespace KMC.MissionControl.Pages
             }
         }
 
-        private void UploadTransferNode()
+        private static ManeuverUplinkPacket BuildProductionNodePacket(
+            string vesselId,
+            string destinationBodyName,
+            LambertParkingOrbitEjectionSolution lambertEjection,
+            ManeuverUplinkPacket legacyCandidate,
+            string planId,
+            out bool usedLambertAuthority)
         {
-            if (_transferNodeCandidate == null)
+            usedLambertAuthority = false;
+
+            if (lambertEjection != null)
             {
-                _transferNodeActionText = "NO VALID NODE CANDIDATE";
-                return;
+                usedLambertAuthority = true;
+
+                return
+                    new ManeuverUplinkPacket
+                    {
+                        VesselId = vesselId ?? string.Empty,
+                        PlanId = planId ?? string.Empty,
+                        NodeUniversalTimeSeconds =
+                            lambertEjection.BurnUniversalTimeSeconds,
+                        ProgradeDeltaVMetersPerSecond =
+                            lambertEjection.ProgradeDeltaVMetersPerSecond,
+                        NormalDeltaVMetersPerSecond =
+                            lambertEjection.NormalDeltaVMetersPerSecond,
+                        RadialDeltaVMetersPerSecond =
+                            lambertEjection.RadialDeltaVMetersPerSecond,
+                        TargetBodyName =
+                            destinationBodyName ?? string.Empty,
+                        Operation = "CREATE"
+                    };
             }
 
-            ManeuverUplinkPacket packet =
+            if (legacyCandidate == null)
+                return null;
+
+            return
                 new ManeuverUplinkPacket
                 {
-                    VesselId = _transferNodeCandidate.VesselId,
-                    PlanId =
-                        "MAP-XFER-" +
-                        SanitizePlanToken(_selectedTransferBodyName) +
-                        "-" +
-                        Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant(),
+                    VesselId =
+                        string.IsNullOrWhiteSpace(vesselId)
+                            ? legacyCandidate.VesselId
+                            : vesselId,
+                    PlanId = planId ?? string.Empty,
                     NodeUniversalTimeSeconds =
-                        _transferNodeCandidate.NodeUniversalTimeSeconds,
+                        legacyCandidate.NodeUniversalTimeSeconds,
                     ProgradeDeltaVMetersPerSecond =
-                        _transferNodeCandidate.ProgradeDeltaVMetersPerSecond,
+                        legacyCandidate.ProgradeDeltaVMetersPerSecond,
                     NormalDeltaVMetersPerSecond = 0.0,
                     RadialDeltaVMetersPerSecond = 0.0,
                     TargetBodyName =
-                        _transferNodeCandidate.TargetBodyName,
+                        string.IsNullOrWhiteSpace(destinationBodyName)
+                            ? legacyCandidate.TargetBodyName
+                            : destinationBodyName,
                     Operation = "CREATE"
                 };
+        }
+
+        private void UploadTransferNode()
+        {
+            LambertParkingOrbitEjectionSolution lambertEjection =
+                _parkingAwareLambertPreview != null
+                    ? _parkingAwareLambertPreview.Ejection
+                    : null;
+
+            if (lambertEjection == null &&
+                _transferNodeCandidate == null)
+            {
+                _transferNodeActionText =
+                    "NO VALID NODE CANDIDATE";
+                return;
+            }
+
+            string planId =
+                "MAP-XFER-" +
+                SanitizePlanToken(_selectedTransferBodyName) +
+                "-" +
+                Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant();
+
+            string vesselId =
+                _transferNodeCandidate != null
+                    ? _transferNodeCandidate.VesselId
+                    : string.Empty;
+
+            bool usedLambertAuthority;
+
+            ManeuverUplinkPacket packet =
+                BuildProductionNodePacket(
+                    vesselId,
+                    _selectedTransferBodyName,
+                    lambertEjection,
+                    _transferNodeCandidate,
+                    planId,
+                    out usedLambertAuthority);
+
+            if (packet == null)
+            {
+                _transferNodeActionText =
+                    "NO VALID NODE CANDIDATE";
+                return;
+            }
 
             string resultText;
             bool sent =
@@ -1341,11 +1421,17 @@ namespace KMC.MissionControl.Pages
                 _submittedTransferRadialDv =
                     packet.RadialDeltaVMetersPerSecond;
                 _submittedTransferWasLambertTest = false;
+                _submittedTransferUsedLambertAuthority =
+                    usedLambertAuthority;
             }
 
             _transferNodeActionText =
                 string.IsNullOrWhiteSpace(resultText)
-                    ? (sent ? "UPLINK SENT" : "UPLINK FAILED")
+                    ? (sent
+                        ? (usedLambertAuthority
+                            ? "LAMBERT AUTHORITY UPLINK SENT"
+                            : "LEGACY FALLBACK UPLINK SENT")
+                        : "UPLINK FAILED")
                     : resultText;
         }
 
@@ -1433,6 +1519,7 @@ namespace KMC.MissionControl.Pages
                 _submittedTransferRadialDv =
                     packet.RadialDeltaVMetersPerSecond;
                 _submittedTransferWasLambertTest = true;
+                _submittedTransferUsedLambertAuthority = false;
             }
 
             _transferNodeActionText =
@@ -1445,6 +1532,14 @@ namespace KMC.MissionControl.Pages
 
         private void RefineTransferNode()
         {
+            if (_submittedTransferWasLambertTest ||
+                _submittedTransferUsedLambertAuthority)
+            {
+                _transferNodeActionText =
+                    "LAMBERT NODE REFINEMENT DISABLED";
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(_lastTransferPlanId))
             {
                 _transferNodeActionText = "NO TRACKED NODE TO REFINE";

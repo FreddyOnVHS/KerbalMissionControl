@@ -39,6 +39,7 @@ internal static class Program
         Run("MAP adapter ranks Lambert candidates by parking ejection DV", ParkingAwareLambertAdapter);
         Run("MAP Lambert test packet preserves full PNR vector", LambertTestPacket);
         Run("finite SOI assessment returns a real boundary state", FiniteSoiBoundaryAssessment);
+        Run("MAP production node prefers Lambert PNR and retains legacy fallback", ProductionAuthorityPacket);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
@@ -732,6 +733,128 @@ internal static class Program
         Check(
             solution.FiniteSoiAssessment.VelocityErrorMetersPerSecond >= 0.0,
             "velocity error invalid");
+    }
+
+    private static void ProductionAuthorityPacket()
+    {
+        OrbitMapBody origin, destination;
+        OrbitMapPacket packet;
+        Fixture(0, out origin, out destination, out packet);
+
+        packet.ReferenceBodyName = origin.Name;
+        packet.ActiveOrbit.ReferenceBodyName = origin.Name;
+        origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
+        origin.SoiRadiusMeters = 500000.0;
+        origin.Orbit.ReferenceBodyName = origin.ParentName;
+        destination.Orbit.ReferenceBodyName = destination.ParentName;
+
+        packet.Bodies.Add(origin);
+        packet.Bodies.Add(destination);
+
+        TransferWindowSolution hohmann;
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateTransferWindow(
+                origin,
+                destination,
+                packet.UniversalTimeSeconds,
+                out hohmann),
+            "Hohmann seed unavailable");
+
+        ParkingOrbitAwareTransferSolution parkingAware;
+        string muSource;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateParkingAwareLambertPreview(
+                packet,
+                origin,
+                destination,
+                hohmann,
+                out parkingAware,
+                out muSource),
+            "Lambert production candidate unavailable");
+
+        ManeuverUplinkPacket legacy =
+            new ManeuverUplinkPacket
+            {
+                VesselId = "TEST-VESSEL",
+                NodeUniversalTimeSeconds = 12345.0,
+                ProgradeDeltaVMetersPerSecond = 321.0,
+                NormalDeltaVMetersPerSecond = 0.0,
+                RadialDeltaVMetersPerSecond = 0.0,
+                TargetBodyName = destination.Name,
+                Operation = "CREATE"
+            };
+
+        var method =
+            typeof(MapPage).GetMethod(
+                "BuildProductionNodePacket",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+        Check(method != null, "production packet builder missing");
+
+        object[] args =
+            new object[]
+            {
+                "TEST-VESSEL",
+                destination.Name,
+                parkingAware.Ejection,
+                legacy,
+                "MAP-XFER-UNIT",
+                false
+            };
+
+        ManeuverUplinkPacket production =
+            (ManeuverUplinkPacket)method.Invoke(
+                null,
+                args);
+
+        Check(production != null, "production Lambert packet is null");
+        Check((bool)args[5], "Lambert authority flag not set");
+        Near(
+            production.NodeUniversalTimeSeconds,
+            parkingAware.Ejection.BurnUniversalTimeSeconds,
+            1e-9);
+        Near(
+            production.ProgradeDeltaVMetersPerSecond,
+            parkingAware.Ejection.ProgradeDeltaVMetersPerSecond,
+            1e-9);
+        Near(
+            production.NormalDeltaVMetersPerSecond,
+            parkingAware.Ejection.NormalDeltaVMetersPerSecond,
+            1e-9);
+        Near(
+            production.RadialDeltaVMetersPerSecond,
+            parkingAware.Ejection.RadialDeltaVMetersPerSecond,
+            1e-9);
+
+        object[] fallbackArgs =
+            new object[]
+            {
+                "TEST-VESSEL",
+                destination.Name,
+                null,
+                legacy,
+                "MAP-XFER-FALLBACK",
+                true
+            };
+
+        ManeuverUplinkPacket fallback =
+            (ManeuverUplinkPacket)method.Invoke(
+                null,
+                fallbackArgs);
+
+        Check(fallback != null, "legacy fallback packet is null");
+        Check(!(bool)fallbackArgs[5], "fallback incorrectly marked Lambert");
+        Near(
+            fallback.NodeUniversalTimeSeconds,
+            legacy.NodeUniversalTimeSeconds,
+            1e-9);
+        Near(
+            fallback.ProgradeDeltaVMetersPerSecond,
+            legacy.ProgradeDeltaVMetersPerSecond,
+            1e-9);
+        Near(fallback.NormalDeltaVMetersPerSecond, 0.0, 1e-12);
+        Near(fallback.RadialDeltaVMetersPerSecond, 0.0, 1e-12);
     }
 
 }
