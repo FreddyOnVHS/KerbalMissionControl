@@ -48,6 +48,8 @@
     <Compile Include="Navigation\LambertTransferSearch.cs" />
     <Compile Include="Navigation\LambertParkingOrbitEjectionPlanner.cs" />
     <Compile Include="Navigation\LambertParkingOrbitEjectionSolution.cs" />
+    <Compile Include="Navigation\ParkingOrbitAwareLambertSearch.cs" />
+    <Compile Include="Navigation\ParkingOrbitAwareTransferSolution.cs" />
     <Compile Include="Navigation\ParkingOrbitEjectionSolution.cs" />
     <Compile Include="Navigation\TransferSearchRequest.cs" />
     <Compile Include="Navigation\TransferSearchSolution.cs" />

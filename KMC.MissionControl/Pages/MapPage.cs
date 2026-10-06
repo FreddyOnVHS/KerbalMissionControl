@@ -41,6 +41,8 @@ namespace KMC.MissionControl.Pages
         private double _submittedTransferNodeUt = double.NaN;
         private double _submittedTransferProgradeDv = double.NaN;
         private TransferSearchSolution _lambertPreview;
+        private LambertParkingOrbitEjectionSolution _lambertEjectionPreview;
+        private ParkingOrbitAwareTransferSolution _parkingAwareLambertPreview;
         private bool _lambertPreviewAttempted;
         private string _lambertPreviewOriginName = string.Empty;
         private string _lambertPreviewDestinationName = string.Empty;
@@ -364,7 +366,49 @@ namespace KMC.MissionControl.Pages
                                 "SCORE          " + _lambertPreview.CombinedExcessSpeedMetersPerSecond.ToString("0.0") +
                                 " m/s  MU " + _lambertPreviewMuSource,
                                 context.SmallFont, dim, x, y);
-                            y += 26;
+                            y += 24;
+
+                            context.Graphics.DrawString(
+                                "PARKING-AWARE LAMBERT / NO NODE AUTHORITY",
+                                context.SmallFont, bright, x, y);
+                            y += 18;
+
+                            if (_lambertEjectionPreview != null)
+                            {
+                                if (_parkingAwareLambertPreview != null)
+                                {
+                                    context.Graphics.DrawString(
+                                        "SELECT " + _parkingAwareLambertPreview.Transfer.Path.ToString().ToUpperInvariant() +
+                                        "  DEP UT " + _parkingAwareLambertPreview.Transfer.DepartureUniversalTimeSeconds.ToString("0") +
+                                        "  ARR VINF " + _parkingAwareLambertPreview.ArrivalExcessSpeedMetersPerSecond.ToString("0.0"),
+                                        context.SmallFont, dim, x, y);
+                                    y += 18;
+                                }
+
+                                context.Graphics.DrawString(
+                                    "BURN UT " + _lambertEjectionPreview.BurnUniversalTimeSeconds.ToString("0") +
+                                    "  OFF " + FormatSignedMinutes(_lambertEjectionPreview.WindowOffsetSeconds),
+                                    context.SmallFont, dim, x, y);
+                                y += 18;
+                                context.Graphics.DrawString(
+                                    "DV P " + _lambertEjectionPreview.ProgradeDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") +
+                                    "  N " + _lambertEjectionPreview.NormalDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") +
+                                    "  R " + _lambertEjectionPreview.RadialDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") + " m/s",
+                                    context.SmallFont, dim, x, y);
+                                y += 18;
+                                context.Graphics.DrawString(
+                                    "EJECT SCORE " + _lambertEjectionPreview.TotalDeltaVMetersPerSecond.ToString("0.0") +
+                                    " m/s  GEOM RES " + _lambertEjectionPreview.GeometryResidualDegrees.ToString("0.0000") + " deg",
+                                    context.SmallFont, dim, x, y);
+                                y += 24;
+                            }
+                            else
+                            {
+                                context.Graphics.DrawString(
+                                    "EJECTION PREVIEW UNAVAILABLE FOR CURRENT PARKING GEOMETRY",
+                                    context.SmallFont, dim, x, y);
+                                y += 24;
+                            }
                         }
                         else
                         {
@@ -438,6 +482,8 @@ namespace KMC.MissionControl.Pages
         private void ResetLambertPreview()
         {
             _lambertPreview = null;
+            _lambertEjectionPreview = null;
+            _parkingAwareLambertPreview = null;
             _lambertPreviewAttempted = false;
             _lambertPreviewOriginName = string.Empty;
             _lambertPreviewDestinationName = string.Empty;
@@ -485,6 +531,8 @@ namespace KMC.MissionControl.Pages
                 return;
 
             _lambertPreview = null;
+            _lambertEjectionPreview = null;
+            _parkingAwareLambertPreview = null;
             _lambertPreviewAttempted = true;
             _lambertPreviewOriginName = origin.Name ?? string.Empty;
             _lambertPreviewDestinationName =
@@ -506,6 +554,32 @@ namespace KMC.MissionControl.Pages
             {
                 _lambertPreview = preview;
                 _lambertPreviewMuSource = muSource ?? string.Empty;
+
+                ParkingOrbitAwareTransferSolution parkingAware;
+                string parkingAwareMuSource;
+                if (OrbitMapNavigationAdapter.TryCalculateParkingAwareLambertPreview(
+                        packet,
+                        origin,
+                        destination,
+                        hohmann,
+                        out parkingAware,
+                        out parkingAwareMuSource))
+                {
+                    _parkingAwareLambertPreview = parkingAware;
+                    _lambertEjectionPreview = parkingAware.Ejection;
+                }
+                else
+                {
+                    LambertParkingOrbitEjectionSolution ejectionPreview;
+                    if (OrbitMapNavigationAdapter.TryCalculateLambertParkingOrbitEjectionPreview(
+                            packet,
+                            origin,
+                            preview,
+                            out ejectionPreview))
+                    {
+                        _lambertEjectionPreview = ejectionPreview;
+                    }
+                }
             }
         }
 

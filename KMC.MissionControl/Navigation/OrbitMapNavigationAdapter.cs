@@ -124,24 +124,171 @@ namespace KMC.MissionControl.Navigation
                 return false;
 
             TransferSearchRequest request =
-                new TransferSearchRequest
-                {
-                    OriginBody = ToBody(origin),
-                    DestinationBody = ToBody(destination),
-                    ParentGravParameter = parentMu,
-                    EarliestDepartureUniversalTimeSeconds = earliestDeparture,
-                    LatestDepartureUniversalTimeSeconds = latestDeparture,
-                    MinimumTimeOfFlightSeconds = minimumFlightTime,
-                    MaximumTimeOfFlightSeconds = maximumFlightTime,
-                    DepartureSamples = 9,
-                    TimeOfFlightSamples = 9,
-                    SearchShortWay = true,
-                    SearchLongWay = true
-                };
+                CreateTransferSearchRequest(
+                    origin,
+                    destination,
+                    parentMu,
+                    earliestDeparture,
+                    latestDeparture,
+                    minimumFlightTime,
+                    maximumFlightTime);
 
             return LambertTransferSearch.TryFindBest(
                 request,
                 out solution);
+        }
+
+        /// <summary>
+        /// Searches the same live Lambert domain but ranks candidates by the
+        /// actual local parking-orbit ejection delta-v.
+        /// </summary>
+        public static bool TryCalculateParkingAwareLambertPreview(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            OrbitMapBody destination,
+            TransferWindowSolution hohmann,
+            out ParkingOrbitAwareTransferSolution solution,
+            out string parentMuSource)
+        {
+            solution = null;
+            parentMuSource = string.Empty;
+
+            if (packet == null || origin == null || destination == null ||
+                hohmann == null || packet.ActiveOrbit == null ||
+                origin.Orbit == null || destination.Orbit == null)
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(packet.ReferenceBodyName) &&
+                !string.Equals(
+                    packet.ReferenceBodyName,
+                    origin.Name,
+                    StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (!string.Equals(
+                    origin.ParentName,
+                    destination.ParentName,
+                    StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            double parentMu;
+            if (!TryResolveParentGravParameter(
+                    packet,
+                    origin,
+                    destination,
+                    out parentMu,
+                    out parentMuSource))
+                return false;
+
+            double synodicSeconds =
+                CalculateSynodicPeriodSeconds(
+                    origin.Orbit.PeriodSeconds,
+                    destination.Orbit.PeriodSeconds);
+
+            double departureHalfSpan =
+                IsFinitePositive(synodicSeconds)
+                    ? synodicSeconds * 0.08
+                    : hohmann.TransferTimeSeconds * 0.35;
+
+            if (!IsFinitePositive(departureHalfSpan))
+                return false;
+
+            double earliestDeparture =
+                Math.Max(
+                    packet.UniversalTimeSeconds,
+                    hohmann.DepartureUniversalTimeSeconds -
+                    departureHalfSpan);
+
+            double latestDeparture =
+                hohmann.DepartureUniversalTimeSeconds +
+                departureHalfSpan;
+
+            double minimumFlightTime =
+                hohmann.TransferTimeSeconds * 0.70;
+
+            double maximumFlightTime =
+                hohmann.TransferTimeSeconds * 1.30;
+
+            if (!IsFinitePositive(minimumFlightTime) ||
+                !IsFinitePositive(maximumFlightTime) ||
+                latestDeparture < earliestDeparture)
+                return false;
+
+            TransferSearchRequest request =
+                CreateTransferSearchRequest(
+                    origin,
+                    destination,
+                    parentMu,
+                    earliestDeparture,
+                    latestDeparture,
+                    minimumFlightTime,
+                    maximumFlightTime);
+
+            return ParkingOrbitAwareLambertSearch.TryFindBest(
+                request,
+                ToElements(packet.ActiveOrbit),
+                packet.ReferenceBodyRadiusMeters,
+                out solution);
+        }
+
+        /// <summary>
+        /// Converts an accepted Lambert transfer preview into a local parking-orbit
+        /// ejection preview. This method is display-only and creates no maneuver.
+        /// </summary>
+        public static bool TryCalculateLambertParkingOrbitEjectionPreview(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            TransferSearchSolution transfer,
+            out LambertParkingOrbitEjectionSolution solution)
+        {
+            solution = null;
+
+            if (packet == null ||
+                origin == null ||
+                transfer == null ||
+                packet.ActiveOrbit == null)
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(packet.ReferenceBodyName) &&
+                !string.Equals(
+                    packet.ReferenceBodyName,
+                    origin.Name,
+                    StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return
+                LambertParkingOrbitEjectionPlanner.TryCalculate(
+                    ToElements(packet.ActiveOrbit),
+                    packet.ReferenceBodyRadiusMeters,
+                    ToBody(origin),
+                    transfer.DepartureExcessVelocity,
+                    transfer.DepartureUniversalTimeSeconds,
+                    out solution);
+        }
+
+        private static TransferSearchRequest CreateTransferSearchRequest(
+            OrbitMapBody origin,
+            OrbitMapBody destination,
+            double parentMu,
+            double earliestDeparture,
+            double latestDeparture,
+            double minimumFlightTime,
+            double maximumFlightTime)
+        {
+            return new TransferSearchRequest
+            {
+                OriginBody = ToBody(origin),
+                DestinationBody = ToBody(destination),
+                ParentGravParameter = parentMu,
+                EarliestDepartureUniversalTimeSeconds = earliestDeparture,
+                LatestDepartureUniversalTimeSeconds = latestDeparture,
+                MinimumTimeOfFlightSeconds = minimumFlightTime,
+                MaximumTimeOfFlightSeconds = maximumFlightTime,
+                DepartureSamples = 9,
+                TimeOfFlightSamples = 9,
+                SearchShortWay = true,
+                SearchLongWay = true
+            };
         }
 
         private static bool TryResolveParentGravParameter(

@@ -35,6 +35,8 @@ internal static class Program
         Run("Lambert Vallado 3D reference case", LambertVallado);
         Run("Lambert rejects invalid and degenerate boundary data", LambertInvalid);
         Run("MAP adapter builds Lambert preview from body telemetry", LambertMapPreviewAdapter);
+        Run("MAP adapter builds Lambert parking-ejection preview", LambertMapEjectionPreviewAdapter);
+        Run("MAP adapter ranks Lambert candidates by parking ejection DV", ParkingAwareLambertAdapter);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
@@ -457,6 +459,142 @@ internal static class Program
         Check(
             muSource == "PARENT BODY TELEMETRY",
             "authoritative parent body mu was not preferred");
+    }
+
+    private static void LambertMapEjectionPreviewAdapter()
+    {
+        OrbitMapBody origin, destination;
+        OrbitMapPacket packet;
+        Fixture(0, out origin, out destination, out packet);
+
+        packet.ReferenceBodyName = origin.Name;
+        packet.ActiveOrbit.ReferenceBodyName = origin.Name;
+        origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
+        origin.Orbit.ReferenceBodyName = origin.ParentName;
+        destination.Orbit.ReferenceBodyName = destination.ParentName;
+
+        packet.Bodies.Add(origin);
+        packet.Bodies.Add(destination);
+
+        TransferWindowSolution hohmann;
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateTransferWindow(
+                origin,
+                destination,
+                packet.UniversalTimeSeconds,
+                out hohmann),
+            "Hohmann seed unavailable");
+
+        TransferSearchSolution transfer;
+        string muSource;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateLambertPreview(
+                packet,
+                origin,
+                destination,
+                hohmann,
+                out transfer,
+                out muSource),
+            "Lambert transfer preview unavailable");
+
+        LambertParkingOrbitEjectionSolution ejection;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateLambertParkingOrbitEjectionPreview(
+                packet,
+                origin,
+                transfer,
+                out ejection),
+            "Lambert parking ejection preview unavailable");
+
+        Check(ejection != null, "ejection preview is null");
+        Check(
+            ejection.TotalDeltaVMetersPerSecond > 0.0,
+            "ejection total DV is not positive");
+        Check(
+            !double.IsNaN(ejection.BurnUniversalTimeSeconds) &&
+            !double.IsInfinity(ejection.BurnUniversalTimeSeconds),
+            "ejection burn UT is invalid");
+        Check(
+            ejection.GeometryResidualDegrees < 1e-6,
+            "ejection geometry residual is too large");
+
+        double componentMagnitude =
+            Math.Sqrt(
+                ejection.ProgradeDeltaVMetersPerSecond *
+                ejection.ProgradeDeltaVMetersPerSecond +
+                ejection.NormalDeltaVMetersPerSecond *
+                ejection.NormalDeltaVMetersPerSecond +
+                ejection.RadialDeltaVMetersPerSecond *
+                ejection.RadialDeltaVMetersPerSecond);
+
+        Near(
+            componentMagnitude,
+            ejection.TotalDeltaVMetersPerSecond,
+            1e-6);
+    }
+
+    private static void ParkingAwareLambertAdapter()
+    {
+        OrbitMapBody origin, destination;
+        OrbitMapPacket packet;
+        Fixture(0, out origin, out destination, out packet);
+
+        packet.ReferenceBodyName = origin.Name;
+        packet.ActiveOrbit.ReferenceBodyName = origin.Name;
+        origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
+        origin.Orbit.ReferenceBodyName = origin.ParentName;
+        destination.Orbit.ReferenceBodyName = destination.ParentName;
+
+        packet.Bodies.Add(origin);
+        packet.Bodies.Add(destination);
+
+        TransferWindowSolution hohmann;
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateTransferWindow(
+                origin,
+                destination,
+                packet.UniversalTimeSeconds,
+                out hohmann),
+            "Hohmann seed unavailable");
+
+        ParkingOrbitAwareTransferSolution solution;
+        string muSource;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateParkingAwareLambertPreview(
+                packet,
+                origin,
+                destination,
+                hohmann,
+                out solution,
+                out muSource),
+            "parking-aware Lambert preview unavailable");
+
+        Check(solution != null, "parking-aware solution is null");
+        Check(solution.Transfer != null, "transfer child is null");
+        Check(solution.Ejection != null, "ejection child is null");
+        Check(
+            solution.EjectionScoreMetersPerSecond > 0.0,
+            "ejection score is not positive");
+        Check(
+            solution.Ejection.GeometryResidualDegrees < 1e-6,
+            "geometry residual too large");
+
+        double componentMagnitude =
+            Math.Sqrt(
+                solution.Ejection.ProgradeDeltaVMetersPerSecond *
+                solution.Ejection.ProgradeDeltaVMetersPerSecond +
+                solution.Ejection.NormalDeltaVMetersPerSecond *
+                solution.Ejection.NormalDeltaVMetersPerSecond +
+                solution.Ejection.RadialDeltaVMetersPerSecond *
+                solution.Ejection.RadialDeltaVMetersPerSecond);
+
+        Near(
+            componentMagnitude,
+            solution.EjectionScoreMetersPerSecond,
+            1e-6);
     }
 
 }
