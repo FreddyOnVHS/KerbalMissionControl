@@ -25,7 +25,6 @@ namespace KMC.MissionControl.Pages
         private Rectangle _resetButton, _fitOrbitButton, _fitManeuverButton, _targetButton;
         private Rectangle _localTab, _transferTab;
         private Rectangle _createTransferNodeButton;
-        private Rectangle _createLambertTestNodeButton;
         private Rectangle _refineTransferNodeButton;
         private const int ButtonGap = 16;
         private const int ButtonHorizontalPadding = 14;
@@ -43,11 +42,12 @@ namespace KMC.MissionControl.Pages
         private double _submittedTransferProgradeDv = double.NaN;
         private double _submittedTransferNormalDv = double.NaN;
         private double _submittedTransferRadialDv = double.NaN;
-        private bool _submittedTransferWasLambertTest;
         private bool _submittedTransferUsedLambertAuthority;
         private TransferSearchSolution _lambertPreview;
         private LambertParkingOrbitEjectionSolution _lambertEjectionPreview;
         private ParkingOrbitAwareTransferSolution _parkingAwareLambertPreview;
+        private FiniteSoiDepartureCorrectionResult _finiteSoiCorrection;
+        private TargetSoiShootingResult _targetSoiShooting;
         private bool _lambertPreviewAttempted;
         private string _lambertPreviewOriginName = string.Empty;
         private string _lambertPreviewDestinationName = string.Empty;
@@ -145,14 +145,6 @@ namespace KMC.MissionControl.Pages
                     return true;
                 }
 
-                if (_parkingAwareLambertPreview != null &&
-                    !_createLambertTestNodeButton.IsEmpty &&
-                    _createLambertTestNodeButton.Contains(q))
-                {
-                    UploadLambertTestNode();
-                    return true;
-                }
-
                 if (!_refineTransferNodeButton.IsEmpty &&
                     _refineTransferNodeButton.Contains(q))
                 {
@@ -172,7 +164,6 @@ namespace KMC.MissionControl.Pages
                         _submittedTransferProgradeDv = double.NaN;
                         _submittedTransferNormalDv = double.NaN;
                         _submittedTransferRadialDv = double.NaN;
-                        _submittedTransferWasLambertTest = false;
                         _submittedTransferUsedLambertAuthority = false;
                         ResetLambertPreview();
                         return true;
@@ -242,7 +233,6 @@ namespace KMC.MissionControl.Pages
             _transferBodyNames.Clear();
             _transferNodeCandidate = null;
             _createTransferNodeButton = Rectangle.Empty;
-            _createLambertTestNodeButton = Rectangle.Empty;
             _refineTransferNodeButton = Rectangle.Empty;
 
             int top = bounds.Top + 84;
@@ -448,7 +438,7 @@ namespace KMC.MissionControl.Pages
                             transferContentBottom)
                         {
                             context.Graphics.DrawString(
-                                "LAMBERT PREVIEW  COARSE 9x9 / NO NODE AUTHORITY",
+                                "LAMBERT SEARCH  COARSE 9x9",
                                 context.SmallFont,
                                 bright,
                                 x,
@@ -501,7 +491,7 @@ namespace KMC.MissionControl.Pages
                                 transferContentBottom)
                         {
                             context.Graphics.DrawString(
-                                "PARKING-AWARE LAMBERT / NO NODE AUTHORITY",
+                                "LAMBERT EJECTION / PRODUCTION",
                                 context.SmallFont,
                                 bright,
                                 x,
@@ -551,18 +541,55 @@ namespace KMC.MissionControl.Pages
                             y += transferLineHeight + transferSectionGap;
                         }
 
-                        if (_parkingAwareLambertPreview != null &&
-                            _parkingAwareLambertPreview.FiniteSoiAssessment != null &&
-                            y + transferLineHeight * 3 <
+                        FiniteSoiDepartureAssessment finiteSoi =
+                            _finiteSoiCorrection != null
+                                ? _finiteSoiCorrection.CorrectedAssessment
+                                : (_parkingAwareLambertPreview != null
+                                    ? _parkingAwareLambertPreview.FiniteSoiAssessment
+                                    : null);
+
+                        if (finiteSoi != null &&
+                            y + transferLineHeight * 4 <
                                 transferContentBottom)
                         {
-                            FiniteSoiDepartureAssessment finiteSoi =
-                                _parkingAwareLambertPreview.FiniteSoiAssessment;
-
                             context.Graphics.DrawString(
-                                "FINITE-SOI MATCH / PRODUCTION SOURCE",
+                                _finiteSoiCorrection != null &&
+                                _finiteSoiCorrection.Applied
+                                    ? "FINITE-SOI LOCAL CORRECTION"
+                                    : "FINITE-SOI MATCH",
                                 context.SmallFont,
                                 bright,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            if (_finiteSoiCorrection != null)
+                            {
+                                context.Graphics.DrawString(
+                                    "SCORE " +
+                                    _finiteSoiCorrection.InitialAssessment.NormalizedStateError.ToString("0.000000") +
+                                    " -> " +
+                                    finiteSoi.NormalizedStateError.ToString("0.000000") +
+                                    "  ITER " +
+                                    _finiteSoiCorrection.Iterations.ToString() +
+                                    "  EVAL " +
+                                    _finiteSoiCorrection.Evaluations.ToString(),
+                                    context.SmallFont,
+                                    dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight;
+                            }
+
+                            context.Graphics.DrawString(
+                                "POS ERR " +
+                                FormatSystemDistance(
+                                    finiteSoi.PositionErrorMeters) +
+                                "  VEL ERR " +
+                                finiteSoi.VelocityErrorMetersPerSecond.ToString("0.0") +
+                                " m/s",
+                                context.SmallFont,
+                                dim,
                                 x,
                                 y);
                             y += transferLineHeight;
@@ -577,16 +604,63 @@ namespace KMC.MissionControl.Pages
                                 dim,
                                 x,
                                 y);
+                            y += transferLineHeight + transferSectionGap;
+                        }
+
+                        if (_targetSoiShooting != null &&
+                            _targetSoiShooting.CorrectedAssessment != null &&
+                            y + transferLineHeight * 4 <
+                                transferContentBottom)
+                        {
+                            TargetSoiShootingAssessment shot =
+                                _targetSoiShooting.CorrectedAssessment;
+
+                            context.Graphics.DrawString(
+                                "TARGET-SOI SHOOTING",
+                                context.SmallFont,
+                                bright,
+                                x,
+                                y);
                             y += transferLineHeight;
 
                             context.Graphics.DrawString(
-                                "POS ERR " +
+                                "MISS " +
                                 FormatSystemDistance(
-                                    finiteSoi.PositionErrorMeters) +
-                                "  VEL ERR " +
-                                finiteSoi.VelocityErrorMetersPerSecond.ToString("0.0") +
-                                " m/s  SCORE " +
-                                finiteSoi.NormalizedStateError.ToString("0.000000"),
+                                    _targetSoiShooting.InitialAssessment.MissDistanceMeters) +
+                                " -> " +
+                                FormatSystemDistance(
+                                    shot.MissDistanceMeters) +
+                                "  / SOI " +
+                                FormatSystemDistance(
+                                    destination.SoiRadiusMeters),
+                                context.SmallFont,
+                                dim,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            context.Graphics.DrawString(
+                                "ARR UT " +
+                                shot.ArrivalUniversalTimeSeconds.ToString("0") +
+                                "  VERR " +
+                                shot.SourceLambertVelocityMismatchMetersPerSecond.ToString("0.0") +
+                                " m/s  " +
+                                (shot.PredictedEncounter
+                                    ? "PREDICT ENCOUNTER"
+                                    : "PREDICT MISS"),
+                                context.SmallFont,
+                                shot.PredictedEncounter
+                                    ? bright
+                                    : dim,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            context.Graphics.DrawString(
+                                "ITER " +
+                                _targetSoiShooting.Iterations.ToString() +
+                                "  EVAL " +
+                                _targetSoiShooting.Evaluations.ToString(),
                                 context.SmallFont,
                                 dim,
                                 x,
@@ -634,11 +708,13 @@ namespace KMC.MissionControl.Pages
                                     };
                             }
 
-                            if (y + transferLineHeight * 3 <
-                                transferContentBottom)
+                            if ((_parkingAwareLambertPreview == null ||
+                                 _parkingAwareLambertPreview.Ejection == null) &&
+                                y + transferLineHeight * 3 <
+                                    transferContentBottom)
                             {
                                 context.Graphics.DrawString(
-                                    "LEGACY EJECTION / CREATE KSP NODE",
+                                    "LEGACY FALLBACK",
                                     context.SmallFont,
                                     bright,
                                     x,
@@ -725,6 +801,8 @@ namespace KMC.MissionControl.Pages
             _lambertPreview = null;
             _lambertEjectionPreview = null;
             _parkingAwareLambertPreview = null;
+            _finiteSoiCorrection = null;
+            _targetSoiShooting = null;
             _lambertPreviewAttempted = false;
             _lambertPreviewOriginName = string.Empty;
             _lambertPreviewDestinationName = string.Empty;
@@ -774,6 +852,8 @@ namespace KMC.MissionControl.Pages
             _lambertPreview = null;
             _lambertEjectionPreview = null;
             _parkingAwareLambertPreview = null;
+            _finiteSoiCorrection = null;
+            _targetSoiShooting = null;
             _lambertPreviewAttempted = true;
             _lambertPreviewOriginName = origin.Name ?? string.Empty;
             _lambertPreviewDestinationName =
@@ -808,6 +888,38 @@ namespace KMC.MissionControl.Pages
                 {
                     _parkingAwareLambertPreview = parkingAware;
                     _lambertEjectionPreview = parkingAware.Ejection;
+
+                    FiniteSoiDepartureCorrectionResult correction;
+
+                    if (MapFiniteSoiCorrectionAdapter.TryOptimize(
+                            packet,
+                            origin,
+                            parkingAware,
+                            out correction))
+                    {
+                        _finiteSoiCorrection = correction;
+
+                        if (correction.CorrectedEjection != null)
+                            _lambertEjectionPreview =
+                                correction.CorrectedEjection;
+                    }
+
+                    TargetSoiShootingResult shooting;
+
+                    if (MapTargetSoiShootingAdapter.TrySolve(
+                            packet,
+                            origin,
+                            destination,
+                            parkingAware,
+                            _lambertEjectionPreview,
+                            out shooting))
+                    {
+                        _targetSoiShooting = shooting;
+
+                        if (shooting.CorrectedEjection != null)
+                            _lambertEjectionPreview =
+                                shooting.CorrectedEjection;
+                    }
                 }
                 else
                 {
@@ -980,16 +1092,13 @@ namespace KMC.MissionControl.Pages
                                 secondaryButton,
                                 "ENCOUNTER ACHIEVED");
                         }
-                        else if (_submittedTransferWasLambertTest ||
-                                 _submittedTransferUsedLambertAuthority)
+                        else if (_submittedTransferUsedLambertAuthority)
                         {
                             _refineTransferNodeButton = Rectangle.Empty;
                             DrawInactiveButton(
                                 context,
                                 secondaryButton,
-                                _submittedTransferWasLambertTest
-                                    ? "LAMBERT TEST - NO REFINE"
-                                    : "LAMBERT AUTHORITY - NO REFINE");
+                                "LAMBERT AUTHORITY - NO REFINE");
                         }
                         else
                         {
@@ -1003,73 +1112,12 @@ namespace KMC.MissionControl.Pages
                 }
                 else
                 {
-                    if (_parkingAwareLambertPreview != null &&
-                        _parkingAwareLambertPreview.Ejection != null)
-                    {
-                        int legacyRequiredWidth =
-                            MeasureButtonWidth(
-                                context.Graphics,
-                                context.SmallFont,
-                                "CREATE KSP NODE");
+                    _createTransferNodeButton = primaryButton;
 
-                        int lambertRequiredWidth =
-                            MeasureButtonWidth(
-                                context.Graphics,
-                                context.SmallFont,
-                                "CREATE LAMBERT TEST NODE");
-
-                        int available =
-                            Math.Max(
-                                2,
-                                width - controlGap);
-
-                        int legacyWidth =
-                            Math.Min(
-                                legacyRequiredWidth,
-                                available / 2);
-
-                        int lambertWidth =
-                            Math.Max(
-                                1,
-                                available - legacyWidth);
-
-                        if (legacyWidth < 1)
-                            legacyWidth = 1;
-
-                        _createTransferNodeButton =
-                            new Rectangle(
-                                left,
-                                buttonTop,
-                                legacyWidth,
-                                buttonHeight);
-
-                        _createLambertTestNodeButton =
-                            new Rectangle(
-                                _createTransferNodeButton.Right + controlGap,
-                                buttonTop,
-                                lambertWidth,
-                                buttonHeight);
-
-                        DrawButton(
-                            context,
-                            _createTransferNodeButton,
-                            "CREATE KSP NODE");
-
-                        DrawButton(
-                            context,
-                            _createLambertTestNodeButton,
-                            "CREATE LAMBERT TEST NODE");
-                    }
-                    else
-                    {
-                        _createTransferNodeButton = primaryButton;
-                        _createLambertTestNodeButton = Rectangle.Empty;
-
-                        DrawButton(
-                            context,
-                            _createTransferNodeButton,
-                            "CREATE KSP NODE");
-                    }
+                    DrawButton(
+                        context,
+                        _createTransferNodeButton,
+                        "CREATE KSP NODE");
                 }
             }
 
@@ -1215,6 +1263,28 @@ namespace KMC.MissionControl.Pages
             }
         }
 
+        private LambertParkingOrbitEjectionSolution GetProductionLambertEjection()
+        {
+            if (_targetSoiShooting != null &&
+                _targetSoiShooting.CorrectedEjection != null)
+            {
+                return
+                    _targetSoiShooting.CorrectedEjection;
+            }
+
+            if (_finiteSoiCorrection != null &&
+                _finiteSoiCorrection.CorrectedEjection != null)
+            {
+                return
+                    _finiteSoiCorrection.CorrectedEjection;
+            }
+
+            return
+                _parkingAwareLambertPreview != null
+                    ? _parkingAwareLambertPreview.Ejection
+                    : null;
+        }
+
         private bool IsSameAsSubmittedTransferCandidate()
         {
             if (string.IsNullOrWhiteSpace(_submittedTransferDestinationName) ||
@@ -1230,13 +1300,10 @@ namespace KMC.MissionControl.Pages
                 return false;
             }
 
-            if (_submittedTransferWasLambertTest ||
-                _submittedTransferUsedLambertAuthority)
+            if (_submittedTransferUsedLambertAuthority)
             {
                 LambertParkingOrbitEjectionSolution ejection =
-                    _parkingAwareLambertPreview != null
-                        ? _parkingAwareLambertPreview.Ejection
-                        : null;
+                    GetProductionLambertEjection();
 
                 if (ejection == null)
                     return false;
@@ -1358,9 +1425,7 @@ namespace KMC.MissionControl.Pages
         private void UploadTransferNode()
         {
             LambertParkingOrbitEjectionSolution lambertEjection =
-                _parkingAwareLambertPreview != null
-                    ? _parkingAwareLambertPreview.Ejection
-                    : null;
+                GetProductionLambertEjection();
 
             if (lambertEjection == null &&
                 _transferNodeCandidate == null)
@@ -1420,7 +1485,6 @@ namespace KMC.MissionControl.Pages
                     packet.NormalDeltaVMetersPerSecond;
                 _submittedTransferRadialDv =
                     packet.RadialDeltaVMetersPerSecond;
-                _submittedTransferWasLambertTest = false;
                 _submittedTransferUsedLambertAuthority =
                     usedLambertAuthority;
             }
@@ -1435,105 +1499,9 @@ namespace KMC.MissionControl.Pages
                     : resultText;
         }
 
-        private static ManeuverUplinkPacket BuildLambertTestNodePacket(
-            string vesselId,
-            string destinationBodyName,
-            LambertParkingOrbitEjectionSolution ejection,
-            string planId)
-        {
-            if (ejection == null)
-                return null;
-
-            return
-                new ManeuverUplinkPacket
-                {
-                    VesselId = vesselId ?? string.Empty,
-                    PlanId = planId ?? string.Empty,
-                    NodeUniversalTimeSeconds =
-                        ejection.BurnUniversalTimeSeconds,
-                    ProgradeDeltaVMetersPerSecond =
-                        ejection.ProgradeDeltaVMetersPerSecond,
-                    NormalDeltaVMetersPerSecond =
-                        ejection.NormalDeltaVMetersPerSecond,
-                    RadialDeltaVMetersPerSecond =
-                        ejection.RadialDeltaVMetersPerSecond,
-                    TargetBodyName =
-                        destinationBodyName ?? string.Empty,
-                    Operation = "CREATE"
-                };
-        }
-
-        private void UploadLambertTestNode()
-        {
-            LambertParkingOrbitEjectionSolution ejection =
-                _parkingAwareLambertPreview != null
-                    ? _parkingAwareLambertPreview.Ejection
-                    : null;
-
-            if (ejection == null || _transferNodeCandidate == null)
-            {
-                _transferNodeActionText =
-                    "NO VALID LAMBERT TEST CANDIDATE";
-                return;
-            }
-
-            string planId =
-                "MAP-LAMBERT-TEST-" +
-                SanitizePlanToken(_selectedTransferBodyName) +
-                "-" +
-                Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant();
-
-            ManeuverUplinkPacket packet =
-                BuildLambertTestNodePacket(
-                    _transferNodeCandidate.VesselId,
-                    _selectedTransferBodyName,
-                    ejection,
-                    planId);
-
-            if (packet == null)
-            {
-                _transferNodeActionText =
-                    "NO VALID LAMBERT TEST CANDIDATE";
-                return;
-            }
-
-            string resultText;
-            bool sent =
-                TransferPlannerManeuverUplink.Send(
-                    packet,
-                    out resultText);
-
-            _lastTransferPlanId =
-                packet.PlanId;
-
-            if (sent)
-            {
-                _submittedTransferDestinationName =
-                    _selectedTransferBodyName ?? string.Empty;
-                _submittedTransferNodeUt =
-                    packet.NodeUniversalTimeSeconds;
-                _submittedTransferProgradeDv =
-                    packet.ProgradeDeltaVMetersPerSecond;
-                _submittedTransferNormalDv =
-                    packet.NormalDeltaVMetersPerSecond;
-                _submittedTransferRadialDv =
-                    packet.RadialDeltaVMetersPerSecond;
-                _submittedTransferWasLambertTest = true;
-                _submittedTransferUsedLambertAuthority = false;
-            }
-
-            _transferNodeActionText =
-                string.IsNullOrWhiteSpace(resultText)
-                    ? (sent
-                        ? "LAMBERT TEST UPLINK SENT"
-                        : "LAMBERT TEST UPLINK FAILED")
-                    : resultText;
-        }
-
         private void RefineTransferNode()
         {
-            if (_submittedTransferWasLambertTest ||
-                _submittedTransferUsedLambertAuthority)
+            if (_submittedTransferUsedLambertAuthority)
             {
                 _transferNodeActionText =
                     "LAMBERT NODE REFINEMENT DISABLED";
@@ -1749,4 +1717,242 @@ namespace KMC.MissionControl.Pages
             return r;
         }
     }
+
+    /// <summary>
+    /// MissionControl-side bridge for finite-SOI local correction. Keeps packet
+    /// translation outside KMC.Engine while the numerical optimizer remains
+    /// KSP-independent.
+    /// </summary>
+    internal static class MapFiniteSoiCorrectionAdapter
+    {
+        public static bool TryOptimize(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            ParkingOrbitAwareTransferSolution parkingAware,
+            out FiniteSoiDepartureCorrectionResult correction)
+        {
+            correction = null;
+
+            if (packet == null ||
+                origin == null ||
+                parkingAware == null ||
+                parkingAware.Transfer == null ||
+                parkingAware.Ejection == null ||
+                packet.ActiveOrbit == null)
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(packet.ReferenceBodyName) &&
+                !string.Equals(
+                    packet.ReferenceBodyName,
+                    origin.Name,
+                    StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            double parentMu;
+
+            if (!TryResolveParentMu(
+                    packet,
+                    origin,
+                    out parentMu))
+                return false;
+
+            return
+                FiniteSoiDepartureOptimizer.TryOptimize(
+                    parkingAware.Transfer,
+                    parkingAware.Ejection,
+                    OrbitMapNavigationAdapter.ToElements(
+                        packet.ActiveOrbit),
+                    OrbitMapNavigationAdapter.ToBody(
+                        origin),
+                    parentMu,
+                    out correction);
+        }
+
+        private static bool TryResolveParentMu(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            out double parentMu)
+        {
+            parentMu = double.NaN;
+
+            if (packet == null ||
+                origin == null ||
+                string.IsNullOrWhiteSpace(origin.ParentName))
+                return false;
+
+            for (int i = 0; i < packet.Bodies.Count; i++)
+            {
+                OrbitMapBody body = packet.Bodies[i];
+
+                if (body == null)
+                    continue;
+
+                if (string.Equals(
+                        body.Name,
+                        origin.ParentName,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    IsFinitePositive(
+                        body.GravParameter))
+                {
+                    parentMu =
+                        body.GravParameter;
+                    return true;
+                }
+            }
+
+            if (origin.Orbit == null ||
+                !IsFinitePositive(
+                    origin.Orbit.SemiMajorAxisMeters) ||
+                !IsFinitePositive(
+                    origin.Orbit.PeriodSeconds))
+                return false;
+
+            double a =
+                origin.Orbit.SemiMajorAxisMeters;
+
+            double period =
+                origin.Orbit.PeriodSeconds;
+
+            double twoPi =
+                2.0 * Math.PI;
+
+            parentMu =
+                twoPi * twoPi *
+                a * a * a /
+                (period * period);
+
+            return
+                IsFinitePositive(
+                    parentMu);
+        }
+
+        private static bool IsFinitePositive(
+            double value)
+        {
+            return
+                !double.IsNaN(value) &&
+                !double.IsInfinity(value) &&
+                value > 0.0;
+        }
+    }
+
+
+    /// <summary>
+    /// Packet-to-engine bridge for the target-SOI shooting solver.
+    /// </summary>
+    internal static class MapTargetSoiShootingAdapter
+    {
+        public static bool TrySolve(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            OrbitMapBody destination,
+            ParkingOrbitAwareTransferSolution parkingAware,
+            LambertParkingOrbitEjectionSolution seedEjection,
+            out TargetSoiShootingResult result)
+        {
+            result = null;
+
+            if (packet == null ||
+                origin == null ||
+                destination == null ||
+                parkingAware == null ||
+                parkingAware.Transfer == null ||
+                seedEjection == null ||
+                packet.ActiveOrbit == null ||
+                destination.Orbit == null ||
+                destination.SoiRadiusMeters <= 0.0)
+                return false;
+
+            double parentMu;
+
+            if (!TryResolveParentMu(
+                    packet,
+                    origin,
+                    out parentMu))
+                return false;
+
+            return
+                TargetSoiShootingSolver.TrySolve(
+                    parkingAware.Transfer,
+                    seedEjection,
+                    OrbitMapNavigationAdapter.ToElements(
+                        packet.ActiveOrbit),
+                    OrbitMapNavigationAdapter.ToBody(
+                        origin),
+                    OrbitMapNavigationAdapter.ToBody(
+                        destination),
+                    parentMu,
+                    out result);
+        }
+
+        private static bool TryResolveParentMu(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            out double parentMu)
+        {
+            parentMu = double.NaN;
+
+            if (packet == null ||
+                origin == null ||
+                string.IsNullOrWhiteSpace(origin.ParentName))
+                return false;
+
+            for (int i = 0; i < packet.Bodies.Count; i++)
+            {
+                OrbitMapBody body =
+                    packet.Bodies[i];
+
+                if (body == null)
+                    continue;
+
+                if (string.Equals(
+                        body.Name,
+                        origin.ParentName,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    IsFinitePositive(
+                        body.GravParameter))
+                {
+                    parentMu =
+                        body.GravParameter;
+                    return true;
+                }
+            }
+
+            if (origin.Orbit == null ||
+                !IsFinitePositive(
+                    origin.Orbit.SemiMajorAxisMeters) ||
+                !IsFinitePositive(
+                    origin.Orbit.PeriodSeconds))
+                return false;
+
+            double a =
+                origin.Orbit.SemiMajorAxisMeters;
+
+            double period =
+                origin.Orbit.PeriodSeconds;
+
+            double twoPi =
+                2.0 *
+                Math.PI;
+
+            parentMu =
+                twoPi * twoPi *
+                a * a * a /
+                (period * period);
+
+            return
+                IsFinitePositive(
+                    parentMu);
+        }
+
+        private static bool IsFinitePositive(
+            double value)
+        {
+            return
+                !double.IsNaN(value) &&
+                !double.IsInfinity(value) &&
+                value > 0.0;
+        }
+    }
+
 }

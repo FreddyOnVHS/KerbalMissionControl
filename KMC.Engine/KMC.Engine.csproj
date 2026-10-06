@@ -51,6 +51,11 @@
     <Compile Include="Navigation\LambertParkingOrbitEjectionSolution.cs" />
     <Compile Include="Navigation\FiniteSoiDepartureAssessment.cs" />
     <Compile Include="Navigation\FiniteSoiDepartureEvaluator.cs" />
+    <Compile Include="Navigation\FiniteSoiDepartureCorrectionResult.cs" />
+    <Compile Include="Navigation\FiniteSoiDepartureOptimizer.cs" />
+    <Compile Include="Navigation\TargetSoiShootingAssessment.cs" />
+    <Compile Include="Navigation\TargetSoiShootingResult.cs" />
+    <Compile Include="Navigation\TargetSoiShootingSolver.cs" />
     <Compile Include="Navigation\ParkingOrbitAwareLambertSearch.cs" />
     <Compile Include="Navigation\ParkingOrbitAwareTransferSolution.cs" />
     <Compile Include="Navigation\ParkingOrbitEjectionSolution.cs" />

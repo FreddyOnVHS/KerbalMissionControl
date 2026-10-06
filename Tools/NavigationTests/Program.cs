@@ -37,8 +37,10 @@ internal static class Program
         Run("MAP adapter builds Lambert preview from body telemetry", LambertMapPreviewAdapter);
         Run("MAP adapter builds Lambert parking-ejection preview", LambertMapEjectionPreviewAdapter);
         Run("MAP adapter ranks Lambert candidates by parking ejection DV", ParkingAwareLambertAdapter);
-        Run("MAP Lambert test packet preserves full PNR vector", LambertTestPacket);
+        Run("MAP production cleanup removes temporary Lambert test path", ProductionCleanup);
         Run("finite SOI assessment returns a real boundary state", FiniteSoiBoundaryAssessment);
+        Run("finite SOI local correction never worsens boundary state", FiniteSoiLocalCorrection);
+        Run("target SOI shooting never worsens propagated miss distance", TargetSoiShooting);
         Run("MAP production node prefers Lambert PNR and retains legacy fallback", ProductionAuthorityPacket);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
@@ -606,84 +608,6 @@ internal static class Program
             1e-6);
     }
 
-    private static void LambertTestPacket()
-    {
-        OrbitMapBody origin, destination;
-        OrbitMapPacket packet;
-        Fixture(0, out origin, out destination, out packet);
-
-        packet.ReferenceBodyName = origin.Name;
-        packet.ActiveOrbit.ReferenceBodyName = origin.Name;
-        origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
-        origin.SoiRadiusMeters = 500000.0;
-        origin.Orbit.ReferenceBodyName = origin.ParentName;
-        destination.Orbit.ReferenceBodyName = destination.ParentName;
-        packet.Bodies.Add(origin);
-        packet.Bodies.Add(destination);
-
-        TransferWindowSolution hohmann;
-        Check(
-            OrbitMapNavigationAdapter.TryCalculateTransferWindow(
-                origin,
-                destination,
-                packet.UniversalTimeSeconds,
-                out hohmann),
-            "Hohmann seed unavailable");
-
-        ParkingOrbitAwareTransferSolution parkingAware;
-        string muSource;
-        Check(
-            OrbitMapNavigationAdapter.TryCalculateParkingAwareLambertPreview(
-                packet,
-                origin,
-                destination,
-                hohmann,
-                out parkingAware,
-                out muSource),
-            "parking-aware Lambert preview unavailable");
-
-        var method =
-            typeof(MapPage).GetMethod(
-                "BuildLambertTestNodePacket",
-                BindingFlags.Static | BindingFlags.NonPublic);
-
-        Check(method != null, "Lambert test packet builder missing");
-
-        ManeuverUplinkPacket uplink =
-            (ManeuverUplinkPacket)method.Invoke(
-                null,
-                new object[]
-                {
-                    "TEST-VESSEL",
-                    destination.Name,
-                    parkingAware.Ejection,
-                    "MAP-LAMBERT-TEST-UNIT"
-                });
-
-        Check(uplink != null, "Lambert test packet is null");
-        Check(uplink.VesselId == "TEST-VESSEL", "vessel ID lost");
-        Check(uplink.TargetBodyName == destination.Name, "target lost");
-        Check(uplink.PlanId == "MAP-LAMBERT-TEST-UNIT", "plan ID lost");
-        Check(uplink.Operation == "CREATE", "operation is not CREATE");
-
-        Near(
-            uplink.NodeUniversalTimeSeconds,
-            parkingAware.Ejection.BurnUniversalTimeSeconds,
-            1e-9);
-        Near(
-            uplink.ProgradeDeltaVMetersPerSecond,
-            parkingAware.Ejection.ProgradeDeltaVMetersPerSecond,
-            1e-9);
-        Near(
-            uplink.NormalDeltaVMetersPerSecond,
-            parkingAware.Ejection.NormalDeltaVMetersPerSecond,
-            1e-9);
-        Near(
-            uplink.RadialDeltaVMetersPerSecond,
-            parkingAware.Ejection.RadialDeltaVMetersPerSecond,
-            1e-9);
-    }
-
     private static void FiniteSoiBoundaryAssessment()
     {
         OrbitMapBody origin, destination;
@@ -733,6 +657,159 @@ internal static class Program
         Check(
             solution.FiniteSoiAssessment.VelocityErrorMetersPerSecond >= 0.0,
             "velocity error invalid");
+    }
+
+
+    private static void FiniteSoiLocalCorrection()
+    {
+        OrbitMapBody origin, destination;
+        OrbitMapPacket packet;
+        Fixture(0, out origin, out destination, out packet);
+
+        packet.ReferenceBodyName = origin.Name;
+        packet.ActiveOrbit.ReferenceBodyName = origin.Name;
+        origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
+        origin.SoiRadiusMeters = 500000.0;
+        origin.Orbit.ReferenceBodyName = origin.ParentName;
+        destination.Orbit.ReferenceBodyName = destination.ParentName;
+
+        packet.Bodies.Add(origin);
+        packet.Bodies.Add(destination);
+
+        TransferWindowSolution hohmann;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateTransferWindow(
+                origin,
+                destination,
+                packet.UniversalTimeSeconds,
+                out hohmann),
+            "Hohmann seed unavailable");
+
+        ParkingOrbitAwareTransferSolution coarse;
+        string muSource;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateParkingAwareLambertPreview(
+                packet,
+                origin,
+                destination,
+                hohmann,
+                out coarse,
+                out muSource),
+            "coarse finite-SOI solution unavailable");
+
+        FiniteSoiDepartureCorrectionResult correction;
+
+        Check(
+            FiniteSoiDepartureOptimizer.TryOptimize(
+                coarse.Transfer,
+                coarse.Ejection,
+                OrbitMapNavigationAdapter.ToElements(
+                    packet.ActiveOrbit),
+                OrbitMapNavigationAdapter.ToBody(
+                    origin),
+                1e12,
+                out correction),
+            "local correction failed");
+
+        Check(correction != null, "correction result is null");
+        Check(correction.InitialAssessment != null, "initial assessment missing");
+        Check(correction.CorrectedAssessment != null, "corrected assessment missing");
+        Check(correction.CorrectedEjection != null, "corrected ejection missing");
+        Check(correction.Evaluations > 0, "no correction evaluations");
+
+        Check(
+            correction.CorrectedAssessment.NormalizedStateError <=
+            correction.InitialAssessment.NormalizedStateError + 1e-12,
+            "local correction worsened state score");
+
+        double total =
+            Math.Sqrt(
+                correction.CorrectedEjection.ProgradeDeltaVMetersPerSecond *
+                correction.CorrectedEjection.ProgradeDeltaVMetersPerSecond +
+                correction.CorrectedEjection.NormalDeltaVMetersPerSecond *
+                correction.CorrectedEjection.NormalDeltaVMetersPerSecond +
+                correction.CorrectedEjection.RadialDeltaVMetersPerSecond *
+                correction.CorrectedEjection.RadialDeltaVMetersPerSecond);
+
+        Near(
+            total,
+            correction.CorrectedEjection.TotalDeltaVMetersPerSecond,
+            1e-8);
+    }
+
+
+    private static void TargetSoiShooting()
+    {
+        OrbitMapBody origin, destination;
+        OrbitMapPacket packet;
+        Fixture(0, out origin, out destination, out packet);
+
+        packet.ReferenceBodyName = origin.Name;
+        packet.ActiveOrbit.ReferenceBodyName = origin.Name;
+        origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
+        origin.SoiRadiusMeters = 500000.0;
+        destination.SoiRadiusMeters = 900000.0;
+        origin.Orbit.ReferenceBodyName = origin.ParentName;
+        destination.Orbit.ReferenceBodyName = destination.ParentName;
+
+        packet.Bodies.Add(origin);
+        packet.Bodies.Add(destination);
+
+        TransferWindowSolution hohmann;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateTransferWindow(
+                origin,
+                destination,
+                packet.UniversalTimeSeconds,
+                out hohmann),
+            "Hohmann seed unavailable");
+
+        ParkingOrbitAwareTransferSolution coarse;
+        string muSource;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateParkingAwareLambertPreview(
+                packet,
+                origin,
+                destination,
+                hohmann,
+                out coarse,
+                out muSource),
+            "parking-aware seed unavailable");
+
+        TargetSoiShootingResult shooting;
+
+        Check(
+            TargetSoiShootingSolver.TrySolve(
+                coarse.Transfer,
+                coarse.Ejection,
+                OrbitMapNavigationAdapter.ToElements(
+                    packet.ActiveOrbit),
+                OrbitMapNavigationAdapter.ToBody(
+                    origin),
+                OrbitMapNavigationAdapter.ToBody(
+                    destination),
+                1e12,
+                out shooting),
+            "target SOI shooting failed");
+
+        Check(shooting != null, "shooting result is null");
+        Check(shooting.InitialAssessment != null, "initial shooting assessment missing");
+        Check(shooting.CorrectedAssessment != null, "corrected shooting assessment missing");
+        Check(shooting.CorrectedEjection != null, "corrected shooting ejection missing");
+        Check(shooting.Evaluations > 0, "shooting made no evaluations");
+
+        Check(
+            shooting.CorrectedAssessment.MissDistanceMeters <=
+            shooting.InitialAssessment.MissDistanceMeters + 1e-6,
+            "target shooting worsened propagated miss distance");
+
+        Check(
+            shooting.CorrectedAssessment.MissFractionOfTargetSoi >= 0.0,
+            "invalid target SOI miss fraction");
     }
 
     private static void ProductionAuthorityPacket()
@@ -855,6 +932,29 @@ internal static class Program
             1e-9);
         Near(fallback.NormalDeltaVMetersPerSecond, 0.0, 1e-12);
         Near(fallback.RadialDeltaVMetersPerSecond, 0.0, 1e-12);
+    }
+
+    private static void ProductionCleanup()
+    {
+        Type mapPage = typeof(MapPage);
+
+        Check(
+            mapPage.GetMethod(
+                "UploadLambertTestNode",
+                BindingFlags.Instance | BindingFlags.NonPublic) == null,
+            "temporary Lambert test upload method still present");
+
+        Check(
+            mapPage.GetMethod(
+                "BuildLambertTestNodePacket",
+                BindingFlags.Static | BindingFlags.NonPublic) == null,
+            "temporary Lambert test packet builder still present");
+
+        Check(
+            mapPage.GetMethod(
+                "BuildProductionNodePacket",
+                BindingFlags.Static | BindingFlags.NonPublic) != null,
+            "production packet builder missing");
     }
 
 }
