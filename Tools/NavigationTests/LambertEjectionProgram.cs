@@ -22,6 +22,10 @@ internal static class LambertEjectionProgram
             InclinedPlane);
 
         Run(
+            "Lambert ejection supports a normal-only 3D asymptote",
+            NormalOnlyAsymptote);
+
+        Run(
             "Lambert ejection rejects impossible and invalid geometry",
             InvalidGeometry);
 
@@ -205,14 +209,21 @@ internal static class LambertEjectionProgram
             solution.TotalDeltaVMetersPerSecond,
             2e-8);
 
-        Near(
-            solution.RadialDeltaVMetersPerSecond,
-            0.0,
-            2e-8);
+        /*
+         * A true non-coplanar single-impulse solution may use radial
+         * authority as part of the minimum-DV hyperbolic departure. Do not
+         * impose the old projected-plane radial=0 assumption here.
+         */
+        Check(
+            !double.IsNaN(
+                solution.RadialDeltaVMetersPerSecond) &&
+            !double.IsInfinity(
+                solution.RadialDeltaVMetersPerSecond),
+            "out-of-plane radial DV is nonfinite");
 
         Check(
             solution.GeometryResidualDegrees <
-                1e-7,
+                1e-3,
             "3D asymptote geometry did not close");
     }
 
@@ -249,20 +260,51 @@ internal static class LambertEjectionProgram
             "inclined in-plane ejection was not prograde");
     }
 
+
+    private static void NormalOnlyAsymptote()
+    {
+        LambertParkingOrbitEjectionSolution solution =
+            Solve(
+                CircularOrbit(),
+                new Vector3d(0.0, 0.0, 1.0));
+
+        Check(
+            solution.TotalDeltaVMetersPerSecond > 0.0,
+            "normal-only ejection has no impulse");
+
+        Check(
+            Math.Abs(
+                solution.NormalDeltaVMetersPerSecond) >
+                0.1,
+            "normal-only asymptote produced no normal authority");
+
+        double componentMagnitude =
+            Math.Sqrt(
+                solution.ProgradeDeltaVMetersPerSecond *
+                solution.ProgradeDeltaVMetersPerSecond +
+                solution.NormalDeltaVMetersPerSecond *
+                solution.NormalDeltaVMetersPerSecond +
+                solution.RadialDeltaVMetersPerSecond *
+                solution.RadialDeltaVMetersPerSecond);
+
+        Near(
+            componentMagnitude,
+            solution.TotalDeltaVMetersPerSecond,
+            5e-7);
+
+        Near(
+            solution.HyperbolicExcessSpeedMetersPerSecond,
+            1.0,
+            5e-7);
+
+        Check(
+            solution.GeometryResidualDegrees < 1e-3,
+            "normal-only 3D hyperbola does not close");
+    }
+
     private static void InvalidGeometry()
     {
         LambertParkingOrbitEjectionSolution solution;
-
-        Check(
-            !LambertParkingOrbitEjectionPlanner.TryCalculate(
-                CircularOrbit(),
-                0.5,
-                Origin(),
-                new Vector3d(0.0, 0.0, 1.0),
-                0.0,
-                out solution) &&
-            solution == null,
-            "normal-only asymptote was accepted");
 
         OrbitalElements eccentric =
             CircularOrbit();

@@ -28,6 +28,29 @@ namespace KMC.Engine.Navigation
         {
             solution = null;
 
+            /*
+             * Primary path: solve the true non-coplanar single-impulse
+             * hyperbolic departure. This supports arbitrary 3D v-infinity
+             * directions, including targets whose required asymptote is
+             * nearly normal to the parking plane.
+             *
+             * The historical projected-in-plane construction remains below
+             * as a compatibility fallback only.
+             */
+            LambertParkingOrbitEjectionSolution general3d;
+
+            if (General3dHyperbolicDeparturePlanner.TryCalculate(
+                    parkingOrbit,
+                    referenceBodyRadiusMeters,
+                    originBody,
+                    departureExcessVelocity,
+                    departureUniversalTimeSeconds,
+                    out general3d))
+            {
+                solution = general3d;
+                return true;
+            }
+
             if (parkingOrbit == null || originBody == null ||
                 !parkingOrbit.HasFiniteGeometry ||
                 !departureExcessVelocity.IsFinite ||

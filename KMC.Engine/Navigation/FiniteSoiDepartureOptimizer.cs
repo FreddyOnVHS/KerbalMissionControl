@@ -21,6 +21,7 @@ namespace KMC.Engine.Navigation
         private const double MinimumUtStepSeconds = 0.50;
         private const double MinimumDvStepMetersPerSecond = 0.02;
         private const double ScoreRelativeTolerance = 1e-12;
+        private const double MaximumDeltaVRatioFromSeed = 1.35;
 
         public static bool TryOptimize(
             TransferSearchSolution transfer,
@@ -375,6 +376,17 @@ namespace KMC.Engine.Navigation
                     prograde,
                     normal,
                     radial);
+
+            double maximumDeltaV =
+                seed.TotalDeltaVMetersPerSecond *
+                MaximumDeltaVRatioFromSeed;
+
+            if (!FinitePositive(
+                    trial.TotalDeltaVMetersPerSecond) ||
+                !FinitePositive(maximumDeltaV) ||
+                trial.TotalDeltaVMetersPerSecond >
+                    maximumDeltaV + 1e-9)
+                return false;
 
             FiniteSoiDepartureAssessment assessment;
 

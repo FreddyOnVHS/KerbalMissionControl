@@ -4,8 +4,9 @@ using KMC.Engine.CelestialMechanics;
 namespace KMC.Engine.Navigation
 {
     /// <summary>
-    /// Bounded Lambert search ranked by the actual local parking-orbit ejection
-    /// impulse rather than departure-vinf + arrival-vinf.
+    /// Bounded Lambert search using MechJeb-style optimization semantics:
+    /// finite-SOI handoff quality is a feasibility constraint; among feasible
+    /// candidates the actual local parking-orbit departure impulse is minimized.
     /// </summary>
     public static class ParkingOrbitAwareLambertSearch
     {
@@ -22,7 +23,8 @@ namespace KMC.Engine.Navigation
             if (!IsValidRequest(request, parkingOrbit, referenceBodyRadiusMeters))
                 return false;
 
-            ParkingOrbitAwareTransferSolution best = null;
+            ParkingOrbitAwareTransferSolution bestFeasible = null;
+            ParkingOrbitAwareTransferSolution bestBootstrap = null;
 
             for (int departureIndex = 0;
                 departureIndex < request.DepartureSamples;
@@ -76,7 +78,8 @@ namespace KMC.Engine.Navigation
                             originState,
                             destinationState,
                             LambertTransferPath.ShortWay,
-                            ref best);
+                            ref bestFeasible,
+                            ref bestBootstrap);
 
                     if (request.SearchLongWay)
                         Consider(
@@ -88,11 +91,12 @@ namespace KMC.Engine.Navigation
                             originState,
                             destinationState,
                             LambertTransferPath.LongWay,
-                            ref best);
+                            ref bestFeasible,
+                            ref bestBootstrap);
                 }
             }
 
-            solution = best;
+            solution = bestFeasible ?? bestBootstrap;
             return solution != null;
         }
 
@@ -105,7 +109,8 @@ namespace KMC.Engine.Navigation
             StateVector originState,
             StateVector destinationState,
             LambertTransferPath path,
-            ref ParkingOrbitAwareTransferSolution best)
+            ref ParkingOrbitAwareTransferSolution bestFeasible,
+            ref ParkingOrbitAwareTransferSolution bestBootstrap)
         {
             LambertSolution lambert;
             if (!LambertSolver.TrySolve(
@@ -173,38 +178,33 @@ namespace KMC.Engine.Navigation
                     candidate.FiniteSoiAssessment.NormalizedStateError))
                 return;
 
-            if (IsBetter(candidate, best))
-                best = candidate;
+            if (IsLowerDepartureDv(
+                    candidate,
+                    bestBootstrap))
+                bestBootstrap = candidate;
+
+            if (FiniteSoiCandidateSelectionPolicy.IsFeasible(
+                    candidate.FiniteSoiAssessment) &&
+                IsBetterFeasible(
+                    candidate,
+                    bestFeasible))
+                bestFeasible = candidate;
         }
 
-        private static bool IsBetter(
+        private static bool IsBetterFeasible(
             ParkingOrbitAwareTransferSolution candidate,
             ParkingOrbitAwareTransferSolution best)
         {
+            if (candidate == null ||
+                !FiniteSoiCandidateSelectionPolicy.IsFeasible(
+                    candidate.FiniteSoiAssessment))
+                return false;
+
             if (best == null)
                 return true;
 
-            double stateScale =
-                Math.Max(
-                    1.0,
-                    Math.Max(
-                        candidate.FiniteSoiAssessment.NormalizedStateError,
-                        best.FiniteSoiAssessment.NormalizedStateError));
-
-            double stateTolerance =
-                ScoreTieRelativeTolerance *
-                stateScale;
-
-            double stateDifference =
-                candidate.FiniteSoiAssessment.NormalizedStateError -
-                best.FiniteSoiAssessment.NormalizedStateError;
-
-            if (stateDifference < -stateTolerance)
+            if (IsLowerDepartureDv(candidate, best))
                 return true;
-
-            if (Math.Abs(stateDifference) >
-                stateTolerance)
-                return false;
 
             double dvScale =
                 Math.Max(
@@ -217,26 +217,103 @@ namespace KMC.Engine.Navigation
                 ScoreTieRelativeTolerance *
                 dvScale;
 
-            double dvDifference =
-                candidate.EjectionScoreMetersPerSecond -
-                best.EjectionScoreMetersPerSecond;
-
-            if (dvDifference < -dvTolerance)
-                return true;
-
-            if (Math.Abs(dvDifference) >
+            if (Math.Abs(
+                    candidate.EjectionScoreMetersPerSecond -
+                    best.EjectionScoreMetersPerSecond) >
                 dvTolerance)
                 return false;
 
+            double stateDifference =
+                candidate.FiniteSoiAssessment.NormalizedStateError -
+                best.FiniteSoiAssessment.NormalizedStateError;
+
+            double stateScale =
+                Math.Max(
+                    1.0,
+                    Math.Max(
+                        candidate.FiniteSoiAssessment.NormalizedStateError,
+                        best.FiniteSoiAssessment.NormalizedStateError));
+
+            double stateTolerance =
+                ScoreTieRelativeTolerance *
+                stateScale;
+
+            if (stateDifference < -stateTolerance)
+                return true;
+
+            if (Math.Abs(stateDifference) >
+                stateTolerance)
+                return false;
+
+            return PreferDeterministicTieBreak(
+                candidate,
+                best,
+                dvTolerance);
+        }
+
+        private static bool IsLowerDepartureDv(
+            ParkingOrbitAwareTransferSolution candidate,
+            ParkingOrbitAwareTransferSolution best)
+        {
+            if (candidate == null)
+                return false;
+
+            if (best == null)
+                return true;
+
+            double scale =
+                Math.Max(
+                    1.0,
+                    Math.Max(
+                        candidate.EjectionScoreMetersPerSecond,
+                        best.EjectionScoreMetersPerSecond));
+
+            double tolerance =
+                ScoreTieRelativeTolerance *
+                scale;
+
+            double difference =
+                candidate.EjectionScoreMetersPerSecond -
+                best.EjectionScoreMetersPerSecond;
+
+            if (difference < -tolerance)
+                return true;
+
+            if (Math.Abs(difference) >
+                tolerance)
+                return false;
+
+            double stateDifference =
+                candidate.FiniteSoiAssessment.NormalizedStateError -
+                best.FiniteSoiAssessment.NormalizedStateError;
+
+            if (stateDifference < -ScoreTieRelativeTolerance)
+                return true;
+
+            if (Math.Abs(stateDifference) >
+                ScoreTieRelativeTolerance)
+                return false;
+
+            return PreferDeterministicTieBreak(
+                candidate,
+                best,
+                tolerance);
+        }
+
+        private static bool PreferDeterministicTieBreak(
+            ParkingOrbitAwareTransferSolution candidate,
+            ParkingOrbitAwareTransferSolution best,
+            double velocityTolerance)
+        {
             double arrivalDifference =
                 candidate.ArrivalExcessSpeedMetersPerSecond -
                 best.ArrivalExcessSpeedMetersPerSecond;
 
-            if (arrivalDifference < -dvTolerance)
+            if (arrivalDifference < -velocityTolerance)
                 return true;
 
             if (Math.Abs(arrivalDifference) >
-                dvTolerance)
+                velocityTolerance)
                 return false;
 
             if (candidate.Transfer.DepartureUniversalTimeSeconds <

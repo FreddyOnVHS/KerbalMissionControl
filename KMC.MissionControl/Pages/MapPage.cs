@@ -48,6 +48,9 @@ namespace KMC.MissionControl.Pages
         private ParkingOrbitAwareTransferSolution _parkingAwareLambertPreview;
         private FiniteSoiDepartureCorrectionResult _finiteSoiCorrection;
         private TargetSoiShootingResult _targetSoiShooting;
+        private string _targetSoiShootingFailureText = string.Empty;
+        private CoupledFiniteSoiShadowResult _coupledFiniteSoiShadow;
+        private string _coupledFiniteSoiShadowFailureText = string.Empty;
         private bool _lambertPreviewAttempted;
         private string _lambertPreviewOriginName = string.Empty;
         private string _lambertPreviewDestinationName = string.Empty;
@@ -548,6 +551,119 @@ namespace KMC.MissionControl.Pages
                                     ? _parkingAwareLambertPreview.FiniteSoiAssessment
                                     : null);
 
+                        // 14.22.57a: Shadow diagnostics get priority over the
+                        // legacy shooting block.  This solver has no maneuver
+                        // authority, but its diagnostics must remain visible
+                        // even when the production block consumes the rest of
+                        // the transfer-planner vertical space.
+                        if (_coupledFiniteSoiShadow != null &&
+                            y + transferLineHeight * 6 <=
+                                transferContentBottom)
+                        {
+                            CoupledFiniteSoiShadowResult shadow =
+                                _coupledFiniteSoiShadow;
+
+                            context.Graphics.DrawString(
+                                "COUPLED FINITE-SOI OPTIMIZER / SHADOW",
+                                context.SmallFont,
+                                bright,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            context.Graphics.DrawString(
+                                "DV " +
+                                shadow.BootstrapDeltaVMetersPerSecond.ToString("0.0") +
+                                " -> " +
+                                shadow.FinalDeltaVMetersPerSecond.ToString("0.0") +
+                                " m/s  FEAS " +
+                                (shadow.FeasibilityPassSucceeded ? "PASS" : "FAIL") +
+                                "  " + shadow.Stage,
+                                context.SmallFont,
+                                shadow.FeasibilityPassSucceeded ? bright : dim,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            context.Graphics.DrawString(
+                                "SOURCE IF " +
+                                FormatSystemDistance(shadow.SourceInterfacePositionErrorMeters) +
+                                " / " +
+                                shadow.SourceInterfaceVelocityErrorMetersPerSecond.ToString("0.0") +
+                                " m/s  SPLIT VERR " +
+                                shadow.SplitVelocityMismatchMetersPerSecond.ToString("0.0") +
+                                "  " +
+                                (shadow.SourceOutbound ? "OUT" : "NOT OUT"),
+                                context.SmallFont,
+                                dim,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            context.Graphics.DrawString(
+                                "TARGET IF " +
+                                FormatSystemDistance(shadow.TargetInterfaceErrorMeters) +
+                                "  PE ERR " +
+                                FormatSystemDistance(shadow.TargetPeriapsisErrorMeters) +
+                                "  " +
+                                (shadow.TargetInbound ? "IN" : "NOT IN") +
+                                (shadow.BPlaneInitializationApplied
+                                    ? "  B-PLANE INIT"
+                                    : string.Empty),
+                                context.SmallFont,
+                                dim,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            context.Graphics.DrawString(
+                                "B MAG ERR " +
+                                FormatSystemDistance(shadow.TargetBPlaneMagnitudeErrorMeters) +
+                                "  B.T " +
+                                FormatSystemDistance(shadow.TargetBPlaneTErrorMeters) +
+                                "  B.R " +
+                                FormatSystemDistance(shadow.TargetBPlaneRErrorMeters),
+                                context.SmallFont,
+                                dim,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            context.Graphics.DrawString(
+                                "ITER " + shadow.Iterations.ToString() +
+                                "  EVAL " + shadow.Evaluations.ToString() +
+                                "  JAC " + shadow.TerminalJacobianColumns.ToString() + "/8" +
+                                "  REJ " + shadow.TerminalRejectedSteps.ToString() +
+                                "  TR " + shadow.TerminalTrustRadius.ToString("0.000") +
+                                "  NO NODE AUTHORITY",
+                                context.SmallFont,
+                                dim,
+                                x,
+                                y);
+                            y += transferLineHeight + transferSectionGap;
+                        }
+                        else if (_coupledFiniteSoiShadow == null &&
+                            !string.IsNullOrWhiteSpace(
+                                _coupledFiniteSoiShadowFailureText) &&
+                            y + transferLineHeight * 2 <=
+                                transferContentBottom)
+                        {
+                            context.Graphics.DrawString(
+                                "COUPLED SHADOW REJECTED",
+                                context.SmallFont,
+                                bright,
+                                x,
+                                y);
+                            y += transferLineHeight;
+                            context.Graphics.DrawString(
+                                _coupledFiniteSoiShadowFailureText,
+                                context.SmallFont,
+                                dim,
+                                x,
+                                y);
+                            y += transferLineHeight + transferSectionGap;
+                        }
+
                         if (_targetSoiShooting == null &&
                             finiteSoi != null &&
                             y + transferLineHeight * 4 <
@@ -608,21 +724,96 @@ namespace KMC.MissionControl.Pages
                             y += transferLineHeight + transferSectionGap;
                         }
 
+                        if (_targetSoiShooting == null &&
+                            !string.IsNullOrWhiteSpace(
+                                _targetSoiShootingFailureText) &&
+                            y + transferLineHeight * 2 <=
+                                transferContentBottom)
+                        {
+                            context.Graphics.DrawString(
+                                "TARGET-SOI SHOOTING REJECTED",
+                                context.SmallFont,
+                                bright,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            context.Graphics.DrawString(
+                                _targetSoiShootingFailureText,
+                                context.SmallFont,
+                                dim,
+                                x,
+                                y);
+                            y += transferLineHeight + transferSectionGap;
+                        }
+
                         if (_targetSoiShooting != null &&
                             _targetSoiShooting.CorrectedAssessment != null &&
-                            y + transferLineHeight * 6 <=
+                            y + transferLineHeight * 8 <=
                                 transferContentBottom)
                         {
                             TargetSoiShootingAssessment shot =
                                 _targetSoiShooting.CorrectedAssessment;
 
                             context.Graphics.DrawString(
-                                "TARGET-SOI SHOOTING",
+                                _parkingAwareLambertPreview != null
+                                    ? "TARGET-SOI SHOOTING"
+                                    : "TARGET-SOI SHOOTING / 3D BOOTSTRAP",
                                 context.SmallFont,
                                 bright,
                                 x,
                                 y);
                             y += transferLineHeight;
+
+                            double seedShootingDv =
+                                _targetSoiShooting.InitialEjection != null
+                                    ? _targetSoiShooting.InitialEjection.TotalDeltaVMetersPerSecond
+                                    : double.NaN;
+
+                            double finalShootingDv =
+                                _targetSoiShooting.CorrectedEjection != null
+                                    ? _targetSoiShooting.CorrectedEjection.TotalDeltaVMetersPerSecond
+                                    : double.NaN;
+
+                            double shootingDvCap =
+                                TargetSoiOptimizationPolicy.
+                                    ComputeMaximumDepartureDeltaV(
+                                        seedShootingDv);
+
+                            context.Graphics.DrawString(
+                                "DV SEED " +
+                                seedShootingDv.ToString("0.0") +
+                                " -> " +
+                                finalShootingDv.ToString("0.0") +
+                                " m/s  CAP " +
+                                shootingDvCap.ToString("0.0"),
+                                context.SmallFont,
+                                dim,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            if (_parkingAwareLambertPreview != null &&
+                                _parkingAwareLambertPreview.FiniteSoiAssessment != null)
+                            {
+                                FiniteSoiDepartureAssessment seedSoi =
+                                    _parkingAwareLambertPreview.FiniteSoiAssessment;
+
+                                context.Graphics.DrawString(
+                                    "SOI SEED POS " +
+                                    (seedSoi.PositionErrorFractionOfSoi * 100.0).ToString("0.0") +
+                                    "%  VEL " +
+                                    (seedSoi.VelocityErrorFractionOfDepartureExcess * 100.0).ToString("0.0") +
+                                    "%  FEASIBLE / MIN-DV" +
+                                    (_targetSoiShooting.BPlaneBootstrapApplied
+                                        ? "  BPLANE SEARCH"
+                                        : string.Empty),
+                                    context.SmallFont,
+                                    dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight;
+                            }
 
                             context.Graphics.DrawString(
                                 "MISS " +
@@ -667,7 +858,13 @@ namespace KMC.MissionControl.Pages
                                         shot.DesiredPeriapsisRadiusMeters) +
                                     "  PRED PE R " +
                                     FormatSystemDistance(
-                                        shot.TargetPeriapsisRadiusMeters),
+                                        shot.TargetPeriapsisRadiusMeters) +
+                                    (IsFinitePositive(
+                                         shot.TargetBPlaneErrorMeters)
+                                        ? "  BERR " +
+                                          FormatSystemDistance(
+                                              shot.TargetBPlaneErrorMeters)
+                                        : string.Empty),
                                     context.SmallFont,
                                     dim,
                                     x,
@@ -838,6 +1035,9 @@ namespace KMC.MissionControl.Pages
             _parkingAwareLambertPreview = null;
             _finiteSoiCorrection = null;
             _targetSoiShooting = null;
+            _targetSoiShootingFailureText = string.Empty;
+            _coupledFiniteSoiShadow = null;
+            _coupledFiniteSoiShadowFailureText = string.Empty;
             _lambertPreviewAttempted = false;
             _lambertPreviewOriginName = string.Empty;
             _lambertPreviewDestinationName = string.Empty;
@@ -889,6 +1089,9 @@ namespace KMC.MissionControl.Pages
             _parkingAwareLambertPreview = null;
             _finiteSoiCorrection = null;
             _targetSoiShooting = null;
+            _targetSoiShootingFailureText = string.Empty;
+            _coupledFiniteSoiShadow = null;
+            _coupledFiniteSoiShadowFailureText = string.Empty;
             _lambertPreviewAttempted = true;
             _lambertPreviewOriginName = origin.Name ?? string.Empty;
             _lambertPreviewDestinationName =
@@ -939,7 +1142,29 @@ namespace KMC.MissionControl.Pages
                                 correction.CorrectedEjection;
                     }
 
+                    CoupledFiniteSoiShadowResult coupledShadow;
+                    string coupledShadowFailure;
+
+                    if (MapCoupledFiniteSoiShadowAdapter.TrySolve(
+                            packet,
+                            origin,
+                            destination,
+                            parkingAware.Transfer,
+                            parkingAware.Ejection,
+                            out coupledShadow,
+                            out coupledShadowFailure))
+                    {
+                        _coupledFiniteSoiShadow = coupledShadow;
+                        _coupledFiniteSoiShadowFailureText = string.Empty;
+                    }
+                    else
+                    {
+                        _coupledFiniteSoiShadowFailureText =
+                            coupledShadowFailure ?? string.Empty;
+                    }
+
                     TargetSoiShootingResult shooting;
+                    string shootingFailure;
 
                     if (MapTargetSoiShootingAdapter.TrySolve(
                             packet,
@@ -947,13 +1172,20 @@ namespace KMC.MissionControl.Pages
                             destination,
                             parkingAware,
                             _lambertEjectionPreview,
-                            out shooting))
+                            out shooting,
+                            out shootingFailure))
                     {
                         _targetSoiShooting = shooting;
+                        _targetSoiShootingFailureText = string.Empty;
 
                         if (shooting.CorrectedEjection != null)
                             _lambertEjectionPreview =
                                 shooting.CorrectedEjection;
+                    }
+                    else
+                    {
+                        _targetSoiShootingFailureText =
+                            shootingFailure ?? string.Empty;
                     }
                 }
                 else
@@ -966,6 +1198,63 @@ namespace KMC.MissionControl.Pages
                             out ejectionPreview))
                     {
                         _lambertEjectionPreview = ejectionPreview;
+
+                        /*
+                         * General 3D bootstrap fallback.
+                         *
+                         * A high-inclination/eccentric destination can produce a
+                         * perfectly valid Lambert + local 3D ejection while the
+                         * parking-aware finite-SOI ranking rejects every coarse
+                         * candidate. Do not drop back to the legacy prograde-only
+                         * path in that case. Let the target-SOI shooting solver
+                         * repair the full P/N/R burn directly from the valid
+                         * Lambert ejection seed.
+                         */
+                        CoupledFiniteSoiShadowResult directCoupledShadow;
+                        string directCoupledShadowFailure;
+
+                        if (MapCoupledFiniteSoiShadowAdapter.TrySolve(
+                                packet,
+                                origin,
+                                destination,
+                                preview,
+                                ejectionPreview,
+                                out directCoupledShadow,
+                                out directCoupledShadowFailure))
+                        {
+                            _coupledFiniteSoiShadow = directCoupledShadow;
+                            _coupledFiniteSoiShadowFailureText = string.Empty;
+                        }
+                        else
+                        {
+                            _coupledFiniteSoiShadowFailureText =
+                                directCoupledShadowFailure ?? string.Empty;
+                        }
+
+                        TargetSoiShootingResult directShooting;
+                        string directShootingFailure;
+
+                        if (MapTargetSoiShootingAdapter.TrySolve(
+                                packet,
+                                origin,
+                                destination,
+                                preview,
+                                ejectionPreview,
+                                out directShooting,
+                                out directShootingFailure))
+                        {
+                            _targetSoiShooting = directShooting;
+                            _targetSoiShootingFailureText = string.Empty;
+
+                            if (directShooting.CorrectedEjection != null)
+                                _lambertEjectionPreview =
+                                    directShooting.CorrectedEjection;
+                        }
+                        else
+                        {
+                            _targetSoiShootingFailureText =
+                                directShootingFailure ?? string.Empty;
+                        }
                     }
                 }
             }
@@ -1885,18 +2174,94 @@ namespace KMC.MissionControl.Pages
             LambertParkingOrbitEjectionSolution seedEjection,
             out TargetSoiShootingResult result)
         {
+            string ignoredFailure;
+
+            return
+                TrySolve(
+                    packet,
+                    origin,
+                    destination,
+                    parkingAware,
+                    seedEjection,
+                    out result,
+                    out ignoredFailure);
+        }
+
+        public static bool TrySolve(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            OrbitMapBody destination,
+            ParkingOrbitAwareTransferSolution parkingAware,
+            LambertParkingOrbitEjectionSolution seedEjection,
+            out TargetSoiShootingResult result,
+            out string failureReason)
+        {
             result = null;
+            failureReason = string.Empty;
+
+            if (parkingAware == null ||
+                parkingAware.Transfer == null)
+            {
+                failureReason = "NO PARKING-AWARE TRANSFER";
+                return false;
+            }
+
+            return
+                TrySolve(
+                    packet,
+                    origin,
+                    destination,
+                    parkingAware.Transfer,
+                    seedEjection,
+                    out result,
+                    out failureReason);
+        }
+
+        public static bool TrySolve(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            OrbitMapBody destination,
+            TransferSearchSolution transfer,
+            LambertParkingOrbitEjectionSolution seedEjection,
+            out TargetSoiShootingResult result)
+        {
+            string ignoredFailure;
+
+            return
+                TrySolve(
+                    packet,
+                    origin,
+                    destination,
+                    transfer,
+                    seedEjection,
+                    out result,
+                    out ignoredFailure);
+        }
+
+        public static bool TrySolve(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            OrbitMapBody destination,
+            TransferSearchSolution transfer,
+            LambertParkingOrbitEjectionSolution seedEjection,
+            out TargetSoiShootingResult result,
+            out string failureReason)
+        {
+            result = null;
+            failureReason = string.Empty;
 
             if (packet == null ||
                 origin == null ||
                 destination == null ||
-                parkingAware == null ||
-                parkingAware.Transfer == null ||
+                transfer == null ||
                 seedEjection == null ||
                 packet.ActiveOrbit == null ||
                 destination.Orbit == null ||
                 destination.SoiRadiusMeters <= 0.0)
+            {
+                failureReason = "MAP ADAPTER INPUT / BODY DATA";
                 return false;
+            }
 
             double parentMu;
 
@@ -1904,11 +2269,14 @@ namespace KMC.MissionControl.Pages
                     packet,
                     origin,
                     out parentMu))
+            {
+                failureReason = "PARENT MU UNAVAILABLE";
                 return false;
+            }
 
             return
                 TargetSoiShootingSolver.TrySolve(
-                    parkingAware.Transfer,
+                    transfer,
                     seedEjection,
                     OrbitMapNavigationAdapter.ToElements(
                         packet.ActiveOrbit),
@@ -1917,7 +2285,8 @@ namespace KMC.MissionControl.Pages
                     OrbitMapNavigationAdapter.ToBody(
                         destination),
                     parentMu,
-                    out result);
+                    out result,
+                    out failureReason);
         }
 
         private static bool TryResolveParentMu(
@@ -1985,6 +2354,99 @@ namespace KMC.MissionControl.Pages
         {
             return
                 !double.IsNaN(value) &&
+                !double.IsInfinity(value) &&
+                value > 0.0;
+        }
+    }
+
+
+    /// <summary>
+    /// Packet bridge for the 14.22.57 coupled finite-SOI optimizer shadow path.
+    /// The returned result is diagnostic-only and is never maneuver authority.
+    /// </summary>
+    internal static class MapCoupledFiniteSoiShadowAdapter
+    {
+        public static bool TrySolve(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            OrbitMapBody destination,
+            TransferSearchSolution transfer,
+            LambertParkingOrbitEjectionSolution bootstrapEjection,
+            out CoupledFiniteSoiShadowResult result,
+            out string failureReason)
+        {
+            result = null;
+            failureReason = string.Empty;
+
+            if (packet == null || origin == null || destination == null ||
+                transfer == null || bootstrapEjection == null ||
+                packet.ActiveOrbit == null || destination.Orbit == null)
+            {
+                failureReason = "COUPLED MAP ADAPTER INPUT";
+                return false;
+            }
+
+            double parentMu;
+            if (!TryResolveParentMu(packet, origin, out parentMu))
+            {
+                failureReason = "COUPLED PARENT MU UNAVAILABLE";
+                return false;
+            }
+
+            return CoupledFiniteSoiOptimizer.TrySolveShadow(
+                transfer,
+                bootstrapEjection,
+                OrbitMapNavigationAdapter.ToElements(packet.ActiveOrbit),
+                OrbitMapNavigationAdapter.ToBody(origin),
+                OrbitMapNavigationAdapter.ToBody(destination),
+                parentMu,
+                out result,
+                out failureReason);
+        }
+
+        private static bool TryResolveParentMu(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            out double parentMu)
+        {
+            parentMu = double.NaN;
+
+            if (packet == null || origin == null ||
+                string.IsNullOrWhiteSpace(origin.ParentName))
+                return false;
+
+            for (int i = 0; i < packet.Bodies.Count; i++)
+            {
+                OrbitMapBody body = packet.Bodies[i];
+                if (body == null)
+                    continue;
+
+                if (string.Equals(
+                        body.Name,
+                        origin.ParentName,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    IsFinitePositive(body.GravParameter))
+                {
+                    parentMu = body.GravParameter;
+                    return true;
+                }
+            }
+
+            if (origin.Orbit == null ||
+                !IsFinitePositive(origin.Orbit.SemiMajorAxisMeters) ||
+                !IsFinitePositive(origin.Orbit.PeriodSeconds))
+                return false;
+
+            double a = origin.Orbit.SemiMajorAxisMeters;
+            double period = origin.Orbit.PeriodSeconds;
+            double twoPi = 2.0 * Math.PI;
+            parentMu = twoPi * twoPi * a * a * a / (period * period);
+            return IsFinitePositive(parentMu);
+        }
+
+        private static bool IsFinitePositive(double value)
+        {
+            return !double.IsNaN(value) &&
                 !double.IsInfinity(value) &&
                 value > 0.0;
         }

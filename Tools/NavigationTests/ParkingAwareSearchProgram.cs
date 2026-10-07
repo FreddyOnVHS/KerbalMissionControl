@@ -8,7 +8,8 @@ internal static class ParkingAwareSearchProgram
 
     private static void Main()
     {
-        Run("parking-aware search returns ejection-ranked candidate", Basic);
+        Run("parking-aware search returns constrained minimum-DV bootstrap", Basic);
+        Run("parking-aware search preserves bootstrap when coarse constraint is unmet", BootstrapAvailable);
         Run("parking-aware search rejects invalid parking frame", InvalidFrame);
         Run("parking-aware search rejects impossible parking geometry", ImpossibleGeometry);
         Console.WriteLine("Parking-aware search: {0} passed, {1} failed", passed, failed);
@@ -106,6 +107,31 @@ internal static class ParkingAwareSearchProgram
         Check(
             Math.Abs(components - solution.EjectionScoreMetersPerSecond) < 1e-8,
             "components do not reproduce score");
+    }
+
+    private static void BootstrapAvailable()
+    {
+        ParkingOrbitAwareTransferSolution solution;
+
+        Check(
+            ParkingOrbitAwareLambertSearch.TryFindBest(
+                Request(),
+                Parking(),
+                0.5,
+                out solution),
+            "valid coarse search lost its optimization bootstrap");
+
+        Check(
+            solution != null &&
+            solution.Ejection != null &&
+            solution.FiniteSoiAssessment != null,
+            "bootstrap is incomplete");
+
+        Check(
+            solution.EjectionScoreMetersPerSecond > 0.0 &&
+            !double.IsNaN(solution.EjectionScoreMetersPerSecond) &&
+            !double.IsInfinity(solution.EjectionScoreMetersPerSecond),
+            "bootstrap departure DV is invalid");
     }
 
     private static void InvalidFrame()

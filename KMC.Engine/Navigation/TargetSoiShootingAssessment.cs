@@ -19,6 +19,18 @@ namespace KMC.Engine.Navigation
 
         public double TargetSoiEntryUniversalTimeSeconds { get; internal set; }
 
+        public KMC.Engine.CelestialMechanics.Vector3d TargetSoiEntryRelativePosition
+        {
+            get;
+            internal set;
+        }
+
+        public KMC.Engine.CelestialMechanics.Vector3d TargetSoiEntryRelativeVelocity
+        {
+            get;
+            internal set;
+        }
+
         public double DesiredPeriapsisRadiusMeters { get; internal set; }
 
         public double TargetPeriapsisRadiusMeters { get; internal set; }
@@ -26,6 +38,14 @@ namespace KMC.Engine.Navigation
         public double TargetPeriapsisAltitudeMeters { get; internal set; }
 
         public double TargetPeriapsisErrorMeters { get; internal set; }
+
+        public double TargetBPlaneRadiusMeters { get; internal set; }
+
+        public double DesiredBPlaneRadiusMeters { get; internal set; }
+
+        public double TargetBPlaneErrorMeters { get; internal set; }
+
+        public double TargetBPlaneErrorFractionOfSoi { get; internal set; }
 
         public bool PredictedCollision { get; internal set; }
 

@@ -11,7 +11,8 @@ namespace KMC.Engine.Navigation
             LambertParkingOrbitEjectionSolution correctedEjection,
             TargetSoiShootingAssessment correctedAssessment,
             int iterations,
-            int evaluations)
+            int evaluations,
+            bool bPlaneBootstrapApplied)
         {
             InitialEjection = initialEjection;
             InitialAssessment = initialAssessment;
@@ -19,6 +20,7 @@ namespace KMC.Engine.Navigation
             CorrectedAssessment = correctedAssessment;
             Iterations = iterations;
             Evaluations = evaluations;
+            BPlaneBootstrapApplied = bPlaneBootstrapApplied;
         }
 
         public LambertParkingOrbitEjectionSolution InitialEjection
@@ -48,6 +50,8 @@ namespace KMC.Engine.Navigation
         public int Iterations { get; private set; }
 
         public int Evaluations { get; private set; }
+
+        public bool BPlaneBootstrapApplied { get; private set; }
 
         public bool Applied
         {

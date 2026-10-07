@@ -42,6 +42,16 @@ internal static class Program
         Run("finite SOI local correction never worsens boundary state", FiniteSoiLocalCorrection);
         Run("target SOI shooting establishes encounter or improves miss distance", TargetSoiShooting);
         Run("target SOI shooting shapes a safe target periapsis", TargetSoiSafePeriapsis);
+        Run("target SOI shooting reports rejection diagnostics", TargetSoiDiagnostics);
+        Run("analytic hyperbolic SOI exit handles arbitrary 3D escape", HyperbolicSoiExit);
+        Run("target SOI optimization keeps DV as constrained objective", TargetSoiOptimizationPolicyRegression);
+        Run("target B-plane maps desired periapsis to impact parameter", TargetBPlaneRegression);
+        Run("target B-plane bootstrap constructs incoming SOI entry", TargetBPlaneBootstrapRegression);
+        Run("target terminal solve initializes from bounded B-plane bootstrap", TargetBPlaneTerminalInitializationRegression);
+        Run("target terminal solve preserves feasible encounter incumbent", TargetBPlaneIncumbentRegression);
+        Run("target terminal search varies B-plane azimuth and arrival epoch", TargetBPlaneConstraintSearchRegression);
+        Run("3D direct shooting bootstrap survives parking-aware rejection", DirectShootingBootstrap);
+        Run("same-parent planetary geometry regression matrix", PlanetGeometryRegressionMatrix);
         Run("MAP production node prefers Lambert PNR and retains legacy fallback", ProductionAuthorityPacket);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
@@ -902,6 +912,581 @@ internal static class Program
             Check(
                 !shot.PredictedCollision,
                 "corrected shooting still predicts collision");
+        }
+    }
+
+
+    private static void TargetSoiOptimizationPolicyRegression()
+    {
+        double seedDv = 3000.0;
+
+        Near(
+            TargetSoiOptimizationPolicy.
+                ComputeMaximumDepartureDeltaV(
+                    seedDv),
+            4500.0,
+            1e-9);
+
+        Check(
+            TargetSoiOptimizationPolicy.
+                IsWithinDepartureTrustRegion(
+                    seedDv,
+                    4499.0),
+            "valid constrained departure rejected");
+
+        Check(
+            !TargetSoiOptimizationPolicy.
+                IsWithinDepartureTrustRegion(
+                    seedDv,
+                    18000.0),
+            "runaway encounter DV accepted");
+
+        /*
+         * Do not construct TargetSoiShootingAssessment here. Its result
+         * properties are intentionally engine-owned/read-only outside the
+         * KMC.Engine assembly. This regression verifies the externally
+         * observable DV trust-region policy; periapsis feasibility is covered
+         * through the live shooting tests that create real assessments.
+         */
+        Check(
+            TargetSoiOptimizationPolicy.
+                ComputeMaximumDepartureDeltaV(
+                    seedDv) >
+                seedDv,
+            "departure trust region did not leave correction authority");
+    }
+
+    private static void TargetBPlaneRegression()
+    {
+        double actualB;
+        double desiredB;
+        double error;
+
+        /*
+         * Hyperbolic entry at r=10 with mu=1 and speed=1.
+         * The target relationship must return a finite desired impact
+         * parameter for rp=1 and a nonnegative geometry error.
+         */
+        Check(
+            TargetBPlanePlanner.TryCalculate(
+                new Vector3d(-9.0, 4.358898943540674, 0.0),
+                new Vector3d(1.0, 0.0, 0.0),
+                1.0,
+                10.0,
+                1.0,
+                out actualB,
+                out desiredB,
+                out error),
+            "B-plane calculation rejected valid hyperbolic entry");
+
+        double expectedVInfinity = Math.Sqrt(0.8);
+        double expectedAngularMomentum = 4.358898943540674;
+        double expectedActualB =
+            expectedAngularMomentum / expectedVInfinity;
+
+        Near(
+            actualB,
+            expectedActualB,
+            2e-12);
+
+        Near(
+            desiredB,
+            Math.Sqrt(3.5),
+            2e-12);
+
+        Check(
+            error >= 0.0 &&
+            !double.IsNaN(error) &&
+            !double.IsInfinity(error),
+            "B-plane error is invalid");
+    }
+
+    private static void TargetBPlaneBootstrapRegression()
+    {
+        Vector3d entry;
+        double desiredB;
+
+        Check(
+            TargetBPlaneBootstrapPlanner.TryBuildEntryOffset(
+                new Vector3d(1.0, 0.0, 0.0),
+                1.0,
+                10.0,
+                1.0,
+                0.0,
+                out entry,
+                out desiredB),
+            "B-plane entry bootstrap rejected valid geometry");
+
+        Near(
+            entry.Magnitude,
+            10.0,
+            2e-10);
+
+        Near(
+            desiredB,
+            Math.Sqrt(3.0),
+            2e-10);
+
+        Check(
+            entry.X < 0.0,
+            "B-plane entry is not upstream of incoming v-infinity");
+
+        Near(
+            Math.Sqrt(
+                entry.Y * entry.Y +
+                entry.Z * entry.Z),
+            desiredB,
+            2e-10);
+    }
+
+    private static void TargetBPlaneTerminalInitializationRegression()
+    {
+        string solverText =
+            System.IO.File.ReadAllText(
+                System.IO.Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory,
+                    "..",
+                    "..",
+                    "..",
+                    "..",
+                    "KMC.Engine",
+                    "Navigation",
+                    "TargetSoiShootingSolver.cs"));
+
+        int searchIndex =
+            solverText.IndexOf(
+                "RunBPlaneTerminalSearch",
+                StringComparison.Ordinal);
+
+        Check(
+            searchIndex >= 0,
+            "B-plane terminal search is missing");
+
+        int terminalIndex =
+            solverText.IndexOf(
+                "PASS 2 -- TERMINAL GEOMETRY",
+                searchIndex,
+                StringComparison.Ordinal);
+
+        Check(
+            terminalIndex > searchIndex,
+            "B-plane terminal search does not initialize terminal refinement");
+
+        Check(
+            solverText.IndexOf(
+                "IsWithinDepartureTrustRegion",
+                searchIndex,
+                StringComparison.Ordinal) >= 0,
+            "B-plane terminal search is not bounded by departure DV");
+    }
+
+    private static void TargetBPlaneIncumbentRegression()
+    {
+        string solverText =
+            System.IO.File.ReadAllText(
+                System.IO.Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory,
+                    "..",
+                    "..",
+                    "..",
+                    "..",
+                    "KMC.Engine",
+                    "Navigation",
+                    "TargetSoiShootingSolver.cs"));
+
+        Check(
+            solverText.IndexOf(
+                "encounterIncumbentEjection",
+                StringComparison.Ordinal) >= 0 &&
+            solverText.IndexOf(
+                "encounterIncumbentAssessment",
+                StringComparison.Ordinal) >= 0,
+            "terminal solve does not preserve a pre-B-plane incumbent");
+
+        int search =
+            solverText.IndexOf(
+                "RunBPlaneTerminalSearch",
+                StringComparison.Ordinal);
+
+        Check(
+            search >= 0,
+            "B-plane terminal search is missing");
+
+        Check(
+            solverText.IndexOf(
+                "trialAssessment.PredictedEncounter",
+                search,
+                StringComparison.Ordinal) >= 0,
+            "B-plane terminal search can promote non-encounter geometry");
+
+        int fallback =
+            solverText.IndexOf(
+                "The B-plane state is an optimizer initialization",
+                StringComparison.Ordinal);
+
+        Check(
+            fallback >= 0 &&
+            solverText.IndexOf(
+                "encounterIncumbentEjection",
+                fallback,
+                StringComparison.Ordinal) >= 0,
+            "terminal result has no incumbent fallback");
+    }
+
+    private static void TargetBPlaneConstraintSearchRegression()
+    {
+        string solverText =
+            System.IO.File.ReadAllText(
+                System.IO.Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory,
+                    "..",
+                    "..",
+                    "..",
+                    "..",
+                    "KMC.Engine",
+                    "Navigation",
+                    "TargetSoiShootingSolver.cs"));
+
+        int search =
+            solverText.IndexOf(
+                "RunBPlaneTerminalSearch",
+                StringComparison.Ordinal);
+
+        Check(
+            search >= 0,
+            "B-plane terminal constraint search is missing");
+
+        Check(
+            solverText.IndexOf(
+                "const int azimuthSamples = 16",
+                search,
+                StringComparison.Ordinal) >= 0,
+            "B-plane azimuth is not searched");
+
+        Check(
+            solverText.IndexOf(
+                "const int arrivalSamples = 7",
+                search,
+                StringComparison.Ordinal) >= 0,
+            "B-plane arrival epoch is not searched");
+
+        Check(
+            solverText.IndexOf(
+                "TryCreateEjectionAtEntry",
+                search,
+                StringComparison.Ordinal) >= 0,
+            "terminal search does not solve Lambert to finite SOI entry");
+
+        Check(
+            solverText.IndexOf(
+                "trialAssessment.PredictedEncounter",
+                search,
+                StringComparison.Ordinal) >= 0,
+            "terminal search can promote non-encounter geometry");
+    }
+
+    private static void HyperbolicSoiExit()
+    {
+        double mu = 1.0;
+
+        StateVector initial =
+            new StateVector(
+                new Vector3d(1.0, 0.0, 0.0),
+                new Vector3d(0.35, 1.55, 0.85),
+                1234.0,
+                mu,
+                "Origin");
+
+        double exitUt;
+        StateVector exitState;
+
+        Check(
+            HyperbolicSoiExitSolver.TrySolve(
+                initial,
+                25.0,
+                out exitUt,
+                out exitState),
+            "analytic 3D hyperbolic SOI crossing rejected");
+
+        Check(
+            exitState != null,
+            "analytic SOI exit state missing");
+
+        Near(
+            exitState.Position.Magnitude,
+            25.0,
+            2e-8);
+
+        Check(
+            exitUt > initial.UniversalTimeSeconds,
+            "analytic SOI exit is not in the future");
+
+        double initialEnergy =
+            0.5 *
+                Vector3d.Dot(
+                    initial.Velocity,
+                    initial.Velocity) -
+            mu /
+                initial.Position.Magnitude;
+
+        double exitEnergy =
+            0.5 *
+                Vector3d.Dot(
+                    exitState.Velocity,
+                    exitState.Velocity) -
+            mu /
+                exitState.Position.Magnitude;
+
+        Near(
+            exitEnergy,
+            initialEnergy,
+            2e-10);
+
+        Vector3d initialH =
+            Vector3d.Cross(
+                initial.Position,
+                initial.Velocity);
+
+        Vector3d exitH =
+            Vector3d.Cross(
+                exitState.Position,
+                exitState.Velocity);
+
+        Near(
+            exitH.Magnitude,
+            initialH.Magnitude,
+            2e-10);
+    }
+
+    private static void TargetSoiDiagnostics()
+    {
+        TargetSoiShootingResult result;
+        string failureReason;
+
+        Check(
+            !TargetSoiShootingSolver.TrySolve(
+                null,
+                null,
+                null,
+                null,
+                null,
+                double.NaN,
+                out result,
+                out failureReason),
+            "invalid shooting input unexpectedly succeeded");
+
+        Check(result == null, "invalid shooting returned a result");
+        Check(
+            !string.IsNullOrWhiteSpace(failureReason),
+            "shooting rejection did not report a diagnostic");
+        Check(
+            failureReason == "INVALID INPUT / MISSING BODY DATA",
+            "unexpected shooting diagnostic: " + failureReason);
+    }
+
+
+    private static void DirectShootingBootstrap()
+    {
+        OrbitMapBody origin, destination;
+        OrbitMapPacket packet;
+        Fixture(0, out origin, out destination, out packet);
+
+        packet.ReferenceBodyName = origin.Name;
+        packet.ActiveOrbit.ReferenceBodyName = origin.Name;
+
+        origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
+        origin.SoiRadiusMeters = 500000.0;
+
+        destination.RadiusMeters = 100000.0;
+        destination.SoiRadiusMeters = 5000000.0;
+        destination.GravParameter = 2.5e8;
+
+        // Deliberately stress inclination/eccentricity beyond the old Duna/Eve cases.
+        destination.Orbit.InclinationDegrees = 12.0;
+        destination.Orbit.Eccentricity = 0.18;
+        destination.Orbit.ArgumentOfPeriapsisDegrees = 75.0;
+        destination.Orbit.LongitudeOfAscendingNodeDegrees = 110.0;
+
+        origin.Orbit.ReferenceBodyName = origin.ParentName;
+        destination.Orbit.ReferenceBodyName = destination.ParentName;
+
+        packet.Bodies.Add(origin);
+        packet.Bodies.Add(destination);
+
+        TransferWindowSolution hohmann;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateTransferWindow(
+                origin,
+                destination,
+                packet.UniversalTimeSeconds,
+                out hohmann),
+            "3D bootstrap Hohmann seed unavailable");
+
+        TransferSearchSolution coarse;
+        string muSource;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateLambertPreview(
+                packet,
+                origin,
+                destination,
+                hohmann,
+                out coarse,
+                out muSource),
+            "3D bootstrap coarse Lambert unavailable");
+
+        LambertParkingOrbitEjectionSolution ejection;
+
+        Check(
+            OrbitMapNavigationAdapter.TryCalculateLambertParkingOrbitEjectionPreview(
+                packet,
+                origin,
+                coarse,
+                out ejection),
+            "3D bootstrap local ejection unavailable");
+
+        TargetSoiShootingResult shooting;
+
+        Check(
+            TargetSoiShootingSolver.TrySolve(
+                coarse,
+                ejection,
+                OrbitMapNavigationAdapter.ToElements(
+                    packet.ActiveOrbit),
+                OrbitMapNavigationAdapter.ToBody(
+                    origin),
+                OrbitMapNavigationAdapter.ToBody(
+                    destination),
+                1e12,
+                out shooting),
+            "direct 3D target shooting failed");
+
+        Check(shooting != null, "direct 3D shooting result missing");
+        Check(shooting.CorrectedEjection != null, "direct 3D corrected ejection missing");
+        Check(shooting.CorrectedAssessment != null, "direct 3D assessment missing");
+    }
+
+    private static void PlanetGeometryRegressionMatrix()
+    {
+        // These are geometry classes intentionally modeled after the stock
+        // same-parent planetary extremes. Runtime code remains body-agnostic.
+        double[,] cases =
+        {
+            // eccentricity, inclination deg, SMA scale, SOI scale
+            { 0.20, 7.0, 0.45, 0.35 },   // inner / high-inclination class (Moho-like)
+            { 0.15, 5.0, 2.10, 0.20 },   // eccentric inclined outer class (Dres-like)
+            { 0.05, 1.3, 3.80, 4.50 },   // giant-planet / huge-SOI class (Jool-like)
+            { 0.26, 6.0, 5.80, 0.75 }    // distant eccentric outer class (Eeloo-like)
+        };
+
+        for (int i = 0; i < cases.GetLength(0); i++)
+        {
+            OrbitMapBody origin, destination;
+            OrbitMapPacket packet;
+            Fixture(0, out origin, out destination, out packet);
+
+            packet.ReferenceBodyName = origin.Name;
+            packet.ActiveOrbit.ReferenceBodyName = origin.Name;
+
+            origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
+            origin.SoiRadiusMeters = 500000.0;
+
+            destination.RadiusMeters = 100000.0;
+            destination.GravParameter = 2.5e8;
+            destination.SoiRadiusMeters =
+                5000000.0 * cases[i, 3];
+
+            destination.Orbit.SemiMajorAxisMeters =
+                origin.Orbit.SemiMajorAxisMeters * cases[i, 2];
+
+            destination.Orbit.Eccentricity =
+                cases[i, 0];
+
+            destination.Orbit.InclinationDegrees =
+                cases[i, 1];
+
+            destination.Orbit.LongitudeOfAscendingNodeDegrees =
+                25.0 + 31.0 * i;
+
+            destination.Orbit.ArgumentOfPeriapsisDegrees =
+                40.0 + 37.0 * i;
+
+            destination.Orbit.PeriodSeconds =
+                2.0 * Math.PI *
+                Math.Sqrt(
+                    destination.Orbit.SemiMajorAxisMeters *
+                    destination.Orbit.SemiMajorAxisMeters *
+                    destination.Orbit.SemiMajorAxisMeters /
+                    1e12);
+
+            origin.Orbit.ReferenceBodyName = origin.ParentName;
+            destination.Orbit.ReferenceBodyName = destination.ParentName;
+
+            packet.Bodies.Add(origin);
+            packet.Bodies.Add(destination);
+
+            TransferWindowSolution hohmann;
+
+            Check(
+                OrbitMapNavigationAdapter.TryCalculateTransferWindow(
+                    origin,
+                    destination,
+                    packet.UniversalTimeSeconds,
+                    out hohmann),
+                "matrix Hohmann seed unavailable at case " + i);
+
+            TransferSearchSolution coarse;
+            string muSource;
+
+            Check(
+                OrbitMapNavigationAdapter.TryCalculateLambertPreview(
+                    packet,
+                    origin,
+                    destination,
+                    hohmann,
+                    out coarse,
+                    out muSource),
+                "matrix Lambert unavailable at case " + i);
+
+            LambertParkingOrbitEjectionSolution ejection;
+
+            Check(
+                OrbitMapNavigationAdapter.TryCalculateLambertParkingOrbitEjectionPreview(
+                    packet,
+                    origin,
+                    coarse,
+                    out ejection),
+                "matrix 3D ejection unavailable at case " + i);
+
+            TargetSoiShootingResult shooting;
+
+            Check(
+                TargetSoiShootingSolver.TrySolve(
+                    coarse,
+                    ejection,
+                    OrbitMapNavigationAdapter.ToElements(
+                        packet.ActiveOrbit),
+                    OrbitMapNavigationAdapter.ToBody(
+                        origin),
+                    OrbitMapNavigationAdapter.ToBody(
+                        destination),
+                    1e12,
+                    out shooting),
+                "matrix target shooting failed at case " + i);
+
+            Check(
+                shooting != null &&
+                shooting.CorrectedAssessment != null,
+                "matrix shooting result missing at case " + i);
+
+            // A regression case must at minimum remain finite and improve or
+            // establish the target encounter. We do not hardcode body-specific outcomes.
+            Check(
+                shooting.CorrectedAssessment.PredictedEncounter ||
+                shooting.CorrectedAssessment.MissDistanceMeters <=
+                    shooting.InitialAssessment.MissDistanceMeters + 1e-6,
+                "matrix shooting regressed at case " + i);
         }
     }
 

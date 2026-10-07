@@ -20,11 +20,17 @@ namespace KMC.Engine.Navigation
         private const int ExitBracketExpansions = 80;
         private const int ExitBisectionIterations = 64;
         private const int TargetEntryBisectionIterations = 56;
-        private const int MaximumIterations = 72;
+        private const int MaximumIterations = 96;
 
         private const double MinimumBurnUtStepSeconds = 0.25;
         private const double MinimumDvStepMetersPerSecond = 0.01;
         private const double MinimumArrivalStepSeconds = 1.0;
+
+        private enum OptimizationStage
+        {
+            Encounter,
+            Periapsis
+        }
 
         public static bool TrySolve(
             TransferSearchSolution transfer,
@@ -35,7 +41,32 @@ namespace KMC.Engine.Navigation
             double parentGravParameter,
             out TargetSoiShootingResult result)
         {
+            string ignoredFailureReason;
+
+            return
+                TrySolve(
+                    transfer,
+                    seedEjection,
+                    parkingOrbit,
+                    originBody,
+                    destinationBody,
+                    parentGravParameter,
+                    out result,
+                    out ignoredFailureReason);
+        }
+
+        public static bool TrySolve(
+            TransferSearchSolution transfer,
+            LambertParkingOrbitEjectionSolution seedEjection,
+            OrbitalElements parkingOrbit,
+            CelestialBodyState originBody,
+            CelestialBodyState destinationBody,
+            double parentGravParameter,
+            out TargetSoiShootingResult result,
+            out string failureReason)
+        {
             result = null;
+            failureReason = string.Empty;
 
             if (transfer == null ||
                 seedEjection == null ||
@@ -48,7 +79,10 @@ namespace KMC.Engine.Navigation
                 !FinitePositive(originBody.SoiRadiusMeters) ||
                 !FinitePositive(destinationBody.SoiRadiusMeters) ||
                 !FinitePositive(parentGravParameter))
+            {
+                failureReason = "INVALID INPUT / MISSING BODY DATA";
                 return false;
+            }
 
             double seedArrivalUt =
                 transfer.ArrivalUniversalTimeSeconds;
@@ -64,7 +98,33 @@ namespace KMC.Engine.Navigation
                     destinationBody,
                     parentGravParameter,
                     out seedAssessment))
+            {
+                failureReason =
+                    DiagnoseSeedFailure(
+                        transfer,
+                        seedEjection,
+                        seedArrivalUt,
+                        parkingOrbit,
+                        originBody,
+                        destinationBody,
+                        parentGravParameter);
                 return false;
+            }
+
+            double seedDv =
+                seedEjection.TotalDeltaVMetersPerSecond;
+
+            double maximumDv =
+                TargetSoiOptimizationPolicy.
+                    ComputeMaximumDepartureDeltaV(
+                        seedDv);
+
+            if (!FinitePositive(seedDv) ||
+                !FinitePositive(maximumDv))
+            {
+                failureReason = "INVALID DEPARTURE DV SEED";
+                return false;
+            }
 
             double parkingPeriod =
                 ResolveParkingPeriodSeconds(
@@ -76,24 +136,19 @@ namespace KMC.Engine.Navigation
                     3600.0,
                     transfer.TimeOfFlightSeconds);
 
-            double burnUtStep =
+            double initialBurnUtStep =
                 Clamp(
                     parkingPeriod / 24.0,
                     10.0,
                     240.0);
 
-            double dvScale =
-                Math.Max(
-                    1.0,
-                    seedEjection.TotalDeltaVMetersPerSecond);
-
-            double dvStep =
+            double initialDvStep =
                 Clamp(
-                    dvScale * 0.02,
+                    seedDv * 0.025,
                     2.0,
-                    40.0);
+                    80.0);
 
-            double arrivalStep =
+            double initialArrivalStep =
                 Clamp(
                     transferTime / 48.0,
                     1800.0,
@@ -104,10 +159,17 @@ namespace KMC.Engine.Navigation
                     120.0,
                     parkingPeriod * 0.50);
 
+            /*
+             * Keep KMC's coordinate box generous, but the actual vector
+             * magnitude is separately constrained by the seed-derived DV
+             * trust region. This is analogous to MechJeb's bounded variables:
+             * feasibility may move the burn, but cannot purchase an encounter
+             * with an arbitrarily expensive impulse.
+             */
             double componentHalfRange =
                 Math.Max(
-                    100.0,
-                    dvScale * 0.40);
+                    300.0,
+                    seedDv * 1.50);
 
             double arrivalHalfRange =
                 Math.Max(
@@ -168,139 +230,470 @@ namespace KMC.Engine.Navigation
             int evaluations = 1;
             int iterations = 0;
 
+            /*
+             * PASS 1 -- FEASIBILITY
+             *
+             * MechJeb first establishes a dynamically consistent trajectory
+             * before applying terminal conditions. KMC mirrors that behavior:
+             * establish target-SOI encounter while respecting the departure-DV
+             * trust region.
+             */
+            RunStage(
+                OptimizationStage.Encounter,
+                48,
+                transfer,
+                seedEjection,
+                parkingOrbit,
+                originBody,
+                destinationBody,
+                parentGravParameter,
+                seedDv,
+                maximumDv,
+                initialBurnUtStep,
+                initialDvStep,
+                initialArrivalStep,
+                minBurnUt,
+                maxBurnUt,
+                minP,
+                maxP,
+                minN,
+                maxN,
+                minR,
+                maxR,
+                minArrivalUt,
+                maxArrivalUt,
+                ref bestEjection,
+                ref bestAssessment,
+                ref evaluations,
+                ref iterations);
+
+            bool bPlaneBootstrapApplied =
+                false;
+
+            LambertParkingOrbitEjectionSolution encounterIncumbentEjection =
+                bestEjection;
+
+            TargetSoiShootingAssessment encounterIncumbentAssessment =
+                bestAssessment;
+
+            /*
+             * B-PLANE TERMINAL CONSTRAINT SEARCH
+             *
+             * MechJeb includes target-SOI position/velocity in the nonlinear
+             * transfer constraints. KMC's bounded optimizer cannot express
+             * that full SQP problem directly, so search the equivalent
+             * terminal geometry explicitly:
+             *
+             * - keep the established encounter as incumbent;
+             * - use its live target-relative SOI-entry velocity as the
+             *   incoming B-plane direction;
+             * - vary target B-plane azimuth and arrival epoch;
+             * - solve a new parent-frame Lambert leg to that finite SOI point;
+             * - convert the departure vector through the general 3D parking
+             *   ejection solver;
+             * - accept only candidates inside the departure-DV trust region;
+             * - evaluate the full finite-SOI trajectory before ranking.
+             */
+            if (bestAssessment.PredictedEncounter &&
+                FinitePositive(
+                    bestAssessment.DesiredPeriapsisRadiusMeters) &&
+                bestAssessment.TargetSoiEntryRelativeVelocity.IsFinite &&
+                FinitePositive(
+                    bestAssessment.TargetSoiEntryRelativeVelocity.Magnitude))
+            {
+                RunBPlaneTerminalSearch(
+                    transfer,
+                    parkingOrbit,
+                    originBody,
+                    destinationBody,
+                    parentGravParameter,
+                    seedDv,
+                    bestAssessment.TargetSoiEntryRelativeVelocity,
+                    bestAssessment.DesiredPeriapsisRadiusMeters,
+                    minArrivalUt,
+                    maxArrivalUt,
+                    ref bestEjection,
+                    ref bestAssessment,
+                    ref evaluations,
+                    ref bPlaneBootstrapApplied);
+            }
+
+            /*
+             * PASS 2 -- TERMINAL GEOMETRY
+             *
+             * Only after an encounter exists do we turn on periapsis/B-plane
+             * shaping. Once the periapsis constraint is feasible, departure DV
+             * becomes the primary objective again.
+             */
+            if (bestAssessment.PredictedEncounter)
+            {
+                RunStage(
+                    OptimizationStage.Periapsis,
+                    48,
+                    transfer,
+                    seedEjection,
+                    parkingOrbit,
+                    originBody,
+                    destinationBody,
+                    parentGravParameter,
+                    seedDv,
+                    maximumDv,
+                    initialBurnUtStep * 0.5,
+                    initialDvStep * 0.5,
+                    initialArrivalStep * 0.5,
+                    minBurnUt,
+                    maxBurnUt,
+                    minP,
+                    maxP,
+                    minN,
+                    maxN,
+                    minR,
+                    maxR,
+                    minArrivalUt,
+                    maxArrivalUt,
+                    ref bestEjection,
+                    ref bestAssessment,
+                    ref evaluations,
+                    ref iterations);
+            }
+
+            /*
+             * The B-plane state is an optimizer initialization, not authority
+             * to discard a known-good encounter. If terminal refinement does
+             * not beat the encounter incumbent under the terminal objective,
+             * preserve the incumbent.
+             */
+            if (encounterIncumbentAssessment != null &&
+                encounterIncumbentAssessment.PredictedEncounter &&
+                !IsBetter(
+                    OptimizationStage.Periapsis,
+                    bestEjection,
+                    bestAssessment,
+                    encounterIncumbentEjection,
+                    encounterIncumbentAssessment))
+            {
+                bestEjection =
+                    encounterIncumbentEjection;
+
+                bestAssessment =
+                    encounterIncumbentAssessment;
+
+                bPlaneBootstrapApplied =
+                    false;
+            }
+
+            result =
+                new TargetSoiShootingResult(
+                    seedEjection,
+                    seedAssessment,
+                    bestEjection,
+                    bestAssessment,
+                    iterations,
+                    evaluations,
+                    bPlaneBootstrapApplied);
+
+            return true;
+        }
+
+        private static void RunBPlaneTerminalSearch(
+            TransferSearchSolution transfer,
+            OrbitalElements parkingOrbit,
+            CelestialBodyState originBody,
+            CelestialBodyState destinationBody,
+            double parentMu,
+            double seedDv,
+            Vector3d incomingTargetRelativeVelocity,
+            double desiredPeriapsisRadius,
+            double minArrivalUt,
+            double maxArrivalUt,
+            ref LambertParkingOrbitEjectionSolution bestEjection,
+            ref TargetSoiShootingAssessment bestAssessment,
+            ref int evaluations,
+            ref bool bPlaneApplied)
+        {
+            const int azimuthSamples = 16;
+            const int arrivalSamples = 7;
+            const int refinementPasses = 3;
+
+            double centerArrivalUt =
+                bestAssessment.ArrivalUniversalTimeSeconds;
+
+            double arrivalHalfSpan =
+                Math.Min(
+                    Math.Max(
+                        1800.0,
+                        (maxArrivalUt - minArrivalUt) * 0.25),
+                    172800.0);
+
+            double centerAzimuth =
+                0.0;
+
+            LambertParkingOrbitEjectionSolution searchBestEjection =
+                bestEjection;
+
+            TargetSoiShootingAssessment searchBestAssessment =
+                bestAssessment;
+
+            bool improved =
+                false;
+
+            for (int pass = 0;
+                pass < refinementPasses;
+                pass++)
+            {
+                LambertParkingOrbitEjectionSolution passBestEjection =
+                    searchBestEjection;
+
+                TargetSoiShootingAssessment passBestAssessment =
+                    searchBestAssessment;
+
+                double passBestAzimuth =
+                    centerAzimuth;
+
+                double passBestArrival =
+                    centerArrivalUt;
+
+                for (int ai = 0;
+                    ai < arrivalSamples;
+                    ai++)
+                {
+                    double arrivalFraction =
+                        arrivalSamples == 1
+                            ? 0.0
+                            : ai /
+                                (double)(arrivalSamples - 1);
+
+                    double arrivalUt =
+                        centerArrivalUt +
+                        (arrivalFraction * 2.0 - 1.0) *
+                        arrivalHalfSpan;
+
+                    arrivalUt =
+                        Clamp(
+                            arrivalUt,
+                            minArrivalUt,
+                            maxArrivalUt);
+
+                    for (int bi = 0;
+                        bi < azimuthSamples;
+                        bi++)
+                    {
+                        double azimuth =
+                            centerAzimuth +
+                            2.0 * Math.PI *
+                            bi /
+                            azimuthSamples;
+
+                        LambertParkingOrbitEjectionSolution trialEjection;
+                        double desiredB;
+
+                        if (!TargetBPlaneBootstrapPlanner.
+                                TryCreateEjectionAtEntry(
+                                    transfer,
+                                    parkingOrbit,
+                                    originBody,
+                                    destinationBody,
+                                    parentMu,
+                                    incomingTargetRelativeVelocity,
+                                    desiredPeriapsisRadius,
+                                    arrivalUt,
+                                    azimuth,
+                                    out trialEjection,
+                                    out desiredB))
+                            continue;
+
+                        if (!TargetSoiOptimizationPolicy.
+                                IsWithinDepartureTrustRegion(
+                                    seedDv,
+                                    trialEjection.TotalDeltaVMetersPerSecond))
+                            continue;
+
+                        TargetSoiShootingAssessment trialAssessment;
+
+                        if (!TryEvaluate(
+                                transfer,
+                                trialEjection,
+                                arrivalUt,
+                                parkingOrbit,
+                                originBody,
+                                destinationBody,
+                                parentMu,
+                                out trialAssessment))
+                            continue;
+
+                        evaluations++;
+
+                        if (!trialAssessment.PredictedEncounter)
+                            continue;
+
+                        if (!IsBetter(
+                                OptimizationStage.Periapsis,
+                                trialEjection,
+                                trialAssessment,
+                                passBestEjection,
+                                passBestAssessment))
+                            continue;
+
+                        passBestEjection =
+                            trialEjection;
+
+                        passBestAssessment =
+                            trialAssessment;
+
+                        passBestAzimuth =
+                            azimuth;
+
+                        passBestArrival =
+                            arrivalUt;
+                    }
+                }
+
+                if (passBestEjection != searchBestEjection ||
+                    passBestAssessment != searchBestAssessment)
+                {
+                    searchBestEjection =
+                        passBestEjection;
+
+                    searchBestAssessment =
+                        passBestAssessment;
+
+                    centerAzimuth =
+                        passBestAzimuth;
+
+                    centerArrivalUt =
+                        passBestArrival;
+
+                    improved =
+                        true;
+                }
+
+                arrivalHalfSpan *=
+                    0.35;
+            }
+
+            if (improved &&
+                IsBetter(
+                    OptimizationStage.Periapsis,
+                    searchBestEjection,
+                    searchBestAssessment,
+                    bestEjection,
+                    bestAssessment))
+            {
+                bestEjection =
+                    searchBestEjection;
+
+                bestAssessment =
+                    searchBestAssessment;
+
+                bPlaneApplied =
+                    true;
+            }
+        }
+
+        private static void RunStage(
+            OptimizationStage stage,
+            int maximumIterations,
+            TransferSearchSolution transfer,
+            LambertParkingOrbitEjectionSolution seed,
+            OrbitalElements parkingOrbit,
+            CelestialBodyState originBody,
+            CelestialBodyState destinationBody,
+            double parentMu,
+            double seedDv,
+            double maximumDv,
+            double initialBurnUtStep,
+            double initialDvStep,
+            double initialArrivalStep,
+            double minBurnUt,
+            double maxBurnUt,
+            double minP,
+            double maxP,
+            double minN,
+            double maxN,
+            double minR,
+            double maxR,
+            double minArrivalUt,
+            double maxArrivalUt,
+            ref LambertParkingOrbitEjectionSolution bestEjection,
+            ref TargetSoiShootingAssessment bestAssessment,
+            ref int evaluations,
+            ref int iterations)
+        {
+            double burnUtStep =
+                Math.Max(
+                    MinimumBurnUtStepSeconds,
+                    initialBurnUtStep);
+
+            double dvStep =
+                Math.Max(
+                    MinimumDvStepMetersPerSecond,
+                    initialDvStep);
+
+            double arrivalStep =
+                Math.Max(
+                    MinimumArrivalStepSeconds,
+                    initialArrivalStep);
+
             for (int iteration = 0;
-                iteration < MaximumIterations;
+                iteration < maximumIterations;
                 iteration++)
             {
-                iterations = iteration + 1;
+                iterations++;
                 bool improved = false;
 
-                improved |= TryAxis(
-                    transfer,
-                    seedEjection,
-                    parkingOrbit,
-                    originBody,
-                    destinationBody,
-                    parentGravParameter,
-                    0,
-                    burnUtStep,
-                    minBurnUt,
-                    maxBurnUt,
-                    minP,
-                    maxP,
-                    minN,
-                    maxN,
-                    minR,
-                    maxR,
-                    minArrivalUt,
-                    maxArrivalUt,
-                    ref bestEjection,
-                    ref bestAssessment,
-                    ref evaluations);
+                for (int axis = 0;
+                    axis < 5;
+                    axis++)
+                {
+                    double step =
+                        axis == 0
+                            ? burnUtStep
+                            : axis == 4
+                                ? arrivalStep
+                                : dvStep;
 
-                improved |= TryAxis(
-                    transfer,
-                    seedEjection,
-                    parkingOrbit,
-                    originBody,
-                    destinationBody,
-                    parentGravParameter,
-                    1,
-                    dvStep,
-                    minBurnUt,
-                    maxBurnUt,
-                    minP,
-                    maxP,
-                    minN,
-                    maxN,
-                    minR,
-                    maxR,
-                    minArrivalUt,
-                    maxArrivalUt,
-                    ref bestEjection,
-                    ref bestAssessment,
-                    ref evaluations);
+                    improved |= TryAxis(
+                        stage,
+                        transfer,
+                        seed,
+                        parkingOrbit,
+                        originBody,
+                        destinationBody,
+                        parentMu,
+                        seedDv,
+                        maximumDv,
+                        axis,
+                        step,
+                        minBurnUt,
+                        maxBurnUt,
+                        minP,
+                        maxP,
+                        minN,
+                        maxN,
+                        minR,
+                        maxR,
+                        minArrivalUt,
+                        maxArrivalUt,
+                        ref bestEjection,
+                        ref bestAssessment,
+                        ref evaluations);
+                }
 
-                improved |= TryAxis(
-                    transfer,
-                    seedEjection,
-                    parkingOrbit,
-                    originBody,
-                    destinationBody,
-                    parentGravParameter,
-                    2,
-                    dvStep,
-                    minBurnUt,
-                    maxBurnUt,
-                    minP,
-                    maxP,
-                    minN,
-                    maxN,
-                    minR,
-                    maxR,
-                    minArrivalUt,
-                    maxArrivalUt,
-                    ref bestEjection,
-                    ref bestAssessment,
-                    ref evaluations);
-
-                improved |= TryAxis(
-                    transfer,
-                    seedEjection,
-                    parkingOrbit,
-                    originBody,
-                    destinationBody,
-                    parentGravParameter,
-                    3,
-                    dvStep,
-                    minBurnUt,
-                    maxBurnUt,
-                    minP,
-                    maxP,
-                    minN,
-                    maxN,
-                    minR,
-                    maxR,
-                    minArrivalUt,
-                    maxArrivalUt,
-                    ref bestEjection,
-                    ref bestAssessment,
-                    ref evaluations);
-
-                improved |= TryAxis(
-                    transfer,
-                    seedEjection,
-                    parkingOrbit,
-                    originBody,
-                    destinationBody,
-                    parentGravParameter,
-                    4,
-                    arrivalStep,
-                    minBurnUt,
-                    maxBurnUt,
-                    minP,
-                    maxP,
-                    minN,
-                    maxN,
-                    minR,
-                    maxR,
-                    minArrivalUt,
-                    maxArrivalUt,
-                    ref bestEjection,
-                    ref bestAssessment,
-                    ref evaluations);
-
-                if (bestAssessment.PredictedEncounter &&
-                    Vector3d.Finite(
-                        bestAssessment.TargetPeriapsisErrorMeters) &&
-                    bestAssessment.TargetPeriapsisErrorMeters <=
-                        Math.Max(
-                            1000.0,
-                            bestAssessment.DesiredPeriapsisRadiusMeters *
-                                0.0025) &&
+                if (stage == OptimizationStage.Periapsis &&
+                    TargetSoiOptimizationPolicy.
+                        IsPeriapsisFeasible(
+                            bestAssessment) &&
                     burnUtStep <= 2.0 &&
                     dvStep <= 0.10 &&
                     arrivalStep <= 30.0)
+                    break;
+
+                /*
+                 * Once feasibility is established in pass 1, stop there.
+                 * Periapsis shaping belongs to pass 2, not the encounter pass.
+                 */
+                if (stage == OptimizationStage.Encounter &&
+                    bestAssessment.PredictedEncounter)
                     break;
 
                 if (!improved)
@@ -315,26 +708,18 @@ namespace KMC.Engine.Navigation
                     arrivalStep < MinimumArrivalStepSeconds)
                     break;
             }
-
-            result =
-                new TargetSoiShootingResult(
-                    seedEjection,
-                    seedAssessment,
-                    bestEjection,
-                    bestAssessment,
-                    iterations,
-                    evaluations);
-
-            return true;
         }
 
         private static bool TryAxis(
+            OptimizationStage stage,
             TransferSearchSolution transfer,
             LambertParkingOrbitEjectionSolution seed,
             OrbitalElements parkingOrbit,
             CelestialBodyState originBody,
             CelestialBodyState destinationBody,
             double parentMu,
+            double seedDv,
+            double maximumDv,
             int axis,
             double step,
             double minBurnUt,
@@ -404,6 +789,14 @@ namespace KMC.Engine.Navigation
                         n,
                         r);
 
+                if (!TargetSoiOptimizationPolicy.
+                        IsWithinDepartureTrustRegion(
+                            seedDv,
+                            trial.TotalDeltaVMetersPerSecond) ||
+                    trial.TotalDeltaVMetersPerSecond >
+                        maximumDv + 1e-9)
+                    continue;
+
                 TargetSoiShootingAssessment assessment;
 
                 if (!TryEvaluate(
@@ -420,6 +813,7 @@ namespace KMC.Engine.Navigation
                 evaluations++;
 
                 if (!IsBetter(
+                        stage,
                         trial,
                         assessment,
                         bestEjection,
@@ -607,8 +1001,26 @@ namespace KMC.Engine.Navigation
             double periapsisError =
                 double.PositiveInfinity;
 
+            double bPlaneRadius =
+                double.NaN;
+
+            double desiredBPlaneRadius =
+                double.NaN;
+
+            double bPlaneError =
+                double.PositiveInfinity;
+
+            double bPlaneErrorFraction =
+                double.PositiveInfinity;
+
             bool collision =
                 false;
+
+            Vector3d targetEntryRelativePosition =
+                new Vector3d();
+
+            Vector3d targetEntryRelativeVelocity =
+                new Vector3d();
 
             if (predictedEncounter &&
                 FinitePositive(destinationBody.GravParameter) &&
@@ -636,6 +1048,12 @@ namespace KMC.Engine.Navigation
                         spacecraftEntry.Velocity -
                         destinationEntry.Velocity;
 
+                    targetEntryRelativePosition =
+                        relativeEntryPosition;
+
+                    targetEntryRelativeVelocity =
+                        relativeEntryVelocity;
+
                     if (TryCalculatePeriapsisRadius(
                             relativeEntryPosition,
                             relativeEntryVelocity,
@@ -654,6 +1072,21 @@ namespace KMC.Engine.Navigation
                         collision =
                             periapsisRadius <=
                             destinationBody.RadiusMeters;
+
+                        if (TargetBPlanePlanner.TryCalculate(
+                                relativeEntryPosition,
+                                relativeEntryVelocity,
+                                destinationBody.GravParameter,
+                                destinationBody.SoiRadiusMeters,
+                                desiredPeriapsis,
+                                out bPlaneRadius,
+                                out desiredBPlaneRadius,
+                                out bPlaneError))
+                        {
+                            bPlaneErrorFraction =
+                                bPlaneError /
+                                destinationBody.SoiRadiusMeters;
+                        }
                     }
                 }
             }
@@ -674,6 +1107,10 @@ namespace KMC.Engine.Navigation
                         relativeSpeed,
                     TargetSoiEntryUniversalTimeSeconds =
                         entryUt,
+                    TargetSoiEntryRelativePosition =
+                        targetEntryRelativePosition,
+                    TargetSoiEntryRelativeVelocity =
+                        targetEntryRelativeVelocity,
                     DesiredPeriapsisRadiusMeters =
                         desiredPeriapsis,
                     TargetPeriapsisRadiusMeters =
@@ -682,6 +1119,14 @@ namespace KMC.Engine.Navigation
                         periapsisAltitude,
                     TargetPeriapsisErrorMeters =
                         periapsisError,
+                    TargetBPlaneRadiusMeters =
+                        bPlaneRadius,
+                    DesiredBPlaneRadiusMeters =
+                        desiredBPlaneRadius,
+                    TargetBPlaneErrorMeters =
+                        bPlaneError,
+                    TargetBPlaneErrorFractionOfSoi =
+                        bPlaneErrorFraction,
                     PredictedCollision =
                         collision,
                     SourceLambertVelocityMismatchMetersPerSecond =
@@ -693,7 +1138,133 @@ namespace KMC.Engine.Navigation
             return true;
         }
 
+        private static string DiagnoseSeedFailure(
+            TransferSearchSolution transfer,
+            LambertParkingOrbitEjectionSolution ejection,
+            double arrivalUt,
+            OrbitalElements parkingOrbit,
+            CelestialBodyState originBody,
+            CelestialBodyState destinationBody,
+            double parentMu)
+        {
+            if (!FinitePositive(arrivalUt) ||
+                arrivalUt <= ejection.BurnUniversalTimeSeconds)
+                return "ARRIVAL UT <= BURN UT";
+
+            StateVector parkingState;
+
+            if (!KeplerPropagator.TryPropagate(
+                    parkingOrbit,
+                    originBody.GravParameter,
+                    ejection.BurnUniversalTimeSeconds,
+                    out parkingState))
+                return "PARKING STATE PROPAGATION";
+
+            Vector3d prograde;
+            Vector3d normal;
+            Vector3d radial;
+
+            if (!TryNormalize(
+                    parkingState.Velocity,
+                    out prograde) ||
+                !TryNormalize(
+                    Vector3d.Cross(
+                        parkingState.Position,
+                        parkingState.Velocity),
+                    out normal) ||
+                !TryNormalize(
+                    Vector3d.Cross(
+                        prograde,
+                        normal),
+                    out radial))
+                return "PARKING P/N/R FRAME";
+
+            Vector3d postBurnVelocity =
+                parkingState.Velocity +
+                prograde *
+                    ejection.ProgradeDeltaVMetersPerSecond +
+                normal *
+                    ejection.NormalDeltaVMetersPerSecond +
+                radial *
+                    ejection.RadialDeltaVMetersPerSecond;
+
+            StateVector relativeBurnState =
+                new StateVector(
+                    parkingState.Position,
+                    postBurnVelocity,
+                    ejection.BurnUniversalTimeSeconds,
+                    originBody.GravParameter,
+                    originBody.Name);
+
+            double exitUt;
+            StateVector relativeExitState;
+
+            if (!TryFindSoiExit(
+                    relativeBurnState,
+                    originBody.SoiRadiusMeters,
+                    Math.Max(
+                        1.0,
+                        ejection.HyperbolicExcessSpeedMetersPerSecond),
+                    out exitUt,
+                    out relativeExitState))
+                return "SOURCE SOI EXIT";
+
+            if (arrivalUt <= exitUt + 1.0)
+                return "ARRIVAL BEFORE SOURCE SOI EXIT";
+
+            StateVector originExitState;
+
+            if (!KeplerPropagator.TryPropagate(
+                    originBody.Orbit,
+                    parentMu,
+                    exitUt,
+                    out originExitState))
+                return "ORIGIN PARENT STATE AT EXIT";
+
+            StateVector actualExit =
+                new StateVector(
+                    originExitState.Position +
+                        relativeExitState.Position,
+                    originExitState.Velocity +
+                        relativeExitState.Velocity,
+                    exitUt,
+                    parentMu,
+                    originBody.ParentName);
+
+            StateVector actualArrival;
+
+            if (!StateVectorPropagator.TryPropagate(
+                    actualExit,
+                    arrivalUt,
+                    out actualArrival))
+                return "PARENT-FRAME COAST TO ARRIVAL";
+
+            StateVector destinationArrival;
+
+            if (!KeplerPropagator.TryPropagate(
+                    destinationBody.Orbit,
+                    parentMu,
+                    arrivalUt,
+                    out destinationArrival))
+                return "DESTINATION STATE AT ARRIVAL";
+
+            double missDistance =
+                (actualArrival.Position -
+                 destinationArrival.Position).Magnitude;
+
+            double relativeSpeed =
+                (actualArrival.Velocity -
+                 destinationArrival.Velocity).Magnitude;
+
+            if (!Vector3d.Finite(missDistance) ||
+                !Vector3d.Finite(relativeSpeed))
+                return "NONFINITE ARRIVAL ASSESSMENT";
+
+            return "ASSESSMENT FINALIZATION";
+        }
+
         private static bool IsBetter(
+            OptimizationStage stage,
             LambertParkingOrbitEjectionSolution candidateEjection,
             TargetSoiShootingAssessment candidate,
             LambertParkingOrbitEjectionSolution bestEjection,
@@ -705,95 +1276,113 @@ namespace KMC.Engine.Navigation
             if (best == null)
                 return true;
 
-            /*
-             * Stage 1: establish an encounter.
-             *
-             * Until both candidates enter the target SOI, lower parent-frame
-             * miss distance remains the objective.
-             */
-            if (candidate.PredictedEncounter !=
-                best.PredictedEncounter)
-            {
-                return
-                    candidate.PredictedEncounter;
-            }
-
-            if (!candidate.PredictedEncounter)
-            {
-                double missTolerance =
-                    Math.Max(
-                        1e-3,
-                        Math.Max(
-                            candidate.MissDistanceMeters,
-                            best.MissDistanceMeters) *
-                        1e-12);
-
-                double missDifference =
-                    candidate.MissDistanceMeters -
-                    best.MissDistanceMeters;
-
-                if (missDifference < -missTolerance)
-                    return true;
-
-                if (Math.Abs(missDifference) >
-                    missTolerance)
-                    return false;
-            }
-            else
+            if (stage == OptimizationStage.Encounter)
             {
                 /*
-                 * Stage 2: once both trajectories enter the SOI, stop aiming
-                 * at the body center. Shape the target-relative hyperbola
-                 * toward the desired periapsis radius.
+                 * Feasibility pass:
+                 * - an encounter is a constraint transition;
+                 * - before feasibility, reduce miss distance;
+                 * - once both are encounters, minimize departure DV.
                  */
-                double candidatePeError =
-                    candidate.TargetPeriapsisErrorMeters;
+                if (candidate.PredictedEncounter !=
+                    best.PredictedEncounter)
+                    return candidate.PredictedEncounter;
 
-                double bestPeError =
-                    best.TargetPeriapsisErrorMeters;
-
-                if (Vector3d.Finite(candidatePeError) &&
-                    Vector3d.Finite(bestPeError))
+                if (!candidate.PredictedEncounter)
                 {
-                    double peTolerance =
+                    double missTolerance =
                         Math.Max(
-                            0.10,
+                            1e-3,
                             Math.Max(
-                                candidate.DesiredPeriapsisRadiusMeters,
-                                best.DesiredPeriapsisRadiusMeters) *
-                            1e-10);
+                                candidate.MissDistanceMeters,
+                                best.MissDistanceMeters) *
+                            1e-12);
 
-                    double peDifference =
-                        candidatePeError -
-                        bestPeError;
-
-                    if (peDifference < -peTolerance)
+                    if (candidate.MissDistanceMeters <
+                        best.MissDistanceMeters -
+                        missTolerance)
                         return true;
 
-                    if (Math.Abs(peDifference) >
-                        peTolerance)
+                    if (candidate.MissDistanceMeters >
+                        best.MissDistanceMeters +
+                        missTolerance)
                         return false;
                 }
 
-                if (candidate.PredictedCollision !=
-                    best.PredictedCollision)
-                {
-                    return
-                        !candidate.PredictedCollision;
-                }
+                return
+                    candidateEjection.TotalDeltaVMetersPerSecond <
+                    bestEjection.TotalDeltaVMetersPerSecond -
+                    1e-9;
             }
 
-            if (candidate.SourceLambertVelocityMismatchMetersPerSecond <
-                best.SourceLambertVelocityMismatchMetersPerSecond - 1e-9)
+            /*
+             * Terminal-geometry pass:
+             * never sacrifice the target encounter.
+             */
+            if (!candidate.PredictedEncounter)
+                return false;
+
+            if (!best.PredictedEncounter)
                 return true;
 
-            if (candidate.SourceLambertVelocityMismatchMetersPerSecond >
-                best.SourceLambertVelocityMismatchMetersPerSecond + 1e-9)
+            bool candidateFeasible =
+                TargetSoiOptimizationPolicy.
+                    IsPeriapsisFeasible(
+                        candidate);
+
+            bool bestFeasible =
+                TargetSoiOptimizationPolicy.
+                    IsPeriapsisFeasible(
+                        best);
+
+            if (candidateFeasible !=
+                bestFeasible)
+                return candidateFeasible;
+
+            if (candidateFeasible)
+            {
+                /*
+                 * Once encounter + safe periapsis constraints are satisfied,
+                 * departure DV is the actual objective, as in MechJeb's
+                 * constrained optimization.
+                 */
+                double dvDifference =
+                    candidateEjection.TotalDeltaVMetersPerSecond -
+                    bestEjection.TotalDeltaVMetersPerSecond;
+
+                if (dvDifference < -1e-9)
+                    return true;
+
+                if (dvDifference > 1e-9)
+                    return false;
+
+                return
+                    candidate.TargetPeriapsisErrorMeters <
+                    best.TargetPeriapsisErrorMeters;
+            }
+
+            double candidateConstraintScore =
+                TargetSoiOptimizationPolicy.
+                    ComputePeriapsisConstraintScore(
+                        candidate);
+
+            double bestConstraintScore =
+                TargetSoiOptimizationPolicy.
+                    ComputePeriapsisConstraintScore(
+                        best);
+
+            if (candidateConstraintScore <
+                bestConstraintScore - 1e-12)
+                return true;
+
+            if (candidateConstraintScore >
+                bestConstraintScore + 1e-12)
                 return false;
 
             return
                 candidateEjection.TotalDeltaVMetersPerSecond <
-                bestEjection.TotalDeltaVMetersPerSecond;
+                bestEjection.TotalDeltaVMetersPerSecond -
+                1e-9;
         }
 
         private static double ComputeDesiredPeriapsisRadius(
@@ -1071,6 +1660,19 @@ namespace KMC.Engine.Navigation
         {
             exitUt = double.NaN;
             exitState = null;
+
+            /*
+             * Primary path: solve the outbound hyperbolic SOI crossing
+             * directly from the osculating two-body conic. This is both
+             * cheaper and more robust than asking the generic Cartesian
+             * propagator to bracket a very long escape coast.
+             */
+            if (HyperbolicSoiExitSolver.TrySolve(
+                    initial,
+                    soiRadius,
+                    out exitUt,
+                    out exitState))
+                return true;
 
             double initialRadius =
                 initial.Position.Magnitude;

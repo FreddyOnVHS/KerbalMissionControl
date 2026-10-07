@@ -184,6 +184,19 @@ namespace KMC.Engine.Navigation
             exitUt = double.NaN;
             exitState = null;
 
+            /*
+             * Primary path: solve the outbound hyperbolic SOI crossing
+             * directly from the osculating two-body conic. This is both
+             * cheaper and more robust than asking the generic Cartesian
+             * propagator to bracket a very long escape coast.
+             */
+            if (HyperbolicSoiExitSolver.TrySolve(
+                    initial,
+                    soiRadius,
+                    out exitUt,
+                    out exitState))
+                return true;
+
             double initialRadius =
                 initial.Position.Magnitude;
 
