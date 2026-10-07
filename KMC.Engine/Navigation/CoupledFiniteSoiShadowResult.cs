@@ -1,12 +1,13 @@
 namespace KMC.Engine.Navigation
 {
     /// <summary>
-    /// Diagnostics emitted by the coupled finite-SOI optimizer while it runs
-    /// in shadow mode. Nothing in this object is maneuver authority.
+    /// Production result emitted by the coupled finite-SOI optimizer.
+    /// This object carries both the solved ejection and the diagnostics used by
+    /// Mission Control to decide whether the result is allowed maneuver authority.
     /// </summary>
-    public sealed class CoupledFiniteSoiShadowResult
+    public class CoupledFiniteSoiResult
     {
-        internal CoupledFiniteSoiShadowResult()
+        internal CoupledFiniteSoiResult()
         {
         }
 
@@ -35,5 +36,16 @@ namespace KMC.Engine.Navigation
         public int Iterations { get; internal set; }
         public int Evaluations { get; internal set; }
         public string Stage { get; internal set; }
+    }
+
+    /// <summary>
+    /// Compatibility type retained for the pre-production shadow API. New code
+    /// should consume CoupledFiniteSoiResult through CoupledFiniteSoiOptimizer.TrySolve.
+    /// </summary>
+    public sealed class CoupledFiniteSoiShadowResult : CoupledFiniteSoiResult
+    {
+        internal CoupledFiniteSoiShadowResult()
+        {
+        }
     }
 }

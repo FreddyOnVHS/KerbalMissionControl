@@ -34,12 +34,12 @@ def test_terminal_acceptance_requires_bplane_and_periapsis():
     assert "TargetBPlaneMagnitudeErrorMeters <=" in OPT
 
 
-def test_shadow_reports_bplane_components_and_never_gets_authority():
+def test_production_result_reports_bplane_components_and_guarded_authority():
     assert "TargetBPlaneMagnitudeErrorMeters" in RESULT
     assert "TargetBPlaneTErrorMeters" in RESULT
     assert "TargetBPlaneRErrorMeters" in RESULT
     assert '"B MAG ERR " +' in MAP
     assert '"  B.T " +' in MAP
     assert '"  B.R " +' in MAP
-    assert "NO NODE AUTHORITY" in MAP
+    assert "AUTH COUPLED" in MAP
     assert "_lambertEjectionPreview = coupledShadow.FinalEjection" not in MAP

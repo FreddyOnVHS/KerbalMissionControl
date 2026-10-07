@@ -30,13 +30,13 @@ def test_terminal_diagnostics_expose_jacobian_rejections_and_trust_radius():
     assert "TerminalJacobianColumns" in RESULT
     assert "TerminalRejectedSteps" in RESULT
     assert "TerminalTrustRadius" in RESULT
-    assert '"  JAC " + shadow.TerminalJacobianColumns' in MAP
-    assert '"  REJ " + shadow.TerminalRejectedSteps' in MAP
-    assert '"  TR " + shadow.TerminalTrustRadius' in MAP
+    assert '"  JAC " + coupledResult.TerminalJacobianColumns' in MAP
+    assert '"  REJ " + coupledResult.TerminalRejectedSteps' in MAP
+    assert '"  TR " + coupledResult.TerminalTrustRadius' in MAP
 
 
-def test_robustness_remains_destination_agnostic_and_shadow_only():
+def test_robustness_remains_destination_agnostic_with_guarded_production_authority():
     for body in ("Duna", "Eve", "Dres", "Moho", "Jool", "Eeloo"):
         assert body not in OPT
-    assert "NO NODE AUTHORITY" in MAP
+    assert "AUTH COUPLED" in MAP
     assert "_lambertEjectionPreview = coupledShadow.FinalEjection" not in MAP

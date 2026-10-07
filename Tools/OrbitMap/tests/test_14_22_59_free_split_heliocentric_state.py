@@ -30,7 +30,7 @@ def test_midpoint_is_not_a_maneuver_and_bplane_stays_disabled_for_stage1():
     assert "mathematical multiple-shooting variable" in OPT
     assert "BPlaneInitializationApplied = bPlaneInitialized" in OPT
     assert "TargetBPlaneBootstrapPlanner" not in OPT
-    assert "NO NODE AUTHORITY" in MAP
+    assert "AUTH COUPLED" in MAP
 
 
 def test_optimizer_tracks_split_continuity_and_optimized_arrival_time():

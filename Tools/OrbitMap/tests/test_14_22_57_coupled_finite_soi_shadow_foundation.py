@@ -7,10 +7,11 @@ PROJECT = (ROOT / "KMC.Engine" / "KMC.Engine.csproj").read_text(encoding="utf-8"
 RESULT = (ROOT / "KMC.Engine" / "Navigation" / "CoupledFiniteSoiShadowResult.cs").read_text(encoding="utf-8")
 
 
-def test_coupled_solver_is_compiled_and_shadow_only():
+def test_coupled_solver_is_compiled_and_preserves_shadow_compatibility():
     assert r'Navigation\CoupledFiniteSoiOptimizer.cs' in PROJECT
-    assert 'CoupledFiniteSoiOptimizer.TrySolveShadow' in MAP
-    assert 'NO NODE AUTHORITY' in MAP
+    assert 'CoupledFiniteSoiOptimizer.TrySolve(' in MAP
+    assert 'TrySolveShadow' in ENGINE
+    assert 'AUTH COUPLED' in MAP
     assert '_lambertEjectionPreview = coupledShadow.FinalEjection' not in MAP
     assert '_lambertEjectionPreview = directCoupledShadow.FinalEjection' not in MAP
 

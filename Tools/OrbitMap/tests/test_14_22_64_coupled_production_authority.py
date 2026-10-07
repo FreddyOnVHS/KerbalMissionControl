@@ -33,7 +33,7 @@ def test_legacy_paths_remain_fallbacks():
 
 def test_ui_reports_production_authority_and_disables_refine():
     assert '"COUPLED FINITE-SOI OPTIMIZER / PRODUCTION"' in MAP
-    assert '"  MANEUVER AUTHORITY"' in MAP
+    assert '"  AUTH COUPLED"' in MAP
     assert '"COUPLED AUTHORITY UPLINK SENT"' in MAP
     assert '"COUPLED AUTHORITY - NO REFINE"' in MAP
     assert '"COUPLED NODE REFINEMENT DISABLED"' in MAP

@@ -53,6 +53,7 @@ internal static class Program
         Run("3D direct shooting bootstrap survives parking-aware rejection", DirectShootingBootstrap);
         Run("same-parent planetary geometry regression matrix", PlanetGeometryRegressionMatrix);
         Run("MAP production node prefers coupled PNR, then Lambert, then legacy fallback", ProductionAuthorityPacket);
+        Run("coupled production API consolidates shadow compatibility", CoupledProductionApiConsolidation);
         Run("maneuver uplink carries optional desired periapsis", ManeuverUplinkDesiredPeriapsis);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
@@ -1723,6 +1724,40 @@ internal static class Program
         Check(double.IsNaN(parsed.DesiredPeriapsisRadiusMeters),
             "legacy packet should not invent a desired periapsis");
     }
+
+    private static void CoupledProductionApiConsolidation()
+    {
+        MethodInfo productionSolve =
+            typeof(CoupledFiniteSoiOptimizer).GetMethod(
+                "TrySolve",
+                BindingFlags.Static | BindingFlags.Public);
+
+        MethodInfo compatibilitySolve =
+            typeof(CoupledFiniteSoiOptimizer).GetMethod(
+                "TrySolveShadow",
+                BindingFlags.Static | BindingFlags.Public);
+
+        Check(productionSolve != null, "coupled production TrySolve API missing");
+        Check(compatibilitySolve != null, "shadow compatibility API missing");
+        Check(
+            typeof(CoupledFiniteSoiShadowResult).BaseType ==
+                typeof(CoupledFiniteSoiResult),
+            "shadow result is not a compatibility subtype of production result");
+
+        FieldInfo productionField =
+            typeof(MapPage).GetField(
+                "_coupledFiniteSoiResult",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+        FieldInfo staleShadowField =
+            typeof(MapPage).GetField(
+                "_coupledFiniteSoiShadow",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Check(productionField != null, "MAP production coupled-result field missing");
+        Check(staleShadowField == null, "MAP still uses the stale shadow-result field");
+    }
+
 
     private static void ProductionCleanup()
     {

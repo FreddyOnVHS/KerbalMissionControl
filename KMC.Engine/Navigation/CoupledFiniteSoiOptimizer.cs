@@ -4,9 +4,10 @@ using KMC.Engine.CelestialMechanics;
 namespace KMC.Engine.Navigation
 {
     /// <summary>
-    /// 14.22.62 coupled finite-SOI optimizer, split-transfer + robust general B-plane terminal stage.
+    /// Coupled finite-SOI optimizer, split-transfer + robust general B-plane terminal stage.
     ///
-    /// Shadow mode only. No result from this solver has maneuver authority.
+    /// This is the production interplanetary solver. Mission Control applies a
+    /// separate acceptance gate before its result receives maneuver authority.
     ///
     /// This stage follows the MechJeb-style split heliocentric formulation:
     /// the source-SOI state is joined to a first Lambert leg, a FREE parent-
@@ -44,6 +45,21 @@ namespace KMC.Engine.Navigation
         private const double MinimumStepNorm = 1e-6;
         private const double ScoreTieTolerance = 1e-8;
 
+        public static bool TrySolve(
+            TransferSearchSolution transfer,
+            LambertParkingOrbitEjectionSolution bootstrapEjection,
+            OrbitalElements parkingOrbit,
+            CelestialBodyState originBody,
+            CelestialBodyState destinationBody,
+            double parentGravParameter,
+            out CoupledFiniteSoiResult result,
+            out string failureReason)
+        {
+            return TrySolveCore(
+                transfer, bootstrapEjection, parkingOrbit, originBody,
+                destinationBody, parentGravParameter, out result, out failureReason);
+        }
+
         public static bool TrySolveShadow(
             TransferSearchSolution transfer,
             LambertParkingOrbitEjectionSolution bootstrapEjection,
@@ -52,6 +68,25 @@ namespace KMC.Engine.Navigation
             CelestialBodyState destinationBody,
             double parentGravParameter,
             out CoupledFiniteSoiShadowResult result,
+            out string failureReason)
+        {
+            CoupledFiniteSoiResult productionResult;
+            bool solved = TrySolveCore(
+                transfer, bootstrapEjection, parkingOrbit, originBody,
+                destinationBody, parentGravParameter,
+                out productionResult, out failureReason);
+            result = productionResult as CoupledFiniteSoiShadowResult;
+            return solved && result != null;
+        }
+
+        private static bool TrySolveCore(
+            TransferSearchSolution transfer,
+            LambertParkingOrbitEjectionSolution bootstrapEjection,
+            OrbitalElements parkingOrbit,
+            CelestialBodyState originBody,
+            CelestialBodyState destinationBody,
+            double parentGravParameter,
+            out CoupledFiniteSoiResult result,
             out string failureReason)
         {
             result = null;

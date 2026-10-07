@@ -51,8 +51,8 @@ namespace KMC.MissionControl.Pages
         private FiniteSoiDepartureCorrectionResult _finiteSoiCorrection;
         private TargetSoiShootingResult _targetSoiShooting;
         private string _targetSoiShootingFailureText = string.Empty;
-        private CoupledFiniteSoiShadowResult _coupledFiniteSoiShadow;
-        private string _coupledFiniteSoiShadowFailureText = string.Empty;
+        private CoupledFiniteSoiResult _coupledFiniteSoiResult;
+        private string _coupledFiniteSoiFailureText = string.Empty;
         private bool _lambertPreviewAttempted;
         private string _lambertPreviewOriginName = string.Empty;
         private string _lambertPreviewDestinationName = string.Empty;
@@ -557,22 +557,20 @@ namespace KMC.MissionControl.Pages
                                     ? _parkingAwareLambertPreview.FiniteSoiAssessment
                                     : null);
 
-                        // 14.22.57a: Shadow diagnostics get priority over the
-                        // legacy shooting block.  This solver has no maneuver
-                        // authority, but its diagnostics must remain visible
-                        // even when the production block consumes the rest of
-                        // the transfer-planner vertical space.
-                        if (_coupledFiniteSoiShadow != null &&
-                            y + transferLineHeight * 6 <=
+                        // Production coupled-solver diagnostics get priority over
+                        // the retained fallback blocks. Keep the accepted maneuver
+                        // solution and its terminal geometry visible together.
+                        if (_coupledFiniteSoiResult != null &&
+                            y + transferLineHeight * 7 <=
                                 transferContentBottom)
                         {
-                            CoupledFiniteSoiShadowResult shadow =
-                                _coupledFiniteSoiShadow;
+                            CoupledFiniteSoiResult coupledResult =
+                                _coupledFiniteSoiResult;
 
                             context.Graphics.DrawString(
-                                IsCoupledProductionReady(shadow)
+                                IsCoupledProductionReady(coupledResult)
                                     ? "COUPLED FINITE-SOI OPTIMIZER / PRODUCTION"
-                                    : "COUPLED FINITE-SOI OPTIMIZER / SHADOW",
+                                    : "COUPLED FINITE-SOI OPTIMIZER / CANDIDATE",
                                 context.SmallFont,
                                 bright,
                                 x,
@@ -581,27 +579,27 @@ namespace KMC.MissionControl.Pages
 
                             context.Graphics.DrawString(
                                 "DV " +
-                                shadow.BootstrapDeltaVMetersPerSecond.ToString("0.0") +
+                                coupledResult.BootstrapDeltaVMetersPerSecond.ToString("0.0") +
                                 " -> " +
-                                shadow.FinalDeltaVMetersPerSecond.ToString("0.0") +
+                                coupledResult.FinalDeltaVMetersPerSecond.ToString("0.0") +
                                 " m/s  FEAS " +
-                                (shadow.FeasibilityPassSucceeded ? "PASS" : "FAIL") +
-                                "  " + shadow.Stage,
+                                (coupledResult.FeasibilityPassSucceeded ? "PASS" : "FAIL") +
+                                "  " + coupledResult.Stage,
                                 context.SmallFont,
-                                shadow.FeasibilityPassSucceeded ? bright : dim,
+                                coupledResult.FeasibilityPassSucceeded ? bright : dim,
                                 x,
                                 y);
                             y += transferLineHeight;
 
                             context.Graphics.DrawString(
                                 "SOURCE IF " +
-                                FormatSystemDistance(shadow.SourceInterfacePositionErrorMeters) +
+                                FormatSystemDistance(coupledResult.SourceInterfacePositionErrorMeters) +
                                 " / " +
-                                shadow.SourceInterfaceVelocityErrorMetersPerSecond.ToString("0.0") +
+                                coupledResult.SourceInterfaceVelocityErrorMetersPerSecond.ToString("0.0") +
                                 " m/s  SPLIT VERR " +
-                                shadow.SplitVelocityMismatchMetersPerSecond.ToString("0.0") +
+                                coupledResult.SplitVelocityMismatchMetersPerSecond.ToString("0.0") +
                                 "  " +
-                                (shadow.SourceOutbound ? "OUT" : "NOT OUT"),
+                                (coupledResult.SourceOutbound ? "OUT" : "NOT OUT"),
                                 context.SmallFont,
                                 dim,
                                 x,
@@ -610,12 +608,12 @@ namespace KMC.MissionControl.Pages
 
                             context.Graphics.DrawString(
                                 "TARGET IF " +
-                                FormatSystemDistance(shadow.TargetInterfaceErrorMeters) +
+                                FormatSystemDistance(coupledResult.TargetInterfaceErrorMeters) +
                                 "  PE ERR " +
-                                FormatSystemDistance(shadow.TargetPeriapsisErrorMeters) +
+                                FormatSystemDistance(coupledResult.TargetPeriapsisErrorMeters) +
                                 "  " +
-                                (shadow.TargetInbound ? "IN" : "NOT IN") +
-                                (shadow.BPlaneInitializationApplied
+                                (coupledResult.TargetInbound ? "IN" : "NOT IN") +
+                                (coupledResult.BPlaneInitializationApplied
                                     ? "  B-PLANE INIT"
                                     : string.Empty),
                                 context.SmallFont,
@@ -624,13 +622,29 @@ namespace KMC.MissionControl.Pages
                                 y);
                             y += transferLineHeight;
 
+                            if (coupledResult.TargetAssessment != null &&
+                                IsFinitePositive(coupledResult.TargetAssessment.DesiredPeriapsisRadiusMeters) &&
+                                IsFinitePositive(coupledResult.TargetAssessment.TargetPeriapsisRadiusMeters))
+                            {
+                                context.Graphics.DrawString(
+                                    "TARGET PE " +
+                                    FormatSystemDistance(coupledResult.TargetAssessment.DesiredPeriapsisRadiusMeters) +
+                                    "  PRED PE " +
+                                    FormatSystemDistance(coupledResult.TargetAssessment.TargetPeriapsisRadiusMeters),
+                                    context.SmallFont,
+                                    dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight;
+                            }
+
                             context.Graphics.DrawString(
                                 "B MAG ERR " +
-                                FormatSystemDistance(shadow.TargetBPlaneMagnitudeErrorMeters) +
+                                FormatSystemDistance(coupledResult.TargetBPlaneMagnitudeErrorMeters) +
                                 "  B.T " +
-                                FormatSystemDistance(shadow.TargetBPlaneTErrorMeters) +
+                                FormatSystemDistance(coupledResult.TargetBPlaneTErrorMeters) +
                                 "  B.R " +
-                                FormatSystemDistance(shadow.TargetBPlaneRErrorMeters),
+                                FormatSystemDistance(coupledResult.TargetBPlaneRErrorMeters),
                                 context.SmallFont,
                                 dim,
                                 x,
@@ -638,35 +652,35 @@ namespace KMC.MissionControl.Pages
                             y += transferLineHeight;
 
                             context.Graphics.DrawString(
-                                "ITER " + shadow.Iterations.ToString() +
-                                "  EVAL " + shadow.Evaluations.ToString() +
-                                "  JAC " + shadow.TerminalJacobianColumns.ToString() + "/8" +
-                                "  REJ " + shadow.TerminalRejectedSteps.ToString() +
-                                "  TR " + shadow.TerminalTrustRadius.ToString("0.000") +
-                                (IsCoupledProductionReady(shadow)
-                                    ? "  MANEUVER AUTHORITY"
-                                    : "  NO NODE AUTHORITY"),
+                                "ITER " + coupledResult.Iterations.ToString() +
+                                "  EVAL " + coupledResult.Evaluations.ToString() +
+                                "  JAC " + coupledResult.TerminalJacobianColumns.ToString() + "/8" +
+                                "  REJ " + coupledResult.TerminalRejectedSteps.ToString() +
+                                "  TR " + coupledResult.TerminalTrustRadius.ToString("0.000") +
+                                (IsCoupledProductionReady(coupledResult)
+                                    ? "  AUTH COUPLED"
+                                    : "  AUTH FALLBACK"),
                                 context.SmallFont,
                                 dim,
                                 x,
                                 y);
                             y += transferLineHeight + transferSectionGap;
                         }
-                        else if (_coupledFiniteSoiShadow == null &&
+                        else if (_coupledFiniteSoiResult == null &&
                             !string.IsNullOrWhiteSpace(
-                                _coupledFiniteSoiShadowFailureText) &&
+                                _coupledFiniteSoiFailureText) &&
                             y + transferLineHeight * 2 <=
                                 transferContentBottom)
                         {
                             context.Graphics.DrawString(
-                                "COUPLED SHADOW REJECTED",
+                                "COUPLED SOLVER REJECTED",
                                 context.SmallFont,
                                 bright,
                                 x,
                                 y);
                             y += transferLineHeight;
                             context.Graphics.DrawString(
-                                _coupledFiniteSoiShadowFailureText,
+                                _coupledFiniteSoiFailureText,
                                 context.SmallFont,
                                 dim,
                                 x,
@@ -1046,8 +1060,8 @@ namespace KMC.MissionControl.Pages
             _finiteSoiCorrection = null;
             _targetSoiShooting = null;
             _targetSoiShootingFailureText = string.Empty;
-            _coupledFiniteSoiShadow = null;
-            _coupledFiniteSoiShadowFailureText = string.Empty;
+            _coupledFiniteSoiResult = null;
+            _coupledFiniteSoiFailureText = string.Empty;
             _lambertPreviewAttempted = false;
             _lambertPreviewOriginName = string.Empty;
             _lambertPreviewDestinationName = string.Empty;
@@ -1100,8 +1114,8 @@ namespace KMC.MissionControl.Pages
             _finiteSoiCorrection = null;
             _targetSoiShooting = null;
             _targetSoiShootingFailureText = string.Empty;
-            _coupledFiniteSoiShadow = null;
-            _coupledFiniteSoiShadowFailureText = string.Empty;
+            _coupledFiniteSoiResult = null;
+            _coupledFiniteSoiFailureText = string.Empty;
             _lambertPreviewAttempted = true;
             _lambertPreviewOriginName = origin.Name ?? string.Empty;
             _lambertPreviewDestinationName =
@@ -1152,25 +1166,25 @@ namespace KMC.MissionControl.Pages
                                 correction.CorrectedEjection;
                     }
 
-                    CoupledFiniteSoiShadowResult coupledShadow;
-                    string coupledShadowFailure;
+                    CoupledFiniteSoiResult coupledResult;
+                    string coupledFailure;
 
-                    if (MapCoupledFiniteSoiShadowAdapter.TrySolve(
+                    if (MapCoupledFiniteSoiAdapter.TrySolve(
                             packet,
                             origin,
                             destination,
                             parkingAware.Transfer,
                             parkingAware.Ejection,
-                            out coupledShadow,
-                            out coupledShadowFailure))
+                            out coupledResult,
+                            out coupledFailure))
                     {
-                        _coupledFiniteSoiShadow = coupledShadow;
-                        _coupledFiniteSoiShadowFailureText = string.Empty;
+                        _coupledFiniteSoiResult = coupledResult;
+                        _coupledFiniteSoiFailureText = string.Empty;
                     }
                     else
                     {
-                        _coupledFiniteSoiShadowFailureText =
-                            coupledShadowFailure ?? string.Empty;
+                        _coupledFiniteSoiFailureText =
+                            coupledFailure ?? string.Empty;
                     }
 
                     TargetSoiShootingResult shooting;
@@ -1220,25 +1234,25 @@ namespace KMC.MissionControl.Pages
                          * repair the full P/N/R burn directly from the valid
                          * Lambert ejection seed.
                          */
-                        CoupledFiniteSoiShadowResult directCoupledShadow;
-                        string directCoupledShadowFailure;
+                        CoupledFiniteSoiResult directCoupledResult;
+                        string directCoupledFailure;
 
-                        if (MapCoupledFiniteSoiShadowAdapter.TrySolve(
+                        if (MapCoupledFiniteSoiAdapter.TrySolve(
                                 packet,
                                 origin,
                                 destination,
                                 preview,
                                 ejectionPreview,
-                                out directCoupledShadow,
-                                out directCoupledShadowFailure))
+                                out directCoupledResult,
+                                out directCoupledFailure))
                         {
-                            _coupledFiniteSoiShadow = directCoupledShadow;
-                            _coupledFiniteSoiShadowFailureText = string.Empty;
+                            _coupledFiniteSoiResult = directCoupledResult;
+                            _coupledFiniteSoiFailureText = string.Empty;
                         }
                         else
                         {
-                            _coupledFiniteSoiShadowFailureText =
-                                directCoupledShadowFailure ?? string.Empty;
+                            _coupledFiniteSoiFailureText =
+                                directCoupledFailure ?? string.Empty;
                         }
 
                         TargetSoiShootingResult directShooting;
@@ -1575,14 +1589,14 @@ namespace KMC.MissionControl.Pages
                     nextLineY += statusLineSpacing;
 
                     if (_submittedTransferUsedCoupledAuthority &&
-                        _coupledFiniteSoiShadow != null &&
-                        _coupledFiniteSoiShadow.TargetAssessment != null &&
+                        _coupledFiniteSoiResult != null &&
+                        _coupledFiniteSoiResult.TargetAssessment != null &&
                         IsFinitePositive(
-                            _coupledFiniteSoiShadow.TargetAssessment.DesiredPeriapsisRadiusMeters) &&
+                            _coupledFiniteSoiResult.TargetAssessment.DesiredPeriapsisRadiusMeters) &&
                         IsFinitePositive(status.ClosestApproachMeters))
                     {
                         double desiredPe =
-                            _coupledFiniteSoiShadow.TargetAssessment.DesiredPeriapsisRadiusMeters;
+                            _coupledFiniteSoiResult.TargetAssessment.DesiredPeriapsisRadiusMeters;
                         double kspPeError =
                             Math.Abs(status.ClosestApproachMeters - desiredPe);
 
@@ -1634,8 +1648,8 @@ namespace KMC.MissionControl.Pages
 
         private LambertParkingOrbitEjectionSolution GetProductionCoupledEjection()
         {
-            return IsCoupledProductionReady(_coupledFiniteSoiShadow)
-                ? _coupledFiniteSoiShadow.FinalEjection
+            return IsCoupledProductionReady(_coupledFiniteSoiResult)
+                ? _coupledFiniteSoiResult.FinalEjection
                 : null;
         }
 
@@ -1647,7 +1661,7 @@ namespace KMC.MissionControl.Pages
         }
 
         private static bool IsCoupledProductionReady(
-            CoupledFiniteSoiShadowResult result)
+            CoupledFiniteSoiResult result)
         {
             if (result == null ||
                 !result.FeasibilityPassSucceeded ||
@@ -1950,13 +1964,13 @@ namespace KMC.MissionControl.Pages
             }
 
             if (usedCoupledAuthority &&
-                _coupledFiniteSoiShadow != null &&
-                _coupledFiniteSoiShadow.TargetAssessment != null &&
+                _coupledFiniteSoiResult != null &&
+                _coupledFiniteSoiResult.TargetAssessment != null &&
                 IsFinitePositive(
-                    _coupledFiniteSoiShadow.TargetAssessment.DesiredPeriapsisRadiusMeters))
+                    _coupledFiniteSoiResult.TargetAssessment.DesiredPeriapsisRadiusMeters))
             {
                 packet.DesiredPeriapsisRadiusMeters =
-                    _coupledFiniteSoiShadow.TargetAssessment.DesiredPeriapsisRadiusMeters;
+                    _coupledFiniteSoiResult.TargetAssessment.DesiredPeriapsisRadiusMeters;
             }
 
             string resultText;
@@ -2548,10 +2562,10 @@ namespace KMC.MissionControl.Pages
 
 
     /// <summary>
-    /// Packet bridge for the 14.22.57 coupled finite-SOI optimizer shadow path.
-    /// The returned result is diagnostic-only and is never maneuver authority.
+    /// Packet bridge for the production coupled finite-SOI optimizer.
+    /// Mission Control separately applies the maneuver-authority gate.
     /// </summary>
-    internal static class MapCoupledFiniteSoiShadowAdapter
+    internal static class MapCoupledFiniteSoiAdapter
     {
         public static bool TrySolve(
             OrbitMapPacket packet,
@@ -2559,7 +2573,7 @@ namespace KMC.MissionControl.Pages
             OrbitMapBody destination,
             TransferSearchSolution transfer,
             LambertParkingOrbitEjectionSolution bootstrapEjection,
-            out CoupledFiniteSoiShadowResult result,
+            out CoupledFiniteSoiResult result,
             out string failureReason)
         {
             result = null;
@@ -2580,7 +2594,7 @@ namespace KMC.MissionControl.Pages
                 return false;
             }
 
-            return CoupledFiniteSoiOptimizer.TrySolveShadow(
+            return CoupledFiniteSoiOptimizer.TrySolve(
                 transfer,
                 bootstrapEjection,
                 OrbitMapNavigationAdapter.ToElements(packet.ActiveOrbit),
@@ -2639,6 +2653,41 @@ namespace KMC.MissionControl.Pages
         private static bool IsFinitePositive(double value)
         {
             return IsFinite(value) && value > 0.0;
+        }
+    }
+
+
+    /// <summary>
+    /// Compatibility bridge retained for pre-production callers.
+    /// New code should use MapCoupledFiniteSoiAdapter.
+    /// </summary>
+    internal static class MapCoupledFiniteSoiShadowAdapter
+    {
+        public static bool TrySolve(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            OrbitMapBody destination,
+            TransferSearchSolution transfer,
+            LambertParkingOrbitEjectionSolution bootstrapEjection,
+            out CoupledFiniteSoiShadowResult result,
+            out string failureReason)
+        {
+            result = null;
+            CoupledFiniteSoiResult productionResult;
+            bool solved = MapCoupledFiniteSoiAdapter.TrySolve(
+                packet,
+                origin,
+                destination,
+                transfer,
+                bootstrapEjection,
+                out productionResult,
+                out failureReason);
+
+            if (!solved)
+                return false;
+
+            result = productionResult as CoupledFiniteSoiShadowResult;
+            return result != null;
         }
     }
 
