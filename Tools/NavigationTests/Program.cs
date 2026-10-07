@@ -57,6 +57,7 @@ internal static class Program
         Run("operator periapsis override exposes production solve input", OperatorTargetPeriapsis);
         Run("maneuver uplink carries optional desired periapsis", ManeuverUplinkDesiredPeriapsis);
         Run("mission time displays use days hours minutes seconds", HumanReadableMissionTimeDisplay);
+        Run("transfer execution summary presents next action", TransferExecutionSummaryRegression);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
@@ -1774,6 +1775,74 @@ internal static class Program
             string.Equals(actual, expected, StringComparison.Ordinal),
             type.Name + "." + methodName +
             " expected " + expected + " got " + actual);
+    }
+
+    private static void TransferExecutionSummaryRegression()
+    {
+        string sourcePath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.MissionControl",
+                "Pages",
+                "MapPage.cs");
+
+        if (!File.Exists(sourcePath))
+        {
+            sourcePath =
+                Path.GetFullPath(
+                    Path.Combine(
+                        AppDomain.CurrentDomain.BaseDirectory,
+                        "..",
+                        "..",
+                        "..",
+                        "..",
+                        "KMC.MissionControl",
+                        "Pages",
+                        "MapPage.cs"));
+        }
+
+        Check(
+            File.Exists(sourcePath),
+            "MapPage source unavailable for execution-summary regression");
+
+        string source =
+            File.ReadAllText(sourcePath);
+
+        Check(
+            source.IndexOf(
+                "TRANSFER EXECUTION",
+                StringComparison.Ordinal) >= 0,
+            "transfer execution heading missing");
+
+        Check(
+            source.IndexOf(
+                "NEXT ACTION",
+                StringComparison.Ordinal) >= 0,
+            "next-action handoff missing");
+
+        Check(
+            source.IndexOf(
+                "EXECUTE MANEUVER NODE",
+                StringComparison.Ordinal) >= 0,
+            "maneuver execution instruction missing");
+
+        Check(
+            source.IndexOf(
+                "KSP PE ALT",
+                StringComparison.Ordinal) >= 0,
+            "KSP periapsis altitude summary missing");
+
+        Check(
+            source.IndexOf(
+                "REFERENCE WINDOW / HOHMANN GUIDE",
+                StringComparison.Ordinal) >= 0,
+            "reference-window clarification missing");
+
+        Check(
+            source.IndexOf(
+                "STATUS NODE CREATED / READY FOR BURN",
+                StringComparison.Ordinal) >= 0,
+            "upper transfer status does not reflect created node");
     }
 
     private static void ManeuverUplinkDesiredPeriapsis()

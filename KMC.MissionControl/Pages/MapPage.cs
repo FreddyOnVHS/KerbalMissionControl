@@ -440,16 +440,31 @@ namespace KMC.MissionControl.Pages
                             packet.UniversalTimeSeconds,
                             out solution))
                     {
+                        EnsureLambertPreview(
+                            packet,
+                            originBody,
+                            destination,
+                            solution);
+
+                        bool productionSolutionReady =
+                            _coupledFiniteSoiResult != null &&
+                            IsCoupledProductionReady(
+                                _coupledFiniteSoiResult);
+
                         context.Graphics.DrawString(
-                            "TRANSFER WINDOW",
+                            productionSolutionReady
+                                ? "REFERENCE WINDOW / HOHMANN GUIDE"
+                                : "TRANSFER WINDOW / HOHMANN GUIDE",
                             context.SmallFont,
-                            bright,
+                            productionSolutionReady ? dim : bright,
                             x,
                             y);
                         y += transferLineHeight;
 
                         context.Graphics.DrawString(
-                            "DEPART IN " +
+                            (productionSolutionReady
+                                ? "REFERENCE DEPART IN "
+                                : "DEPART IN ") +
                             FormatTransferInterval(solution.WaitSeconds) +
                             "  EST FLIGHT " +
                             FormatTransferInterval(solution.TransferTimeSeconds),
@@ -459,15 +474,8 @@ namespace KMC.MissionControl.Pages
                             y);
                         y += transferLineHeight + transferSectionGap;
 
-                        EnsureLambertPreview(
-                            packet,
-                            originBody,
-                            destination,
-                            solution);
-
                         bool showFallbackDiagnostics =
-                            _coupledFiniteSoiResult == null ||
-                            !IsCoupledProductionReady(_coupledFiniteSoiResult);
+                            !productionSolutionReady;
 
                         if (showFallbackDiagnostics &&
                             y + transferLineHeight * 3 <
@@ -662,8 +670,29 @@ namespace KMC.MissionControl.Pages
                                 y += transferLineHeight;
                             }
 
+                            string productionStatus =
+                                "STATUS READY TO CREATE NODE  AUTH COUPLED";
+
+                            if (IsSameAsSubmittedTransferCandidate() &&
+                                !string.IsNullOrWhiteSpace(
+                                    _lastTransferPlanId))
+                            {
+                                ManeuverUplinkStatusSnapshot liveNodeStatus =
+                                    ManeuverUplinkStatusStore.GetForPlan(
+                                        _lastTransferPlanId);
+
+                                if (liveNodeStatus != null &&
+                                    liveNodeStatus.NodeExists)
+                                {
+                                    productionStatus =
+                                        liveNodeStatus.TransferAssessmentAvailable
+                                            ? "STATUS NODE CREATED / READY FOR BURN  AUTH COUPLED"
+                                            : "STATUS NODE CREATED / VERIFYING  AUTH COUPLED";
+                                }
+                            }
+
                             context.Graphics.DrawString(
-                                "STATUS READY TO CREATE NODE  AUTH COUPLED",
+                                productionStatus,
                                 context.SmallFont,
                                 bright,
                                 x,
@@ -1579,31 +1608,21 @@ namespace KMC.MissionControl.Pages
                     statusFontHeight + 6;
                 const int statusButtonGap = 10;
 
-                int detailLineCount =
-                    string.IsNullOrWhiteSpace(detail)
-                        ? 0
+                bool hasExecutionSummary =
+                    status != null &&
+                    status.UpdatedUtc != DateTime.MinValue &&
+                    sameSubmittedCandidate;
+
+                int executionLineCount =
+                    hasExecutionSummary
+                        ? 6
                         : 1;
-                int assessmentLineCount = 0;
-
-                if (status != null &&
-                    status.TransferAssessmentAvailable)
-                {
-                    assessmentLineCount =
-                        status.TargetEncounter
-                            ? 4
-                            : 5;
-                }
-
-                int totalLineCount =
-                    1 +
-                    detailLineCount +
-                    assessmentLineCount;
 
                 int statusBlockBottom =
                     buttonTop -
                     statusButtonGap;
                 int statusBlockHeight =
-                    (totalLineCount - 1) * statusLineSpacing +
+                    (executionLineCount - 1) * statusLineSpacing +
                     statusFontHeight;
                 int statusY =
                     statusBlockBottom -
@@ -1624,135 +1643,258 @@ namespace KMC.MissionControl.Pages
                         separatorY);
                 }
 
+                if (!hasExecutionSummary)
+                {
+                    context.Graphics.DrawString(
+                        "NODE STATUS  " +
+                        (string.IsNullOrWhiteSpace(state)
+                            ? "---"
+                            : state),
+                        context.SmallFont,
+                        bright,
+                        left,
+                        nextLineY);
+                    return;
+                }
+
+                string targetName =
+                    string.IsNullOrWhiteSpace(status.TargetBodyName)
+                        ? _selectedTransferBodyName
+                        : status.TargetBodyName;
+
+                OrbitMapPacket livePacket;
+                DateTime liveReceivedUtc;
+                double currentUt = double.NaN;
+                double targetBodyRadius = double.NaN;
+
+                if (OrbitMapSnapshotStore.TryGetLatest(
+                        out livePacket,
+                        out liveReceivedUtc) &&
+                    livePacket != null)
+                {
+                    currentUt =
+                        livePacket.UniversalTimeSeconds;
+
+                    OrbitMapBody liveTarget =
+                        FindBody(
+                            livePacket.Bodies,
+                            targetName);
+
+                    if (liveTarget != null &&
+                        IsFinitePositive(
+                            liveTarget.RadiusMeters))
+                    {
+                        targetBodyRadius =
+                            liveTarget.RadiusMeters;
+                    }
+                }
+
+                double burnInSeconds =
+                    status.NodeExists &&
+                    IsFinite(status.NodeUniversalTimeSeconds) &&
+                    IsFinite(currentUt)
+                        ? status.NodeUniversalTimeSeconds -
+                          currentUt
+                        : double.NaN;
+
+                double totalDv =
+                    IsFinite(status.ProgradeDeltaVMetersPerSecond) &&
+                    IsFinite(status.NormalDeltaVMetersPerSecond) &&
+                    IsFinite(status.RadialDeltaVMetersPerSecond)
+                        ? Math.Sqrt(
+                            status.ProgradeDeltaVMetersPerSecond *
+                            status.ProgradeDeltaVMetersPerSecond +
+                            status.NormalDeltaVMetersPerSecond *
+                            status.NormalDeltaVMetersPerSecond +
+                            status.RadialDeltaVMetersPerSecond *
+                            status.RadialDeltaVMetersPerSecond)
+                        : double.NaN;
+
+                double desiredPeRadius = double.NaN;
+
+                if (_submittedTransferUsedCoupledAuthority &&
+                    _coupledFiniteSoiResult != null &&
+                    _coupledFiniteSoiResult.TargetAssessment != null &&
+                    IsFinitePositive(
+                        _coupledFiniteSoiResult
+                            .TargetAssessment
+                            .DesiredPeriapsisRadiusMeters))
+                {
+                    desiredPeRadius =
+                        _coupledFiniteSoiResult
+                            .TargetAssessment
+                            .DesiredPeriapsisRadiusMeters;
+                }
+
+                string targetPeText =
+                    IsFinitePositive(desiredPeRadius) &&
+                    IsFinitePositive(targetBodyRadius)
+                        ? FormatSystemDistance(
+                            Math.Max(
+                                0.0,
+                                desiredPeRadius -
+                                targetBodyRadius))
+                        : "---";
+
+                string actualPeText =
+                    status.TransferAssessmentAvailable &&
+                    IsFinitePositive(status.ClosestApproachMeters) &&
+                    IsFinitePositive(targetBodyRadius)
+                        ? FormatSystemDistance(
+                            Math.Max(
+                                0.0,
+                                status.ClosestApproachMeters -
+                                targetBodyRadius))
+                        : "---";
+
+                string nextAction;
+
+                if (!status.NodeExists)
+                {
+                    nextAction =
+                        "VERIFY BURN / COAST STATUS";
+                }
+                else if (!IsFinite(burnInSeconds))
+                {
+                    nextAction =
+                        "EXECUTE MANEUVER NODE";
+                }
+                else if (burnInSeconds > 60.0)
+                {
+                    nextAction =
+                        "EXECUTE MANEUVER NODE";
+                }
+                else if (burnInSeconds >= -300.0)
+                {
+                    nextAction =
+                        "EXECUTE MANEUVER NODE NOW";
+                }
+                else
+                {
+                    nextAction =
+                        "NODE PAST DUE - REVIEW MANEUVER";
+                }
+
                 context.Graphics.DrawString(
-                    "NODE STATUS  " + (string.IsNullOrWhiteSpace(state) ? "---" : state),
+                    "TRANSFER EXECUTION  " +
+                    (string.IsNullOrWhiteSpace(targetName)
+                        ? "---"
+                        : targetName),
                     context.SmallFont,
                     bright,
                     left,
                     nextLineY);
                 nextLineY += statusLineSpacing;
 
-                if (!string.IsNullOrWhiteSpace(detail))
-                {
-                    context.Graphics.DrawString(
-                        detail,
-                        context.SmallFont,
-                        dim,
-                        left,
-                        nextLineY);
-                    nextLineY += statusLineSpacing;
-                }
+                context.Graphics.DrawString(
+                    (string.IsNullOrWhiteSpace(state)
+                        ? "NODE STATUS ---"
+                        : state) +
+                    (string.IsNullOrWhiteSpace(detail)
+                        ? string.Empty
+                        : "  /  " + detail),
+                    context.SmallFont,
+                    dim,
+                    left,
+                    nextLineY);
+                nextLineY += statusLineSpacing;
 
-                if (status != null &&
-                    status.TransferAssessmentAvailable)
-                {
-                    string targetName =
-                        string.IsNullOrWhiteSpace(status.TargetBodyName)
-                            ? _selectedTransferBodyName
-                            : status.TargetBodyName;
+                context.Graphics.DrawString(
+                    "BURN IN " +
+                    (IsFinite(burnInSeconds)
+                        ? (burnInSeconds >= 0.0
+                            ? FormatTransferInterval(burnInSeconds)
+                            : "PAST " +
+                              FormatTransferInterval(
+                                  Math.Abs(burnInSeconds)))
+                        : "---") +
+                    "  TOTAL DV " +
+                    (IsFinite(totalDv)
+                        ? totalDv.ToString("0.0") + " m/s"
+                        : "---"),
+                    context.SmallFont,
+                    dim,
+                    left,
+                    nextLineY);
+                nextLineY += statusLineSpacing;
 
-                    context.Graphics.DrawString(
-                        "KSP TRANSFER ASSESSMENT  " + targetName,
-                        context.SmallFont,
-                        bright,
-                        left,
-                        nextLineY);
-                    nextLineY += statusLineSpacing;
+                const string encounterLabel =
+                    "ENCOUNTER ";
+                context.Graphics.DrawString(
+                    encounterLabel,
+                    context.SmallFont,
+                    dim,
+                    left,
+                    nextLineY);
 
-                    const string encounterLabel = "ENCOUNTER       ";
-                    context.Graphics.DrawString(
+                SizeF encounterLabelSize =
+                    context.Graphics.MeasureString(
                         encounterLabel,
-                        context.SmallFont,
-                        dim,
-                        left,
-                        nextLineY);
+                        context.SmallFont);
 
-                    SizeF encounterLabelSize =
-                        context.Graphics.MeasureString(
-                            encounterLabel,
-                            context.SmallFont);
+                string encounterValue =
+                    status.TransferAssessmentAvailable
+                        ? (status.TargetEncounter
+                            ? "YES"
+                            : "NO")
+                        : "---";
 
-                    using (SolidBrush encounterValueBrush =
-                        new SolidBrush(
-                            status.TargetEncounter
+                using (SolidBrush encounterValueBrush =
+                    new SolidBrush(
+                        status.TransferAssessmentAvailable
+                            ? (status.TargetEncounter
                                 ? Color.LimeGreen
-                                : Color.Red))
-                    {
-                        context.Graphics.DrawString(
-                            status.TargetEncounter ? "YES" : "NO",
-                            context.SmallFont,
-                            encounterValueBrush,
-                            left + encounterLabelSize.Width,
-                            nextLineY);
-                    }
-                    nextLineY += statusLineSpacing;
-
+                                : Color.Red)
+                            : context.DimPhosphorColor))
+                {
                     context.Graphics.DrawString(
-                        "CLOSEST APPROACH " +
-                        FormatSystemDistance(status.ClosestApproachMeters) +
-                        "  @ UT " +
-                        FormatMissionTime(status.ClosestApproachUniversalTimeSeconds),
+                        encounterValue,
                         context.SmallFont,
-                        dim,
-                        left,
+                        encounterValueBrush,
+                        left + encounterLabelSize.Width,
                         nextLineY);
-                    nextLineY += statusLineSpacing;
-
-                    if (_submittedTransferUsedCoupledAuthority &&
-                        _coupledFiniteSoiResult != null &&
-                        _coupledFiniteSoiResult.TargetAssessment != null &&
-                        IsFinitePositive(
-                            _coupledFiniteSoiResult.TargetAssessment.DesiredPeriapsisRadiusMeters) &&
-                        IsFinitePositive(status.ClosestApproachMeters))
-                    {
-                        double desiredPe =
-                            _coupledFiniteSoiResult.TargetAssessment.DesiredPeriapsisRadiusMeters;
-                        double kspPeError =
-                            Math.Abs(status.ClosestApproachMeters - desiredPe);
-
-                        context.Graphics.DrawString(
-                            "TARGET PE        " +
-                            FormatSystemDistance(desiredPe) +
-                            "  ERR " +
-                            FormatSystemDistance(kspPeError),
-                            context.SmallFont,
-                            kspPeError <= Math.Max(1000.0, desiredPe * 0.002)
-                                ? dim
-                                : bright,
-                            left,
-                            nextLineY);
-                    }
-                    else
-                    {
-                        context.Graphics.DrawString(
-                            "TARGET SOI       " +
-                            FormatSystemDistance(status.TargetSoiRadiusMeters),
-                            context.SmallFont,
-                            dim,
-                            left,
-                            nextLineY);
-                    }
-                    nextLineY += statusLineSpacing;
-
-                    if (!status.TargetEncounter &&
-                        IsFinitePositive(status.ClosestApproachMeters) &&
-                        IsFinitePositive(status.TargetSoiRadiusMeters))
-                    {
-                        double outside =
-                            Math.Max(
-                                0.0,
-                                status.ClosestApproachMeters -
-                                status.TargetSoiRadiusMeters);
-
-                        context.Graphics.DrawString(
-                            "OUTSIDE SOI      " +
-                            FormatSystemDistance(outside),
-                            context.SmallFont,
-                            bright,
-                            left,
-                            nextLineY);
-                    }
                 }
+
+                float afterEncounter =
+                    left +
+                    encounterLabelSize.Width +
+                    context.Graphics.MeasureString(
+                        encounterValue,
+                        context.SmallFont).Width +
+                    22.0f;
+
+                context.Graphics.DrawString(
+                    "TARGET ALT " +
+                    targetPeText,
+                    context.SmallFont,
+                    dim,
+                    afterEncounter,
+                    nextLineY);
+                nextLineY += statusLineSpacing;
+
+                context.Graphics.DrawString(
+                    "KSP PE ALT " +
+                    actualPeText +
+                    (status.TransferAssessmentAvailable &&
+                     IsFinitePositive(status.ClosestApproachMeters)
+                        ? "  @ UT " +
+                          FormatMissionTime(
+                              status
+                                .ClosestApproachUniversalTimeSeconds)
+                        : string.Empty),
+                    context.SmallFont,
+                    dim,
+                    left,
+                    nextLineY);
+                nextLineY += statusLineSpacing;
+
+                context.Graphics.DrawString(
+                    "NEXT ACTION  " +
+                    nextAction,
+                    context.SmallFont,
+                    bright,
+                    left,
+                    nextLineY);
             }
         }
 
