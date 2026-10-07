@@ -23,6 +23,13 @@ namespace KMC.Plugin
         private const double InitialRefinementProgradeStepMetersPerSecond = 40.0;
         private const double MinimumRefinementUtStepSeconds = 45.0;
         private const double MinimumRefinementProgradeStepMetersPerSecond = 1.0;
+        private const int TerminalPeriapsisCorrectionIterations = 10;
+        private const int TerminalPeriapsisLineSearchRetries = 6;
+        private const double TerminalPeriapsisAbsoluteToleranceMeters = 1000.0;
+        private const double TerminalPeriapsisRelativeTolerance = 0.002;
+        private const double TerminalPeriapsisFiniteDifferenceStep = 0.20;
+        private const double TerminalPeriapsisInitialTrustRadius = 0.75;
+        private const double TerminalPeriapsisMinimumTrustRadius = 0.02;
 
         private sealed class TrackedManeuver
         {
@@ -34,6 +41,10 @@ namespace KMC.Plugin
             public double PlannedPrograde;
             public double PlannedNormal;
             public double PlannedRadial;
+            public double DesiredPeriapsisRadiusMeters = double.NaN;
+            public bool TerminalPeriapsisCorrectionApplied;
+            public double TerminalPeriapsisInitialErrorMeters = double.NaN;
+            public double TerminalPeriapsisFinalErrorMeters = double.NaN;
 
             public bool TransferAssessmentAvailable;
             public bool TargetEncounter;
@@ -222,13 +233,25 @@ namespace KMC.Plugin
                     PlannedNodeUt = packet.NodeUniversalTimeSeconds,
                     PlannedPrograde = packet.ProgradeDeltaVMetersPerSecond,
                     PlannedNormal = packet.NormalDeltaVMetersPerSecond,
-                    PlannedRadial = packet.RadialDeltaVMetersPerSecond
+                    PlannedRadial = packet.RadialDeltaVMetersPerSecond,
+                    DesiredPeriapsisRadiusMeters = packet.DesiredPeriapsisRadiusMeters
                 };
 
                 _trackedPlans.Add(packet.PlanId, tracked);
                 UpdateTransferAssessment(tracked);
 
-                SendAck(packet, "NODE LOADED", "PLUGIN CREATED MANEUVER NODE", packet.NodeUniversalTimeSeconds);
+                if (IsFinite(tracked.DesiredPeriapsisRadiusMeters) &&
+                    tracked.DesiredPeriapsisRadiusMeters > 0.0 &&
+                    tracked.TargetEncounter)
+                {
+                    TryApplyKspAuthoritativePeriapsisCorrection(vessel, tracked);
+                }
+
+                string createDetail = tracked.TerminalPeriapsisCorrectionApplied
+                    ? "PLUGIN CREATED NODE / KSP TERMINAL PE CORRECTED"
+                    : "PLUGIN CREATED MANEUVER NODE";
+
+                SendAck(packet, "NODE LOADED", createDetail, tracked.Node.UT);
                 PublishTrackedNodeState(vessel, tracked);
 
                 ScreenMessages.PostScreenMessage(
@@ -487,9 +510,13 @@ namespace KMC.Plugin
                 UpdateTransferAssessment(tracked);
             }
 
-            string detail = verified
-                ? "KSP NODE MATCHES UPLINKED PLAN"
-                : "KSP NODE DIFFERS FROM UPLINKED PLAN";
+            string detail;
+            if (verified && tracked.TerminalPeriapsisCorrectionApplied)
+                detail = "KSP NODE MATCHES TERMINAL-CORRECTED PLAN";
+            else
+                detail = verified
+                    ? "KSP NODE MATCHES UPLINKED PLAN"
+                    : "KSP NODE DIFFERS FROM UPLINKED PLAN";
 
             SendNodeState(
                 tracked,
@@ -500,6 +527,266 @@ namespace KMC.Plugin
                 actualNormal,
                 actualRadial,
                 detail);
+        }
+
+        private bool TryApplyKspAuthoritativePeriapsisCorrection(
+            Vessel vessel,
+            TrackedManeuver tracked)
+        {
+            if (vessel == null || tracked == null || tracked.Node == null ||
+                vessel.patchedConicSolver == null ||
+                !IsFinite(tracked.DesiredPeriapsisRadiusMeters) ||
+                tracked.DesiredPeriapsisRadiusMeters <= 0.0)
+                return false;
+
+            UpdateTransferAssessment(tracked);
+            if (!tracked.TransferAssessmentAvailable ||
+                !tracked.TargetEncounter ||
+                !IsFinite(tracked.ClosestApproachMeters))
+                return false;
+
+            double desired = tracked.DesiredPeriapsisRadiusMeters;
+            double tolerance = Math.Max(
+                TerminalPeriapsisAbsoluteToleranceMeters,
+                desired * TerminalPeriapsisRelativeTolerance);
+
+            double initialError = tracked.ClosestApproachMeters - desired;
+            tracked.TerminalPeriapsisInitialErrorMeters = Math.Abs(initialError);
+            tracked.TerminalPeriapsisFinalErrorMeters = Math.Abs(initialError);
+
+            if (Math.Abs(initialError) <= tolerance)
+                return true;
+
+            double originalUt = tracked.Node.UT;
+            Vector3d originalDv = tracked.Node.DeltaV;
+            double bestUt = originalUt;
+            Vector3d bestDv = originalDv;
+            double bestError = initialError;
+
+            double dvScale = Math.Max(0.5, originalDv.magnitude * 0.002);
+            double[] scales = { 30.0, dvScale, dvScale, dvScale };
+            double trustRadius = TerminalPeriapsisInitialTrustRadius;
+
+            for (int iteration = 0;
+                 iteration < TerminalPeriapsisCorrectionIterations;
+                 iteration++)
+            {
+                if (Math.Abs(bestError) <= tolerance)
+                    break;
+
+                SetNodeState(tracked.Node, bestUt, bestDv);
+                vessel.patchedConicSolver.UpdateFlightPlan();
+                UpdateTransferAssessment(tracked);
+                if (!tracked.TransferAssessmentAvailable ||
+                    !tracked.TargetEncounter ||
+                    !IsFinite(tracked.ClosestApproachMeters))
+                    break;
+
+                bestError = tracked.ClosestApproachMeters - desired;
+                double[] gradient = new double[4];
+                bool anyDerivative = false;
+
+                for (int variable = 0; variable < 4; variable++)
+                {
+                    double h = TerminalPeriapsisFiniteDifferenceStep;
+                    double plusError;
+                    double minusError;
+                    bool plusOk = TryEvaluateTerminalPerturbation(
+                        vessel, tracked, bestUt, bestDv, variable,
+                        h * scales[variable], desired, out plusError);
+                    bool minusOk = TryEvaluateTerminalPerturbation(
+                        vessel, tracked, bestUt, bestDv, variable,
+                        -h * scales[variable], desired, out minusError);
+
+                    SetNodeState(tracked.Node, bestUt, bestDv);
+                    vessel.patchedConicSolver.UpdateFlightPlan();
+                    UpdateTransferAssessment(tracked);
+
+                    if (plusOk && minusOk)
+                    {
+                        gradient[variable] =
+                            (plusError - minusError) / (2.0 * h);
+                        anyDerivative = true;
+                    }
+                    else if (plusOk)
+                    {
+                        gradient[variable] =
+                            (plusError - bestError) / h;
+                        anyDerivative = true;
+                    }
+                    else if (minusOk)
+                    {
+                        gradient[variable] =
+                            (bestError - minusError) / h;
+                        anyDerivative = true;
+                    }
+                }
+
+                if (!anyDerivative)
+                    break;
+
+                double gradientNormSquared = 0.0;
+                for (int i = 0; i < gradient.Length; i++)
+                    gradientNormSquared += gradient[i] * gradient[i];
+                if (!IsFinite(gradientNormSquared) || gradientNormSquared < 1e-12)
+                    break;
+
+                double[] step = new double[4];
+                double stepNormSquared = 0.0;
+                for (int i = 0; i < step.Length; i++)
+                {
+                    step[i] = -bestError * gradient[i] / gradientNormSquared;
+                    stepNormSquared += step[i] * step[i];
+                }
+
+                double stepNorm = Math.Sqrt(stepNormSquared);
+                if (stepNorm > trustRadius && stepNorm > 0.0)
+                {
+                    double shrink = trustRadius / stepNorm;
+                    for (int i = 0; i < step.Length; i++)
+                        step[i] *= shrink;
+                }
+
+                bool accepted = false;
+                double retryScale = 1.0;
+                for (int retry = 0;
+                     retry < TerminalPeriapsisLineSearchRetries;
+                     retry++)
+                {
+                    double trialUt = bestUt + step[0] * scales[0] * retryScale;
+                    Vector3d trialDv = new Vector3d(
+                        bestDv.x + step[1] * scales[1] * retryScale,
+                        bestDv.y + step[2] * scales[2] * retryScale,
+                        bestDv.z + step[3] * scales[3] * retryScale);
+
+                    if (trialUt <= Planetarium.GetUniversalTime() + 0.25)
+                    {
+                        retryScale *= 0.5;
+                        continue;
+                    }
+
+                    SetNodeState(tracked.Node, trialUt, trialDv);
+                    vessel.patchedConicSolver.UpdateFlightPlan();
+                    UpdateTransferAssessment(tracked);
+
+                    if (tracked.TransferAssessmentAvailable &&
+                        tracked.TargetEncounter &&
+                        IsFinite(tracked.ClosestApproachMeters))
+                    {
+                        double trialError = tracked.ClosestApproachMeters - desired;
+                        if (Math.Abs(trialError) + 0.1 < Math.Abs(bestError))
+                        {
+                            bestUt = trialUt;
+                            bestDv = trialDv;
+                            bestError = trialError;
+                            accepted = true;
+                            trustRadius = Math.Min(1.5, trustRadius * 1.35);
+                            break;
+                        }
+                    }
+
+                    retryScale *= 0.5;
+                }
+
+                if (!accepted)
+                {
+                    trustRadius *= 0.5;
+                    if (trustRadius < TerminalPeriapsisMinimumTrustRadius)
+                        break;
+                }
+            }
+
+            SetNodeState(tracked.Node, bestUt, bestDv);
+            vessel.patchedConicSolver.UpdateFlightPlan();
+            UpdateTransferAssessment(tracked);
+
+            if (!tracked.TransferAssessmentAvailable ||
+                !tracked.TargetEncounter ||
+                !IsFinite(tracked.ClosestApproachMeters))
+            {
+                SetNodeState(tracked.Node, originalUt, originalDv);
+                vessel.patchedConicSolver.UpdateFlightPlan();
+                UpdateTransferAssessment(tracked);
+                return false;
+            }
+
+            double finalError = tracked.ClosestApproachMeters - desired;
+            tracked.TerminalPeriapsisFinalErrorMeters = Math.Abs(finalError);
+
+            if (Math.Abs(finalError) >= Math.Abs(initialError))
+            {
+                SetNodeState(tracked.Node, originalUt, originalDv);
+                vessel.patchedConicSolver.UpdateFlightPlan();
+                UpdateTransferAssessment(tracked);
+                tracked.TerminalPeriapsisFinalErrorMeters = Math.Abs(initialError);
+                return false;
+            }
+
+            tracked.TerminalPeriapsisCorrectionApplied = true;
+            tracked.PlannedNodeUt = tracked.Node.UT;
+            tracked.PlannedRadial = tracked.Node.DeltaV.x;
+            tracked.PlannedNormal = tracked.Node.DeltaV.y;
+            tracked.PlannedPrograde = tracked.Node.DeltaV.z;
+
+            Debug.Log(
+                "[KMC] KSP TERMINAL PE CORRECTION" +
+                " | PlanId=" + tracked.PlanId +
+                " | Target=" + tracked.TargetBodyName +
+                " | DesiredPeM=" + desired.ToString("0.0") +
+                " | InitialErrorM=" + Math.Abs(initialError).ToString("0.0") +
+                " | FinalErrorM=" + Math.Abs(finalError).ToString("0.0") +
+                " | NodeUT=" + tracked.Node.UT.ToString("0.0") +
+                " | RadialDV=" + tracked.Node.DeltaV.x.ToString("0.00") +
+                " | NormalDV=" + tracked.Node.DeltaV.y.ToString("0.00") +
+                " | ProgradeDV=" + tracked.Node.DeltaV.z.ToString("0.00"));
+
+            return Math.Abs(finalError) <= tolerance;
+        }
+
+        private bool TryEvaluateTerminalPerturbation(
+            Vessel vessel,
+            TrackedManeuver tracked,
+            double baseUt,
+            Vector3d baseDv,
+            int variable,
+            double physicalOffset,
+            double desiredPeriapsis,
+            out double errorMeters)
+        {
+            errorMeters = double.NaN;
+            double ut = baseUt;
+            Vector3d dv = baseDv;
+
+            if (variable == 0) ut += physicalOffset;
+            else if (variable == 1) dv.x += physicalOffset;
+            else if (variable == 2) dv.y += physicalOffset;
+            else if (variable == 3) dv.z += physicalOffset;
+            else return false;
+
+            if (ut <= Planetarium.GetUniversalTime() + 0.25)
+                return false;
+
+            SetNodeState(tracked.Node, ut, dv);
+            vessel.patchedConicSolver.UpdateFlightPlan();
+            UpdateTransferAssessment(tracked);
+
+            if (!tracked.TransferAssessmentAvailable ||
+                !tracked.TargetEncounter ||
+                !IsFinite(tracked.ClosestApproachMeters))
+                return false;
+
+            errorMeters = tracked.ClosestApproachMeters - desiredPeriapsis;
+            return IsFinite(errorMeters);
+        }
+
+        private static void SetNodeState(
+            ManeuverNode node,
+            double ut,
+            Vector3d deltaV)
+        {
+            if (node == null) return;
+            node.UT = ut;
+            node.DeltaV = deltaV;
         }
 
         private void UpdateTransferAssessment(TrackedManeuver tracked)

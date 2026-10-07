@@ -42,7 +42,9 @@ namespace KMC.MissionControl.Pages
         private double _submittedTransferProgradeDv = double.NaN;
         private double _submittedTransferNormalDv = double.NaN;
         private double _submittedTransferRadialDv = double.NaN;
+        private bool _submittedTransferUsedCoupledAuthority;
         private bool _submittedTransferUsedLambertAuthority;
+        private string _currentTransferVesselId = string.Empty;
         private TransferSearchSolution _lambertPreview;
         private LambertParkingOrbitEjectionSolution _lambertEjectionPreview;
         private ParkingOrbitAwareTransferSolution _parkingAwareLambertPreview;
@@ -140,7 +142,7 @@ namespace KMC.MissionControl.Pages
 
             if (_subpage == 1)
             {
-                if (_transferNodeCandidate != null &&
+                if (HasProductionNodeCandidate() &&
                     !_createTransferNodeButton.IsEmpty &&
                     _createTransferNodeButton.Contains(q))
                 {
@@ -167,6 +169,7 @@ namespace KMC.MissionControl.Pages
                         _submittedTransferProgradeDv = double.NaN;
                         _submittedTransferNormalDv = double.NaN;
                         _submittedTransferRadialDv = double.NaN;
+                        _submittedTransferUsedCoupledAuthority = false;
                         _submittedTransferUsedLambertAuthority = false;
                         ResetLambertPreview();
                         return true;
@@ -235,6 +238,9 @@ namespace KMC.MissionControl.Pages
             _transferBodyButtons.Clear();
             _transferBodyNames.Clear();
             _transferNodeCandidate = null;
+            _currentTransferVesselId = packet != null
+                ? (packet.VesselId ?? string.Empty)
+                : string.Empty;
             _createTransferNodeButton = Rectangle.Empty;
             _refineTransferNodeButton = Rectangle.Empty;
 
@@ -564,7 +570,9 @@ namespace KMC.MissionControl.Pages
                                 _coupledFiniteSoiShadow;
 
                             context.Graphics.DrawString(
-                                "COUPLED FINITE-SOI OPTIMIZER / SHADOW",
+                                IsCoupledProductionReady(shadow)
+                                    ? "COUPLED FINITE-SOI OPTIMIZER / PRODUCTION"
+                                    : "COUPLED FINITE-SOI OPTIMIZER / SHADOW",
                                 context.SmallFont,
                                 bright,
                                 x,
@@ -635,7 +643,9 @@ namespace KMC.MissionControl.Pages
                                 "  JAC " + shadow.TerminalJacobianColumns.ToString() + "/8" +
                                 "  REJ " + shadow.TerminalRejectedSteps.ToString() +
                                 "  TR " + shadow.TerminalTrustRadius.ToString("0.000") +
-                                "  NO NODE AUTHORITY",
+                                (IsCoupledProductionReady(shadow)
+                                    ? "  MANEUVER AUTHORITY"
+                                    : "  NO NODE AUTHORITY"),
                                 context.SmallFont,
                                 dim,
                                 x,
@@ -1291,7 +1301,7 @@ namespace KMC.MissionControl.Pages
                 }
             }
             else if (!string.IsNullOrWhiteSpace(_lastTransferPlanId) &&
-                     _transferNodeCandidate != null)
+                     HasProductionNodeCandidate())
             {
                 state = "NEW SOLUTION READY";
                 detail = "PREVIOUS NODE DOES NOT MATCH CURRENT CANDIDATE";
@@ -1307,7 +1317,7 @@ namespace KMC.MissionControl.Pages
                 !string.IsNullOrWhiteSpace(_lastTransferPlanId) &&
                 !rejected;
 
-            if (_transferNodeCandidate != null)
+            if (HasProductionNodeCandidate())
             {
                 const int controlGap = 12;
                 int singleButtonWidth =
@@ -1415,6 +1425,14 @@ namespace KMC.MissionControl.Pages
                                 context,
                                 secondaryButton,
                                 "ENCOUNTER ACHIEVED");
+                        }
+                        else if (_submittedTransferUsedCoupledAuthority)
+                        {
+                            _refineTransferNodeButton = Rectangle.Empty;
+                            DrawInactiveButton(
+                                context,
+                                secondaryButton,
+                                "COUPLED AUTHORITY - NO REFINE");
                         }
                         else if (_submittedTransferUsedLambertAuthority)
                         {
@@ -1556,13 +1574,40 @@ namespace KMC.MissionControl.Pages
                         nextLineY);
                     nextLineY += statusLineSpacing;
 
-                    context.Graphics.DrawString(
-                        "TARGET SOI       " +
-                        FormatSystemDistance(status.TargetSoiRadiusMeters),
-                        context.SmallFont,
-                        dim,
-                        left,
-                        nextLineY);
+                    if (_submittedTransferUsedCoupledAuthority &&
+                        _coupledFiniteSoiShadow != null &&
+                        _coupledFiniteSoiShadow.TargetAssessment != null &&
+                        IsFinitePositive(
+                            _coupledFiniteSoiShadow.TargetAssessment.DesiredPeriapsisRadiusMeters) &&
+                        IsFinitePositive(status.ClosestApproachMeters))
+                    {
+                        double desiredPe =
+                            _coupledFiniteSoiShadow.TargetAssessment.DesiredPeriapsisRadiusMeters;
+                        double kspPeError =
+                            Math.Abs(status.ClosestApproachMeters - desiredPe);
+
+                        context.Graphics.DrawString(
+                            "TARGET PE        " +
+                            FormatSystemDistance(desiredPe) +
+                            "  ERR " +
+                            FormatSystemDistance(kspPeError),
+                            context.SmallFont,
+                            kspPeError <= Math.Max(1000.0, desiredPe * 0.002)
+                                ? dim
+                                : bright,
+                            left,
+                            nextLineY);
+                    }
+                    else
+                    {
+                        context.Graphics.DrawString(
+                            "TARGET SOI       " +
+                            FormatSystemDistance(status.TargetSoiRadiusMeters),
+                            context.SmallFont,
+                            dim,
+                            left,
+                            nextLineY);
+                    }
                     nextLineY += statusLineSpacing;
 
                     if (!status.TargetEncounter &&
@@ -1585,6 +1630,84 @@ namespace KMC.MissionControl.Pages
                     }
                 }
             }
+        }
+
+        private LambertParkingOrbitEjectionSolution GetProductionCoupledEjection()
+        {
+            return IsCoupledProductionReady(_coupledFiniteSoiShadow)
+                ? _coupledFiniteSoiShadow.FinalEjection
+                : null;
+        }
+
+        private bool HasProductionNodeCandidate()
+        {
+            return GetProductionCoupledEjection() != null ||
+                GetProductionLambertEjection() != null ||
+                _transferNodeCandidate != null;
+        }
+
+        private static bool IsCoupledProductionReady(
+            CoupledFiniteSoiShadowResult result)
+        {
+            if (result == null ||
+                !result.FeasibilityPassSucceeded ||
+                !result.BPlaneInitializationApplied ||
+                !result.SourceOutbound ||
+                !result.TargetInbound ||
+                !string.Equals(
+                    result.Stage,
+                    "B-PLANE / PE SOLVED",
+                    StringComparison.Ordinal) ||
+                result.FinalEjection == null ||
+                result.TargetAssessment == null ||
+                !result.TargetAssessment.PredictedEncounter ||
+                result.TargetAssessment.PredictedCollision)
+            {
+                return false;
+            }
+
+            LambertParkingOrbitEjectionSolution ejection =
+                result.FinalEjection;
+
+            if (!IsFinitePositive(ejection.BurnUniversalTimeSeconds) ||
+                !IsFinite(ejection.ProgradeDeltaVMetersPerSecond) ||
+                !IsFinite(ejection.NormalDeltaVMetersPerSecond) ||
+                !IsFinite(ejection.RadialDeltaVMetersPerSecond) ||
+                !IsFinitePositive(ejection.TotalDeltaVMetersPerSecond) ||
+                !IsFinite(result.SourceInterfacePositionErrorMeters) ||
+                !IsFinite(result.SourceInterfaceVelocityErrorMetersPerSecond) ||
+                !IsFinite(result.SplitVelocityMismatchMetersPerSecond) ||
+                !IsFinite(result.TargetInterfaceErrorMeters) ||
+                !IsFinite(result.TargetPeriapsisErrorMeters) ||
+                !IsFinite(result.TargetBPlaneMagnitudeErrorMeters))
+            {
+                return false;
+            }
+
+            if (result.SourceInterfacePositionErrorMeters > 1000.0 ||
+                result.SourceInterfaceVelocityErrorMetersPerSecond > 5.0 ||
+                result.SplitVelocityMismatchMetersPerSecond > 5.0 ||
+                result.TargetInterfaceErrorMeters > 1000.0)
+            {
+                return false;
+            }
+
+            double desiredPe =
+                result.TargetAssessment.DesiredPeriapsisRadiusMeters;
+            double desiredB =
+                result.TargetAssessment.DesiredBPlaneRadiusMeters;
+
+            if (!IsFinitePositive(desiredPe) ||
+                !IsFinitePositive(desiredB))
+            {
+                return false;
+            }
+
+            double peTolerance = Math.Max(1000.0, desiredPe * 0.002);
+            double bTolerance = Math.Max(1000.0, desiredB * 0.002);
+
+            return result.TargetPeriapsisErrorMeters <= peTolerance &&
+                result.TargetBPlaneMagnitudeErrorMeters <= bTolerance;
         }
 
         private LambertParkingOrbitEjectionSolution GetProductionLambertEjection()
@@ -1622,6 +1745,29 @@ namespace KMC.MissionControl.Pages
                 double.IsNaN(_submittedTransferRadialDv))
             {
                 return false;
+            }
+
+            if (_submittedTransferUsedCoupledAuthority)
+            {
+                LambertParkingOrbitEjectionSolution ejection =
+                    GetProductionCoupledEjection();
+
+                if (ejection == null)
+                    return false;
+
+                return
+                    Math.Abs(
+                        ejection.BurnUniversalTimeSeconds -
+                        _submittedTransferNodeUt) <= 120.0 &&
+                    Math.Abs(
+                        ejection.ProgradeDeltaVMetersPerSecond -
+                        _submittedTransferProgradeDv) <= 5.0 &&
+                    Math.Abs(
+                        ejection.NormalDeltaVMetersPerSecond -
+                        _submittedTransferNormalDv) <= 5.0 &&
+                    Math.Abs(
+                        ejection.RadialDeltaVMetersPerSecond -
+                        _submittedTransferRadialDv) <= 5.0;
             }
 
             if (_submittedTransferUsedLambertAuthority)
@@ -1691,16 +1837,23 @@ namespace KMC.MissionControl.Pages
         private static ManeuverUplinkPacket BuildProductionNodePacket(
             string vesselId,
             string destinationBodyName,
+            LambertParkingOrbitEjectionSolution coupledEjection,
             LambertParkingOrbitEjectionSolution lambertEjection,
             ManeuverUplinkPacket legacyCandidate,
             string planId,
+            out bool usedCoupledAuthority,
             out bool usedLambertAuthority)
         {
+            usedCoupledAuthority = false;
             usedLambertAuthority = false;
 
-            if (lambertEjection != null)
+            LambertParkingOrbitEjectionSolution authoritativeEjection =
+                coupledEjection ?? lambertEjection;
+
+            if (authoritativeEjection != null)
             {
-                usedLambertAuthority = true;
+                usedCoupledAuthority = coupledEjection != null;
+                usedLambertAuthority = !usedCoupledAuthority;
 
                 return
                     new ManeuverUplinkPacket
@@ -1708,13 +1861,13 @@ namespace KMC.MissionControl.Pages
                         VesselId = vesselId ?? string.Empty,
                         PlanId = planId ?? string.Empty,
                         NodeUniversalTimeSeconds =
-                            lambertEjection.BurnUniversalTimeSeconds,
+                            authoritativeEjection.BurnUniversalTimeSeconds,
                         ProgradeDeltaVMetersPerSecond =
-                            lambertEjection.ProgradeDeltaVMetersPerSecond,
+                            authoritativeEjection.ProgradeDeltaVMetersPerSecond,
                         NormalDeltaVMetersPerSecond =
-                            lambertEjection.NormalDeltaVMetersPerSecond,
+                            authoritativeEjection.NormalDeltaVMetersPerSecond,
                         RadialDeltaVMetersPerSecond =
-                            lambertEjection.RadialDeltaVMetersPerSecond,
+                            authoritativeEjection.RadialDeltaVMetersPerSecond,
                         TargetBodyName =
                             destinationBodyName ?? string.Empty,
                         Operation = "CREATE"
@@ -1748,10 +1901,13 @@ namespace KMC.MissionControl.Pages
 
         private void UploadTransferNode()
         {
+            LambertParkingOrbitEjectionSolution coupledEjection =
+                GetProductionCoupledEjection();
             LambertParkingOrbitEjectionSolution lambertEjection =
                 GetProductionLambertEjection();
 
-            if (lambertEjection == null &&
+            if (coupledEjection == null &&
+                lambertEjection == null &&
                 _transferNodeCandidate == null)
             {
                 _transferNodeActionText =
@@ -1766,19 +1922,24 @@ namespace KMC.MissionControl.Pages
                 Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant();
 
             string vesselId =
-                _transferNodeCandidate != null
-                    ? _transferNodeCandidate.VesselId
-                    : string.Empty;
+                !string.IsNullOrWhiteSpace(_currentTransferVesselId)
+                    ? _currentTransferVesselId
+                    : (_transferNodeCandidate != null
+                        ? _transferNodeCandidate.VesselId
+                        : string.Empty);
 
+            bool usedCoupledAuthority;
             bool usedLambertAuthority;
 
             ManeuverUplinkPacket packet =
                 BuildProductionNodePacket(
                     vesselId,
                     _selectedTransferBodyName,
+                    coupledEjection,
                     lambertEjection,
                     _transferNodeCandidate,
                     planId,
+                    out usedCoupledAuthority,
                     out usedLambertAuthority);
 
             if (packet == null)
@@ -1786,6 +1947,16 @@ namespace KMC.MissionControl.Pages
                 _transferNodeActionText =
                     "NO VALID NODE CANDIDATE";
                 return;
+            }
+
+            if (usedCoupledAuthority &&
+                _coupledFiniteSoiShadow != null &&
+                _coupledFiniteSoiShadow.TargetAssessment != null &&
+                IsFinitePositive(
+                    _coupledFiniteSoiShadow.TargetAssessment.DesiredPeriapsisRadiusMeters))
+            {
+                packet.DesiredPeriapsisRadiusMeters =
+                    _coupledFiniteSoiShadow.TargetAssessment.DesiredPeriapsisRadiusMeters;
             }
 
             string resultText;
@@ -1809,6 +1980,8 @@ namespace KMC.MissionControl.Pages
                     packet.NormalDeltaVMetersPerSecond;
                 _submittedTransferRadialDv =
                     packet.RadialDeltaVMetersPerSecond;
+                _submittedTransferUsedCoupledAuthority =
+                    usedCoupledAuthority;
                 _submittedTransferUsedLambertAuthority =
                     usedLambertAuthority;
             }
@@ -1816,15 +1989,24 @@ namespace KMC.MissionControl.Pages
             _transferNodeActionText =
                 string.IsNullOrWhiteSpace(resultText)
                     ? (sent
-                        ? (usedLambertAuthority
-                            ? "LAMBERT AUTHORITY UPLINK SENT"
-                            : "LEGACY FALLBACK UPLINK SENT")
+                        ? (usedCoupledAuthority
+                            ? "COUPLED AUTHORITY UPLINK SENT"
+                            : (usedLambertAuthority
+                                ? "LAMBERT AUTHORITY UPLINK SENT"
+                                : "LEGACY FALLBACK UPLINK SENT"))
                         : "UPLINK FAILED")
                     : resultText;
         }
 
         private void RefineTransferNode()
         {
+            if (_submittedTransferUsedCoupledAuthority)
+            {
+                _transferNodeActionText =
+                    "COUPLED NODE REFINEMENT DISABLED";
+                return;
+            }
+
             if (_submittedTransferUsedLambertAuthority)
             {
                 _transferNodeActionText =
@@ -1909,9 +2091,14 @@ namespace KMC.MissionControl.Pages
         }
 
 
+        private static bool IsFinite(double value)
+        {
+            return !double.IsNaN(value) && !double.IsInfinity(value);
+        }
+
         private static bool IsFinitePositive(double value)
         {
-            return !double.IsNaN(value) && !double.IsInfinity(value) && value > 0.0;
+            return IsFinite(value) && value > 0.0;
         }
 
         private static string FormatSignedMinutes(double seconds)
@@ -2444,11 +2631,14 @@ namespace KMC.MissionControl.Pages
             return IsFinitePositive(parentMu);
         }
 
+        private static bool IsFinite(double value)
+        {
+            return !double.IsNaN(value) && !double.IsInfinity(value);
+        }
+
         private static bool IsFinitePositive(double value)
         {
-            return !double.IsNaN(value) &&
-                !double.IsInfinity(value) &&
-                value > 0.0;
+            return IsFinite(value) && value > 0.0;
         }
     }
 

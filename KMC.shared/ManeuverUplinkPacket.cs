@@ -25,6 +25,7 @@ namespace KMC.Shared
         public double RadialDeltaVMetersPerSecond { get; set; }
         public string TargetBodyName { get; set; }
         public string Operation { get; set; }
+        public double DesiredPeriapsisRadiusMeters { get; set; }
 
         public ManeuverUplinkPacket()
         {
@@ -32,6 +33,7 @@ namespace KMC.Shared
             PlanId = string.Empty;
             TargetBodyName = string.Empty;
             Operation = "CREATE";
+            DesiredPeriapsisRadiusMeters = double.NaN;
         }
 
         public string Serialize()
@@ -48,7 +50,8 @@ namespace KMC.Shared
                     Format(NormalDeltaVMetersPerSecond),
                     Format(RadialDeltaVMetersPerSecond),
                     Uri.EscapeDataString(TargetBodyName ?? string.Empty),
-                    Uri.EscapeDataString(string.IsNullOrWhiteSpace(Operation) ? "CREATE" : Operation)
+                    Uri.EscapeDataString(string.IsNullOrWhiteSpace(Operation) ? "CREATE" : Operation),
+                    FormatOptional(DesiredPeriapsisRadiusMeters)
                 });
         }
 
@@ -58,15 +61,17 @@ namespace KMC.Shared
             if (string.IsNullOrWhiteSpace(message)) return false;
 
             string[] fields = message.Split('|');
-            if ((fields.Length != 7 && fields.Length != 8 && fields.Length != 9) ||
+            if ((fields.Length != 7 && fields.Length != 8 && fields.Length != 9 && fields.Length != 10) ||
                 !string.Equals(fields[0], ProtocolId, StringComparison.Ordinal))
                 return false;
 
             double nodeUt, prograde, normal, radial;
+            double desiredPeriapsis = double.NaN;
             if (!TryDouble(fields[3], out nodeUt) ||
                 !TryDouble(fields[4], out prograde) ||
                 !TryDouble(fields[5], out normal) ||
-                !TryDouble(fields[6], out radial))
+                !TryDouble(fields[6], out radial) ||
+                (fields.Length >= 10 && !TryOptionalDouble(fields[9], out desiredPeriapsis)))
                 return false;
 
             packet = new ManeuverUplinkPacket
@@ -82,7 +87,8 @@ namespace KMC.Shared
                     : string.Empty,
                 Operation = fields.Length >= 9
                     ? Uri.UnescapeDataString(fields[8])
-                    : "CREATE"
+                    : "CREATE",
+                DesiredPeriapsisRadiusMeters = desiredPeriapsis
             };
 
             return !string.IsNullOrWhiteSpace(packet.VesselId) &&
@@ -92,6 +98,31 @@ namespace KMC.Shared
         private static string Format(double value)
         {
             return value.ToString("R", CultureInfo.InvariantCulture);
+        }
+
+        private static string FormatOptional(double value)
+        {
+            return double.IsNaN(value) || double.IsInfinity(value)
+                ? "N/A"
+                : value.ToString("R", CultureInfo.InvariantCulture);
+        }
+
+        private static bool TryOptionalDouble(string value, out double result)
+        {
+            if (string.Equals(value, "N/A", StringComparison.OrdinalIgnoreCase))
+            {
+                result = double.NaN;
+                return true;
+            }
+
+            if (!double.TryParse(
+                    value,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out result))
+                return false;
+
+            return !double.IsInfinity(result);
         }
 
         private static bool TryDouble(string value, out double result)

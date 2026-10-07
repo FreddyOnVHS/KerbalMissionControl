@@ -52,7 +52,8 @@ internal static class Program
         Run("target terminal search varies B-plane azimuth and arrival epoch", TargetBPlaneConstraintSearchRegression);
         Run("3D direct shooting bootstrap survives parking-aware rejection", DirectShootingBootstrap);
         Run("same-parent planetary geometry regression matrix", PlanetGeometryRegressionMatrix);
-        Run("MAP production node prefers Lambert PNR and retains legacy fallback", ProductionAuthorityPacket);
+        Run("MAP production node prefers coupled PNR, then Lambert, then legacy fallback", ProductionAuthorityPacket);
+        Run("maneuver uplink carries optional desired periapsis", ManeuverUplinkDesiredPeriapsis);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
@@ -1490,43 +1491,68 @@ internal static class Program
         }
     }
 
+    private static LambertParkingOrbitEjectionSolution SyntheticProductionEjection(
+        double burnUt,
+        double prograde,
+        double normal,
+        double radial)
+    {
+        LambertParkingOrbitEjectionSolution ejection =
+            new LambertParkingOrbitEjectionSolution();
+
+        SetInternalProperty(ejection, "BurnUniversalTimeSeconds", burnUt);
+        SetInternalProperty(ejection, "ProgradeDeltaVMetersPerSecond", prograde);
+        SetInternalProperty(ejection, "NormalDeltaVMetersPerSecond", normal);
+        SetInternalProperty(ejection, "RadialDeltaVMetersPerSecond", radial);
+        SetInternalProperty(
+            ejection,
+            "TotalDeltaVMetersPerSecond",
+            Math.Sqrt(
+                prograde * prograde +
+                normal * normal +
+                radial * radial));
+
+        return ejection;
+    }
+
+    private static void SetInternalProperty(
+        object target,
+        string propertyName,
+        object value)
+    {
+        PropertyInfo property =
+            target.GetType().GetProperty(
+                propertyName,
+                BindingFlags.Instance | BindingFlags.Public);
+
+        Check(property != null, "missing property " + propertyName);
+
+        MethodInfo setter = property.GetSetMethod(true);
+        Check(setter != null, "missing setter " + propertyName);
+        setter.Invoke(target, new object[] { value });
+    }
+
     private static void ProductionAuthorityPacket()
     {
-        OrbitMapBody origin, destination;
-        OrbitMapPacket packet;
-        Fixture(0, out origin, out destination, out packet);
+        const string destinationName = "Destination";
 
-        packet.ReferenceBodyName = origin.Name;
-        packet.ActiveOrbit.ReferenceBodyName = origin.Name;
-        origin.RadiusMeters = packet.ReferenceBodyRadiusMeters;
-        origin.SoiRadiusMeters = 500000.0;
-        origin.Orbit.ReferenceBodyName = origin.ParentName;
-        destination.Orbit.ReferenceBodyName = destination.ParentName;
+        // Packet-authority selection is intentionally tested with explicit
+        // P/N/R candidates. Do not make this regression depend on transfer
+        // search, parking geometry, or any other planner merely to manufacture
+        // an ejection object: those systems have their own dedicated tests.
+        LambertParkingOrbitEjectionSolution coupledEjection =
+            SyntheticProductionEjection(
+                22222.0,
+                901.25,
+                -37.5,
+                18.75);
 
-        packet.Bodies.Add(origin);
-        packet.Bodies.Add(destination);
-
-        TransferWindowSolution hohmann;
-        Check(
-            OrbitMapNavigationAdapter.TryCalculateTransferWindow(
-                origin,
-                destination,
-                packet.UniversalTimeSeconds,
-                out hohmann),
-            "Hohmann seed unavailable");
-
-        ParkingOrbitAwareTransferSolution parkingAware;
-        string muSource;
-
-        Check(
-            OrbitMapNavigationAdapter.TryCalculateParkingAwareLambertPreview(
-                packet,
-                origin,
-                destination,
-                hohmann,
-                out parkingAware,
-                out muSource),
-            "Lambert production candidate unavailable");
+        LambertParkingOrbitEjectionSolution lambertEjection =
+            SyntheticProductionEjection(
+                33333.0,
+                812.5,
+                24.0,
+                -11.5);
 
         ManeuverUplinkPacket legacy =
             new ManeuverUplinkPacket
@@ -1536,7 +1562,7 @@ internal static class Program
                 ProgradeDeltaVMetersPerSecond = 321.0,
                 NormalDeltaVMetersPerSecond = 0.0,
                 RadialDeltaVMetersPerSecond = 0.0,
-                TargetBodyName = destination.Name,
+                TargetBodyName = destinationName,
                 Operation = "CREATE"
             };
 
@@ -1547,49 +1573,98 @@ internal static class Program
 
         Check(method != null, "production packet builder missing");
 
-        object[] args =
+        // 14.22.64: coupled authority must win when supplied, and its full
+        // P/N/R impulse must be preserved rather than using Lambert or legacy.
+        object[] coupledArgs =
             new object[]
             {
                 "TEST-VESSEL",
-                destination.Name,
-                parkingAware.Ejection,
+                destinationName,
+                coupledEjection,
+                lambertEjection,
                 legacy,
-                "MAP-XFER-UNIT",
+                "MAP-XFER-COUPLED",
+                false,
                 false
             };
 
-        ManeuverUplinkPacket production =
+        ManeuverUplinkPacket coupled =
             (ManeuverUplinkPacket)method.Invoke(
                 null,
-                args);
+                coupledArgs);
 
-        Check(production != null, "production Lambert packet is null");
-        Check((bool)args[5], "Lambert authority flag not set");
+        Check(coupled != null, "production coupled packet is null");
+        Check((bool)coupledArgs[6], "coupled authority flag not set");
+        Check(!(bool)coupledArgs[7], "coupled packet incorrectly marked Lambert");
         Near(
-            production.NodeUniversalTimeSeconds,
-            parkingAware.Ejection.BurnUniversalTimeSeconds,
+            coupled.NodeUniversalTimeSeconds,
+            coupledEjection.BurnUniversalTimeSeconds,
             1e-9);
         Near(
-            production.ProgradeDeltaVMetersPerSecond,
-            parkingAware.Ejection.ProgradeDeltaVMetersPerSecond,
+            coupled.ProgradeDeltaVMetersPerSecond,
+            coupledEjection.ProgradeDeltaVMetersPerSecond,
             1e-9);
         Near(
-            production.NormalDeltaVMetersPerSecond,
-            parkingAware.Ejection.NormalDeltaVMetersPerSecond,
+            coupled.NormalDeltaVMetersPerSecond,
+            coupledEjection.NormalDeltaVMetersPerSecond,
             1e-9);
         Near(
-            production.RadialDeltaVMetersPerSecond,
-            parkingAware.Ejection.RadialDeltaVMetersPerSecond,
+            coupled.RadialDeltaVMetersPerSecond,
+            coupledEjection.RadialDeltaVMetersPerSecond,
             1e-9);
 
+        // If coupled authority is unavailable, retain the previous Lambert
+        // P/N/R authority path unchanged.
+        object[] lambertArgs =
+            new object[]
+            {
+                "TEST-VESSEL",
+                destinationName,
+                null,
+                lambertEjection,
+                legacy,
+                "MAP-XFER-LAMBERT",
+                true,
+                false
+            };
+
+        ManeuverUplinkPacket lambert =
+            (ManeuverUplinkPacket)method.Invoke(
+                null,
+                lambertArgs);
+
+        Check(lambert != null, "production Lambert packet is null");
+        Check(!(bool)lambertArgs[6], "Lambert packet incorrectly marked coupled");
+        Check((bool)lambertArgs[7], "Lambert authority flag not set");
+        Near(
+            lambert.NodeUniversalTimeSeconds,
+            lambertEjection.BurnUniversalTimeSeconds,
+            1e-9);
+        Near(
+            lambert.ProgradeDeltaVMetersPerSecond,
+            lambertEjection.ProgradeDeltaVMetersPerSecond,
+            1e-9);
+        Near(
+            lambert.NormalDeltaVMetersPerSecond,
+            lambertEjection.NormalDeltaVMetersPerSecond,
+            1e-9);
+        Near(
+            lambert.RadialDeltaVMetersPerSecond,
+            lambertEjection.RadialDeltaVMetersPerSecond,
+            1e-9);
+
+        // With neither coupled nor Lambert authority, the old prograde-only
+        // candidate remains the final safety fallback.
         object[] fallbackArgs =
             new object[]
             {
                 "TEST-VESSEL",
-                destination.Name,
+                destinationName,
+                null,
                 null,
                 legacy,
                 "MAP-XFER-FALLBACK",
+                true,
                 true
             };
 
@@ -1599,7 +1674,8 @@ internal static class Program
                 fallbackArgs);
 
         Check(fallback != null, "legacy fallback packet is null");
-        Check(!(bool)fallbackArgs[5], "fallback incorrectly marked Lambert");
+        Check(!(bool)fallbackArgs[6], "fallback incorrectly marked coupled");
+        Check(!(bool)fallbackArgs[7], "fallback incorrectly marked Lambert");
         Near(
             fallback.NodeUniversalTimeSeconds,
             legacy.NodeUniversalTimeSeconds,
@@ -1610,6 +1686,42 @@ internal static class Program
             1e-9);
         Near(fallback.NormalDeltaVMetersPerSecond, 0.0, 1e-12);
         Near(fallback.RadialDeltaVMetersPerSecond, 0.0, 1e-12);
+    }
+
+
+    private static void ManeuverUplinkDesiredPeriapsis()
+    {
+        ManeuverUplinkPacket packet = new ManeuverUplinkPacket
+        {
+            VesselId = "VESSEL",
+            PlanId = "PLAN",
+            NodeUniversalTimeSeconds = 1234.5,
+            ProgradeDeltaVMetersPerSecond = 100.0,
+            NormalDeltaVMetersPerSecond = -2.0,
+            RadialDeltaVMetersPerSecond = 3.0,
+            TargetBodyName = "Duna",
+            Operation = "CREATE",
+            DesiredPeriapsisRadiusMeters = 640000.0
+        };
+
+        ManeuverUplinkPacket parsed;
+        Check(ManeuverUplinkPacket.TryParse(packet.Serialize(), out parsed),
+            "extended maneuver packet did not parse");
+        Near(parsed.DesiredPeriapsisRadiusMeters, 640000.0, 1e-9);
+
+        string legacy = string.Join("|", new[]
+        {
+            ManeuverUplinkPacket.ProtocolId,
+            Uri.EscapeDataString("VESSEL"),
+            Uri.EscapeDataString("PLAN"),
+            "1234.5", "100", "-2", "3",
+            Uri.EscapeDataString("Duna"),
+            "CREATE"
+        });
+        Check(ManeuverUplinkPacket.TryParse(legacy, out parsed),
+            "legacy 9-field maneuver packet no longer parses");
+        Check(double.IsNaN(parsed.DesiredPeriapsisRadiusMeters),
+            "legacy packet should not invent a desired periapsis");
     }
 
     private static void ProductionCleanup()
