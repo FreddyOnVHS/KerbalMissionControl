@@ -198,37 +198,15 @@ namespace KMC.MissionControl.Rendering.Ascent
         private static string FormatMissionTime(
             double seconds)
         {
-            if (!IsFinite(seconds))
-            {
-                return "---";
-            }
-
-            seconds =
-                Math.Max(
-                    0.0,
-                    seconds);
-
-            int totalSeconds =
-                (int)Math.Floor(seconds);
-
-            int hours =
-                totalSeconds /
-                3600;
-
-            int minutes =
-                (totalSeconds %
-                 3600) /
-                60;
-
-            int remainingSeconds =
-                totalSeconds %
-                60;
-
-            return string.Format(
-                "{0:00}:{1:00}:{2:00}",
-                hours,
-                minutes,
-                remainingSeconds);
+            if (!IsFinite(seconds)) return "---";
+            long totalSeconds = (long)Math.Floor(Math.Max(0.0, seconds) + 0.5);
+            long days = totalSeconds / 86400;
+            long hours = (totalSeconds % 86400) / 3600;
+            long minutes = (totalSeconds % 3600) / 60;
+            long remainingSeconds = totalSeconds % 60;
+            if (days > 0)
+                return string.Format("{0}d {1:00}h {2:00}m {3:00}s", days, hours, minutes, remainingSeconds);
+            return string.Format("{0:00}h {1:00}m {2:00}s", hours, minutes, remainingSeconds);
         }
 
         private static string FormatDistance(

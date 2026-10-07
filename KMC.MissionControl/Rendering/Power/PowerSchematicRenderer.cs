@@ -1323,24 +1323,22 @@ namespace KMC.MissionControl.Rendering.Power
             return value.ToString("0") + "%";
         }
 
-        private static string FormatDuration(double seconds)
+        private static string FormatDuration(
+            double seconds)
         {
             if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0.0)
-            {
                 return "--";
-            }
 
-            if (seconds < 60.0)
-            {
-                return seconds.ToString("0") + " S";
-            }
+            long total = (long)Math.Floor(seconds + 0.5);
+            long days = total / 86400;
+            long hours = (total % 86400) / 3600;
+            long minutes = (total % 3600) / 60;
+            long secs = total % 60;
 
-            if (seconds < 3600.0)
-            {
-                return (seconds / 60.0).ToString("0.0") + " MIN";
-            }
-
-            return (seconds / 3600.0).ToString("0.0") + " HR";
+            if (days > 0) return string.Format("{0}d {1:00}h {2:00}m {3:00}s", days, hours, minutes, secs);
+            if (hours > 0) return string.Format("{0}h {1:00}m {2:00}s", hours, minutes, secs);
+            if (minutes > 0) return string.Format("{0}m {1:00}s", minutes, secs);
+            return secs.ToString("0") + "s";
         }
 
         private static string SplitWords(string value)

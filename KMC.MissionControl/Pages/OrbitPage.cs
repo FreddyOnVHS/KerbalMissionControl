@@ -1571,45 +1571,27 @@ namespace KMC.MissionControl.Pages
         private static string FormatDuration(
             double totalSeconds)
         {
-            if (!IsFinite(totalSeconds) ||
-                totalSeconds <
-                    0.0)
+            if (!IsFinite(totalSeconds) || totalSeconds < 0.0)
             {
                 return "---";
             }
 
-            int hours =
-                (int)(
-                    totalSeconds /
-                    3600.0);
+            long total =
+                (long)Math.Floor(totalSeconds + 0.5);
 
-            int minutes =
-                (int)(
-                    totalSeconds %
-                    3600.0) /
-                60;
+            long days = total / 86400;
+            long hours = (total % 86400) / 3600;
+            long minutes = (total % 3600) / 60;
+            long remainingSeconds = total % 60;
 
-            int seconds =
-                (int)(
-                    totalSeconds %
-                    60.0);
+            if (days > 0)
+                return string.Format("{0}d {1:00}h {2:00}m {3:00}s", days, hours, minutes, remainingSeconds);
+            if (hours > 0)
+                return string.Format("{0}h {1:00}m {2:00}s", hours, minutes, remainingSeconds);
+            if (minutes > 0)
+                return string.Format("{0}m {1:00}s", minutes, remainingSeconds);
 
-            if (hours >
-                0)
-            {
-                return
-                    string.Format(
-                        "{0:00}:{1:00}:{2:00}",
-                        hours,
-                        minutes,
-                        seconds);
-            }
-
-            return
-                string.Format(
-                    "{0:00}:{1:00}",
-                    minutes,
-                    seconds);
+            return remainingSeconds.ToString("0") + "s";
         }
 
         private static string FormatSignedDuration(

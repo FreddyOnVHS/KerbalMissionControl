@@ -2422,33 +2422,16 @@ namespace KMC.MissionControl.Guidance
         private static string FormatCountdown(
             double seconds)
         {
-            if (!IsFinite(seconds))
-            {
-                return "---";
-            }
-
-            seconds =
-                Math.Max(
-                    0.0,
-                    seconds);
-
-            int minutes =
-                (int)(seconds / 60.0);
-
-            int remainingSeconds =
-                (int)Math.Round(
-                    seconds % 60.0);
-
-            if (remainingSeconds >= 60)
-            {
-                minutes++;
-                remainingSeconds = 0;
-            }
-
-            return string.Format(
-                "{0:00}:{1:00}",
-                minutes,
-                remainingSeconds);
+            if (!IsFinite(seconds)) return "---";
+            long total = (long)Math.Floor(Math.Max(0.0, seconds) + 0.5);
+            long days = total / 86400;
+            long hours = (total % 86400) / 3600;
+            long minutes = (total % 3600) / 60;
+            long secs = total % 60;
+            if (days > 0) return string.Format("{0}d {1:00}h {2:00}m {3:00}s", days, hours, minutes, secs);
+            if (hours > 0) return string.Format("{0}h {1:00}m {2:00}s", hours, minutes, secs);
+            if (minutes > 0) return string.Format("{0}m {1:00}s", minutes, secs);
+            return secs.ToString("0") + "s";
         }
 
         private static string FormatOrbitPair(

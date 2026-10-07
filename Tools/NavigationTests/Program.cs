@@ -54,7 +54,9 @@ internal static class Program
         Run("same-parent planetary geometry regression matrix", PlanetGeometryRegressionMatrix);
         Run("MAP production node prefers coupled PNR, then Lambert, then legacy fallback", ProductionAuthorityPacket);
         Run("coupled production API consolidates shadow compatibility", CoupledProductionApiConsolidation);
+        Run("operator periapsis override exposes production solve input", OperatorTargetPeriapsis);
         Run("maneuver uplink carries optional desired periapsis", ManeuverUplinkDesiredPeriapsis);
+        Run("mission time displays use days hours minutes seconds", HumanReadableMissionTimeDisplay);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
@@ -1690,6 +1692,90 @@ internal static class Program
     }
 
 
+
+    private static void OperatorTargetPeriapsis()
+    {
+        MethodInfo[] methods =
+            typeof(CoupledFiniteSoiOptimizer).GetMethods(
+                BindingFlags.Public | BindingFlags.Static);
+
+        bool foundOverride = false;
+        for (int i = 0; i < methods.Length; i++)
+        {
+            if (!string.Equals(methods[i].Name, "TrySolve", StringComparison.Ordinal))
+                continue;
+
+            ParameterInfo[] parameters = methods[i].GetParameters();
+            if (parameters.Length == 9 &&
+                parameters[6].ParameterType == typeof(double))
+            {
+                foundOverride = true;
+                break;
+            }
+        }
+
+        Check(foundOverride,
+            "coupled production solve does not expose desired periapsis input");
+
+        MethodInfo autoMethod =
+            typeof(MapPage).GetMethod(
+                "ComputeAutoTargetPeriapsisRadius",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+        Check(autoMethod != null,
+            "MAP automatic periapsis helper missing");
+
+        OrbitMapBody body = new OrbitMapBody
+        {
+            RadiusMeters = 320000.0,
+            SoiRadiusMeters = 47921949.0
+        };
+
+        double automatic =
+            (double)autoMethod.Invoke(null, new object[] { body });
+
+        Near(automatic, 640000.0, 1e-6);
+    }
+
+
+    private static void HumanReadableMissionTimeDisplay()
+    {
+        const double sample = 90061.0; // 1d 01h 01m 01s
+        const string expected = "1d 01h 01m 01s";
+
+        CheckPrivateTimeFormatter(typeof(MapPage), "FormatTransferInterval", sample, expected);
+        CheckPrivateTimeFormatter(typeof(ManeuverPage), "FormatDuration", sample, expected);
+        CheckPrivateTimeFormatter(typeof(GuidancePage), "FormatDuration", sample, expected);
+        CheckPrivateTimeFormatter(typeof(OrbitPage), "FormatDuration", sample, expected);
+        CheckPrivateTimeFormatter(
+            typeof(KMC.MissionControl.Rendering.Ascent.FooterRenderer),
+            "FormatMissionTime",
+            sample,
+            expected);
+    }
+
+    private static void CheckPrivateTimeFormatter(
+        Type type,
+        string methodName,
+        double seconds,
+        string expected)
+    {
+        MethodInfo method =
+            type.GetMethod(
+                methodName,
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+        Check(method != null, type.Name + "." + methodName + " missing");
+
+        string actual =
+            method.Invoke(null, new object[] { seconds }) as string;
+
+        Check(
+            string.Equals(actual, expected, StringComparison.Ordinal),
+            type.Name + "." + methodName +
+            " expected " + expected + " got " + actual);
+    }
+
     private static void ManeuverUplinkDesiredPeriapsis()
     {
         ManeuverUplinkPacket packet = new ManeuverUplinkPacket
@@ -1730,7 +1816,20 @@ internal static class Program
         MethodInfo productionSolve =
             typeof(CoupledFiniteSoiOptimizer).GetMethod(
                 "TrySolve",
-                BindingFlags.Static | BindingFlags.Public);
+                BindingFlags.Static | BindingFlags.Public,
+                null,
+                new Type[]
+                {
+                    typeof(TransferSearchSolution),
+                    typeof(LambertParkingOrbitEjectionSolution),
+                    typeof(OrbitalElements),
+                    typeof(CelestialBodyState),
+                    typeof(CelestialBodyState),
+                    typeof(double),
+                    typeof(CoupledFiniteSoiResult).MakeByRefType(),
+                    typeof(string).MakeByRefType()
+                },
+                null);
 
         MethodInfo compatibilitySolve =
             typeof(CoupledFiniteSoiOptimizer).GetMethod(

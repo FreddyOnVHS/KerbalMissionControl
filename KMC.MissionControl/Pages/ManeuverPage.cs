@@ -1206,18 +1206,28 @@ namespace KMC.MissionControl.Pages
         private static string Safe(string value) { return string.IsNullOrWhiteSpace(value) ? "---" : value.Trim().ToUpperInvariant(); }
         private static string FormatDistance(double meters) { if (!IsFinite(meters)) return "---"; return Math.Abs(meters) >= 1000.0 ? (meters / 1000.0).ToString("0.000") + " KM" : meters.ToString("0") + " M"; }
         private static string FormatDeltaV(double value) { return IsFinite(value) ? value.ToString("0.00") + " M/S" : "---"; }
-        private static string FormatSeconds(double value) { return IsFinite(value) ? value.ToString("0.00") + " S" : "---"; }
+        private static string FormatSeconds(double value)
+        {
+            if (!IsFinite(value)) return "---";
+            if (Math.Abs(value) < 60.0) return value.ToString("0.00") + " S";
+            return (value < 0.0 ? "-" : string.Empty) + FormatDuration(Math.Abs(value));
+        }
         private static string FormatAngle(double value) { return IsFinite(value) ? value.ToString("0.000") + " DEG" : "---"; }
         private static string FormatRatio(double value) { return IsFinite(value) ? value.ToString("0.000000") : "---"; }
         private static string FormatDuration(double seconds)
         {
             if (!IsFinite(seconds)) return "---";
             bool negative = seconds < 0.0;
-            int total = (int)Math.Floor(Math.Abs(seconds));
-            int hours = total / 3600;
-            int minutes = (total % 3600) / 60;
-            int secs = total % 60;
-            string value = hours > 0 ? hours.ToString("00") + ":" + minutes.ToString("00") + ":" + secs.ToString("00") : minutes.ToString("00") + ":" + secs.ToString("00");
+            long totalSeconds = (long)Math.Floor(Math.Abs(seconds) + 0.5);
+            long days = totalSeconds / 86400;
+            long hours = (totalSeconds % 86400) / 3600;
+            long minutes = (totalSeconds % 3600) / 60;
+            long secs = totalSeconds % 60;
+            string value;
+            if (days > 0) value = string.Format("{0}d {1:00}h {2:00}m {3:00}s", days, hours, minutes, secs);
+            else if (hours > 0) value = string.Format("{0}h {1:00}m {2:00}s", hours, minutes, secs);
+            else if (minutes > 0) value = string.Format("{0}m {1:00}s", minutes, secs);
+            else value = secs.ToString("0") + "s";
             return negative ? "-" + value : value;
         }
         private static bool IsFinite(double value) { return !double.IsNaN(value) && !double.IsInfinity(value); }

@@ -26,6 +26,11 @@ namespace KMC.MissionControl.Pages
         private Rectangle _localTab, _transferTab;
         private Rectangle _createTransferNodeButton;
         private Rectangle _refineTransferNodeButton;
+        private Rectangle _peMinus100Button;
+        private Rectangle _peMinus10Button;
+        private Rectangle _pePlus10Button;
+        private Rectangle _pePlus100Button;
+        private Rectangle _peAutoButton;
         private const int ButtonGap = 16;
         private const int ButtonHorizontalPadding = 14;
         private const int ButtonHeight = 24;
@@ -34,6 +39,8 @@ namespace KMC.MissionControl.Pages
         private bool _initialFitDone;
         private int _subpage;
         private string _selectedTransferBodyName = string.Empty;
+        // NaN means AUTO. Manual values are altitude above the live target surface.
+        private double _transferTargetPeriapsisAltitudeMeters = double.NaN;
         private ManeuverUplinkPacket _transferNodeCandidate;
         private string _lastTransferPlanId = string.Empty;
         private string _transferNodeActionText = "NO NODE REQUEST";
@@ -157,11 +164,26 @@ namespace KMC.MissionControl.Pages
                     return true;
                 }
 
+                if (!_peMinus100Button.IsEmpty && _peMinus100Button.Contains(q))
+                    return AdjustTargetPeriapsisAltitude(-100000.0);
+                if (!_peMinus10Button.IsEmpty && _peMinus10Button.Contains(q))
+                    return AdjustTargetPeriapsisAltitude(-10000.0);
+                if (!_pePlus10Button.IsEmpty && _pePlus10Button.Contains(q))
+                    return AdjustTargetPeriapsisAltitude(10000.0);
+                if (!_pePlus100Button.IsEmpty && _pePlus100Button.Contains(q))
+                    return AdjustTargetPeriapsisAltitude(100000.0);
+                if (!_peAutoButton.IsEmpty && _peAutoButton.Contains(q))
+                {
+                    SetTargetPeriapsisAuto();
+                    return true;
+                }
+
                 for (int i = 0; i < _transferBodyButtons.Count && i < _transferBodyNames.Count; i++)
                 {
                     if (_transferBodyButtons[i].Contains(q))
                     {
                         _selectedTransferBodyName = _transferBodyNames[i];
+                        _transferTargetPeriapsisAltitudeMeters = double.NaN;
                         _lastTransferPlanId = string.Empty;
                         _transferNodeActionText = "NO NODE REQUEST";
                         _submittedTransferDestinationName = string.Empty;
@@ -243,6 +265,11 @@ namespace KMC.MissionControl.Pages
                 : string.Empty;
             _createTransferNodeButton = Rectangle.Empty;
             _refineTransferNodeButton = Rectangle.Empty;
+            _peMinus100Button = Rectangle.Empty;
+            _peMinus10Button = Rectangle.Empty;
+            _pePlus10Button = Rectangle.Empty;
+            _pePlus100Button = Rectangle.Empty;
+            _peAutoButton = Rectangle.Empty;
 
             int top = bounds.Top + 84;
             Rectangle systemPanel = new Rectangle(bounds.Left, top, Math.Max(420, (int)(bounds.Width * 0.58)), bounds.Bottom - top);
@@ -319,7 +346,7 @@ namespace KMC.MissionControl.Pages
              * this hard boundary so the two regions can never collide.
              */
             int transferContentBottom =
-                plannerPanel.Bottom - 235;
+                plannerPanel.Bottom - 245;
 
             using (SolidBrush bright = new SolidBrush(context.PhosphorColor))
             using (SolidBrush dim = new SolidBrush(context.DimPhosphorColor))
@@ -387,12 +414,23 @@ namespace KMC.MissionControl.Pages
                             : "HIERARCHY CHANGE";
 
                     context.Graphics.DrawString(
-                        "ROUTE CLASS  " + relation,
+                        "ROUTE  " + (relation == "SAME PARENT"
+                            ? "DIRECT PLANET TRANSFER"
+                            : "HIERARCHY CHANGE"),
                         context.SmallFont,
                         dim,
                         x,
                         y);
-                    y += transferLineHeight + transferSectionGap;
+                    y += transferLineHeight;
+
+                    DrawTargetPeriapsisControls(
+                        context,
+                        destination,
+                        plannerPanel,
+                        x,
+                        ref y,
+                        transferLineHeight,
+                        transferSectionGap);
 
                     TransferWindowSolution solution;
 
@@ -403,7 +441,7 @@ namespace KMC.MissionControl.Pages
                             out solution))
                     {
                         context.Graphics.DrawString(
-                            "HOHMANN WINDOW  CIRCULAR / COPLANAR APPROX",
+                            "TRANSFER WINDOW",
                             context.SmallFont,
                             bright,
                             x,
@@ -411,26 +449,10 @@ namespace KMC.MissionControl.Pages
                         y += transferLineHeight;
 
                         context.Graphics.DrawString(
-                            "PHASE " +
-                            solution.CurrentPhaseDegrees.ToString("0.00") +
-                            " / REQ " +
-                            solution.RequiredPhaseDegrees.ToString("0.00") +
-                            " deg  WINDOW " +
-                            FormatTransferInterval(solution.WaitSeconds),
-                            context.SmallFont,
-                            dim,
-                            x,
-                            y);
-                        y += transferLineHeight;
-
-                        context.Graphics.DrawString(
-                            "DEP UT " +
-                            solution.DepartureUniversalTimeSeconds.ToString("0") +
-                            "  TOF " +
-                            FormatTransferInterval(solution.TransferTimeSeconds) +
-                            "  PARENT DV " +
-                            solution.ParentFrameDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") +
-                            " m/s",
+                            "DEPART IN " +
+                            FormatTransferInterval(solution.WaitSeconds) +
+                            "  EST FLIGHT " +
+                            FormatTransferInterval(solution.TransferTimeSeconds),
                             context.SmallFont,
                             dim,
                             x,
@@ -443,11 +465,16 @@ namespace KMC.MissionControl.Pages
                             destination,
                             solution);
 
-                        if (y + transferLineHeight * 3 <
+                        bool showFallbackDiagnostics =
+                            _coupledFiniteSoiResult == null ||
+                            !IsCoupledProductionReady(_coupledFiniteSoiResult);
+
+                        if (showFallbackDiagnostics &&
+                            y + transferLineHeight * 3 <
                             transferContentBottom)
                         {
                             context.Graphics.DrawString(
-                                "LAMBERT SEARCH  COARSE 9x9",
+                                "LAMBERT SEARCH / FALLBACK",
                                 context.SmallFont,
                                 bright,
                                 x,
@@ -460,7 +487,7 @@ namespace KMC.MissionControl.Pages
                                     "PATH " +
                                     _lambertPreview.Path.ToString().ToUpperInvariant() +
                                     "  DEP UT " +
-                                    _lambertPreview.DepartureUniversalTimeSeconds.ToString("0") +
+                                    FormatMissionTime(_lambertPreview.DepartureUniversalTimeSeconds) +
                                     "  TOF " +
                                     FormatTransferInterval(_lambertPreview.TimeOfFlightSeconds),
                                     context.SmallFont,
@@ -495,7 +522,8 @@ namespace KMC.MissionControl.Pages
                             }
                         }
 
-                        if (_lambertEjectionPreview != null &&
+                        if (showFallbackDiagnostics &&
+                            _lambertEjectionPreview != null &&
                             y + transferLineHeight * 4 <
                                 transferContentBottom)
                         {
@@ -513,7 +541,7 @@ namespace KMC.MissionControl.Pages
                                     "SELECT " +
                                     _parkingAwareLambertPreview.Transfer.Path.ToString().ToUpperInvariant() +
                                     "  DEP UT " +
-                                    _parkingAwareLambertPreview.Transfer.DepartureUniversalTimeSeconds.ToString("0") +
+                                    FormatMissionTime(_parkingAwareLambertPreview.Transfer.DepartureUniversalTimeSeconds) +
                                     "  ARR VINF " +
                                     _parkingAwareLambertPreview.ArrivalExcessSpeedMetersPerSecond.ToString("0.0"),
                                     context.SmallFont,
@@ -525,7 +553,7 @@ namespace KMC.MissionControl.Pages
 
                             context.Graphics.DrawString(
                                 "BURN UT " +
-                                _lambertEjectionPreview.BurnUniversalTimeSeconds.ToString("0") +
+                                FormatMissionTime(_lambertEjectionPreview.BurnUniversalTimeSeconds) +
                                 "  OFF " +
                                 FormatSignedMinutes(_lambertEjectionPreview.WindowOffsetSeconds),
                                 context.SmallFont,
@@ -557,20 +585,99 @@ namespace KMC.MissionControl.Pages
                                     ? _parkingAwareLambertPreview.FiniteSoiAssessment
                                     : null);
 
-                        // Production coupled-solver diagnostics get priority over
-                        // the retained fallback blocks. Keep the accepted maneuver
-                        // solution and its terminal geometry visible together.
+                        // Keep the normal operator view compact. Detailed numerical
+                        // diagnostics remain visible only when the coupled solution has
+                        // not reached production authority, where they are useful for
+                        // understanding why fallback may be required.
                         if (_coupledFiniteSoiResult != null &&
-                            y + transferLineHeight * 7 <=
-                                transferContentBottom)
+                            IsCoupledProductionReady(_coupledFiniteSoiResult) &&
+                            y + transferLineHeight * 5 <= transferContentBottom)
                         {
                             CoupledFiniteSoiResult coupledResult =
                                 _coupledFiniteSoiResult;
 
                             context.Graphics.DrawString(
-                                IsCoupledProductionReady(coupledResult)
-                                    ? "COUPLED FINITE-SOI OPTIMIZER / PRODUCTION"
-                                    : "COUPLED FINITE-SOI OPTIMIZER / CANDIDATE",
+                                "TRANSFER SOLUTION READY",
+                                context.SmallFont,
+                                bright,
+                                x,
+                                y);
+                            y += transferLineHeight;
+
+                            if (coupledResult.FinalEjection != null)
+                            {
+                                double burnInSeconds =
+                                    coupledResult.FinalEjection.BurnUniversalTimeSeconds -
+                                    packet.UniversalTimeSeconds;
+
+                                context.Graphics.DrawString(
+                                    "BURN IN " +
+                                    FormatTransferInterval(Math.Max(0.0, burnInSeconds)) +
+                                    "  TOTAL DV " +
+                                    coupledResult.FinalDeltaVMetersPerSecond.ToString("0.0") +
+                                    " m/s",
+                                    context.SmallFont,
+                                    dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight;
+
+                                context.Graphics.DrawString(
+                                    "PROGRADE " +
+                                    coupledResult.FinalEjection.ProgradeDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") +
+                                    "  NORMAL " +
+                                    coupledResult.FinalEjection.NormalDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") +
+                                    "  RADIAL " +
+                                    coupledResult.FinalEjection.RadialDeltaVMetersPerSecond.ToString("+0.0;-0.0;0.0") +
+                                    " m/s",
+                                    context.SmallFont,
+                                    dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight;
+                            }
+
+                            if (coupledResult.TargetAssessment != null &&
+                                IsFinitePositive(coupledResult.TargetAssessment.DesiredPeriapsisRadiusMeters) &&
+                                IsFinitePositive(coupledResult.TargetAssessment.TargetPeriapsisRadiusMeters))
+                            {
+                                double desiredAltitude =
+                                    coupledResult.TargetAssessment.DesiredPeriapsisRadiusMeters -
+                                    destination.RadiusMeters;
+                                double predictedAltitude =
+                                    coupledResult.TargetAssessment.TargetPeriapsisRadiusMeters -
+                                    destination.RadiusMeters;
+
+                                context.Graphics.DrawString(
+                                    "TARGET ALT " +
+                                    FormatSystemDistance(desiredAltitude) +
+                                    "  PRED " +
+                                    FormatSystemDistance(predictedAltitude) +
+                                    "  ERR " +
+                                    FormatSystemDistance(coupledResult.TargetPeriapsisErrorMeters),
+                                    context.SmallFont,
+                                    dim,
+                                    x,
+                                    y);
+                                y += transferLineHeight;
+                            }
+
+                            context.Graphics.DrawString(
+                                "STATUS READY TO CREATE NODE  AUTH COUPLED",
+                                context.SmallFont,
+                                bright,
+                                x,
+                                y);
+                            y += transferLineHeight + transferSectionGap;
+                        }
+                        else if (_coupledFiniteSoiResult != null &&
+                            y + transferLineHeight * 7 <= transferContentBottom)
+                        {
+                            CoupledFiniteSoiResult coupledResult =
+                                _coupledFiniteSoiResult;
+
+                            context.Graphics.DrawString(
+                                "COUPLED FINITE-SOI OPTIMIZER / CANDIDATE",
                                 context.SmallFont,
                                 bright,
                                 x,
@@ -612,31 +719,12 @@ namespace KMC.MissionControl.Pages
                                 "  PE ERR " +
                                 FormatSystemDistance(coupledResult.TargetPeriapsisErrorMeters) +
                                 "  " +
-                                (coupledResult.TargetInbound ? "IN" : "NOT IN") +
-                                (coupledResult.BPlaneInitializationApplied
-                                    ? "  B-PLANE INIT"
-                                    : string.Empty),
+                                (coupledResult.TargetInbound ? "IN" : "NOT IN"),
                                 context.SmallFont,
                                 dim,
                                 x,
                                 y);
                             y += transferLineHeight;
-
-                            if (coupledResult.TargetAssessment != null &&
-                                IsFinitePositive(coupledResult.TargetAssessment.DesiredPeriapsisRadiusMeters) &&
-                                IsFinitePositive(coupledResult.TargetAssessment.TargetPeriapsisRadiusMeters))
-                            {
-                                context.Graphics.DrawString(
-                                    "TARGET PE " +
-                                    FormatSystemDistance(coupledResult.TargetAssessment.DesiredPeriapsisRadiusMeters) +
-                                    "  PRED PE " +
-                                    FormatSystemDistance(coupledResult.TargetAssessment.TargetPeriapsisRadiusMeters),
-                                    context.SmallFont,
-                                    dim,
-                                    x,
-                                    y);
-                                y += transferLineHeight;
-                            }
 
                             context.Graphics.DrawString(
                                 "B MAG ERR " +
@@ -657,9 +745,7 @@ namespace KMC.MissionControl.Pages
                                 "  JAC " + coupledResult.TerminalJacobianColumns.ToString() + "/8" +
                                 "  REJ " + coupledResult.TerminalRejectedSteps.ToString() +
                                 "  TR " + coupledResult.TerminalTrustRadius.ToString("0.000") +
-                                (IsCoupledProductionReady(coupledResult)
-                                    ? "  AUTH COUPLED"
-                                    : "  AUTH FALLBACK"),
+                                "  AUTH FALLBACK",
                                 context.SmallFont,
                                 dim,
                                 x,
@@ -688,7 +774,8 @@ namespace KMC.MissionControl.Pages
                             y += transferLineHeight + transferSectionGap;
                         }
 
-                        if (_targetSoiShooting == null &&
+                        if (showFallbackDiagnostics &&
+                            _targetSoiShooting == null &&
                             finiteSoi != null &&
                             y + transferLineHeight * 4 <
                                 transferContentBottom)
@@ -737,7 +824,7 @@ namespace KMC.MissionControl.Pages
 
                             context.Graphics.DrawString(
                                 "EXIT UT " +
-                                finiteSoi.ExitUniversalTimeSeconds.ToString("0") +
+                                FormatMissionTime(finiteSoi.ExitUniversalTimeSeconds) +
                                 "  TO EXIT " +
                                 FormatTransferInterval(
                                     finiteSoi.TimeFromBurnToExitSeconds),
@@ -748,7 +835,8 @@ namespace KMC.MissionControl.Pages
                             y += transferLineHeight + transferSectionGap;
                         }
 
-                        if (_targetSoiShooting == null &&
+                        if (showFallbackDiagnostics &&
+                            _targetSoiShooting == null &&
                             !string.IsNullOrWhiteSpace(
                                 _targetSoiShootingFailureText) &&
                             y + transferLineHeight * 2 <=
@@ -771,7 +859,8 @@ namespace KMC.MissionControl.Pages
                             y += transferLineHeight + transferSectionGap;
                         }
 
-                        if (_targetSoiShooting != null &&
+                        if (showFallbackDiagnostics &&
+                            _targetSoiShooting != null &&
                             _targetSoiShooting.CorrectedAssessment != null &&
                             y + transferLineHeight * 8 <=
                                 transferContentBottom)
@@ -857,7 +946,7 @@ namespace KMC.MissionControl.Pages
 
                             context.Graphics.DrawString(
                                 "ARR UT " +
-                                shot.ArrivalUniversalTimeSeconds.ToString("0") +
+                                FormatMissionTime(shot.ArrivalUniversalTimeSeconds) +
                                 "  VERR " +
                                 shot.SourceLambertVelocityMismatchMetersPerSecond.ToString("0.0") +
                                 " m/s  " +
@@ -994,7 +1083,7 @@ namespace KMC.MissionControl.Pages
 
                                 context.Graphics.DrawString(
                                     "BURN UT " +
-                                    ejection.BurnUniversalTimeSeconds.ToString("0") +
+                                    FormatMissionTime(ejection.BurnUniversalTimeSeconds) +
                                     "  " +
                                     FormatSignedMinutes(
                                         ejection.WindowOffsetSeconds) +
@@ -1175,6 +1264,7 @@ namespace KMC.MissionControl.Pages
                             destination,
                             parkingAware.Transfer,
                             parkingAware.Ejection,
+                            ResolveRequestedPeriapsisRadius(destination),
                             out coupledResult,
                             out coupledFailure))
                     {
@@ -1243,6 +1333,7 @@ namespace KMC.MissionControl.Pages
                                 destination,
                                 preview,
                                 ejectionPreview,
+                                ResolveRequestedPeriapsisRadius(destination),
                                 out directCoupledResult,
                                 out directCoupledFailure))
                         {
@@ -1568,20 +1659,39 @@ namespace KMC.MissionControl.Pages
                         nextLineY);
                     nextLineY += statusLineSpacing;
 
+                    const string encounterLabel = "ENCOUNTER       ";
                     context.Graphics.DrawString(
-                        "ENCOUNTER       " +
-                        (status.TargetEncounter ? "YES" : "NO"),
+                        encounterLabel,
                         context.SmallFont,
                         dim,
                         left,
                         nextLineY);
+
+                    SizeF encounterLabelSize =
+                        context.Graphics.MeasureString(
+                            encounterLabel,
+                            context.SmallFont);
+
+                    using (SolidBrush encounterValueBrush =
+                        new SolidBrush(
+                            status.TargetEncounter
+                                ? Color.LimeGreen
+                                : Color.Red))
+                    {
+                        context.Graphics.DrawString(
+                            status.TargetEncounter ? "YES" : "NO",
+                            context.SmallFont,
+                            encounterValueBrush,
+                            left + encounterLabelSize.Width,
+                            nextLineY);
+                    }
                     nextLineY += statusLineSpacing;
 
                     context.Graphics.DrawString(
                         "CLOSEST APPROACH " +
                         FormatSystemDistance(status.ClosestApproachMeters) +
                         "  @ UT " +
-                        status.ClosestApproachUniversalTimeSeconds.ToString("0"),
+                        FormatMissionTime(status.ClosestApproachUniversalTimeSeconds),
                         context.SmallFont,
                         dim,
                         left,
@@ -1655,8 +1765,15 @@ namespace KMC.MissionControl.Pages
 
         private bool HasProductionNodeCandidate()
         {
-            return GetProductionCoupledEjection() != null ||
-                GetProductionLambertEjection() != null ||
+            if (GetProductionCoupledEjection() != null)
+                return true;
+
+            // A manual periapsis is an operator constraint. Never silently
+            // fall back to a path that was solved for the automatic target.
+            if (IsManualTargetPeriapsis())
+                return false;
+
+            return GetProductionLambertEjection() != null ||
                 _transferNodeCandidate != null;
         }
 
@@ -1917,6 +2034,14 @@ namespace KMC.MissionControl.Pages
         {
             LambertParkingOrbitEjectionSolution coupledEjection =
                 GetProductionCoupledEjection();
+
+            if (IsManualTargetPeriapsis() && coupledEjection == null)
+            {
+                _transferNodeActionText =
+                    "CUSTOM PE REQUIRES COUPLED SOLUTION";
+                return;
+            }
+
             LambertParkingOrbitEjectionSolution lambertEjection =
                 GetProductionLambertEjection();
 
@@ -2091,6 +2216,239 @@ namespace KMC.MissionControl.Pages
                     : resultText;
         }
 
+        private bool IsManualTargetPeriapsis()
+        {
+            return IsFinitePositive(_transferTargetPeriapsisAltitudeMeters);
+        }
+
+        private double ResolveRequestedPeriapsisRadius(OrbitMapBody destination)
+        {
+            if (!IsManualTargetPeriapsis() || destination == null ||
+                !IsFinitePositive(destination.RadiusMeters) ||
+                !IsFinitePositive(destination.SoiRadiusMeters))
+                return double.NaN;
+
+            double radius =
+                destination.RadiusMeters +
+                _transferTargetPeriapsisAltitudeMeters;
+
+            return radius > destination.RadiusMeters &&
+                   radius < destination.SoiRadiusMeters
+                ? radius
+                : double.NaN;
+        }
+
+        private static double ComputeAutoTargetPeriapsisRadius(OrbitMapBody destination)
+        {
+            if (destination == null ||
+                !IsFinitePositive(destination.SoiRadiusMeters))
+                return double.NaN;
+
+            double desired = destination.SoiRadiusMeters * 0.01;
+            if (IsFinitePositive(destination.RadiusMeters))
+                desired = Math.Max(desired, destination.RadiusMeters * 2.0);
+
+            double maximum = destination.SoiRadiusMeters * 0.25;
+            desired = Math.Min(desired, maximum);
+
+            if (IsFinitePositive(destination.RadiusMeters) &&
+                desired <= destination.RadiusMeters)
+            {
+                double fallback = destination.RadiusMeters * 1.10;
+                if (fallback >= destination.SoiRadiusMeters)
+                    return double.NaN;
+                desired = Math.Min(fallback, maximum);
+            }
+
+            return IsFinitePositive(desired) ? desired : double.NaN;
+        }
+
+        private bool AdjustTargetPeriapsisAltitude(double deltaMeters)
+        {
+            OrbitMapPacket packet;
+            DateTime received;
+            if (!OrbitMapSnapshotStore.TryGetLatest(out packet, out received) ||
+                packet == null)
+                return false;
+
+            OrbitMapBody destination =
+                FindBody(packet.Bodies, _selectedTransferBodyName);
+            if (destination == null ||
+                !IsFinitePositive(destination.RadiusMeters) ||
+                !IsFinitePositive(destination.SoiRadiusMeters))
+                return false;
+
+            double currentAltitude;
+            if (IsManualTargetPeriapsis())
+            {
+                currentAltitude = _transferTargetPeriapsisAltitudeMeters;
+            }
+            else
+            {
+                double automaticRadius =
+                    ComputeAutoTargetPeriapsisRadius(destination);
+                if (!IsFinitePositive(automaticRadius))
+                    return false;
+                currentAltitude =
+                    automaticRadius - destination.RadiusMeters;
+            }
+
+            double minimumAltitude =
+                Math.Max(1000.0, destination.RadiusMeters * 0.01);
+            double maximumAltitude =
+                destination.SoiRadiusMeters * 0.90 -
+                destination.RadiusMeters;
+
+            if (!IsFinitePositive(maximumAltitude) ||
+                maximumAltitude <= minimumAltitude)
+                return false;
+
+            _transferTargetPeriapsisAltitudeMeters =
+                Math.Max(
+                    minimumAltitude,
+                    Math.Min(
+                        maximumAltitude,
+                        currentAltitude + deltaMeters));
+
+            InvalidateTransferSolutionForPeriapsisChange();
+            return true;
+        }
+
+        private void SetTargetPeriapsisAuto()
+        {
+            if (!IsManualTargetPeriapsis())
+                return;
+
+            _transferTargetPeriapsisAltitudeMeters = double.NaN;
+            InvalidateTransferSolutionForPeriapsisChange();
+        }
+
+        private void InvalidateTransferSolutionForPeriapsisChange()
+        {
+            _lastTransferPlanId = string.Empty;
+            _transferNodeActionText = "NO NODE REQUEST";
+            _submittedTransferDestinationName = string.Empty;
+            _submittedTransferNodeUt = double.NaN;
+            _submittedTransferProgradeDv = double.NaN;
+            _submittedTransferNormalDv = double.NaN;
+            _submittedTransferRadialDv = double.NaN;
+            _submittedTransferUsedCoupledAuthority = false;
+            _submittedTransferUsedLambertAuthority = false;
+            ResetLambertPreview();
+        }
+
+        private void DrawTargetPeriapsisControls(
+            MissionRenderContext context,
+            OrbitMapBody destination,
+            Rectangle plannerPanel,
+            int x,
+            ref int y,
+            int lineHeight,
+            int sectionGap)
+        {
+            double autoRadius = ComputeAutoTargetPeriapsisRadius(destination);
+            double displayedAltitude = IsManualTargetPeriapsis()
+                ? _transferTargetPeriapsisAltitudeMeters
+                : (IsFinitePositive(autoRadius) && destination != null &&
+                   IsFinitePositive(destination.RadiusMeters)
+                    ? autoRadius - destination.RadiusMeters
+                    : double.NaN);
+
+            const int gap = 8;
+            const int buttonHeight = 28;
+            string[] labels =
+            {
+                "LOWER 100",
+                "LOWER 10",
+                "RAISE 10",
+                "RAISE 100",
+                "AUTO"
+            };
+            Rectangle[] buttons = new Rectangle[5];
+
+            string text =
+                "TARGET PERIAPSIS ALTITUDE  " +
+                (IsFinitePositive(displayedAltitude)
+                    ? (displayedAltitude / 1000.0).ToString("0.0") + " km"
+                    : "---") +
+                (IsManualTargetPeriapsis() ? "  MANUAL" : "  AUTO");
+
+            using (SolidBrush brush = new SolidBrush(context.PhosphorColor))
+            {
+                context.Graphics.DrawString(
+                    text,
+                    context.SmallFont,
+                    brush,
+                    x,
+                    y + 3);
+            }
+
+            int buttonTop = y + Math.Max(lineHeight, buttonHeight);
+            int buttonLeft = x;
+
+            for (int i = 0; i < labels.Length; i++)
+            {
+                int width = Math.Max(82, MeasureButtonWidth(
+                    context.Graphics, context.SmallFont, labels[i]));
+
+                if (buttonLeft + width > plannerPanel.Right - 12)
+                    width = Math.Max(1, plannerPanel.Right - 12 - buttonLeft);
+
+                buttons[i] = new Rectangle(
+                    buttonLeft, buttonTop, width, buttonHeight);
+
+                bool selected =
+                    i == 4 && !IsManualTargetPeriapsis();
+
+                DrawPeriapsisControlButton(
+                    context,
+                    buttons[i],
+                    labels[i],
+                    selected);
+
+                buttonLeft = buttons[i].Right + gap;
+            }
+
+            _peMinus100Button = buttons[0];
+            _peMinus10Button = buttons[1];
+            _pePlus10Button = buttons[2];
+            _pePlus100Button = buttons[3];
+            _peAutoButton = buttons[4];
+
+            y = buttonTop + buttonHeight + sectionGap;
+        }
+
+        private static void DrawPeriapsisControlButton(
+            MissionRenderContext context,
+            Rectangle rectangle,
+            string text,
+            bool selected)
+        {
+            Color outline = context.PhosphorColor;
+            Color fill = Color.FromArgb(
+                selected ? 52 : 24,
+                context.PhosphorColor);
+
+            using (SolidBrush background = new SolidBrush(fill))
+                context.Graphics.FillRectangle(background, rectangle);
+
+            using (Pen pen = new Pen(outline, selected ? 1.8f : 1.2f))
+                context.Graphics.DrawRectangle(pen, rectangle);
+
+            using (SolidBrush brush = new SolidBrush(context.PhosphorColor))
+            using (StringFormat format = new StringFormat())
+            {
+                format.Alignment = StringAlignment.Center;
+                format.LineAlignment = StringAlignment.Center;
+                context.Graphics.DrawString(
+                    text,
+                    context.SmallFont,
+                    brush,
+                    rectangle,
+                    format);
+            }
+        }
+
         private static string SanitizePlanToken(string value)
         {
             if (string.IsNullOrWhiteSpace(value)) return "BODY";
@@ -2117,21 +2475,23 @@ namespace KMC.MissionControl.Pages
 
         private static string FormatSignedMinutes(double seconds)
         {
-            if (double.IsNaN(seconds) || double.IsInfinity(seconds)) return "---";
+            if (!IsFinite(seconds)) return "---";
             string sign = seconds >= 0.0 ? "+" : "-";
-            long totalSeconds = (long)Math.Floor(Math.Abs(seconds) + 0.5);
-            long minutes = totalSeconds / 60;
-            long secs = totalSeconds % 60;
-            return string.Format("{0}{1}m {2:00}s", sign, minutes, secs);
+            return sign + FormatTransferInterval(Math.Abs(seconds));
         }
 
         private static string FormatTransferInterval(double seconds)
         {
-            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0.0) return "---";
-            long totalMinutes = (long)Math.Floor((seconds / 60.0) + 0.5);
-            long hours = totalMinutes / 60;
-            long minutes = totalMinutes % 60;
-            return string.Format("{0}h {1:00}m", hours, minutes);
+            if (!IsFinite(seconds) || seconds < 0.0) return "---";
+            long totalSeconds = (long)Math.Floor(seconds + 0.5);
+            long days = totalSeconds / 86400;
+            long hours = (totalSeconds % 86400) / 3600;
+            long minutes = (totalSeconds % 3600) / 60;
+            long secs = totalSeconds % 60;
+            if (days > 0) return string.Format("{0}d {1:00}h {2:00}m {3:00}s", days, hours, minutes, secs);
+            if (hours > 0) return string.Format("{0}h {1:00}m {2:00}s", hours, minutes, secs);
+            if (minutes > 0) return string.Format("{0}m {1:00}s", minutes, secs);
+            return secs.ToString("0") + "s";
         }
 
         private void EnsureTransferSelection(OrbitMapPacket packet, string origin)
@@ -2140,6 +2500,7 @@ namespace KMC.MissionControl.Pages
             if (selected != null && !string.Equals(selected.Name, origin, StringComparison.OrdinalIgnoreCase)) return;
 
             _selectedTransferBodyName = string.Empty;
+            _transferTargetPeriapsisAltitudeMeters = double.NaN;
             for (int i = 0; i < packet.Bodies.Count; i++)
             {
                 OrbitMapBody body = packet.Bodies[i];
@@ -2201,11 +2562,15 @@ namespace KMC.MissionControl.Pages
             return (meters / 1000.0).ToString("0.0") + " km";
         }
 
+        private static string FormatMissionTime(double seconds)
+        {
+            if (!IsFinite(seconds) || seconds < 0.0) return "---";
+            return FormatTransferInterval(seconds);
+        }
+
         private static string FormatDuration(double seconds)
         {
-            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds <= 0.0) return "---";
-            double days = seconds / 86400.0;
-            return days >= 1.0 ? days.ToString("0.00") + " d" : (seconds / 3600.0).ToString("0.00") + " h";
+            return FormatTransferInterval(seconds);
         }
 
         private static int MeasureButtonWidth(Graphics graphics, Font font, string text)
@@ -2576,6 +2941,21 @@ namespace KMC.MissionControl.Pages
             out CoupledFiniteSoiResult result,
             out string failureReason)
         {
+            return TrySolve(
+                packet, origin, destination, transfer, bootstrapEjection,
+                double.NaN, out result, out failureReason);
+        }
+
+        public static bool TrySolve(
+            OrbitMapPacket packet,
+            OrbitMapBody origin,
+            OrbitMapBody destination,
+            TransferSearchSolution transfer,
+            LambertParkingOrbitEjectionSolution bootstrapEjection,
+            double desiredPeriapsisRadiusMeters,
+            out CoupledFiniteSoiResult result,
+            out string failureReason)
+        {
             result = null;
             failureReason = string.Empty;
 
@@ -2601,6 +2981,7 @@ namespace KMC.MissionControl.Pages
                 OrbitMapNavigationAdapter.ToBody(origin),
                 OrbitMapNavigationAdapter.ToBody(destination),
                 parentMu,
+                desiredPeriapsisRadiusMeters,
                 out result,
                 out failureReason);
         }

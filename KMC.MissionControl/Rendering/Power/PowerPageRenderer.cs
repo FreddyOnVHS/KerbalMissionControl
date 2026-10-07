@@ -2419,31 +2419,19 @@ namespace KMC.MissionControl.Rendering.Power
         private static string FormatDuration(
             double seconds)
         {
-            if (double.IsNaN(seconds) ||
-                double.IsInfinity(seconds) ||
-                seconds < 0.0)
-            {
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0.0)
                 return "--";
-            }
 
-            TimeSpan time =
-                TimeSpan.FromSeconds(
-                    seconds);
+            long total = (long)Math.Floor(seconds + 0.5);
+            long days = total / 86400;
+            long hours = (total % 86400) / 3600;
+            long minutes = (total % 3600) / 60;
+            long secs = total % 60;
 
-            if (time.TotalHours >= 1.0)
-            {
-                return
-                    ((int)time.TotalHours).ToString("00") +
-                    ":" +
-                    time.Minutes.ToString("00") +
-                    ":" +
-                    time.Seconds.ToString("00");
-            }
-
-            return
-                time.Minutes.ToString("00") +
-                ":" +
-                time.Seconds.ToString("00");
+            if (days > 0) return string.Format("{0}d {1:00}h {2:00}m {3:00}s", days, hours, minutes, secs);
+            if (hours > 0) return string.Format("{0}h {1:00}m {2:00}s", hours, minutes, secs);
+            if (minutes > 0) return string.Format("{0}m {1:00}s", minutes, secs);
+            return secs.ToString("0") + "s";
         }
 
         private static string SplitWords(

@@ -57,7 +57,25 @@ namespace KMC.Engine.Navigation
         {
             return TrySolveCore(
                 transfer, bootstrapEjection, parkingOrbit, originBody,
-                destinationBody, parentGravParameter, out result, out failureReason);
+                destinationBody, parentGravParameter, double.NaN,
+                out result, out failureReason);
+        }
+
+        public static bool TrySolve(
+            TransferSearchSolution transfer,
+            LambertParkingOrbitEjectionSolution bootstrapEjection,
+            OrbitalElements parkingOrbit,
+            CelestialBodyState originBody,
+            CelestialBodyState destinationBody,
+            double parentGravParameter,
+            double desiredPeriapsisRadiusMeters,
+            out CoupledFiniteSoiResult result,
+            out string failureReason)
+        {
+            return TrySolveCore(
+                transfer, bootstrapEjection, parkingOrbit, originBody,
+                destinationBody, parentGravParameter, desiredPeriapsisRadiusMeters,
+                out result, out failureReason);
         }
 
         public static bool TrySolveShadow(
@@ -73,7 +91,7 @@ namespace KMC.Engine.Navigation
             CoupledFiniteSoiResult productionResult;
             bool solved = TrySolveCore(
                 transfer, bootstrapEjection, parkingOrbit, originBody,
-                destinationBody, parentGravParameter,
+                destinationBody, parentGravParameter, double.NaN,
                 out productionResult, out failureReason);
             result = productionResult as CoupledFiniteSoiShadowResult;
             return solved && result != null;
@@ -86,6 +104,7 @@ namespace KMC.Engine.Navigation
             CelestialBodyState originBody,
             CelestialBodyState destinationBody,
             double parentGravParameter,
+            double desiredPeriapsisRadiusMeters,
             out CoupledFiniteSoiResult result,
             out string failureReason)
         {
@@ -102,6 +121,15 @@ namespace KMC.Engine.Navigation
                 !FinitePositive(parentGravParameter))
             {
                 failureReason = "COUPLED INPUT / BODY DATA";
+                return false;
+            }
+
+            if (Finite(desiredPeriapsisRadiusMeters) &&
+                (!FinitePositive(destinationBody.RadiusMeters) ||
+                 desiredPeriapsisRadiusMeters <= destinationBody.RadiusMeters ||
+                 desiredPeriapsisRadiusMeters >= destinationBody.SoiRadiusMeters))
+            {
+                failureReason = "COUPLED TARGET PE OUT OF RANGE";
                 return false;
             }
 
@@ -383,6 +411,7 @@ namespace KMC.Engine.Navigation
                         originBody,
                         destinationBody,
                         parentGravParameter,
+                        desiredPeriapsisRadiusMeters,
                         bestQ,
                         parameterScale,
                         baseMidpointPosition,
@@ -409,7 +438,7 @@ namespace KMC.Engine.Navigation
                         int usableColumns;
                         if (!TryBuildRobustTerminalJacobian(
                                 transfer, bootstrapEjection, parkingOrbit, originBody,
-                                destinationBody, parentGravParameter, terminalQ,
+                                destinationBody, parentGravParameter, desiredPeriapsisRadiusMeters, terminalQ,
                                 parameterScale, baseMidpointPosition, terminalCurrent,
                                 out jacobian, out usableColumns, ref evaluations))
                         {
@@ -464,7 +493,7 @@ namespace KMC.Engine.Navigation
                             ConstraintEvaluation trial;
                             bool trialOk = TryEvaluateTerminalConstraints(
                                 transfer, bootstrapEjection, parkingOrbit, originBody,
-                                destinationBody, parentGravParameter, trialQ, parameterScale,
+                                destinationBody, parentGravParameter, desiredPeriapsisRadiusMeters, trialQ, parameterScale,
                                 baseMidpointPosition, out trial);
                             if (trialOk)
                                 evaluations++;
@@ -534,7 +563,8 @@ namespace KMC.Engine.Navigation
                     out bestTarget,
                     out bestOutbound,
                     out bestInbound,
-                    best.ArrivalUniversalTimeSeconds))
+                    best.ArrivalUniversalTimeSeconds,
+                    desiredPeriapsisRadiusMeters))
             {
                 failureReason = "COUPLED SPLIT FINAL EVALUATION";
                 return false;
@@ -754,6 +784,7 @@ namespace KMC.Engine.Navigation
             CelestialBodyState originBody,
             CelestialBodyState destinationBody,
             double parentMu,
+            double desiredPeriapsisRadiusMeters,
             double[] q,
             double[] scale,
             Vector3d baseMidpointPosition,
@@ -790,11 +821,11 @@ namespace KMC.Engine.Navigation
                     bool plusOk = Math.Abs(plusStep) >= 1e-12 &&
                         TryEvaluateTerminalConstraints(
                             transfer, bootstrap, parkingOrbit, originBody, destinationBody,
-                            parentMu, plusQ, scale, baseMidpointPosition, out plus);
+                            parentMu, desiredPeriapsisRadiusMeters, plusQ, scale, baseMidpointPosition, out plus);
                     bool minusOk = Math.Abs(minusStep) >= 1e-12 &&
                         TryEvaluateTerminalConstraints(
                             transfer, bootstrap, parkingOrbit, originBody, destinationBody,
-                            parentMu, minusQ, scale, baseMidpointPosition, out minus);
+                            parentMu, desiredPeriapsisRadiusMeters, minusQ, scale, baseMidpointPosition, out minus);
                     if (plusOk) evaluations++;
                     if (minusOk) evaluations++;
 
@@ -882,6 +913,7 @@ namespace KMC.Engine.Navigation
             CelestialBodyState originBody,
             CelestialBodyState destinationBody,
             double parentMu,
+            double desiredPeriapsisRadiusMeters,
             double[] q,
             double[] scale,
             Vector3d baseMidpointPosition,
@@ -902,7 +934,8 @@ namespace KMC.Engine.Navigation
                     transfer, baseEvaluation.Candidate, parkingOrbit, originBody,
                     destinationBody, parentMu, out sourceAssessment, out targetAssessment,
                     out sourceOutbound, out targetInbound,
-                    baseEvaluation.ArrivalUniversalTimeSeconds))
+                    baseEvaluation.ArrivalUniversalTimeSeconds,
+                    desiredPeriapsisRadiusMeters))
                 return false;
 
             if (targetAssessment == null ||

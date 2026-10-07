@@ -4,8 +4,8 @@ using KMC.Engine.CelestialMechanics;
 namespace KMC.Engine.Navigation
 {
     /// <summary>
-    /// Shared trajectory assessment used only by the new coupled finite-SOI
-    /// shadow solver. It evaluates one complete candidate from parking burn,
+    /// Shared trajectory assessment used by the production coupled finite-SOI
+    /// solver. It evaluates one complete candidate from parking burn,
     /// through source SOI exit, parent-frame coast, target SOI entry, and
     /// target hyperbolic periapsis.
     /// </summary>
@@ -24,7 +24,8 @@ namespace KMC.Engine.Navigation
             out TargetSoiShootingAssessment targetAssessment,
             out bool sourceOutbound,
             out bool targetInbound,
-            double arrivalUniversalTimeSecondsOverride = double.NaN)
+            double arrivalUniversalTimeSecondsOverride = double.NaN,
+            double desiredPeriapsisRadiusOverrideMeters = double.NaN)
         {
             sourceAssessment = null;
             targetAssessment = null;
@@ -153,7 +154,16 @@ namespace KMC.Engine.Navigation
             bool predictedEncounter =
                 missDistance <= destinationBody.SoiRadiusMeters;
 
-            double desiredPeriapsis = ComputeDesiredPeriapsisRadius(destinationBody);
+            double desiredPeriapsis =
+                Positive(desiredPeriapsisRadiusOverrideMeters)
+                    ? desiredPeriapsisRadiusOverrideMeters
+                    : ComputeDesiredPeriapsisRadius(destinationBody);
+
+            if (Positive(desiredPeriapsisRadiusOverrideMeters) &&
+                (!Positive(destinationBody.RadiusMeters) ||
+                 desiredPeriapsisRadiusOverrideMeters <= destinationBody.RadiusMeters ||
+                 desiredPeriapsisRadiusOverrideMeters >= destinationBody.SoiRadiusMeters))
+                return false;
             double entryUt = double.NaN;
             double periapsisRadius = double.NaN;
             double periapsisAltitude = double.NaN;

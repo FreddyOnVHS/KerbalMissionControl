@@ -1920,25 +1920,27 @@ namespace KMC.MissionControl.Pages
         private static string FormatDuration(
             double seconds)
         {
-            if (!IsFinite(seconds))
+            if (!IsFinite(seconds) || seconds < 0.0)
             {
                 return "---";
             }
 
-            string sign =
-                seconds < 0.0
-                    ? "-"
-                    : string.Empty;
+            long totalSeconds =
+                (long)Math.Floor(seconds + 0.5);
 
-            int total =
-                (int)Math.Floor(
-                    Math.Abs(seconds));
+            long days = totalSeconds / 86400;
+            long hours = (totalSeconds % 86400) / 3600;
+            long minutes = (totalSeconds % 3600) / 60;
+            long remainingSeconds = totalSeconds % 60;
 
-            return
-                sign +
-                (total / 60).ToString("00") +
-                ":" +
-                (total % 60).ToString("00");
+            if (days > 0)
+                return string.Format("{0}d {1:00}h {2:00}m {3:00}s", days, hours, minutes, remainingSeconds);
+            if (hours > 0)
+                return string.Format("{0}h {1:00}m {2:00}s", hours, minutes, remainingSeconds);
+            if (minutes > 0)
+                return string.Format("{0}m {1:00}s", minutes, remainingSeconds);
+
+            return remainingSeconds.ToString("0") + "s";
         }
 
         private static string FormatDeltaV(
@@ -1980,10 +1982,9 @@ namespace KMC.MissionControl.Pages
         private static string FormatSeconds(
             double value)
         {
-            return
-                IsFinite(value)
-                    ? value.ToString("0.00") + " S"
-                    : "---";
+            if (!IsFinite(value)) return "---";
+            if (Math.Abs(value) < 60.0) return value.ToString("0.00") + " S";
+            return (value < 0.0 ? "-" : string.Empty) + FormatDuration(Math.Abs(value));
         }
 
         private static string FormatAngle(
