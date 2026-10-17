@@ -64,6 +64,7 @@ internal static class Program
         Run("OrbitMap maneuver nodes preserve KSP-authoritative burn vector", OrbitMapAuthoritativeManeuverVectorRoundTrip);
         Run("GUID selects OrbitMap authoritative vector by vessel and node UT", ManeuverVectorStoreExactMatch);
         Run("standalone maneuver-vector UDP path removed", StandaloneManeuverVectorUdpRemoved);
+        Run("maneuver execution readiness is Engine-owned and explicit", ManeuverExecutionReadinessRegression);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
@@ -1881,7 +1882,7 @@ internal static class Program
 
         Check(
             source.IndexOf(
-                "STATUS NODE CREATED / READY FOR BURN",
+                "STATUS NODE CREATED / READY FOR GUIDANCE",
                 StringComparison.Ordinal) >= 0,
             "upper transfer status does not reflect created node");
     }
@@ -2319,6 +2320,130 @@ internal static class Program
                 "ManeuverVectorTelemetryReceiver",
                 StringComparison.Ordinal) < 0,
             "standalone Mission Control maneuver-vector UDP receiver still present");
+    }
+
+    private static void ManeuverExecutionReadinessRegression()
+    {
+        string enginePath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.Engine",
+                "Guidance",
+                "GuidanceSystem.cs");
+
+        string modelPath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.Engine",
+                "Guidance",
+                "GuidanceSolutionModel.cs");
+
+        string guidancePagePath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.MissionControl",
+                "Pages",
+                "GuidancePage.cs");
+
+        string mapPagePath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.MissionControl",
+                "Pages",
+                "MapPage.cs");
+
+        string maneuverPagePath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.MissionControl",
+                "Pages",
+                "ManeuverPage.cs");
+
+        Check(
+            File.Exists(enginePath) &&
+            File.Exists(modelPath) &&
+            File.Exists(guidancePagePath) &&
+            File.Exists(mapPagePath) &&
+            File.Exists(maneuverPagePath),
+            "readiness regression source unavailable");
+
+        string engine =
+            File.ReadAllText(enginePath);
+
+        string model =
+            File.ReadAllText(modelPath);
+
+        string guidancePage =
+            File.ReadAllText(guidancePagePath);
+
+        string mapPage =
+            File.ReadAllText(mapPagePath);
+
+        string maneuverPage =
+            File.ReadAllText(maneuverPagePath);
+
+        Check(
+            model.IndexOf(
+                "public string BurnReadiness",
+                StringComparison.Ordinal) >= 0 &&
+            engine.IndexOf(
+                "PopulateBurnReadiness(_latest);",
+                StringComparison.Ordinal) >= 0,
+            "burn readiness is not Engine-owned");
+
+        Check(
+            engine.IndexOf(
+                "!solution.NodeVerified",
+                StringComparison.Ordinal) >= 0 &&
+            engine.IndexOf(
+                "!solution.ExecutionAuthorized",
+                StringComparison.Ordinal) >= 0 &&
+            engine.IndexOf(
+                "!solution.ManeuverVectorAvailable",
+                StringComparison.Ordinal) >= 0 &&
+            engine.IndexOf(
+                "AlignmentHoldToleranceDegrees",
+                StringComparison.Ordinal) >= 0 &&
+            engine.IndexOf(
+                "TimeToIgnitionSeconds",
+                StringComparison.Ordinal) >= 0,
+            "readiness does not use verified node/vector/alignment/timing state");
+
+        Check(
+            engine.IndexOf(
+                "\"ALIGN REQUIRED\"",
+                StringComparison.Ordinal) >= 0 &&
+            engine.IndexOf(
+                "\"READY\"",
+                StringComparison.Ordinal) >= 0 &&
+            engine.IndexOf(
+                "\"FINAL COUNT\"",
+                StringComparison.Ordinal) >= 0 &&
+            engine.IndexOf(
+                "\"IGNITION DUE\"",
+                StringComparison.Ordinal) >= 0,
+            "crew readiness states incomplete");
+
+        Check(
+            guidancePage.IndexOf(
+                "\"BURN STATUS\"",
+                StringComparison.Ordinal) >= 0 &&
+            guidancePage.IndexOf(
+                "guidance.BurnReadiness",
+                StringComparison.Ordinal) >= 0,
+            "GUID does not expose explicit burn status");
+
+        Check(
+            mapPage.IndexOf(
+                "STATUS NODE CREATED / READY FOR GUIDANCE",
+                StringComparison.Ordinal) >= 0,
+            "MAP still claims burn readiness before GUID");
+
+        Check(
+            maneuverPage.IndexOf(
+                "NODE VERIFIED / READY FOR GUIDANCE",
+                StringComparison.Ordinal) >= 0,
+            "MNV handoff does not identify guidance readiness");
     }
 
     private static void ManeuverUplinkDesiredPeriapsis()

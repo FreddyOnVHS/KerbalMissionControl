@@ -176,6 +176,14 @@ namespace KMC.Engine.Guidance
                 }
             }
 
+            /*
+             * 14.22.74:
+             * Classify crew-visible burn readiness only after the complete
+             * Engine solution has been built. This keeps MAP/MNV ownership
+             * separate from actual execution readiness.
+             */
+            PopulateBurnReadiness(_latest);
+
             if (receivedUtc - _lastDiagnosticUtc >=
                 TimeSpan.FromSeconds(
                     DiagnosticIntervalSeconds))
@@ -1690,6 +1698,125 @@ namespace KMC.Engine.Guidance
             }
         }
 
+        private static void PopulateBurnReadiness(
+            GuidanceSolutionModel solution)
+        {
+            if (solution == null)
+            {
+                return;
+            }
+
+            if (solution.BurnComplete)
+            {
+                solution.BurnReadiness =
+                    solution.PostBurnVerificationAvailable
+                        ? "COMPLETE / VERIFIED"
+                        : "COMPLETE / VERIFYING";
+
+                return;
+            }
+
+            if (solution.BurnActive)
+            {
+                solution.BurnReadiness =
+                    "BURN IN PROGRESS";
+
+                return;
+            }
+
+            if (!solution.Available)
+            {
+                solution.BurnReadiness =
+                    "UNAVAILABLE";
+
+                return;
+            }
+
+            if (string.Equals(
+                    solution.Status,
+                    "REPLAN REQUIRED",
+                    StringComparison.OrdinalIgnoreCase) ||
+                (IsFinite(solution.TimeToNodeSeconds) &&
+                 solution.TimeToNodeSeconds < 0.0))
+            {
+                solution.BurnReadiness =
+                    "REPLAN REQUIRED";
+
+                return;
+            }
+
+            if (!solution.NodeExists)
+            {
+                solution.BurnReadiness =
+                    "NODE NOT LOADED";
+
+                return;
+            }
+
+            if (!solution.NodeVerified ||
+                !solution.ExecutionAuthorized)
+            {
+                solution.BurnReadiness =
+                    "NODE NOT VERIFIED";
+
+                return;
+            }
+
+            if (!solution.ManeuverVectorAvailable)
+            {
+                solution.BurnReadiness =
+                    "VECTOR UNAVAILABLE";
+
+                return;
+            }
+
+            if (!IsFinite(
+                    solution.AlignmentErrorDegrees))
+            {
+                solution.BurnReadiness =
+                    "ALIGNMENT UNKNOWN";
+
+                return;
+            }
+
+            if (solution.AlignmentErrorDegrees >
+                AlignmentHoldToleranceDegrees)
+            {
+                solution.BurnReadiness =
+                    "ALIGN REQUIRED";
+
+                return;
+            }
+
+            if (!IsFinite(
+                    solution.TimeToIgnitionSeconds))
+            {
+                solution.BurnReadiness =
+                    "TIMING UNAVAILABLE";
+
+                return;
+            }
+
+            if (solution.TimeToIgnitionSeconds <= 0.0)
+            {
+                solution.BurnReadiness =
+                    "IGNITION DUE";
+
+                return;
+            }
+
+            if (solution.TimeToIgnitionSeconds <=
+                IgnitionStandbySeconds)
+            {
+                solution.BurnReadiness =
+                    "FINAL COUNT";
+
+                return;
+            }
+
+            solution.BurnReadiness =
+                "READY";
+        }
         private static bool ShouldStartBurn(
             GuidanceSolutionModel solution,
             TelemetryPacket flight)

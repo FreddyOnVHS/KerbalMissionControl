@@ -102,6 +102,7 @@ namespace KMC.Engine.Guidance
             AttitudeReference = "NONE";
             ThrottleAdvisory = "THROTTLE 0%";
             Status = "UNAVAILABLE";
+            BurnReadiness = "UNAVAILABLE";
             Evidence = string.Empty;
             NodeState = "UNAVAILABLE";
             NodeDetail = string.Empty;
@@ -139,6 +140,7 @@ namespace KMC.Engine.Guidance
         public string AttitudeReference { get; internal set; }
         public string ThrottleAdvisory { get; internal set; }
         public string Status { get; internal set; }
+        public string BurnReadiness { get; internal set; }
         public string Evidence { get; internal set; }
 
         public bool NodeVerificationAvailable { get; internal set; }
@@ -196,6 +198,7 @@ namespace KMC.Engine.Guidance
                 AttitudeReference = AttitudeReference,
                 ThrottleAdvisory = ThrottleAdvisory,
                 Status = Status,
+                BurnReadiness = BurnReadiness,
                 Evidence = Evidence,
 
                 NodeVerificationAvailable =

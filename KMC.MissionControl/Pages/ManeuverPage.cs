@@ -109,7 +109,7 @@ namespace KMC.MissionControl.Pages
             else if (missed) footer = "MANEUVER WINDOW MISSED - CLICK COMPUTE TO REPLAN";
             else if (retroPending) footer = "RETROGRADE GUIDANCE REQUIRED - UPLINK INHIBITED";
             else if (!plan.Available) footer = "PLAN NOT AVAILABLE - REVIEW ENGINE EVIDENCE";
-            else if (nodeVerified) footer = "NODE VERIFIED - KSP MATCHES " + Safe(plan.PlanId);
+            else if (nodeVerified) footer = "NODE VERIFIED / READY FOR GUIDANCE - KSP MATCHES " + Safe(plan.PlanId);
             else if (crewModified) footer = "CREW MODIFIED NODE - KSP STATE DIFFERS FROM PLAN";
             else if (nodeRemoved && nextAvailableKmcSequence > 0)
                 footer =

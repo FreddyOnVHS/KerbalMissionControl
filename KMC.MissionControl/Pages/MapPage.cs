@@ -687,7 +687,7 @@ namespace KMC.MissionControl.Pages
                                 {
                                     productionStatus =
                                         liveNodeStatus.TransferAssessmentAvailable
-                                            ? "STATUS NODE CREATED / READY FOR BURN  AUTH COUPLED"
+                                            ? "STATUS NODE CREATED / READY FOR GUIDANCE  AUTH COUPLED"
                                             : "STATUS NODE CREATED / VERIFYING  AUTH COUPLED";
                                 }
                             }

@@ -900,7 +900,7 @@ namespace KMC.MissionControl.Pages
                         guidance != null &&
                         guidance.PostBurnVerificationAvailable
                             ? "RESULT"
-                            : "STATUS",
+                            : "BURN STATUS",
                         guidance != null &&
                         guidance.PostBurnVerificationAvailable
                             ? guidance.PostBurnResult
@@ -909,7 +909,7 @@ namespace KMC.MissionControl.Pages
                               !guidance.BurnComplete
                                 ? "PLAN NOT ACTIVE"
                                 : guidance != null
-                                    ? guidance.Status
+                                    ? guidance.BurnReadiness
                                     : "---")
                 });
 
