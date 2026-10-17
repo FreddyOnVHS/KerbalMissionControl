@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Windows.Forms;
 using KMC.Engine.CelestialMechanics;
 using KMC.Engine.Navigation;
+using KMC.Engine.Orbit;
 using KMC.MissionControl.Navigation;
 using KMC.MissionControl.Rendering.OrbitMap;
 using KMC.MissionControl.Rendering;
@@ -58,6 +59,11 @@ internal static class Program
         Run("maneuver uplink carries optional desired periapsis", ManeuverUplinkDesiredPeriapsis);
         Run("mission time displays use days hours minutes seconds", HumanReadableMissionTimeDisplay);
         Run("transfer execution summary presents next action", TransferExecutionSummaryRegression);
+        Run("MAP transfer nodes enter retained maneuver and GUID ownership", TransferManeuverHandoffRegression);
+        Run("mixed maneuver guidance uses resultant PNR vector", MixedManeuverGuidanceRegression);
+        Run("OrbitMap maneuver nodes preserve KSP-authoritative burn vector", OrbitMapAuthoritativeManeuverVectorRoundTrip);
+        Run("GUID selects OrbitMap authoritative vector by vessel and node UT", ManeuverVectorStoreExactMatch);
+        Run("standalone maneuver-vector UDP path removed", StandaloneManeuverVectorUdpRemoved);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
@@ -1741,18 +1747,53 @@ internal static class Program
 
     private static void HumanReadableMissionTimeDisplay()
     {
-        const double sample = 90061.0; // 1d 01h 01m 01s
-        const string expected = "1d 01h 01m 01s";
+        /*
+         * KSP Kerbin-time convention: 6-hour days.
+         * 90061 s = 4d 01h 01m 01s.
+         */
+        OrbitMapSnapshotStore.Clear();
 
-        CheckPrivateTimeFormatter(typeof(MapPage), "FormatTransferInterval", sample, expected);
-        CheckPrivateTimeFormatter(typeof(ManeuverPage), "FormatDuration", sample, expected);
-        CheckPrivateTimeFormatter(typeof(GuidancePage), "FormatDuration", sample, expected);
-        CheckPrivateTimeFormatter(typeof(OrbitPage), "FormatDuration", sample, expected);
+        OrbitMapPacket kerbin =
+            new OrbitMapPacket
+            {
+                CalendarDayLengthSeconds = 21600.0
+            };
+
+        OrbitMapSnapshotStore.SetLatest(
+            kerbin,
+            DateTime.UtcNow);
+
+        const double sample = 90061.0;
+        const string kerbinExpected = "4d 01h 01m 01s";
+
+        CheckPrivateTimeFormatter(typeof(MapPage), "FormatTransferInterval", sample, kerbinExpected);
+        CheckPrivateTimeFormatter(typeof(ManeuverPage), "FormatDuration", sample, kerbinExpected);
+        CheckPrivateTimeFormatter(typeof(GuidancePage), "FormatDuration", sample, kerbinExpected);
+        CheckPrivateTimeFormatter(typeof(OrbitPage), "FormatDuration", sample, kerbinExpected);
         CheckPrivateTimeFormatter(
             typeof(KMC.MissionControl.Rendering.Ascent.FooterRenderer),
             "FormatMissionTime",
             sample,
-            expected);
+            kerbinExpected);
+
+        OrbitMapPacket earth =
+            new OrbitMapPacket
+            {
+                CalendarDayLengthSeconds = 86400.0
+            };
+
+        OrbitMapSnapshotStore.SetLatest(
+            earth,
+            DateTime.UtcNow);
+
+        Check(
+            string.Equals(
+                KMC.MissionControl.Telemetry.KspTimeDisplay.FormatDuration(sample),
+                "1d 01h 01m 01s",
+                StringComparison.Ordinal),
+            "Earth-style KSP day length not honored");
+
+        OrbitMapSnapshotStore.Clear();
     }
 
     private static void CheckPrivateTimeFormatter(
@@ -1843,6 +1884,441 @@ internal static class Program
                 "STATUS NODE CREATED / READY FOR BURN",
                 StringComparison.Ordinal) >= 0,
             "upper transfer status does not reflect created node");
+    }
+
+    private static void TransferManeuverHandoffRegression()
+    {
+        string sourcePath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.MissionControl",
+                "Pages",
+                "MapPage.cs");
+
+        if (!File.Exists(sourcePath))
+        {
+            sourcePath =
+                Path.GetFullPath(
+                    Path.Combine(
+                        AppDomain.CurrentDomain.BaseDirectory,
+                        "..",
+                        "..",
+                        "..",
+                        "..",
+                        "KMC.MissionControl",
+                        "Pages",
+                        "MapPage.cs"));
+        }
+
+        Check(
+            File.Exists(sourcePath),
+            "MapPage source unavailable for transfer-handoff regression");
+
+        string source =
+            File.ReadAllText(sourcePath);
+
+        Check(
+            source.IndexOf(
+                "TransferManeuverPlanBridge.RegisterAndPromote",
+                StringComparison.Ordinal) >= 0,
+            "successful MAP uplink does not register transfer maneuver");
+
+        Check(
+            source.IndexOf(
+                "KmcManeuverPlanStore.Capture",
+                StringComparison.Ordinal) >= 0 &&
+            source.IndexOf(
+                "KmcManeuverPlanStore.Select",
+                StringComparison.Ordinal) >= 0,
+            "MAP transfer is not retained/selected as a KMC maneuver");
+
+        Check(
+            source.IndexOf(
+                "ManeuverPlanPromotionStore.Publish",
+                StringComparison.Ordinal) >= 0,
+            "MAP transfer is not promoted into Engine maneuver ownership");
+
+        Check(
+            source.IndexOf(
+                "ManeuverPlanModel.CreateFromPromotionRequest",
+                StringComparison.Ordinal) >= 0,
+            "MAP transfer bypasses Engine-owned maneuver-plan construction");
+
+        Check(
+            source.IndexOf(
+                "ManeuverUplinkStatusStore.RepublishGuidanceForPlan",
+                StringComparison.Ordinal) >= 0,
+            "MAP transfer does not republish node verification to GUID");
+    }
+
+    private static void MixedManeuverGuidanceRegression()
+    {
+        string sourcePath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.Engine",
+                "Guidance",
+                "GuidanceSystem.cs");
+
+        if (!File.Exists(sourcePath))
+        {
+            sourcePath =
+                Path.GetFullPath(
+                    Path.Combine(
+                        AppDomain.CurrentDomain.BaseDirectory,
+                        "..",
+                        "..",
+                        "..",
+                        "..",
+                        "KMC.Engine",
+                        "Guidance",
+                        "GuidanceSystem.cs"));
+        }
+
+        Check(
+            File.Exists(sourcePath),
+            "GuidanceSystem source unavailable for mixed-vector regression");
+
+        string source =
+            File.ReadAllText(sourcePath);
+
+        Check(
+            source.IndexOf(
+                "IsMixedManeuver(plan)",
+                StringComparison.Ordinal) >= 0,
+            "mixed P/N/R maneuver detection missing");
+
+        Check(
+            source.IndexOf(
+                "TRUE COMBINED MANEUVER VECTOR",
+                StringComparison.Ordinal) >= 0,
+            "combined maneuver attitude reference missing");
+
+        Check(
+            source.IndexOf(
+                "p *",
+                StringComparison.Ordinal) >= 0 &&
+            source.IndexOf(
+                "n *",
+                StringComparison.Ordinal) >= 0 &&
+            source.IndexOf(
+                "r *",
+                StringComparison.Ordinal) >= 0,
+            "combined maneuver does not use all P/N/R coefficients");
+
+        Check(
+            source.IndexOf(
+                "right /= resultantMagnitude",
+                StringComparison.Ordinal) >= 0 &&
+            source.IndexOf(
+                "nose /= resultantMagnitude",
+                StringComparison.Ordinal) >= 0 &&
+            source.IndexOf(
+                "forward /= resultantMagnitude",
+                StringComparison.Ordinal) >= 0,
+            "combined maneuver resultant is not normalized");
+
+        Check(
+            source.IndexOf(
+                "_burnPlanSnapshot",
+                StringComparison.Ordinal) >= 0 &&
+            source.IndexOf(
+                "ManeuverPlanModel.Clone",
+                StringComparison.Ordinal) >= 0,
+            "mixed maneuver vector is not preserved through burn execution");
+    }
+
+    private static void OrbitMapAuthoritativeManeuverVectorRoundTrip()
+    {
+        OrbitMapPacket packet =
+            new OrbitMapPacket
+            {
+                Sequence = 1,
+                TimestampUtc = DateTime.UtcNow,
+                VesselId = "VESSEL",
+                VesselName = "TEST",
+                UniversalTimeSeconds = 1000.0,
+                ReferenceBodyName = "Kerbin",
+                ReferenceBodyRadiusMeters = 600000.0,
+                ReferenceBodySoiRadiusMeters = 84159286.0,
+                ActiveOrbit =
+                    new OrbitMapOrbit
+                    {
+                        ReferenceBodyName = "Kerbin",
+                        SemiMajorAxisMeters = 700000.0,
+                        Eccentricity = 0.0,
+                        InclinationDegrees = 0.0,
+                        LongitudeOfAscendingNodeDegrees = 0.0,
+                        ArgumentOfPeriapsisDegrees = 0.0,
+                        EpochUniversalTimeSeconds = 0.0,
+                        MeanAnomalyAtEpochRadians = 0.0,
+                        ApoapsisMeters = 100000.0,
+                        PeriapsisMeters = 100000.0,
+                        PeriodSeconds = 2000.0,
+                        PositionX = 700000.0,
+                        PositionY = 0.0,
+                        PositionZ = 0.0
+                    }
+            };
+
+        packet.ManeuverNodes.Add(
+            new OrbitMapManeuverNode
+            {
+                Index = 0,
+                UniversalTimeSeconds = 5000.0,
+                ProgradeDeltaVMetersPerSecond = 1000.0,
+                NormalDeltaVMetersPerSecond = -100.0,
+                RadialDeltaVMetersPerSecond = 20.0,
+                TotalDeltaVMetersPerSecond =
+                    Math.Sqrt(
+                        1000.0 * 1000.0 +
+                        100.0 * 100.0 +
+                        20.0 * 20.0),
+                PositionX = 1.0,
+                PositionY = 2.0,
+                PositionZ = 3.0,
+                PatchIndex = 0,
+                AuthoritativeBurnVectorAvailable = true,
+                AuthoritativeBurnRight = 0.25,
+                AuthoritativeBurnNose = 0.75,
+                AuthoritativeBurnReferenceForward =
+                    Math.Sqrt(0.375)
+            });
+
+        string serialized =
+            packet.Serialize();
+
+        OrbitMapPacket parsed;
+
+        Check(
+            OrbitMapPacket.TryParse(
+                serialized,
+                out parsed),
+            "extended OrbitMap packet did not parse");
+
+        Check(
+            parsed != null &&
+            parsed.ManeuverNodes.Count == 1,
+            "extended OrbitMap maneuver node missing");
+
+        OrbitMapManeuverNode node =
+            parsed.ManeuverNodes[0];
+
+        Check(
+            node.AuthoritativeBurnVectorAvailable,
+            "authoritative burn-vector flag lost");
+
+        Near(
+            node.AuthoritativeBurnRight,
+            0.25,
+            1e-12);
+
+        Near(
+            node.AuthoritativeBurnNose,
+            0.75,
+            1e-12);
+
+        Near(
+            node.AuthoritativeBurnReferenceForward,
+            Math.Sqrt(0.375),
+            1e-12);
+
+        /*
+         * Legacy 10-field node remains accepted.
+         *
+         * Reuse the packet we just serialized, but structurally trim only the
+         * first maneuver-node entry from the new 14-field layout back to the
+         * pre-14.22.71 10-field layout. This avoids brittle floating-point
+         * substring replacement.
+         */
+        string[] packetFields =
+            serialized.Split('|');
+
+        int nodeCountIndex =
+            12 +
+            packet.Bodies.Count;
+
+        int firstNodeIndex =
+            nodeCountIndex + 1;
+
+        string[] nodeFields =
+            packetFields[firstNodeIndex].Split('~');
+
+        Check(
+            nodeFields.Length == 14,
+            "extended maneuver node did not serialize to 14 fields");
+
+        packetFields[firstNodeIndex] =
+            string.Join(
+                "~",
+                nodeFields,
+                0,
+                10);
+
+        string legacyPacket =
+            string.Join(
+                "|",
+                packetFields);
+
+        Check(
+            OrbitMapPacket.TryParse(
+                legacyPacket,
+                out parsed),
+            "legacy 10-field OrbitMap maneuver node no longer parses");
+
+        Check(
+            parsed.ManeuverNodes.Count == 1 &&
+            !parsed.ManeuverNodes[0].AuthoritativeBurnVectorAvailable,
+            "legacy maneuver node invented authoritative vector");
+    }
+
+    private static void ManeuverVectorStoreExactMatch()
+    {
+        DateTime now =
+            DateTime.UtcNow;
+
+        ManeuverVectorTelemetryStore.Clear();
+
+        ManeuverVectorTelemetryStore.Publish(
+            new ManeuverVectorTelemetryModel
+            {
+                TelemetryAvailable = true,
+                SourceTimestampUtc = now,
+                ReceivedUtc = now,
+                VesselId = "VESSEL-A",
+                NodeUniversalTimeSeconds = 1000.0,
+                RightComponent = 0.0,
+                NoseComponent = 1.0,
+                ReferenceForwardComponent = 0.0,
+                BurnMagnitudeMetersPerSecond = 100.0
+            });
+
+        ManeuverVectorTelemetryStore.Publish(
+            new ManeuverVectorTelemetryModel
+            {
+                TelemetryAvailable = true,
+                SourceTimestampUtc = now,
+                ReceivedUtc = now,
+                VesselId = "VESSEL-A",
+                NodeUniversalTimeSeconds = 2000.0,
+                RightComponent = 1.0,
+                NoseComponent = 0.0,
+                ReferenceForwardComponent = 0.0,
+                BurnMagnitudeMetersPerSecond = 200.0
+            });
+
+        ManeuverVectorTelemetryModel first =
+            ManeuverVectorTelemetryStore.FindForPlan(
+                "VESSEL-A",
+                1000.0,
+                now);
+
+        Check(
+            first != null &&
+            first.TelemetryAvailable,
+            "first authoritative maneuver-vector sample not found");
+
+        Near(
+            first.RightComponent,
+            0.0,
+            1e-12);
+
+        Near(
+            first.NoseComponent,
+            1.0,
+            1e-12);
+
+        ManeuverVectorTelemetryModel second =
+            ManeuverVectorTelemetryStore.FindForPlan(
+                "VESSEL-A",
+                2000.0,
+                now);
+
+        Check(
+            second != null &&
+            second.TelemetryAvailable,
+            "second authoritative maneuver-vector sample not found");
+
+        Near(
+            second.RightComponent,
+            1.0,
+            1e-12);
+
+        Near(
+            second.NoseComponent,
+            0.0,
+            1e-12);
+
+        ManeuverVectorTelemetryModel wrongVessel =
+            ManeuverVectorTelemetryStore.FindForPlan(
+                "VESSEL-B",
+                1000.0,
+                now);
+
+        Check(
+            wrongVessel != null &&
+            !wrongVessel.TelemetryAvailable,
+            "authoritative vector crossed vessel identity");
+
+        ManeuverVectorTelemetryModel wrongNode =
+            ManeuverVectorTelemetryStore.FindForPlan(
+                "VESSEL-A",
+                3000.0,
+                now);
+
+        Check(
+            wrongNode != null &&
+            !wrongNode.TelemetryAvailable,
+            "authoritative vector crossed node identity");
+
+        ManeuverVectorTelemetryStore.Clear();
+    }
+
+    private static void StandaloneManeuverVectorUdpRemoved()
+    {
+        string pluginPath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.Plugin",
+                "VelocityVectorTelemetrySender.cs");
+
+        string transportPath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.MissionControl",
+                "Transport",
+                "VelocityVectorTelemetrySample.cs");
+
+        Check(
+            File.Exists(pluginPath),
+            "VelocityVectorTelemetrySender source unavailable");
+
+        Check(
+            File.Exists(transportPath),
+            "VelocityVectorTelemetrySample source unavailable");
+
+        string plugin =
+            File.ReadAllText(
+                pluginPath);
+
+        string transport =
+            File.ReadAllText(
+                transportPath);
+
+        Check(
+            plugin.IndexOf(
+                "KMC-MNVV1",
+                StringComparison.Ordinal) < 0 &&
+            plugin.IndexOf(
+                "ManeuverVectorTelemetryPort",
+                StringComparison.Ordinal) < 0,
+            "standalone plugin maneuver-vector UDP sender still present");
+
+        Check(
+            transport.IndexOf(
+                "ManeuverVectorTelemetryReceiver",
+                StringComparison.Ordinal) < 0,
+            "standalone Mission Control maneuver-vector UDP receiver still present");
     }
 
     private static void ManeuverUplinkDesiredPeriapsis()

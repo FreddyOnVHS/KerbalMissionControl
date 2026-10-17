@@ -39,23 +39,65 @@ namespace KMC.MissionControl.Transport
                 return;
             }
 
-            _epochClient =
-                new UdpClient(
-                    new IPEndPoint(
-                        IPAddress.Any,
-                        ManeuverEpochPacket.TelemetryPort));
+            try
+            {
+                _epochClient =
+                    new UdpClient(
+                        new IPEndPoint(
+                            IPAddress.Any,
+                            ManeuverEpochPacket.TelemetryPort));
+            }
+            catch (SocketException ex)
+            {
+                throw new InvalidOperationException(
+                    "KMC UDP BIND FAILED | MANEUVER EPOCH | UDP " +
+                    ManeuverEpochPacket.TelemetryPort +
+                    " | " +
+                    ex.SocketErrorCode +
+                    " | " +
+                    ex.Message,
+                    ex);
+            }
 
-            _ackClient =
-                new UdpClient(
-                    new IPEndPoint(
-                        IPAddress.Any,
-                        ManeuverUplinkPacket.AckPort));
+            try
+            {
+                _ackClient =
+                    new UdpClient(
+                        new IPEndPoint(
+                            IPAddress.Any,
+                            ManeuverUplinkPacket.AckPort));
+            }
+            catch (SocketException ex)
+            {
+                throw new InvalidOperationException(
+                    "KMC UDP BIND FAILED | MANEUVER ACK | UDP " +
+                    ManeuverUplinkPacket.AckPort +
+                    " | " +
+                    ex.SocketErrorCode +
+                    " | " +
+                    ex.Message,
+                    ex);
+            }
 
-            _nodeStateClient =
-                new UdpClient(
-                    new IPEndPoint(
-                        IPAddress.Any,
-                        ManeuverUplinkPacket.NodeStatePort));
+            try
+            {
+                _nodeStateClient =
+                    new UdpClient(
+                        new IPEndPoint(
+                            IPAddress.Any,
+                            ManeuverUplinkPacket.NodeStatePort));
+            }
+            catch (SocketException ex)
+            {
+                throw new InvalidOperationException(
+                    "KMC UDP BIND FAILED | MANEUVER NODE STATE | UDP " +
+                    ManeuverUplinkPacket.NodeStatePort +
+                    " | " +
+                    ex.SocketErrorCode +
+                    " | " +
+                    ex.Message,
+                    ex);
+            }
 
             _commandClient =
                 new UdpClient();

@@ -19,6 +19,12 @@ namespace KMC.Shared
         public string VesselId { get; set; }
         public string VesselName { get; set; }
         public double UniversalTimeSeconds { get; set; }
+
+        /// <summary>
+        /// KSP display-calendar day length. 21600 seconds for Kerbin time,
+        /// 86400 seconds for Earth-style time.
+        /// </summary>
+        public double CalendarDayLengthSeconds { get; set; }
         public string ReferenceBodyName { get; set; }
         public double ReferenceBodyRadiusMeters { get; set; }
         public double ReferenceBodySoiRadiusMeters { get; set; }
@@ -34,6 +40,7 @@ namespace KMC.Shared
             VesselId = string.Empty;
             VesselName = string.Empty;
             ReferenceBodyName = string.Empty;
+            CalendarDayLengthSeconds = 21600.0;
             ManeuverNodes = new List<OrbitMapManeuverNode>();
             Patches = new List<OrbitMapPatch>();
             Bodies = new List<OrbitMapBody>();
@@ -65,6 +72,13 @@ namespace KMC.Shared
             for (int i = 0; i < ManeuverNodes.Count; i++) fields.Add(SerializeNode(ManeuverNodes[i]));
             fields.Add(Patches.Count.ToString(CultureInfo.InvariantCulture));
             for (int i = 0; i < Patches.Count; i++) fields.Add(SerializePatch(Patches[i]));
+
+            /*
+             * 14.22.73 optional tail field. Keeping it at the packet tail
+             * preserves parsing of all earlier OrbitMap packet layouts.
+             */
+            fields.Add(F(CalendarDayLengthSeconds));
+
             return string.Join("|", fields.ToArray());
         }
 
@@ -142,6 +156,28 @@ namespace KMC.Shared
                     if (totalPatchSamples > MaxTotalPatchSamples) return false;
                     value.Patches.Add(patch);
                 }
+                /*
+                 * 14.22.73 optional calendar-day tail field.
+                 * Legacy packets omit it and default to Kerbin time.
+                 */
+                value.CalendarDayLengthSeconds = 21600.0;
+
+                if (p < fields.Length)
+                {
+                    if (fields.Length - p != 1 ||
+                        !TryFinite(
+                            fields[p++],
+                            out valueDouble) ||
+                        (Math.Abs(valueDouble - 21600.0) > 0.5 &&
+                         Math.Abs(valueDouble - 86400.0) > 0.5))
+                    {
+                        return false;
+                    }
+
+                    value.CalendarDayLengthSeconds =
+                        valueDouble;
+                }
+
                 if (p != fields.Length) return false;
                 packet = value;
                 return true;
@@ -265,7 +301,31 @@ namespace KMC.Shared
 
         private static string SerializeNode(OrbitMapManeuverNode n)
         {
-            return string.Join("~", new[] { n.Index.ToString(CultureInfo.InvariantCulture), F(n.UniversalTimeSeconds), F(n.ProgradeDeltaVMetersPerSecond), F(n.NormalDeltaVMetersPerSecond), F(n.RadialDeltaVMetersPerSecond), F(n.TotalDeltaVMetersPerSecond), F(n.PositionX), F(n.PositionY), F(n.PositionZ), n.PatchIndex.ToString(CultureInfo.InvariantCulture) });
+            return string.Join(
+                "~",
+                new[]
+                {
+                    n.Index.ToString(CultureInfo.InvariantCulture),
+                    F(n.UniversalTimeSeconds),
+                    F(n.ProgradeDeltaVMetersPerSecond),
+                    F(n.NormalDeltaVMetersPerSecond),
+                    F(n.RadialDeltaVMetersPerSecond),
+                    F(n.TotalDeltaVMetersPerSecond),
+                    F(n.PositionX),
+                    F(n.PositionY),
+                    F(n.PositionZ),
+                    n.PatchIndex.ToString(CultureInfo.InvariantCulture),
+                    n.AuthoritativeBurnVectorAvailable ? "1" : "0",
+                    n.AuthoritativeBurnVectorAvailable
+                        ? F(n.AuthoritativeBurnRight)
+                        : string.Empty,
+                    n.AuthoritativeBurnVectorAvailable
+                        ? F(n.AuthoritativeBurnNose)
+                        : string.Empty,
+                    n.AuthoritativeBurnVectorAvailable
+                        ? F(n.AuthoritativeBurnReferenceForward)
+                        : string.Empty
+                });
         }
 
         private static bool TryParseNode(string text, out OrbitMapManeuverNode node)
@@ -274,19 +334,95 @@ namespace KMC.Shared
             string[] f = text.Split('~');
             int index;
             int patchIndex;
-            if (f.Length != 10 || !int.TryParse(f[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out index) || !int.TryParse(f[9], NumberStyles.Integer, CultureInfo.InvariantCulture, out patchIndex)) return false;
+
+            if ((f.Length != 10 && f.Length != 14) ||
+                !int.TryParse(
+                    f[0],
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out index) ||
+                !int.TryParse(
+                    f[9],
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out patchIndex))
+            {
+                return false;
+            }
+
             double d;
-            OrbitMapManeuverNode v = new OrbitMapManeuverNode();
+            OrbitMapManeuverNode v =
+                new OrbitMapManeuverNode();
+
             v.Index = index;
             v.PatchIndex = patchIndex;
-            if (!TryFinite(f[1], out d)) return false; v.UniversalTimeSeconds = d;
-            if (!TryFinite(f[2], out d)) return false; v.ProgradeDeltaVMetersPerSecond = d;
-            if (!TryFinite(f[3], out d)) return false; v.NormalDeltaVMetersPerSecond = d;
-            if (!TryFinite(f[4], out d)) return false; v.RadialDeltaVMetersPerSecond = d;
-            if (!TryFinite(f[5], out d)) return false; v.TotalDeltaVMetersPerSecond = d;
-            if (!TryFinite(f[6], out d)) return false; v.PositionX = d;
-            if (!TryFinite(f[7], out d)) return false; v.PositionY = d;
-            if (!TryFinite(f[8], out d)) return false; v.PositionZ = d;
+
+            if (!TryFinite(f[1], out d)) return false;
+            v.UniversalTimeSeconds = d;
+
+            if (!TryFinite(f[2], out d)) return false;
+            v.ProgradeDeltaVMetersPerSecond = d;
+
+            if (!TryFinite(f[3], out d)) return false;
+            v.NormalDeltaVMetersPerSecond = d;
+
+            if (!TryFinite(f[4], out d)) return false;
+            v.RadialDeltaVMetersPerSecond = d;
+
+            if (!TryFinite(f[5], out d)) return false;
+            v.TotalDeltaVMetersPerSecond = d;
+
+            if (!TryFinite(f[6], out d)) return false;
+            v.PositionX = d;
+
+            if (!TryFinite(f[7], out d)) return false;
+            v.PositionY = d;
+
+            if (!TryFinite(f[8], out d)) return false;
+            v.PositionZ = d;
+
+            /*
+             * Legacy 10-field packets remain valid. New 14-field packets
+             * carry KSP's authoritative future-node steering direction.
+             */
+            if (f.Length == 14)
+            {
+                if (f[10] != "0" && f[10] != "1")
+                {
+                    return false;
+                }
+
+                v.AuthoritativeBurnVectorAvailable =
+                    f[10] == "1";
+
+                if (v.AuthoritativeBurnVectorAvailable)
+                {
+                    if (!TryFinite(f[11], out d)) return false;
+                    v.AuthoritativeBurnRight = d;
+
+                    if (!TryFinite(f[12], out d)) return false;
+                    v.AuthoritativeBurnNose = d;
+
+                    if (!TryFinite(f[13], out d)) return false;
+                    v.AuthoritativeBurnReferenceForward = d;
+
+                    double magnitude =
+                        Math.Sqrt(
+                            v.AuthoritativeBurnRight *
+                            v.AuthoritativeBurnRight +
+                            v.AuthoritativeBurnNose *
+                            v.AuthoritativeBurnNose +
+                            v.AuthoritativeBurnReferenceForward *
+                            v.AuthoritativeBurnReferenceForward);
+
+                    if (magnitude < 0.95 ||
+                        magnitude > 1.05)
+                    {
+                        return false;
+                    }
+                }
+            }
+
             node = v;
             return true;
         }
@@ -426,8 +562,21 @@ namespace KMC.Shared
 
     public sealed class OrbitMapManeuverNode
     {
+        public OrbitMapManeuverNode()
+        {
+            AuthoritativeBurnRight = double.NaN;
+            AuthoritativeBurnNose = double.NaN;
+            AuthoritativeBurnReferenceForward = double.NaN;
+        }
+
         public int Index { get; set; }
         public double UniversalTimeSeconds { get; set; }
+
+        /// <summary>
+        /// KSP display-calendar day length. 21600 seconds for Kerbin time,
+        /// 86400 seconds for Earth-style time.
+        /// </summary>
+        public double CalendarDayLengthSeconds { get; set; }
         public double ProgradeDeltaVMetersPerSecond { get; set; }
         public double NormalDeltaVMetersPerSecond { get; set; }
         public double RadialDeltaVMetersPerSecond { get; set; }
@@ -436,6 +585,17 @@ namespace KMC.Shared
         public double PositionY { get; set; }
         public double PositionZ { get; set; }
         public int PatchIndex { get; set; }
+
+        /*
+         * 14.22.71:
+         * KSP-authoritative maneuver direction from
+         * ManeuverNode.GetBurnVector(active.orbit), normalized and resolved
+         * into the active vessel ReferenceTransform.
+         */
+        public bool AuthoritativeBurnVectorAvailable { get; set; }
+        public double AuthoritativeBurnRight { get; set; }
+        public double AuthoritativeBurnNose { get; set; }
+        public double AuthoritativeBurnReferenceForward { get; set; }
     }
 
     public sealed class OrbitMapPatch
@@ -453,6 +613,12 @@ namespace KMC.Shared
     public sealed class OrbitMapPatchSample
     {
         public double UniversalTimeSeconds { get; set; }
+
+        /// <summary>
+        /// KSP display-calendar day length. 21600 seconds for Kerbin time,
+        /// 86400 seconds for Earth-style time.
+        /// </summary>
+        public double CalendarDayLengthSeconds { get; set; }
         public double PositionX { get; set; }
         public double PositionY { get; set; }
         public double PositionZ { get; set; }

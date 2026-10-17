@@ -48,6 +48,15 @@ namespace KMC.Plugin
                 packet.VesselId = vessel.id.ToString();
                 packet.VesselName = vessel.vesselName ?? string.Empty;
                 packet.UniversalTimeSeconds = ut;
+
+                /*
+                 * Mirror KSP's own display convention. GameSettings.KERBIN_TIME
+                 * is true for 6-hour Kerbin days and false for 24-hour days.
+                 */
+                packet.CalendarDayLengthSeconds =
+                    GameSettings.KERBIN_TIME
+                        ? 21600.0
+                        : 86400.0;
                 packet.ReferenceBodyName = vessel.mainBody.bodyName ?? string.Empty;
                 packet.ReferenceBodyRadiusMeters = vessel.mainBody.Radius;
                 packet.ReferenceBodySoiRadiusMeters = double.IsNaN(vessel.mainBody.sphereOfInfluence) || double.IsInfinity(vessel.mainBody.sphereOfInfluence) ? 0.0 : vessel.mainBody.sphereOfInfluence;
@@ -243,6 +252,88 @@ namespace KMC.Plugin
                 item.PositionY = position.y;
                 item.PositionZ = position.z;
                 item.PatchIndex = 0;
+
+                /*
+                 * 14.22.71:
+                 * Do not reconstruct a far-future maneuver direction from the
+                 * vessel's current P/N/R frame. Ask KSP for the exact burn
+                 * vector it uses for this ManeuverNode at node UT.
+                 */
+                if (active.ReferenceTransform != null)
+                {
+                    try
+                    {
+                        Vector3d burnVector =
+                            node.GetBurnVector(
+                                active.orbit);
+
+                        double burnMagnitude =
+                            burnVector.magnitude;
+
+                        if (burnMagnitude > 1.0e-9 &&
+                            IsFinite(burnMagnitude))
+                        {
+                            burnVector =
+                                burnVector /
+                                burnMagnitude;
+
+                            Vector3d vesselRight =
+                                active.ReferenceTransform.right;
+
+                            Vector3d vesselNose =
+                                active.ReferenceTransform.up;
+
+                            Vector3d vesselReferenceForward =
+                                active.ReferenceTransform.forward;
+
+                            item.AuthoritativeBurnRight =
+                                Vector3d.Dot(
+                                    burnVector,
+                                    vesselRight);
+
+                            item.AuthoritativeBurnNose =
+                                Vector3d.Dot(
+                                    burnVector,
+                                    vesselNose);
+
+                            item.AuthoritativeBurnReferenceForward =
+                                Vector3d.Dot(
+                                    burnVector,
+                                    vesselReferenceForward);
+
+                            double resolvedMagnitude =
+                                Math.Sqrt(
+                                    item.AuthoritativeBurnRight *
+                                    item.AuthoritativeBurnRight +
+                                    item.AuthoritativeBurnNose *
+                                    item.AuthoritativeBurnNose +
+                                    item.AuthoritativeBurnReferenceForward *
+                                    item.AuthoritativeBurnReferenceForward);
+
+                            if (resolvedMagnitude > 1.0e-9 &&
+                                IsFinite(resolvedMagnitude))
+                            {
+                                item.AuthoritativeBurnRight /=
+                                    resolvedMagnitude;
+
+                                item.AuthoritativeBurnNose /=
+                                    resolvedMagnitude;
+
+                                item.AuthoritativeBurnReferenceForward /=
+                                    resolvedMagnitude;
+
+                                item.AuthoritativeBurnVectorAvailable = true;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning(
+                            "[KMC] Orbit-map authoritative maneuver vector unavailable: " +
+                            ex.Message);
+                    }
+                }
+
                 packet.ManeuverNodes.Add(item);
             }
         }

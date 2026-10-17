@@ -222,8 +222,7 @@ namespace KMC.MissionControl
 
             _radialReceiver =
                 new RadialTelemetryReceiver();
-
-            _orbitMapReceiver =
+_orbitMapReceiver =
                 new OrbitMapTelemetryReceiver();
 
             _orbitNormalReceiver.SampleReceived +=
@@ -231,8 +230,7 @@ namespace KMC.MissionControl
 
             _radialReceiver.SampleReceived +=
                 OnRadialTelemetryReceived;
-
-            _orbitMapReceiver.SnapshotReceived +=
+_orbitMapReceiver.SnapshotReceived +=
                 OnOrbitMapSnapshotReceived;
 
             _receiver.TelemetryReceived += OnTelemetryReceived;
@@ -1738,6 +1736,7 @@ namespace KMC.MissionControl
                 ManeuverPlanPromotionStore.Clear();
                 OrbitNormalTelemetryStore.Clear();
                 RadialTelemetryStore.Clear();
+                ManeuverVectorTelemetryStore.Clear();
             OrbitMapSnapshotStore.Clear();
                 _orbitNormalReceiver.Start();
                 _radialReceiver.Start();
@@ -1755,13 +1754,42 @@ namespace KMC.MissionControl
                 MessageBox.Show(
                     "Mission Control could not start " +
                     "the telemetry receiver.\n\n" +
-                    ex.Message,
+                    BuildStartupExceptionMessage(ex),
                     "KMC Startup Error",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
         }
 
+        private static string BuildStartupExceptionMessage(
+            Exception ex)
+        {
+            if (ex == null)
+            {
+                return "Unknown startup failure.";
+            }
+
+            System.Text.StringBuilder builder =
+                new System.Text.StringBuilder();
+
+            Exception current = ex;
+
+            while (current != null)
+            {
+                if (builder.Length > 0)
+                {
+                    builder.AppendLine();
+                    builder.AppendLine();
+                    builder.Append("Caused by: ");
+                }
+
+                builder.Append(current.Message);
+
+                current = current.InnerException;
+            }
+
+            return builder.ToString();
+        }
         private void OnRadialTelemetryReceived(
             RadialTelemetrySample sample)
         {

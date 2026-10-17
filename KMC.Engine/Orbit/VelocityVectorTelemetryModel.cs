@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace KMC.Engine.Orbit
 {
@@ -622,6 +623,219 @@ namespace KMC.Engine.Orbit
             {
                 _latest =
                     new OrbitNormalTelemetryModel();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 14.22.70b KSP-authoritative maneuver-node burn direction.
+    /// Components are a unit vector resolved in vessel ReferenceTransform.
+    /// </summary>
+    public sealed class ManeuverVectorTelemetryModel
+    {
+        public bool TelemetryAvailable { get; set; }
+        public DateTime SourceTimestampUtc { get; set; }
+        public DateTime ReceivedUtc { get; set; }
+        public string VesselId { get; set; } = string.Empty;
+        public double NodeUniversalTimeSeconds { get; set; } = double.NaN;
+        public double RightComponent { get; set; }
+        public double NoseComponent { get; set; }
+        public double ReferenceForwardComponent { get; set; }
+        public double BurnMagnitudeMetersPerSecond { get; set; } = double.NaN;
+
+        public bool IsUsableFor(
+            string vesselId,
+            double nodeUt,
+            DateTime analysisUtc)
+        {
+            if (!TelemetryAvailable ||
+                ReceivedUtc == DateTime.MinValue ||
+                Math.Abs((analysisUtc - ReceivedUtc).TotalSeconds) > 0.75 ||
+                string.IsNullOrWhiteSpace(vesselId) ||
+                !string.Equals(
+                    VesselId ?? string.Empty,
+                    vesselId ?? string.Empty,
+                    StringComparison.Ordinal) ||
+                double.IsNaN(nodeUt) ||
+                double.IsInfinity(nodeUt) ||
+                double.IsNaN(NodeUniversalTimeSeconds) ||
+                double.IsInfinity(NodeUniversalTimeSeconds) ||
+                Math.Abs(NodeUniversalTimeSeconds - nodeUt) > 0.25)
+            {
+                return false;
+            }
+
+            double magnitude =
+                Math.Sqrt(
+                    RightComponent * RightComponent +
+                    NoseComponent * NoseComponent +
+                    ReferenceForwardComponent *
+                    ReferenceForwardComponent);
+
+            return
+                magnitude >= 0.95 &&
+                magnitude <= 1.05;
+        }
+
+        internal static ManeuverVectorTelemetryModel Clone(
+            ManeuverVectorTelemetryModel source)
+        {
+            if (source == null)
+            {
+                return new ManeuverVectorTelemetryModel();
+            }
+
+            return new ManeuverVectorTelemetryModel
+            {
+                TelemetryAvailable = source.TelemetryAvailable,
+                SourceTimestampUtc = source.SourceTimestampUtc,
+                ReceivedUtc = source.ReceivedUtc,
+                VesselId = source.VesselId,
+                NodeUniversalTimeSeconds = source.NodeUniversalTimeSeconds,
+                RightComponent = source.RightComponent,
+                NoseComponent = source.NoseComponent,
+                ReferenceForwardComponent = source.ReferenceForwardComponent,
+                BurnMagnitudeMetersPerSecond =
+                    source.BurnMagnitudeMetersPerSecond
+            };
+        }
+    }
+
+    public static class ManeuverVectorTelemetryStore
+    {
+        private const double NodeUtMatchToleranceSeconds = 0.25;
+        private const int MaxSamples = 16;
+
+        private static readonly object SyncRoot =
+            new object();
+
+        private static readonly List<ManeuverVectorTelemetryModel> Samples =
+            new List<ManeuverVectorTelemetryModel>();
+
+        private static ManeuverVectorTelemetryModel _latest =
+            new ManeuverVectorTelemetryModel();
+
+        public static void Publish(
+            ManeuverVectorTelemetryModel sample)
+        {
+            if (sample == null)
+            {
+                return;
+            }
+
+            ManeuverVectorTelemetryModel clone =
+                ManeuverVectorTelemetryModel.Clone(
+                    sample);
+
+            lock (SyncRoot)
+            {
+                _latest =
+                    ManeuverVectorTelemetryModel.Clone(
+                        clone);
+
+                int replaceIndex = -1;
+
+                for (int index = 0;
+                     index < Samples.Count;
+                     index++)
+                {
+                    ManeuverVectorTelemetryModel existing =
+                        Samples[index];
+
+                    if (string.Equals(
+                            existing.VesselId ?? string.Empty,
+                            clone.VesselId ?? string.Empty,
+                            StringComparison.Ordinal) &&
+                        !double.IsNaN(
+                            existing.NodeUniversalTimeSeconds) &&
+                        !double.IsNaN(
+                            clone.NodeUniversalTimeSeconds) &&
+                        Math.Abs(
+                            existing.NodeUniversalTimeSeconds -
+                            clone.NodeUniversalTimeSeconds) <=
+                            NodeUtMatchToleranceSeconds)
+                    {
+                        replaceIndex = index;
+                        break;
+                    }
+                }
+
+                if (replaceIndex >= 0)
+                {
+                    Samples[replaceIndex] = clone;
+                }
+                else
+                {
+                    Samples.Add(clone);
+                }
+
+                Samples.Sort(
+                    delegate(
+                        ManeuverVectorTelemetryModel left,
+                        ManeuverVectorTelemetryModel right)
+                    {
+                        return
+                            right.ReceivedUtc.CompareTo(
+                                left.ReceivedUtc);
+                    });
+
+                while (Samples.Count > MaxSamples)
+                {
+                    Samples.RemoveAt(
+                        Samples.Count - 1);
+                }
+            }
+        }
+
+        public static ManeuverVectorTelemetryModel FindForPlan(
+            string vesselId,
+            double nodeUniversalTimeSeconds,
+            DateTime analysisUtc)
+        {
+            lock (SyncRoot)
+            {
+                for (int index = 0;
+                     index < Samples.Count;
+                     index++)
+                {
+                    ManeuverVectorTelemetryModel sample =
+                        Samples[index];
+
+                    if (sample != null &&
+                        sample.IsUsableFor(
+                            vesselId,
+                            nodeUniversalTimeSeconds,
+                            analysisUtc))
+                    {
+                        return
+                            ManeuverVectorTelemetryModel.Clone(
+                                sample);
+                    }
+                }
+            }
+
+            return
+                new ManeuverVectorTelemetryModel();
+        }
+
+        public static ManeuverVectorTelemetryModel GetLatest()
+        {
+            lock (SyncRoot)
+            {
+                return
+                    ManeuverVectorTelemetryModel.Clone(
+                        _latest);
+            }
+        }
+
+        public static void Clear()
+        {
+            lock (SyncRoot)
+            {
+                _latest =
+                    new ManeuverVectorTelemetryModel();
+
+                Samples.Clear();
             }
         }
     }

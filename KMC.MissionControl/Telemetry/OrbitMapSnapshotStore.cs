@@ -72,4 +72,107 @@ namespace KMC.MissionControl.Telemetry
             }
         }
     }
+
+    /// <summary>
+    /// Central KSP mission-time formatter. Uses the calendar convention
+    /// reported by the live KSP OrbitMap telemetry stream.
+    /// </summary>
+    public static class KspTimeDisplay
+    {
+        private const double KerbinDaySeconds = 21600.0;
+        private const double EarthDaySeconds = 86400.0;
+
+        public static double GetDayLengthSeconds()
+        {
+            OrbitMapPacket packet;
+            DateTime receivedUtc;
+
+            if (OrbitMapSnapshotStore.TryGetLatest(
+                    out packet,
+                    out receivedUtc) &&
+                packet != null &&
+                IsSupportedDayLength(
+                    packet.CalendarDayLengthSeconds))
+            {
+                return
+                    packet.CalendarDayLengthSeconds;
+            }
+
+            return
+                KerbinDaySeconds;
+        }
+
+        public static string FormatDuration(
+            double seconds)
+        {
+            if (double.IsNaN(seconds) ||
+                double.IsInfinity(seconds))
+            {
+                return "---";
+            }
+
+            bool negative =
+                seconds < 0.0;
+
+            double magnitude =
+                Math.Abs(seconds);
+
+            long totalSeconds =
+                (long)Math.Round(
+                    magnitude);
+
+            long daySeconds =
+                (long)Math.Round(
+                    GetDayLengthSeconds());
+
+            long days =
+                totalSeconds /
+                daySeconds;
+
+            long remainder =
+                totalSeconds %
+                daySeconds;
+
+            long hours =
+                remainder /
+                3600;
+
+            long minutes =
+                (remainder % 3600) /
+                60;
+
+            long secondsPart =
+                remainder %
+                60;
+
+            string text =
+                days.ToString() +
+                "d " +
+                hours.ToString("00") +
+                "h " +
+                minutes.ToString("00") +
+                "m " +
+                secondsPart.ToString("00") +
+                "s";
+
+            return
+                negative
+                    ? "-" + text
+                    : text;
+        }
+
+        private static bool IsSupportedDayLength(
+            double seconds)
+        {
+            return
+                Math.Abs(
+                    seconds -
+                    KerbinDaySeconds) <
+                    0.5 ||
+                Math.Abs(
+                    seconds -
+                    EarthDaySeconds) <
+                    0.5;
+        }
+    }
 }

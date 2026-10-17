@@ -76,6 +76,15 @@ namespace KMC.Engine.Guidance
         private ManeuverAttitudeMode _burnAttitudeMode =
             ManeuverAttitudeMode.Prograde;
 
+        /*
+         * 14.22.70a:
+         * Preserve the exact maneuver vector through burn execution. Without
+         * this snapshot, mixed P/N/R guidance would be correct pre-burn but
+         * would lose the vector when BuildBurnExecutionSolution no longer had
+         * the live plan object.
+         */
+        private ManeuverPlanModel _burnPlanSnapshot;
+
         private bool _burnRequiresOrbitTargetVerification;
 
         private bool _cutoffCommanded;
@@ -392,6 +401,7 @@ namespace KMC.Engine.Guidance
             PopulateAttitudeGuidance(
                 solution,
                 orbit,
+                _burnPlanSnapshot,
                 _burnAttitudeMode,
                 receivedUtc);
 
@@ -698,6 +708,7 @@ namespace KMC.Engine.Guidance
             PopulateAttitudeGuidance(
                 solution,
                 orbit,
+                plan,
                 attitudeMode,
                 receivedUtc);
 
@@ -872,6 +883,7 @@ namespace KMC.Engine.Guidance
         private static void PopulateAttitudeGuidance(
             GuidanceSolutionModel solution,
             OrbitModel orbit,
+            ManeuverPlanModel plan,
             ManeuverAttitudeMode attitudeMode,
             DateTime receivedUtc)
         {
@@ -905,7 +917,257 @@ namespace KMC.Engine.Guidance
             double nose;
             double forward;
 
-            if (attitudeMode ==
+            /*
+             * 14.22.70b:
+             * Prefer KSP's own ManeuverNode.GetBurnVector() telemetry. This
+             * is the same future-node vector used by KSP's maneuver marker,
+             * already resolved into the vessel ReferenceTransform frame.
+             */
+            ManeuverVectorTelemetryModel authoritative =
+                plan != null
+                    ? ManeuverVectorTelemetryStore.FindForPlan(
+                        plan.VesselId,
+                        plan.NodeUniversalTimeSeconds,
+                        receivedUtc)
+                    : new ManeuverVectorTelemetryModel();
+
+            if (plan != null &&
+                authoritative != null &&
+                authoritative.IsUsableFor(
+                    plan.VesselId,
+                    plan.NodeUniversalTimeSeconds,
+                    receivedUtc))
+            {
+                right =
+                    authoritative.RightComponent;
+
+                nose =
+                    authoritative.NoseComponent;
+
+                forward =
+                    authoritative.ReferenceForwardComponent;
+
+                double authoritativeMagnitude =
+                    Math.Sqrt(
+                        right * right +
+                        nose * nose +
+                        forward * forward);
+
+                if (authoritativeMagnitude > 1.0e-9)
+                {
+                    right /= authoritativeMagnitude;
+                    nose /= authoritativeMagnitude;
+                    forward /= authoritativeMagnitude;
+
+                    solution.CommandedRetrograde =
+                        false;
+
+                    solution.AttitudeReference =
+                        "KSP-AUTHORITATIVE MANEUVER VECTOR";
+
+                    solution.Evidence =
+                        "Authoritative maneuver attitude reference from KSP ManeuverNode.GetBurnVector at the verified node epoch.";
+
+                    PopulateResolvedManeuverVector(
+                        solution,
+                        right,
+                        nose,
+                        forward);
+
+                    return;
+                }
+            }
+
+            /*
+             * 14.22.70:
+             * A stock KSP maneuver node is a vector in the orbital P/N/R
+             * basis. Mixed transfer burns must point along the normalized
+             * resultant, not along whichever principal axis happens to win
+             * ResolveAttitudeMode().
+             *
+             * Pure-axis maneuvers deliberately retain the proven legacy path
+             * below. Only 2- or 3-axis nodes enter this branch.
+             */
+            if (IsMixedManeuver(plan))
+            {
+                bool usePrograde =
+                    IsFinite(plan.ProgradeDeltaVMetersPerSecond) &&
+                    Math.Abs(plan.ProgradeDeltaVMetersPerSecond) >
+                        NodeDeltaVToleranceMetersPerSecond;
+
+                bool useNormal =
+                    IsFinite(plan.NormalDeltaVMetersPerSecond) &&
+                    Math.Abs(plan.NormalDeltaVMetersPerSecond) >
+                        NodeDeltaVToleranceMetersPerSecond;
+
+                bool useRadial =
+                    IsFinite(plan.RadialDeltaVMetersPerSecond) &&
+                    Math.Abs(plan.RadialDeltaVMetersPerSecond) >
+                        NodeDeltaVToleranceMetersPerSecond;
+
+                VelocityVectorTelemetryModel vector =
+                    orbit.VelocityVector;
+
+                double velocityMagnitude =
+                    vector.OrbitalMagnitudeMetersPerSecond;
+
+                if (usePrograde &&
+                    (!IsFinite(velocityMagnitude) ||
+                     velocityMagnitude < 1.0))
+                {
+                    solution.Evidence =
+                        "Combined maneuver vector unavailable: orbital velocity vector invalid.";
+
+                    return;
+                }
+
+                OrbitNormalTelemetryModel normal =
+                    null;
+
+                if (useNormal || useRadial)
+                {
+                    normal =
+                        OrbitNormalTelemetryStore.GetLatest();
+
+                    normal.EvaluateAgainstVelocity(
+                        vector,
+                        receivedUtc);
+
+                    if (!normal.Available)
+                    {
+                        solution.Evidence =
+                            "Combined maneuver vector unavailable: " +
+                            normal.Status;
+
+                        return;
+                    }
+                }
+
+                RadialTelemetryModel radial =
+                    null;
+
+                if (useRadial)
+                {
+                    radial =
+                        RadialTelemetryStore.GetLatest();
+
+                    radial.EvaluateAgainstNormal(
+                        normal,
+                        receivedUtc);
+
+                    if (!radial.Available)
+                    {
+                        solution.Evidence =
+                            "Combined maneuver vector unavailable: " +
+                            radial.Status;
+
+                        return;
+                    }
+                }
+
+                double p =
+                    usePrograde
+                        ? plan.ProgradeDeltaVMetersPerSecond
+                        : 0.0;
+
+                double n =
+                    useNormal
+                        ? plan.NormalDeltaVMetersPerSecond
+                        : 0.0;
+
+                double r =
+                    useRadial
+                        ? plan.RadialDeltaVMetersPerSecond
+                        : 0.0;
+
+                right = 0.0;
+                nose = 0.0;
+                forward = 0.0;
+
+                if (usePrograde)
+                {
+                    right +=
+                        p *
+                        vector.OrbitalRightMetersPerSecond /
+                        velocityMagnitude;
+
+                    nose +=
+                        p *
+                        vector.OrbitalNoseMetersPerSecond /
+                        velocityMagnitude;
+
+                    forward +=
+                        p *
+                        vector.OrbitalReferenceForwardMetersPerSecond /
+                        velocityMagnitude;
+                }
+
+                if (useNormal)
+                {
+                    right +=
+                        n *
+                        normal.RightComponent /
+                        normal.Magnitude;
+
+                    nose +=
+                        n *
+                        normal.NoseComponent /
+                        normal.Magnitude;
+
+                    forward +=
+                        n *
+                        normal.ReferenceForwardComponent /
+                        normal.Magnitude;
+                }
+
+                if (useRadial)
+                {
+                    right +=
+                        r *
+                        radial.RightComponent /
+                        radial.Magnitude;
+
+                    nose +=
+                        r *
+                        radial.NoseComponent /
+                        radial.Magnitude;
+
+                    forward +=
+                        r *
+                        radial.ReferenceForwardComponent /
+                        radial.Magnitude;
+                }
+
+                double resultantMagnitude =
+                    Math.Sqrt(
+                        right * right +
+                        nose * nose +
+                        forward * forward);
+
+                if (!IsFinite(resultantMagnitude) ||
+                    resultantMagnitude <=
+                        NodeDeltaVToleranceMetersPerSecond)
+                {
+                    solution.Evidence =
+                        "Combined maneuver vector unavailable: resultant magnitude invalid.";
+
+                    return;
+                }
+
+                right /= resultantMagnitude;
+                nose /= resultantMagnitude;
+                forward /= resultantMagnitude;
+
+                solution.CommandedRetrograde =
+                    false;
+
+                solution.AttitudeReference =
+                    "TRUE COMBINED MANEUVER VECTOR";
+
+                solution.Evidence =
+                    "True mixed P/N/R maneuver attitude reference from the normalized stock-node resultant using verified prograde, normal, and radial orbital basis vectors; maneuver execution remains crew advisory.";
+            }
+            else if (attitudeMode ==
                     ManeuverAttitudeMode.RadialOut ||
                 attitudeMode ==
                     ManeuverAttitudeMode.RadialIn)
@@ -1042,6 +1304,19 @@ namespace KMC.Engine.Guidance
                         : "True orbital prograde attitude reference from verified orbital velocity vector; maneuver execution remains crew advisory.";
             }
 
+            PopulateResolvedManeuverVector(
+                solution,
+                right,
+                nose,
+                forward);
+        }
+
+        private static void PopulateResolvedManeuverVector(
+            GuidanceSolutionModel solution,
+            double right,
+            double nose,
+            double forward)
+        {
             nose =
                 Clamp(
                     nose,
@@ -1085,6 +1360,46 @@ namespace KMC.Engine.Guidance
                 true;
         }
 
+        private static bool IsMixedManeuver(
+            ManeuverPlanModel plan)
+        {
+            if (plan == null)
+            {
+                return false;
+            }
+
+            int activeAxes = 0;
+
+            if (IsFinite(
+                    plan.ProgradeDeltaVMetersPerSecond) &&
+                Math.Abs(
+                    plan.ProgradeDeltaVMetersPerSecond) >
+                    NodeDeltaVToleranceMetersPerSecond)
+            {
+                activeAxes++;
+            }
+
+            if (IsFinite(
+                    plan.NormalDeltaVMetersPerSecond) &&
+                Math.Abs(
+                    plan.NormalDeltaVMetersPerSecond) >
+                    NodeDeltaVToleranceMetersPerSecond)
+            {
+                activeAxes++;
+            }
+
+            if (IsFinite(
+                    plan.RadialDeltaVMetersPerSecond) &&
+                Math.Abs(
+                    plan.RadialDeltaVMetersPerSecond) >
+                    NodeDeltaVToleranceMetersPerSecond)
+            {
+                activeAxes++;
+            }
+
+            return
+                activeAxes > 1;
+        }
         private static ManeuverAttitudeMode ResolveAttitudeMode(
             ManeuverPlanModel plan)
         {
@@ -1421,6 +1736,10 @@ namespace KMC.Engine.Guidance
 
             _burnAttitudeMode =
                 ResolveAttitudeMode(
+                    plan);
+
+            _burnPlanSnapshot =
+                ManeuverPlanModel.Clone(
                     plan);
 
             _burnRequiresOrbitTargetVerification =
@@ -1816,6 +2135,9 @@ namespace KMC.Engine.Guidance
 
             _burnAttitudeMode =
                 ManeuverAttitudeMode.Prograde;
+
+            _burnPlanSnapshot =
+                null;
 
             _burnRequiresOrbitTargetVerification =
                 false;

@@ -1925,22 +1925,9 @@ namespace KMC.MissionControl.Pages
                 return "---";
             }
 
-            long totalSeconds =
-                (long)Math.Floor(seconds + 0.5);
-
-            long days = totalSeconds / 86400;
-            long hours = (totalSeconds % 86400) / 3600;
-            long minutes = (totalSeconds % 3600) / 60;
-            long remainingSeconds = totalSeconds % 60;
-
-            if (days > 0)
-                return string.Format("{0}d {1:00}h {2:00}m {3:00}s", days, hours, minutes, remainingSeconds);
-            if (hours > 0)
-                return string.Format("{0}h {1:00}m {2:00}s", hours, minutes, remainingSeconds);
-            if (minutes > 0)
-                return string.Format("{0}m {1:00}s", minutes, remainingSeconds);
-
-            return remainingSeconds.ToString("0") + "s";
+            return
+                KMC.MissionControl.Telemetry.KspTimeDisplay.FormatDuration(
+                    seconds);
         }
 
         private static string FormatDeltaV(

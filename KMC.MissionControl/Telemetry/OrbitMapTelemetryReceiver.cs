@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using KMC.Shared;
+using KMC.Engine.Orbit;
 
 namespace KMC.MissionControl.Telemetry
 {
@@ -17,7 +18,25 @@ namespace KMC.MissionControl.Telemetry
         public void Start()
         {
             if (_running) return;
-            _client = new UdpClient(new IPEndPoint(IPAddress.Loopback, OrbitMapPacket.TelemetryPort));
+            try
+            {
+                _client =
+                    new UdpClient(
+                        new IPEndPoint(
+                            IPAddress.Loopback,
+                            OrbitMapPacket.TelemetryPort));
+            }
+            catch (SocketException ex)
+            {
+                throw new InvalidOperationException(
+                    "KMC UDP BIND FAILED | ORBIT MAP | UDP " +
+                    OrbitMapPacket.TelemetryPort +
+                    " | " +
+                    ex.SocketErrorCode +
+                    " | " +
+                    ex.Message,
+                    ex);
+            }
             _running = true;
             _thread = new Thread(ReceiveLoop);
             _thread.IsBackground = true;
@@ -48,7 +67,17 @@ namespace KMC.MissionControl.Telemetry
                         OrbitMapSnapshotStore.RecordRejected();
                         continue;
                     }
-                    OrbitMapSnapshotStore.SetLatest(packet, DateTime.UtcNow);
+                    DateTime receivedUtc =
+                        DateTime.UtcNow;
+
+                    OrbitMapSnapshotStore.SetLatest(
+                        packet,
+                        receivedUtc);
+
+                    PublishAuthoritativeManeuverVectors(
+                        packet,
+                        receivedUtc);
+
                     Action<OrbitMapPacket> handler = SnapshotReceived;
                     if (handler != null) handler(packet);
                 }
@@ -58,6 +87,54 @@ namespace KMC.MissionControl.Telemetry
             }
         }
 
+        private static void PublishAuthoritativeManeuverVectors(
+            OrbitMapPacket packet,
+            DateTime receivedUtc)
+        {
+            if (packet == null ||
+                packet.ManeuverNodes == null ||
+                string.IsNullOrWhiteSpace(
+                    packet.VesselId))
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < packet.ManeuverNodes.Count;
+                 index++)
+            {
+                OrbitMapManeuverNode node =
+                    packet.ManeuverNodes[index];
+
+                if (node == null ||
+                    !node.AuthoritativeBurnVectorAvailable)
+                {
+                    continue;
+                }
+
+                ManeuverVectorTelemetryStore.Publish(
+                    new ManeuverVectorTelemetryModel
+                    {
+                        TelemetryAvailable = true,
+                        SourceTimestampUtc =
+                            packet.TimestampUtc,
+                        ReceivedUtc =
+                            receivedUtc,
+                        VesselId =
+                            packet.VesselId,
+                        NodeUniversalTimeSeconds =
+                            node.UniversalTimeSeconds,
+                        RightComponent =
+                            node.AuthoritativeBurnRight,
+                        NoseComponent =
+                            node.AuthoritativeBurnNose,
+                        ReferenceForwardComponent =
+                            node.AuthoritativeBurnReferenceForward,
+                        BurnMagnitudeMetersPerSecond =
+                            node.TotalDeltaVMetersPerSecond
+                    });
+            }
+        }
         public void Dispose() { Stop(); }
     }
 }

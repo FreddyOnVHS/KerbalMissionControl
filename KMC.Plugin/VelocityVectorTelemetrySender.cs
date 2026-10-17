@@ -31,8 +31,7 @@ namespace KMC.Plugin
 
         private const int RadialTelemetryPort =
             5099;
-
-        private const string VelocityProtocolId =
+private const string VelocityProtocolId =
             "KMC-VEL1";
 
         private const string OrbitNormalProtocolId =
@@ -40,8 +39,7 @@ namespace KMC.Plugin
 
         private const string RadialProtocolId =
             "KMC-RAD1";
-
-        private const float SendIntervalSeconds =
+private const float SendIntervalSeconds =
             0.1f;
 
         private UdpClient _udpClient;
@@ -71,8 +69,7 @@ namespace KMC.Plugin
                     new IPEndPoint(
                         IPAddress.Loopback,
                         RadialTelemetryPort);
-
-                Debug.Log(
+Debug.Log(
                     "[KMC] Velocity/orbit-normal telemetry sender started.");
             }
             catch (Exception ex)
@@ -246,6 +243,8 @@ namespace KMC.Plugin
                 Send(
                     radialMessage,
                     _radialEndpoint);
+
+
             }
             catch (Exception ex)
             {

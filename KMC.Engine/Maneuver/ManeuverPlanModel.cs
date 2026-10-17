@@ -88,6 +88,83 @@ namespace KMC.Engine.Maneuver
 
         public IList<string> Evidence { get; private set; }
 
+        /*
+         * 14.22.69b:
+         * Mission Control may request promotion of an already-reviewed KMC
+         * maneuver, but ManeuverPlanModel remains Engine-owned. Convert the
+         * public promotion DTO inside the Engine assembly so callers never
+         * need access to internal plan setters.
+         */
+        public static ManeuverPlanModel CreateFromPromotionRequest(
+            ManeuverPlanPromotionRequest request)
+        {
+            ManeuverPlanModel plan =
+                new ManeuverPlanModel();
+
+            if (request == null)
+            {
+                return plan;
+            }
+
+            plan.Available =
+                request.Available;
+            plan.OrbitTargetVerificationRequired =
+                request.OrbitTargetVerificationRequired;
+            plan.PlanId =
+                request.PlanId ?? string.Empty;
+            plan.VesselId =
+                request.VesselId ?? string.Empty;
+            plan.Objective =
+                request.Objective ?? string.Empty;
+            plan.NodeUniversalTimeAvailable =
+                request.NodeUniversalTimeAvailable;
+            plan.NodeUniversalTimeSeconds =
+                request.NodeUniversalTimeSeconds;
+            plan.NodeMissionTimeSeconds =
+                request.NodeMissionTimeSeconds;
+            plan.TimeToNodeSeconds =
+                request.TimeToNodeSeconds;
+            plan.ProgradeDeltaVMetersPerSecond =
+                request.ProgradeDeltaVMetersPerSecond;
+            plan.NormalDeltaVMetersPerSecond =
+                request.NormalDeltaVMetersPerSecond;
+            plan.RadialDeltaVMetersPerSecond =
+                request.RadialDeltaVMetersPerSecond;
+            plan.TotalDeltaVMetersPerSecond =
+                request.TotalDeltaVMetersPerSecond;
+            plan.EstimatedBurnDurationSeconds =
+                request.EstimatedBurnDurationSeconds;
+            plan.IgnitionLeadSeconds =
+                request.IgnitionLeadSeconds;
+            plan.IgnitionMissionTimeSeconds =
+                request.IgnitionMissionTimeSeconds;
+            plan.PredictedApoapsisMeters =
+                request.PredictedApoapsisMeters;
+            plan.PredictedPeriapsisMeters =
+                request.PredictedPeriapsisMeters;
+            plan.PredictedInclinationDegrees =
+                request.PredictedInclinationDegrees;
+            plan.PredictedEccentricity =
+                request.PredictedEccentricity;
+            plan.PredictedPeriodSeconds =
+                request.PredictedPeriodSeconds;
+            plan.Status =
+                request.Status ?? string.Empty;
+
+            if (request.Evidence != null)
+            {
+                for (int index = 0;
+                     index < request.Evidence.Count;
+                     index++)
+                {
+                    plan.Evidence.Add(
+                        request.Evidence[index]);
+                }
+            }
+
+            return plan;
+        }
+
         internal static ManeuverPlanModel Clone(ManeuverPlanModel source)
         {
             ManeuverPlanModel clone = new ManeuverPlanModel();

@@ -10,6 +10,7 @@ using KMC.MissionControl.Rendering.OrbitMap;
 using KMC.MissionControl.Telemetry;
 using KMC.Shared;
 using KMC.Engine.Navigation;
+using KMC.Engine.Maneuver;
 using KMC.MissionControl.Navigation;
 
 namespace KMC.MissionControl.Pages
@@ -2265,6 +2266,20 @@ namespace KMC.MissionControl.Pages
                     usedCoupledAuthority;
                 _submittedTransferUsedLambertAuthority =
                     usedLambertAuthority;
+
+                /*
+                 * 14.22.69:
+                 * MAP-created interplanetary nodes are KMC-authored maneuvers,
+                 * not arbitrary/manual stock KSP nodes. Register the exact
+                 * uplinked PlanId/UT/P-N-R vector with the existing retained
+                 * maneuver system and promote that same identity into the
+                 * Engine/GUID path. This preserves the established maneuver
+                 * ownership/interlock architecture instead of teaching GUID
+                 * about a second special transfer-node authority.
+                 */
+                TransferManeuverPlanBridge.RegisterAndPromote(
+                    packet,
+                    _selectedTransferBodyName);
             }
 
             _transferNodeActionText =
@@ -2624,16 +2639,14 @@ namespace KMC.MissionControl.Pages
 
         private static string FormatTransferInterval(double seconds)
         {
-            if (!IsFinite(seconds) || seconds < 0.0) return "---";
-            long totalSeconds = (long)Math.Floor(seconds + 0.5);
-            long days = totalSeconds / 86400;
-            long hours = (totalSeconds % 86400) / 3600;
-            long minutes = (totalSeconds % 3600) / 60;
-            long secs = totalSeconds % 60;
-            if (days > 0) return string.Format("{0}d {1:00}h {2:00}m {3:00}s", days, hours, minutes, secs);
-            if (hours > 0) return string.Format("{0}h {1:00}m {2:00}s", hours, minutes, secs);
-            if (minutes > 0) return string.Format("{0}m {1:00}s", minutes, secs);
-            return secs.ToString("0") + "s";
+            if (!IsFinite(seconds) || seconds < 0.0)
+            {
+                return "---";
+            }
+
+            return
+                KMC.MissionControl.Telemetry.KspTimeDisplay.FormatDuration(
+                    seconds);
         }
 
         private void EnsureTransferSelection(OrbitMapPacket packet, string origin)
@@ -2749,6 +2762,144 @@ namespace KMC.MissionControl.Pages
             return r;
         }
     }
+
+    /// <summary>
+    /// 14.22.69 bridge between MAP transfer planning and the established
+    /// retained maneuver / Engine GUID ownership path.
+    ///
+    /// The KSP maneuver node remains authoritative. This bridge only gives the
+    /// already-created KMC node the same PlanId identity that MNV and GUID use
+    /// for every other KMC-authored maneuver.
+    /// </summary>
+    internal static class TransferManeuverPlanBridge
+    {
+        public static void RegisterAndPromote(
+            ManeuverUplinkPacket packet,
+            string destinationBodyName)
+        {
+            if (packet == null ||
+                string.IsNullOrWhiteSpace(packet.PlanId) ||
+                string.IsNullOrWhiteSpace(packet.VesselId) ||
+                !IsFinite(packet.NodeUniversalTimeSeconds) ||
+                !IsFinite(packet.ProgradeDeltaVMetersPerSecond) ||
+                !IsFinite(packet.NormalDeltaVMetersPerSecond) ||
+                !IsFinite(packet.RadialDeltaVMetersPerSecond))
+            {
+                return;
+            }
+
+            OrbitMapPacket livePacket;
+            DateTime receivedUtc;
+            double currentUt = double.NaN;
+
+            if (OrbitMapSnapshotStore.TryGetLatest(
+                    out livePacket,
+                    out receivedUtc) &&
+                livePacket != null &&
+                IsFinite(livePacket.UniversalTimeSeconds))
+            {
+                currentUt =
+                    livePacket.UniversalTimeSeconds;
+            }
+
+            double timeToNode =
+                IsFinite(currentUt)
+                    ? packet.NodeUniversalTimeSeconds -
+                      currentUt
+                    : double.NaN;
+
+            double totalDv =
+                Math.Sqrt(
+                    packet.ProgradeDeltaVMetersPerSecond *
+                    packet.ProgradeDeltaVMetersPerSecond +
+                    packet.NormalDeltaVMetersPerSecond *
+                    packet.NormalDeltaVMetersPerSecond +
+                    packet.RadialDeltaVMetersPerSecond *
+                    packet.RadialDeltaVMetersPerSecond);
+
+            string target =
+                !string.IsNullOrWhiteSpace(destinationBodyName)
+                    ? destinationBodyName.Trim()
+                    : (!string.IsNullOrWhiteSpace(packet.TargetBodyName)
+                        ? packet.TargetBodyName.Trim()
+                        : "TARGET");
+
+            ManeuverPlanPromotionRequest promotion =
+                new ManeuverPlanPromotionRequest
+                {
+                    Available = true,
+                    OrbitTargetVerificationRequired = false,
+                    PlanId = packet.PlanId,
+                    VesselId = packet.VesselId,
+                    Objective =
+                        "INTERPLANETARY TRANSFER TO " +
+                        target.ToUpperInvariant(),
+                    NodeUniversalTimeAvailable = true,
+                    NodeUniversalTimeSeconds =
+                        packet.NodeUniversalTimeSeconds,
+                    NodeMissionTimeSeconds = double.NaN,
+                    TimeToNodeSeconds = timeToNode,
+                    ProgradeDeltaVMetersPerSecond =
+                        packet.ProgradeDeltaVMetersPerSecond,
+                    NormalDeltaVMetersPerSecond =
+                        packet.NormalDeltaVMetersPerSecond,
+                    RadialDeltaVMetersPerSecond =
+                        packet.RadialDeltaVMetersPerSecond,
+                    TotalDeltaVMetersPerSecond = totalDv,
+                    EstimatedBurnDurationSeconds = double.NaN,
+                    IgnitionLeadSeconds = 0.0,
+                    IgnitionMissionTimeSeconds = double.NaN,
+                    PredictedApoapsisMeters = double.NaN,
+                    PredictedPeriapsisMeters =
+                        IsFinite(packet.DesiredPeriapsisRadiusMeters)
+                            ? packet.DesiredPeriapsisRadiusMeters
+                            : double.NaN,
+                    PredictedInclinationDegrees = double.NaN,
+                    PredictedEccentricity = double.NaN,
+                    PredictedPeriodSeconds = double.NaN,
+                    Status = "TRANSFER MANEUVER READY"
+                };
+
+            promotion.Evidence.Add(
+                "MAP transfer planner created and KSP accepted the maneuver node.");
+
+            promotion.Evidence.Add(
+                "Plan identity is the exact MAP uplink PlanId/UT/P-N-R vector.");
+
+            ManeuverPlanModel retainedPlan =
+                ManeuverPlanModel.CreateFromPromotionRequest(
+                    promotion);
+
+            KMC.MissionControl.KmcManeuverPlanStore.Capture(
+                retainedPlan);
+
+            KMC.MissionControl.KmcManeuverPlanStore.Select(
+                promotion.PlanId);
+
+            /*
+             * Publish through the established Engine promotion mechanism.
+             * The same immutable PlanId / UT / P-N-R identity is therefore
+             * shared by MAP, MNV, Engine, GUID, and the live KSP node.
+             */
+            ManeuverPlanPromotionStore.Publish(
+                promotion);
+
+            ManeuverPlanPromotionStore.SetActivePlanId(
+                promotion.PlanId);
+
+            ManeuverUplinkStatusStore.RepublishGuidanceForPlan(
+                promotion.PlanId);
+        }
+
+        private static bool IsFinite(
+            double value)
+        {
+            return
+                !double.IsNaN(value) &&
+                !double.IsInfinity(value);
+        }
+    }
+
 
     /// <summary>
     /// MissionControl-side bridge for finite-SOI local correction. Keeps packet

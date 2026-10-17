@@ -91,11 +91,25 @@ namespace KMC.MissionControl.Transport
                 return;
             }
 
-            _client =
-                new UdpClient(
-                    new IPEndPoint(
-                        IPAddress.Any,
-                        Port));
+            try
+            {
+                _client =
+                    new UdpClient(
+                        new IPEndPoint(
+                            IPAddress.Any,
+                            Port));
+            }
+            catch (SocketException ex)
+            {
+                throw new InvalidOperationException(
+                    "KMC UDP BIND FAILED | ORBIT NORMAL | UDP " +
+                    Port +
+                    " | " +
+                    ex.SocketErrorCode +
+                    " | " +
+                    ex.Message,
+                    ex);
+            }
 
             _running =
                 true;
@@ -299,7 +313,25 @@ namespace KMC.MissionControl.Transport
         public void Start()
         {
             if (_running) return;
-            _client = new UdpClient(new IPEndPoint(IPAddress.Any, Port));
+            try
+            {
+                _client =
+                    new UdpClient(
+                        new IPEndPoint(
+                            IPAddress.Any,
+                            Port));
+            }
+            catch (SocketException ex)
+            {
+                throw new InvalidOperationException(
+                    "KMC UDP BIND FAILED | RADIAL | UDP " +
+                    Port +
+                    " | " +
+                    ex.SocketErrorCode +
+                    " | " +
+                    ex.Message,
+                    ex);
+            }
             _running = true;
             _thread = new Thread(ReceiveLoop);
             _thread.IsBackground = true;
@@ -363,5 +395,6 @@ namespace KMC.MissionControl.Transport
             if (client != null) { try { client.Close(); } catch { } }
         }
     }
+
 
 }

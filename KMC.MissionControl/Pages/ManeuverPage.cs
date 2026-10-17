@@ -1216,20 +1216,16 @@ namespace KMC.MissionControl.Pages
         private static string FormatRatio(double value) { return IsFinite(value) ? value.ToString("0.000000") : "---"; }
         private static string FormatDuration(double seconds)
         {
-            if (!IsFinite(seconds)) return "---";
-            bool negative = seconds < 0.0;
-            long totalSeconds = (long)Math.Floor(Math.Abs(seconds) + 0.5);
-            long days = totalSeconds / 86400;
-            long hours = (totalSeconds % 86400) / 3600;
-            long minutes = (totalSeconds % 3600) / 60;
-            long secs = totalSeconds % 60;
-            string value;
-            if (days > 0) value = string.Format("{0}d {1:00}h {2:00}m {3:00}s", days, hours, minutes, secs);
-            else if (hours > 0) value = string.Format("{0}h {1:00}m {2:00}s", hours, minutes, secs);
-            else if (minutes > 0) value = string.Format("{0}m {1:00}s", minutes, secs);
-            else value = secs.ToString("0") + "s";
-            return negative ? "-" + value : value;
+            if (!IsFinite(seconds))
+            {
+                return "---";
+            }
+
+            return
+                KMC.MissionControl.Telemetry.KspTimeDisplay.FormatDuration(
+                    seconds);
         }
+
         private static bool IsFinite(double value) { return !double.IsNaN(value) && !double.IsInfinity(value); }
     }
 }
