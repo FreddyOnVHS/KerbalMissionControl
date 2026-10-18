@@ -68,6 +68,7 @@ internal static class Program
         Run("GUID final count and ignition cues are explicit", GuidanceFinalCountCueRegression);
         Run("MNV compute and upload actions expose operator feedback", ManeuverOperatorFeedbackRegression);
         Run("manual maneuver nodes survive unavailable burn estimate", ManualManeuverBurnEstimateDecouplingRegression);
+        Run("post-burn cleanup and queue handoff are explicit", PostBurnCleanupQueueHandoffRegression);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
@@ -2658,6 +2659,41 @@ internal static class Program
                 ": double.NaN",
                 StringComparison.Ordinal) >= 0,
             "manual maneuver does not preserve unknown burn timing explicitly");
+    }
+
+    private static void PostBurnCleanupQueueHandoffRegression()
+    {
+        string main = File.ReadAllText(
+            Path.Combine(Environment.CurrentDirectory, "KMC.MissionControl", "MainForm.cs"));
+        string mnv = File.ReadAllText(
+            Path.Combine(Environment.CurrentDirectory, "KMC.MissionControl", "Pages", "ManeuverPage.cs"));
+        string guid = File.ReadAllText(
+            Path.Combine(Environment.CurrentDirectory, "KMC.MissionControl", "Pages", "GuidancePage.cs"));
+
+        Check(
+            guid.IndexOf("\"NEXT ACTION\"", StringComparison.Ordinal) >= 0 &&
+            guid.IndexOf("\"REMOVE COMPLETED NODE\"", StringComparison.Ordinal) >= 0 &&
+            guid.IndexOf("\"CLEANUP COMPLETE\"", StringComparison.Ordinal) >= 0,
+            "GUID post-burn next action missing");
+
+        Check(
+            main.IndexOf("SelectCompletedActiveNodeForCleanup", StringComparison.Ordinal) >= 0 &&
+            main.IndexOf("\"REMOVE COMPLETE NODE\"", StringComparison.Ordinal) >= 0,
+            "MNV completed-node cleanup focus missing");
+
+        Check(
+            main.IndexOf("\"REMOVE COMMAND SENT - AWAITING NODE REMOVED\"", StringComparison.Ordinal) >= 0,
+            "completed-node removal feedback missing");
+
+        Check(
+            mnv.IndexOf("\"CLEANUP COMPLETE - ACTIVATE KMC #\"", StringComparison.Ordinal) >= 0 &&
+            mnv.IndexOf("\"MANEUVER COMPLETE - REMOVE COMPLETED NODE\"", StringComparison.Ordinal) >= 0,
+            "MNV cleanup/next-plan handoff language missing");
+
+        Check(
+            main.IndexOf("ManeuverPlanPromotionStore.Publish", StringComparison.Ordinal) >= 0 &&
+            main.IndexOf("SendDelete", StringComparison.Ordinal) >= 0,
+            "crew-controlled queue actions unexpectedly removed");
     }
 
     private static void ManeuverUplinkDesiredPeriapsis()

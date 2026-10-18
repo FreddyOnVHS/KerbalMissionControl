@@ -910,7 +910,16 @@ namespace KMC.MissionControl.Pages
                                 ? "PLAN NOT ACTIVE"
                                 : guidance != null
                                     ? guidance.BurnReadiness
-                                    : "---")
+                                    : "---"),
+
+                    new FieldPair(
+                        "NEXT ACTION",
+                        guidance != null &&
+                        guidance.BurnComplete
+                            ? BuildPostBurnNextAction(
+                                guidance,
+                                queue)
+                            : "---")
                 });
 
             if (guidance != null &&
@@ -1374,6 +1383,29 @@ namespace KMC.MissionControl.Pages
                 y);
         }
 
+        private static string BuildPostBurnNextAction(
+            GuidanceSolutionModel guidance,
+            QueueDirectorState queue)
+        {
+            if (guidance == null || !guidance.BurnComplete)
+            {
+                return "---";
+            }
+
+            if (!guidance.ReacquisitionReady)
+            {
+                return "REMOVE COMPLETED NODE";
+            }
+
+            if (queue != null && queue.NextKmcPlanAvailable)
+            {
+                return
+                    "ACTIVATE KMC #" +
+                    Math.Max(1, queue.NextKmcSequence).ToString();
+            }
+
+            return "CLEANUP COMPLETE";
+        }
         private static void DrawCrewCommandGroup(
             MissionRenderContext context,
             Rectangle bounds,
@@ -1415,6 +1447,42 @@ namespace KMC.MissionControl.Pages
                             guidance.Command)
                         : "AWAIT GUIDANCE";
 
+            bool postBurnCleanup =
+                guidance != null &&
+                guidance.BurnComplete &&
+                !guidance.ReacquisitionReady;
+
+            bool postBurnNext =
+                guidance != null &&
+                guidance.BurnComplete &&
+                guidance.ReacquisitionReady &&
+                queue != null &&
+                queue.NextKmcPlanAvailable;
+
+            bool postBurnDone =
+                guidance != null &&
+                guidance.BurnComplete &&
+                guidance.ReacquisitionReady &&
+                (queue == null ||
+                 !queue.NextKmcPlanAvailable);
+
+            if (postBurnCleanup)
+            {
+                command = "REMOVE COMPLETED NODE";
+                color = Color.Orange;
+            }
+            else if (postBurnNext)
+            {
+                command =
+                    "ACTIVATE KMC #" +
+                    Math.Max(1, queue.NextKmcSequence).ToString();
+                color = Color.LimeGreen;
+            }
+            else if (postBurnDone)
+            {
+                command = "QUEUE COMPLETE";
+                color = Color.LimeGreen;
+            }
             bool ignitionStandby =
                 guidance != null &&
                 string.Equals(

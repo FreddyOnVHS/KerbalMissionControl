@@ -122,7 +122,7 @@ namespace KMC.MissionControl.Pages
                     : -1;
 
             string footer;
-            if (manualComplete) footer = nodeRemoved ? "MANUAL MANEUVER COMPLETE - NODE REMOVED" : "MANUAL MANEUVER COMPLETE - REMOVE NODE";
+            if (manualComplete) footer = nodeRemoved ? (nextAvailableKmcSequence > 0 ? "CLEANUP COMPLETE - ACTIVATE KMC #" + nextAvailableKmcSequence.ToString() : "CLEANUP COMPLETE - QUEUE CLEAR") : "MANEUVER COMPLETE - REMOVE COMPLETED NODE";
             else if (missed) footer = "MANEUVER WINDOW MISSED - CLICK COMPUTE TO REPLAN";
             else if (retroPending) footer = "RETROGRADE GUIDANCE REQUIRED - UPLINK INHIBITED";
             else if (!plan.Available) footer = "PLAN NOT AVAILABLE - REVIEW ENGINE EVIDENCE";
@@ -133,7 +133,7 @@ namespace KMC.MissionControl.Pages
                     "NEXT KMC #" +
                     nextAvailableKmcSequence.ToString() +
                     " AVAILABLE - ACTIVATE NEXT";
-            else if (nodeRemoved) footer = "NODE REMOVED - UPLOAD REQUIRED";
+            else if (nodeRemoved) footer = "NODE REMOVED - CLEANUP COMPLETE";
             else if (vesselNotActive) footer = "TRACKED NODE VESSEL NOT ACTIVE";
             else if (nodeLoaded) footer = "NODE LOADED - VERIFYING KSP NODE";
             else if (samePlan && string.Equals(uplink.State, "AWAITING ACK", StringComparison.OrdinalIgnoreCase)) footer = "UPLINK SENT - AWAITING PLUGIN ACK";

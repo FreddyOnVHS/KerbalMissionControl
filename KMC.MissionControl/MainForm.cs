@@ -1192,11 +1192,55 @@ _orbitMapReceiver.SnapshotReceived +=
             RefreshKmcManeuverLifecycle(
                 snapshot);
 
+            SelectCompletedActiveNodeForCleanup(
+                snapshot);
+
             UpdateManeuverNodeActionState();
 
             _missionDisplay.RequestRender();
         }
 
+        private void SelectCompletedActiveNodeForCleanup(
+            ManeuverInventorySnapshot snapshot)
+        {
+            if (snapshot == null ||
+                snapshot.Nodes == null ||
+                _maneuverNodeSelector == null ||
+                _maneuverNodeSelector.Items.Count == 0)
+            {
+                return;
+            }
+
+            string activePlanId =
+                ManeuverPlanPromotionStore.GetActivePlanId();
+
+            if (string.IsNullOrWhiteSpace(activePlanId) ||
+                !IsManeuverBurnComplete(activePlanId))
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < snapshot.Nodes.Count &&
+                 index < _maneuverNodeSelector.Items.Count;
+                 index++)
+            {
+                KmcQueuedManeuverPlan retained =
+                    KmcManeuverPlanStore.FindForNode(
+                        snapshot.Nodes[index],
+                        snapshot.VesselId);
+
+                if (retained != null &&
+                    string.Equals(
+                        retained.PlanId,
+                        activePlanId,
+                        StringComparison.Ordinal))
+                {
+                    _maneuverNodeSelector.SelectedIndex = index;
+                    return;
+                }
+            }
+        }
         private void OnManeuverNodeSelectionChanged(
             object sender,
             EventArgs e)
@@ -1220,6 +1264,9 @@ _orbitMapReceiver.SnapshotReceived +=
             _maneuverDeleteButton.Enabled =
                 selected != null;
 
+            _maneuverDeleteButton.Text =
+                "DELETE";
+
             KmcQueuedManeuverPlan plan =
                 ResolveSelectedRetainedPlan(
                     selected);
@@ -1233,6 +1280,17 @@ _orbitMapReceiver.SnapshotReceived +=
                     plan.PlanId,
                     activePlanId,
                     StringComparison.Ordinal);
+
+            bool completedSelected =
+                plan != null &&
+                IsManeuverBurnComplete(
+                    plan.PlanId);
+
+            if (completedSelected)
+            {
+                _maneuverDeleteButton.Text =
+                    "REMOVE COMPLETE NODE";
+            }
 
             bool promotionAllowed =
                 plan != null &&
@@ -1563,6 +1621,14 @@ _orbitMapReceiver.SnapshotReceived +=
                 return;
             }
 
+            KmcQueuedManeuverPlan retainedPlan =
+                ResolveSelectedRetainedPlan(
+                    selected);
+
+            bool completedCleanup =
+                retainedPlan != null &&
+                IsManeuverBurnComplete(
+                    retainedPlan.PlanId);
             DialogResult confirm =
                 MessageBox.Show(
                     "Delete " + selected.Text +
@@ -1577,9 +1643,6 @@ _orbitMapReceiver.SnapshotReceived +=
                 return;
             }
 
-            KmcQueuedManeuverPlan retainedPlan =
-                ResolveSelectedRetainedPlan(
-                    selected);
 
             if (retainedPlan != null)
             {
@@ -1594,6 +1657,11 @@ _orbitMapReceiver.SnapshotReceived +=
                 _maneuverQueueTransport.SendDelete(
                     snapshot.VesselId,
                     selected.NodeId);
+                ManeuverOperatorFeedbackStore.Publish(
+                    completedCleanup
+                        ? "REMOVE COMMAND SENT - AWAITING NODE REMOVED"
+                        : "DELETE COMMAND SENT - AWAITING NODE REMOVED",
+                    true);
             }
             catch (Exception ex)
             {
