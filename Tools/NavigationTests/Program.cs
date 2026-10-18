@@ -13,7 +13,7 @@ using KMC.MissionControl.Rendering;
 using KMC.MissionControl.Pages;
 using KMC.MissionControl.Telemetry;
 using KMC.Shared;
-
+using KMC.Shared.Topology;
 internal static class Program
 {
     private static int passed, failed;
@@ -69,6 +69,14 @@ internal static class Program
         Run("MNV compute and upload actions expose operator feedback", ManeuverOperatorFeedbackRegression);
         Run("manual maneuver nodes survive unavailable burn estimate", ManualManeuverBurnEstimateDecouplingRegression);
         Run("post-burn cleanup and queue handoff are explicit", PostBurnCleanupQueueHandoffRegression);
+        Run("SCHEM vessel topology pipeline preserves projected part positions", VesselSchematicFoundationRegression);
+        Run("SCHEM oriented geometry survives topology transport", VesselSchematicGeometryRegression);
+        Run("SCHEM geometry uses native local mesh bounds", VesselSchematicNativeBoundsRegression);
+        Run("SCHEM side outline survives topology transport", VesselSchematicOutlineTransportRegression);
+        Run("SCHEM uses one clean side-view renderer", VesselSchematicSingleViewRegression);
+        Run("SCHEM presentation prioritizes hull and engine bell", VesselSchematicPresentationPolishRegression);
+        Run("SCHEM engine bell is compact and attached", VesselSchematicEngineBellScaleRegression);
+        Run("SCHEM primary hull dominates visual hierarchy", VesselSchematicHullHierarchyRegression);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
@@ -2694,6 +2702,625 @@ internal static class Program
             main.IndexOf("ManeuverPlanPromotionStore.Publish", StringComparison.Ordinal) >= 0 &&
             main.IndexOf("SendDelete", StringComparison.Ordinal) >= 0,
             "crew-controlled queue actions unexpectedly removed");
+    }
+
+    private static void VesselSchematicFoundationRegression()
+    {
+        VesselTopology topology =
+            new VesselTopology
+            {
+                VesselId = "SCHEM-TEST",
+                VesselName = "Schematic Test",
+                RootPartId = 1U,
+                HasRootPart = true,
+                PartCount = 2,
+                CurrentStage = 3,
+                Revision = 7
+            };
+
+        topology.Nodes.Add(
+            new VesselTopologyNode
+            {
+                PartId = 1U,
+                PartTitle = "Root",
+                VesselX = 1.25,
+                VesselY = 2.5,
+                VesselZ = -3.75
+            });
+
+        topology.Nodes.Add(
+            new VesselTopologyNode
+            {
+                PartId = 2U,
+                ParentPartId = 1U,
+                HasParent = true,
+                PartTitle = "Child",
+                VesselX = -4.5,
+                VesselY = 5.75,
+                VesselZ = 6.25
+            });
+
+        byte[] encoded =
+            VesselTopologyPacketCodec.Encode(
+                topology);
+
+        VesselTopology decoded;
+
+        Check(
+            VesselTopologyPacketCodec.TryDecode(
+                encoded,
+                out decoded),
+            "SCHEM topology round trip failed");
+
+        Check(
+            decoded != null &&
+            decoded.Nodes.Count == 2,
+            "SCHEM topology node count lost");
+
+        Near(
+            decoded.Nodes[0].VesselX,
+            1.25);
+
+        Near(
+            decoded.Nodes[0].VesselY,
+            2.5);
+
+        Near(
+            decoded.Nodes[0].VesselZ,
+            -3.75);
+
+        Near(
+            decoded.Nodes[1].VesselX,
+            -4.5);
+
+        Near(
+            decoded.Nodes[1].VesselY,
+            5.75);
+
+        Near(
+            decoded.Nodes[1].VesselZ,
+            6.25);
+
+        string main =
+            File.ReadAllText(
+                Path.Combine(
+                    Environment.CurrentDirectory,
+                    "KMC.MissionControl",
+                    "MainForm.cs"));
+
+        string page =
+            File.ReadAllText(
+                Path.Combine(
+                    Environment.CurrentDirectory,
+                    "KMC.MissionControl",
+                    "Pages",
+                    "SchematicPage.cs"));
+
+        string receiver =
+            File.ReadAllText(
+                Path.Combine(
+                    Environment.CurrentDirectory,
+                    "KMC.MissionControl",
+                    "Telemetry",
+                    "VesselSchematicTelemetry.cs"));
+
+        Check(
+            main.IndexOf(
+                "\"SCHEM\"",
+                StringComparison.Ordinal) >= 0 &&
+            main.IndexOf(
+                "new SchematicPage()",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM navigation tab missing");
+
+        Check(
+            receiver.IndexOf(
+                "VesselTopologyPacketCodec.TopologyPort",
+                StringComparison.Ordinal) >= 0 &&
+            receiver.IndexOf(
+                "VesselTopologyPacketCodec.TryDecode",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM does not consume existing KMC topology transport");
+
+        Check(
+            page.IndexOf(
+                "\"ACTIVE VESSEL / SIDE\"",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "\"SINGLE SIDE VIEW\"",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "\"FRONT\"",
+                StringComparison.Ordinal) < 0 &&
+            page.IndexOf(
+                "\"TOP\"",
+                StringComparison.Ordinal) < 0,
+            "SCHEM single side-view presentation missing");
+
+        Check(
+            page.IndexOf(
+                "SideOutlinePoints",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "DrawPartOutline",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "node.VesselZ",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "node.VesselY",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM side-outline/fallback projection path incomplete");
+    }
+
+    private static void VesselSchematicGeometryRegression()
+    {
+        VesselTopology topology =
+            new VesselTopology
+            {
+                VesselId = "SCHEM-GEOMETRY",
+                VesselName = "Geometry Test",
+                RootPartId = 10U,
+                HasRootPart = true,
+                PartCount = 1,
+                CurrentStage = 2,
+                Revision = 9
+            };
+
+        VesselTopologyNode node =
+            new VesselTopologyNode
+            {
+                PartId = 10U,
+                PartTitle = "Oriented Part",
+                VesselX = 1.0,
+                VesselY = 2.0,
+                VesselZ = 3.0,
+                GeometryAvailable = true,
+                BoundsCenterX = 0.1,
+                BoundsCenterY = -0.2,
+                BoundsCenterZ = 0.3,
+                BoundsSizeX = 1.25,
+                BoundsSizeY = 2.5,
+                BoundsSizeZ = 3.75,
+                AxisRightX = 0.0,
+                AxisRightY = 1.0,
+                AxisRightZ = 0.0,
+                AxisUpX = -1.0,
+                AxisUpY = 0.0,
+                AxisUpZ = 0.0,
+                AxisForwardX = 0.0,
+                AxisForwardY = 0.0,
+                AxisForwardZ = 1.0
+            };
+
+        topology.Nodes.Add(
+            node);
+
+        byte[] encoded =
+            VesselTopologyPacketCodec.Encode(
+                topology);
+
+        VesselTopology decoded;
+
+        Check(
+            VesselTopologyPacketCodec.TryDecode(
+                encoded,
+                out decoded),
+            "SCHEM geometry topology decode failed");
+
+        Check(
+            decoded != null &&
+            decoded.TransportVersion >= 3 &&
+            decoded.Nodes.Count == 1 &&
+            decoded.Nodes[0].GeometryAvailable,
+            "SCHEM geometry availability/version lost");
+
+        VesselTopologyNode actual =
+            decoded.Nodes[0];
+
+        Near(actual.BoundsCenterX, 0.1);
+        Near(actual.BoundsCenterY, -0.2);
+        Near(actual.BoundsCenterZ, 0.3);
+        Near(actual.BoundsSizeX, 1.25);
+        Near(actual.BoundsSizeY, 2.5);
+        Near(actual.BoundsSizeZ, 3.75);
+        Near(actual.AxisRightY, 1.0);
+        Near(actual.AxisUpX, -1.0);
+        Near(actual.AxisForwardZ, 1.0);
+
+        string builder =
+            File.ReadAllText(
+                Path.Combine(
+                    Environment.CurrentDirectory,
+                    "KMC.Plugin",
+                    "Topology",
+                    "VesselTopologyBuilder.cs"));
+
+        string page =
+            File.ReadAllText(
+                Path.Combine(
+                    Environment.CurrentDirectory,
+                    "KMC.MissionControl",
+                    "Pages",
+                    "SchematicPage.cs"));
+
+        Check(
+            builder.IndexOf(
+                "GetComponentsInChildren<Renderer>",
+                StringComparison.Ordinal) >= 0 &&
+            builder.IndexOf(
+                "InverseTransformDirection",
+                StringComparison.Ordinal) >= 0 &&
+            builder.IndexOf(
+                "BoundsSizeX",
+                StringComparison.Ordinal) >= 0,
+            "KSP SCHEM geometry capture missing");
+
+        Check(
+            page.IndexOf(
+                "SideOutlinePoints",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "DrawPartOutline",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "FillPolygon",
+                StringComparison.Ordinal) >= 0,
+            "Mission Control mesh-outline renderer missing");
+    }
+
+    private static void VesselSchematicNativeBoundsRegression()
+    {
+        string builder =
+            File.ReadAllText(
+                Path.Combine(
+                    Environment.CurrentDirectory,
+                    "KMC.Plugin",
+                    "Topology",
+                    "VesselTopologyBuilder.cs"));
+
+        Check(
+            builder.IndexOf(
+                "TryGetRendererLocalGeometryBounds",
+                StringComparison.Ordinal) >= 0 &&
+            builder.IndexOf(
+                "AccumulateRendererLocalBounds",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM native-local geometry helpers missing");
+
+        Check(
+            builder.IndexOf(
+                "GetComponent(" +
+                Environment.NewLine +
+                "                        \"MeshFilter\")",
+                StringComparison.Ordinal) >= 0 ||
+            builder.IndexOf(
+                "GetComponent(" +
+                "\r\n" +
+                "                        \"MeshFilter\")",
+                StringComparison.Ordinal) >= 0 ||
+            builder.IndexOf(
+                "\"MeshFilter\"",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM MeshFilter local-bounds path missing");
+
+        Check(
+            builder.IndexOf(
+                "\"localBounds\"",
+                StringComparison.Ordinal) >= 0 &&
+            builder.IndexOf(
+                "\"sharedMesh\"",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM skinned/mesh local bounds lookup missing");
+
+        Check(
+            builder.IndexOf(
+                "Bounds bounds =" +
+                Environment.NewLine +
+                "                        renderer.bounds",
+                StringComparison.Ordinal) < 0 &&
+            builder.IndexOf(
+                "Bounds bounds =" +
+                "\r\n" +
+                "                        renderer.bounds",
+                StringComparison.Ordinal) < 0,
+            "world-space renderer.bounds AABB path still present");
+    }
+
+    private static void VesselSchematicOutlineTransportRegression()
+    {
+        VesselTopology topology =
+            new VesselTopology
+            {
+                VesselId = "SCHEM-OUTLINE",
+                VesselName = "Outline Test",
+                RootPartId = 1U,
+                HasRootPart = true,
+                PartCount = 1,
+                Revision = 11
+            };
+
+        VesselTopologyNode node =
+            new VesselTopologyNode
+            {
+                PartId = 1U,
+                PartTitle = "Hull"
+            };
+
+        node.SideOutlinePoints.Add(
+            new VesselOutlinePoint
+            {
+                Horizontal = -2.0,
+                Vertical = -1.0
+            });
+
+        node.SideOutlinePoints.Add(
+            new VesselOutlinePoint
+            {
+                Horizontal = 2.0,
+                Vertical = -1.0
+            });
+
+        node.SideOutlinePoints.Add(
+            new VesselOutlinePoint
+            {
+                Horizontal = 0.0,
+                Vertical = 3.0
+            });
+
+        topology.Nodes.Add(
+            node);
+
+        byte[] encoded =
+            VesselTopologyPacketCodec.Encode(
+                topology);
+
+        VesselTopology decoded;
+
+        Check(
+            VesselTopologyPacketCodec.TryDecode(
+                encoded,
+                out decoded),
+            "SCHEM outline transport decode failed");
+
+        Check(
+            decoded != null &&
+            decoded.TransportVersion >= 4 &&
+            decoded.Nodes.Count == 1 &&
+            decoded.Nodes[0].SideOutlinePoints.Count == 3,
+            "SCHEM outline collection lost");
+
+        Near(
+            decoded.Nodes[0]
+                .SideOutlinePoints[0]
+                .Horizontal,
+            -2.0);
+
+        Near(
+            decoded.Nodes[0]
+                .SideOutlinePoints[2]
+                .Vertical,
+            3.0);
+    }
+
+    private static void VesselSchematicSingleViewRegression()
+    {
+        string builder =
+            File.ReadAllText(
+                Path.Combine(
+                    Environment.CurrentDirectory,
+                    "KMC.Plugin",
+                    "Topology",
+                    "VesselTopologyBuilder.cs"));
+
+        string page =
+            File.ReadAllText(
+                Path.Combine(
+                    Environment.CurrentDirectory,
+                    "KMC.MissionControl",
+                    "Pages",
+                    "SchematicPage.cs"));
+
+        Check(
+            builder.IndexOf(
+                "BuildConvexHull",
+                StringComparison.Ordinal) >= 0 &&
+            builder.IndexOf(
+                "SideOutlinePoints.Add",
+                StringComparison.Ordinal) >= 0 &&
+            builder.IndexOf(
+                "vertices",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM mesh-outline generation missing");
+
+        Check(
+            page.IndexOf(
+                "\"ACTIVE VESSEL / SIDE\"",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "\"SINGLE SIDE VIEW\"",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM single side view missing");
+
+        Check(
+            page.IndexOf(
+                "DrawPolygon",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "FillPolygon",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM clean polygon renderer missing");
+
+        Check(
+            page.IndexOf(
+                "PointerDown",
+                StringComparison.Ordinal) < 0 &&
+            page.IndexOf(
+                "\"FRONT\"",
+                StringComparison.Ordinal) < 0 &&
+            page.IndexOf(
+                "\"TOP\"",
+                StringComparison.Ordinal) < 0,
+            "SCHEM legacy multi-view controls remain");
+    }
+
+    private static void VesselSchematicPresentationPolishRegression()
+    {
+        string page =
+            File.ReadAllText(
+                Path.Combine(
+                    Environment.CurrentDirectory,
+                    "KMC.MissionControl",
+                    "Pages",
+                    "SchematicPage.cs"));
+
+        Check(
+            page.IndexOf(
+                "DrawEngineBell",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "VesselNodeCategory.Engine",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "exitHalfWidth",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM engine-bell presentation missing");
+
+        Check(
+            page.IndexOf(
+                "ShouldSuppressMinorPart",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "IsMinorPart",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "bounds.Width < 11.0f",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM tiny-detail suppression missing");
+
+        Check(
+            page.IndexOf(
+                "lineAlpha",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "lineWidth",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "fillAlpha",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM visual hierarchy styling missing");
+
+        Check(
+            page.IndexOf(
+                "\"ACTIVE VESSEL / SIDE\"",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "\"FRONT\"",
+                StringComparison.Ordinal) < 0 &&
+            page.IndexOf(
+                "\"TOP\"",
+                StringComparison.Ordinal) < 0,
+            "SCHEM single-view layout changed unexpectedly");
+    }
+
+    private static void VesselSchematicEngineBellScaleRegression()
+    {
+        string page =
+            File.ReadAllText(
+                Path.Combine(
+                    Environment.CurrentDirectory,
+                    "KMC.MissionControl",
+                    "Pages",
+                    "SchematicPage.cs"));
+
+        Check(
+            page.IndexOf(
+                "float bellHeight =",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "bounds.Height * 0.74f",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM compact engine-bell height missing");
+
+        Check(
+            page.IndexOf(
+                "bounds.Width * 0.34f",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "bounds.Width * 0.16f",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM compact engine-bell width missing");
+
+        Check(
+            page.IndexOf(
+                "bounds.Top -",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "bounds.Height * 0.04f",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM engine-bell upward attachment bias missing");
+    }
+
+    private static void VesselSchematicHullHierarchyRegression()
+    {
+        string page =
+            File.ReadAllText(
+                Path.Combine(
+                    Environment.CurrentDirectory,
+                    "KMC.MissionControl",
+                    "Pages",
+                    "SchematicPage.cs"));
+
+        Check(
+            page.IndexOf(
+                "IsPrimaryHullPart",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "VesselNodeCategory.Fairing",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "VesselNodeCategory.FuelTank",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM primary hull classification missing");
+
+        Check(
+            page.IndexOf(
+                "bool primaryHull",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "? 38",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM primary hull fill emphasis missing");
+
+        Check(
+            page.IndexOf(
+                "bool primaryHull",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "? 245",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "? 2.0f",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM primary hull outline emphasis missing");
+
+        Check(
+            page.IndexOf(
+                "bounds.Width < 11.0f",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "bounds.Height < 11.0f",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM stronger tiny-detail suppression missing");
+
+        Check(
+            page.IndexOf(
+                "DrawEngineBell",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "float bellHeight =",
+                StringComparison.Ordinal) >= 0,
+            "SCHEM engine bell changed unexpectedly");
     }
 
     private static void ManeuverUplinkDesiredPeriapsis()

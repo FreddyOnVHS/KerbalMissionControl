@@ -57,6 +57,7 @@
     <Compile Include="Topology\VesselModuleResource.cs" />
     <Compile Include="Topology\VesselModuleDescriptor.cs" />
     <Compile Include="Topology\VesselPropellantRequirement.cs" />
+    <Compile Include="Topology\VesselOutlinePoint.cs" />
     <Compile Include="Topology\VesselTopologyNode.cs" />
     <Compile Include="Topology\VesselTopology.cs" />
     <Compile Include="Topology\VesselTopologyPacketCodec.cs" />

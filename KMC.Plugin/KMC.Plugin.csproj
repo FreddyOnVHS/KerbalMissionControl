@@ -101,6 +101,7 @@
     <Compile Include="..\KMC.shared\Topology\VesselModuleResource.cs"><Link>Shared\Topology\VesselModuleResource.cs</Link></Compile>
     <Compile Include="..\KMC.shared\Topology\VesselModuleDescriptor.cs"><Link>Shared\Topology\VesselModuleDescriptor.cs</Link></Compile>
     <Compile Include="..\KMC.shared\Topology\VesselPropellantRequirement.cs"><Link>Shared\Topology\VesselPropellantRequirement.cs</Link></Compile>
+    <Compile Include="..\KMC.shared\Topology\VesselOutlinePoint.cs"><Link>Shared\Topology\VesselOutlinePoint.cs</Link></Compile>
     <Compile Include="..\KMC.shared\Topology\VesselTopologyNode.cs"><Link>Shared\Topology\VesselTopologyNode.cs</Link></Compile>
     <Compile Include="..\KMC.shared\Topology\VesselTopology.cs"><Link>Shared\Topology\VesselTopology.cs</Link></Compile>
     <Compile Include="..\KMC.shared\Topology\VesselTopologyPacketCodec.cs"><Link>Shared\Topology\VesselTopologyPacketCodec.cs</Link></Compile>

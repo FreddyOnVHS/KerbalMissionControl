@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 
@@ -7,7 +7,7 @@ namespace KMC.Shared.Topology
     public static class VesselTopologyPacketCodec
     {
         public const int TopologyPort = 5082;
-        public const int CurrentVersion = 2;
+        public const int CurrentVersion = 4;
 
         private const int Magic = 0x4B4D4354;
         private const int MinimumSupportedVersion = 1;
@@ -152,6 +152,24 @@ namespace KMC.Shared.Topology
             writer.Write(node.VesselX);
             writer.Write(node.VesselY);
             writer.Write(node.VesselZ);
+
+            writer.Write(node.GeometryAvailable);
+            writer.Write(node.BoundsCenterX);
+            writer.Write(node.BoundsCenterY);
+            writer.Write(node.BoundsCenterZ);
+            writer.Write(node.BoundsSizeX);
+            writer.Write(node.BoundsSizeY);
+            writer.Write(node.BoundsSizeZ);
+            writer.Write(node.AxisRightX);
+            writer.Write(node.AxisRightY);
+            writer.Write(node.AxisRightZ);
+            writer.Write(node.AxisUpX);
+            writer.Write(node.AxisUpY);
+            writer.Write(node.AxisUpZ);
+            writer.Write(node.AxisForwardX);
+            writer.Write(node.AxisForwardY);
+            writer.Write(node.AxisForwardZ);
+
             writer.Write(node.StructuralDepth);
             writer.Write(node.SymmetryGroupId);
             writer.Write(node.BranchRootPartId);
@@ -214,6 +232,9 @@ namespace KMC.Shared.Topology
                     writer,
                     node.Modules[index]);
             }
+            WriteOutlinePoints(
+                writer,
+                node.SideOutlinePoints);
         }
 
         private static VesselTopologyNode ReadNode(
@@ -242,16 +263,79 @@ namespace KMC.Shared.Topology
                     ResourceMassTonnes = reader.ReadDouble(),
                     VesselX = reader.ReadDouble(),
                     VesselY = reader.ReadDouble(),
-                    VesselZ = reader.ReadDouble(),
-                    StructuralDepth = reader.ReadInt32(),
-                    SymmetryGroupId = reader.ReadUInt32(),
-                    BranchRootPartId = reader.ReadUInt32(),
-                    ActivationStage = reader.ReadInt32(),
-                    SeparationStage = reader.ReadInt32(),
-                    IsSeparationBoundary = reader.ReadBoolean(),
-                    WillSeparateOnNextStage = reader.ReadBoolean(),
-                    AllowsCrossFeed = reader.ReadBoolean()
+                    VesselZ = reader.ReadDouble()
                 };
+
+            if (version >= 3)
+            {
+                node.GeometryAvailable =
+                    reader.ReadBoolean();
+
+                node.BoundsCenterX =
+                    reader.ReadDouble();
+                node.BoundsCenterY =
+                    reader.ReadDouble();
+                node.BoundsCenterZ =
+                    reader.ReadDouble();
+
+                node.BoundsSizeX =
+                    reader.ReadDouble();
+                node.BoundsSizeY =
+                    reader.ReadDouble();
+                node.BoundsSizeZ =
+                    reader.ReadDouble();
+
+                node.AxisRightX =
+                    reader.ReadDouble();
+                node.AxisRightY =
+                    reader.ReadDouble();
+                node.AxisRightZ =
+                    reader.ReadDouble();
+
+                node.AxisUpX =
+                    reader.ReadDouble();
+                node.AxisUpY =
+                    reader.ReadDouble();
+                node.AxisUpZ =
+                    reader.ReadDouble();
+
+                node.AxisForwardX =
+                    reader.ReadDouble();
+                node.AxisForwardY =
+                    reader.ReadDouble();
+                node.AxisForwardZ =
+                    reader.ReadDouble();
+            }
+
+            node.StructuralDepth =
+                reader.ReadInt32();
+
+            node.SymmetryGroupId =
+                reader.ReadUInt32();
+
+            node.BranchRootPartId =
+                reader.ReadUInt32();
+
+            node.ActivationStage =
+                reader.ReadInt32();
+
+            node.SeparationStage =
+                reader.ReadInt32();
+
+            node.IsSeparationBoundary =
+                reader.ReadBoolean();
+
+            node.WillSeparateOnNextStage =
+                reader.ReadBoolean();
+
+            node.AllowsCrossFeed =
+                reader.ReadBoolean();
+
+            /*
+             * The properties above were moved out of the initializer in v3
+             * so v1/v2 packets can still be decoded without consuming fields
+             * that do not exist in those transports.
+             */
 
             ReadUIntList(reader, node.ChildPartIds);
             ReadUIntList(reader, node.StackChildPartIds);
@@ -317,9 +401,66 @@ namespace KMC.Shared.Topology
                 }
             }
 
+            if (version >= 4)
+            {
+                ReadOutlinePoints(
+                    reader,
+                    node.SideOutlinePoints);
+            }
+
             return node;
         }
 
+        private static void WriteOutlinePoints(
+            BinaryWriter writer,
+            System.Collections.Generic.IList<VesselOutlinePoint> points)
+        {
+            writer.Write(
+                points != null
+                    ? points.Count
+                    : 0);
+
+            if (points == null)
+            {
+                return;
+            }
+
+            for (int index = 0;
+                 index < points.Count;
+                 index++)
+            {
+                writer.Write(
+                    points[index].Horizontal);
+
+                writer.Write(
+                    points[index].Vertical);
+            }
+        }
+
+        private static void ReadOutlinePoints(
+            BinaryReader reader,
+            System.Collections.Generic.IList<VesselOutlinePoint> points)
+        {
+            int count =
+                ReadCount(
+                    reader,
+                    128);
+
+            for (int index = 0;
+                 index < count;
+                 index++)
+            {
+                points.Add(
+                    new VesselOutlinePoint
+                    {
+                        Horizontal =
+                            reader.ReadDouble(),
+
+                        Vertical =
+                            reader.ReadDouble()
+                    });
+            }
+        }
         private static void WriteModule(
             BinaryWriter writer,
             VesselModuleDescriptor module)

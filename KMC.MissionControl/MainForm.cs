@@ -48,7 +48,8 @@ namespace KMC.MissionControl
         private readonly MissionControlReceiver _receiver;
         private readonly OrbitNormalTelemetryReceiver _orbitNormalReceiver;
         private readonly RadialTelemetryReceiver _radialReceiver;
-        private readonly OrbitMapTelemetryReceiver _orbitMapReceiver;
+        private readonly OrbitMapTelemetryReceiver _orbitMapReceiver;        private readonly VesselSchematicTelemetryReceiver _vesselSchematicReceiver;
+
         private readonly MapPage _mapPage;
         private readonly LatestTelemetryBuffer _telemetryBuffer;
         private readonly FormsTimer _connectionTimer;
@@ -84,7 +85,8 @@ namespace KMC.MissionControl
         private long _displayedPacketCount;
         private DateTime _lastPerformanceReportUtc;
         private bool _isMovingOrResizing;
-        private bool _mapPageActive;
+        private bool _mapPageActive;        private bool _schematicPageActive;
+
 
         public MainForm()
         {
@@ -224,6 +226,8 @@ namespace KMC.MissionControl
                 new RadialTelemetryReceiver();
 _orbitMapReceiver =
                 new OrbitMapTelemetryReceiver();
+            _vesselSchematicReceiver =
+                new VesselSchematicTelemetryReceiver();
 
             _orbitNormalReceiver.SampleReceived +=
                 OnOrbitNormalTelemetryReceived;
@@ -232,6 +236,8 @@ _orbitMapReceiver =
                 OnRadialTelemetryReceived;
 _orbitMapReceiver.SnapshotReceived +=
                 OnOrbitMapSnapshotReceived;
+            _vesselSchematicReceiver.SnapshotReceived +=
+                OnVesselSchematicSnapshotReceived;
 
             _receiver.TelemetryReceived += OnTelemetryReceived;
             _receiver.ManeuverAcknowledgmentReceived += OnManeuverAcknowledgmentReceived;
@@ -790,6 +796,9 @@ _orbitMapReceiver.SnapshotReceived +=
             _navigationBar.AddPage(
                 "MAP",
                 _mapPage);
+            _navigationBar.AddPage(
+                "SCHEM",
+                new SchematicPage());
 
             _navigationBar.PageChanged +=
                 OnPageChanged;
@@ -807,6 +816,11 @@ _orbitMapReceiver.SnapshotReceived +=
                 string.Equals(
                     title,
                     "MAP",
+                    StringComparison.OrdinalIgnoreCase);
+            _schematicPageActive =
+                string.Equals(
+                    title,
+                    "SCHEM",
                     StringComparison.OrdinalIgnoreCase);
 
             if (_mapPageActive)
@@ -1820,10 +1834,12 @@ _orbitMapReceiver.SnapshotReceived +=
                 OrbitNormalTelemetryStore.Clear();
                 RadialTelemetryStore.Clear();
                 ManeuverVectorTelemetryStore.Clear();
-            OrbitMapSnapshotStore.Clear();
+            OrbitMapSnapshotStore.Clear();                VesselSchematicTelemetryStore.Clear();
+
                 _orbitNormalReceiver.Start();
                 _radialReceiver.Start();
-                _orbitMapReceiver.Start();
+                _orbitMapReceiver.Start();                _vesselSchematicReceiver.Start();
+
                 _maneuverQueueTransport.Start();
                 _electricalControlReceiver.Start();
                 _failureEffectAckReceiver.Start();
@@ -1929,6 +1945,26 @@ _orbitMapReceiver.SnapshotReceived +=
                 });
         }
 
+        private void OnVesselSchematicSnapshotReceived(
+            KMC.Shared.Topology.VesselTopology topology)
+        {
+            if (!_schematicPageActive ||
+                IsDisposed ||
+                !IsHandleCreated)
+            {
+                return;
+            }
+
+            BeginInvoke(
+                (MethodInvoker)delegate
+                {
+                    if (_schematicPageActive &&
+                        !_missionDisplay.IsDisposed)
+                    {
+                        _missionDisplay.RequestRender();
+                    }
+                });
+        }
         private void OnOrbitMapSnapshotReceived(
             OrbitMapPacket packet)
         {
@@ -2396,13 +2432,17 @@ _orbitMapReceiver.SnapshotReceived +=
 
             _orbitMapReceiver.SnapshotReceived -=
                 OnOrbitMapSnapshotReceived;
+            _vesselSchematicReceiver.SnapshotReceived -=
+                OnVesselSchematicSnapshotReceived;
 
             _orbitNormalReceiver.Dispose();
             _radialReceiver.Dispose();
-            _orbitMapReceiver.Dispose();
+            _orbitMapReceiver.Dispose();            _vesselSchematicReceiver.Dispose();
+
             OrbitNormalTelemetryStore.Clear();
             RadialTelemetryStore.Clear();
-            OrbitMapSnapshotStore.Clear();
+            OrbitMapSnapshotStore.Clear();                VesselSchematicTelemetryStore.Clear();
+
             ManeuverInventoryStore.Clear();
             KmcManeuverPlanStore.Clear();
             ManeuverPlanPromotionStore.Clear();

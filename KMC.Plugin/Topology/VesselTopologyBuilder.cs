@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using KMC.Shared.Topology;
 using UnityEngine;
@@ -208,6 +208,16 @@ namespace KMC.Plugin.Topology
                 part,
                 node);
 
+            ReadVesselGeometry(
+                vessel,
+                part,
+                node);
+
+            BuildSideOutline(
+                vessel,
+                part,
+                node);
+
             return node;
         }
 
@@ -311,6 +321,905 @@ namespace KMC.Plugin.Topology
             }
         }
 
+        private static void ReadVesselGeometry(
+            Vessel vessel,
+            Part part,
+            VesselTopologyNode node)
+        {
+            if (vessel == null ||
+                part == null ||
+                node == null ||
+                part.transform == null)
+            {
+                return;
+            }
+
+            try
+            {
+                Transform reference =
+                    vessel.ReferenceTransform;
+
+                if (reference == null)
+                {
+                    return;
+                }
+
+                Vector3 right =
+                    reference.InverseTransformDirection(
+                        part.transform.right).normalized;
+
+                Vector3 up =
+                    reference.InverseTransformDirection(
+                        part.transform.up).normalized;
+
+                Vector3 forward =
+                    reference.InverseTransformDirection(
+                        part.transform.forward).normalized;
+
+                Renderer[] renderers =
+                    part.GetComponentsInChildren<Renderer>(
+                        true);
+
+                if (renderers == null ||
+                    renderers.Length == 0)
+                {
+                    return;
+                }
+
+                bool hasBounds =
+                    false;
+
+                Vector3 localMin =
+                    Vector3.zero;
+
+                Vector3 localMax =
+                    Vector3.zero;
+
+                for (int index = 0;
+                     index < renderers.Length;
+                     index++)
+                {
+                    Renderer renderer =
+                        renderers[index];
+
+                    if (renderer == null)
+                    {
+                        continue;
+                    }
+
+                    /*
+                     * Avoid hard references to optional Unity split modules
+                     * such as UnityEngine.ParticleSystemModule. KSP's managed
+                     * assembly set forwards ParticleSystemRenderer there, but
+                     * KMC.Plugin does not otherwise need that module.
+                     */
+                    string rendererTypeName =
+                        renderer.GetType().Name;
+
+                    if (string.Equals(
+                            rendererTypeName,
+                            "ParticleSystemRenderer",
+                            StringComparison.Ordinal) ||
+                        string.Equals(
+                            rendererTypeName,
+                            "LineRenderer",
+                            StringComparison.Ordinal) ||
+                        string.Equals(
+                            rendererTypeName,
+                            "TrailRenderer",
+                            StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    /*
+                     * GetComponentsInChildren<Renderer>() on a Part transform
+                     * can include renderer hierarchies belonging to attached
+                     * child Parts. Only measure renderers whose nearest Part
+                     * ancestor is the Part currently being sampled.
+                     */
+                    Part rendererOwner =
+                        renderer.GetComponentInParent<Part>();
+
+                    if (rendererOwner != part)
+                    {
+                        continue;
+                    }
+
+                    Bounds localRendererBounds;
+                    Transform geometryTransform;
+
+                    if (!TryGetRendererLocalGeometryBounds(
+                            renderer,
+                            out localRendererBounds,
+                            out geometryTransform))
+                    {
+                        continue;
+                    }
+
+                    AccumulateRendererLocalBounds(
+                        part,
+                        geometryTransform,
+                        localRendererBounds,
+                        ref hasBounds,
+                        ref localMin,
+                        ref localMax);
+                }
+
+                if (!hasBounds)
+                {
+                    return;
+                }
+
+                Vector3 size =
+                    localMax -
+                    localMin;
+
+                if (!IsFinite(size.x) ||
+                    !IsFinite(size.y) ||
+                    !IsFinite(size.z) ||
+                    size.sqrMagnitude < 1.0e-8f)
+                {
+                    return;
+                }
+
+                Vector3 centerLocal =
+                    (localMin + localMax) *
+                    0.5f;
+
+                node.GeometryAvailable =
+                    true;
+
+                node.BoundsCenterX =
+                    centerLocal.x;
+                node.BoundsCenterY =
+                    centerLocal.y;
+                node.BoundsCenterZ =
+                    centerLocal.z;
+
+                node.BoundsSizeX =
+                    Math.Abs(size.x);
+                node.BoundsSizeY =
+                    Math.Abs(size.y);
+                node.BoundsSizeZ =
+                    Math.Abs(size.z);
+
+                node.AxisRightX =
+                    right.x;
+                node.AxisRightY =
+                    right.y;
+                node.AxisRightZ =
+                    right.z;
+
+                node.AxisUpX =
+                    up.x;
+                node.AxisUpY =
+                    up.y;
+                node.AxisUpZ =
+                    up.z;
+
+                node.AxisForwardX =
+                    forward.x;
+                node.AxisForwardY =
+                    forward.y;
+                node.AxisForwardZ =
+                    forward.z;
+            }
+            catch
+            {
+                /*
+                 * Geometry is presentation data only. A modded part with a
+                 * renderer edge case must never break topology telemetry.
+                 */
+                node.GeometryAvailable =
+                    false;
+            }
+        }
+        private static void BuildSideOutline(
+            Vessel vessel,
+            Part part,
+            VesselTopologyNode node)
+        {
+            if (vessel == null ||
+                part == null ||
+                node == null ||
+                part.transform == null)
+            {
+                return;
+            }
+
+            Transform reference =
+                vessel.ReferenceTransform;
+
+            if (reference == null)
+            {
+                return;
+            }
+
+            List<OutlineSample> samples =
+                new List<OutlineSample>();
+
+            try
+            {
+                Renderer[] renderers =
+                    part.GetComponentsInChildren<Renderer>(
+                        true);
+
+                if (renderers == null)
+                {
+                    return;
+                }
+
+                for (int rendererIndex = 0;
+                     rendererIndex < renderers.Length;
+                     rendererIndex++)
+                {
+                    Renderer renderer =
+                        renderers[rendererIndex];
+
+                    if (renderer == null)
+                    {
+                        continue;
+                    }
+
+                    Part rendererOwner =
+                        renderer.GetComponentInParent<Part>();
+
+                    if (rendererOwner != part)
+                    {
+                        continue;
+                    }
+
+                    string typeName =
+                        renderer.GetType().Name;
+
+                    if (string.Equals(
+                            typeName,
+                            "ParticleSystemRenderer",
+                            StringComparison.Ordinal) ||
+                        string.Equals(
+                            typeName,
+                            "LineRenderer",
+                            StringComparison.Ordinal) ||
+                        string.Equals(
+                            typeName,
+                            "TrailRenderer",
+                            StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    AddRendererOutlineSamples(
+                        renderer,
+                        reference,
+                        samples);
+                }
+            }
+            catch
+            {
+                return;
+            }
+
+            if (samples.Count < 3)
+            {
+                return;
+            }
+
+            List<OutlineSample> hull =
+                BuildConvexHull(
+                    samples);
+
+            if (hull.Count < 3)
+            {
+                return;
+            }
+
+            hull =
+                ReduceHull(
+                    hull,
+                    24);
+
+            for (int index = 0;
+                 index < hull.Count;
+                 index++)
+            {
+                node.SideOutlinePoints.Add(
+                    new VesselOutlinePoint
+                    {
+                        Horizontal =
+                            hull[index].Horizontal,
+
+                        Vertical =
+                            hull[index].Vertical
+                    });
+            }
+        }
+
+        private static void AddRendererOutlineSamples(
+            Renderer renderer,
+            Transform reference,
+            IList<OutlineSample> samples)
+        {
+            if (renderer == null ||
+                reference == null ||
+                samples == null)
+            {
+                return;
+            }
+
+            string typeName =
+                renderer.GetType().Name;
+
+            if (string.Equals(
+                    typeName,
+                    "SkinnedMeshRenderer",
+                    StringComparison.Ordinal))
+            {
+                try
+                {
+                    System.Reflection.PropertyInfo sharedMeshProperty =
+                        renderer.GetType().GetProperty(
+                            "sharedMesh");
+
+                    object mesh =
+                        sharedMeshProperty != null
+                            ? sharedMeshProperty.GetValue(
+                                renderer,
+                                null)
+                            : null;
+
+                    if (mesh != null)
+                    {
+                        AddMeshVertices(
+                            mesh,
+                            renderer.transform,
+                            reference,
+                            samples);
+
+                        return;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            try
+            {
+                Component meshFilter =
+                    renderer.GetComponent(
+                        "MeshFilter");
+
+                if (meshFilter == null)
+                {
+                    return;
+                }
+
+                System.Reflection.PropertyInfo sharedMeshProperty =
+                    meshFilter.GetType().GetProperty(
+                        "sharedMesh");
+
+                object mesh =
+                    sharedMeshProperty != null
+                        ? sharedMeshProperty.GetValue(
+                            meshFilter,
+                            null)
+                        : null;
+
+                if (mesh == null)
+                {
+                    return;
+                }
+
+                AddMeshVertices(
+                    mesh,
+                    meshFilter.transform,
+                    reference,
+                    samples);
+            }
+            catch
+            {
+            }
+        }
+
+        private static void AddMeshVertices(
+            object mesh,
+            Transform geometryTransform,
+            Transform reference,
+            IList<OutlineSample> samples)
+        {
+            if (mesh == null ||
+                geometryTransform == null ||
+                reference == null)
+            {
+                return;
+            }
+
+            try
+            {
+                System.Reflection.PropertyInfo verticesProperty =
+                    mesh.GetType().GetProperty(
+                        "vertices");
+
+                if (verticesProperty == null)
+                {
+                    return;
+                }
+
+                Vector3[] vertices =
+                    verticesProperty.GetValue(
+                        mesh,
+                        null) as
+                    Vector3[];
+
+                if (vertices == null ||
+                    vertices.Length == 0)
+                {
+                    return;
+                }
+
+                int stride =
+                    Math.Max(
+                        1,
+                        vertices.Length /
+                        512);
+
+                for (int index = 0;
+                     index < vertices.Length;
+                     index += stride)
+                {
+                    Vector3 world =
+                        geometryTransform.TransformPoint(
+                            vertices[index]);
+
+                    Vector3 vesselPoint =
+                        reference.InverseTransformPoint(
+                            world);
+
+                    if (!IsFinite(vesselPoint.y) ||
+                        !IsFinite(vesselPoint.z))
+                    {
+                        continue;
+                    }
+
+                    samples.Add(
+                        new OutlineSample(
+                            vesselPoint.z,
+                            vesselPoint.y));
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static List<OutlineSample> BuildConvexHull(
+            IList<OutlineSample> source)
+        {
+            List<OutlineSample> points =
+                new List<OutlineSample>();
+
+            for (int index = 0;
+                 index < source.Count;
+                 index++)
+            {
+                points.Add(
+                    source[index]);
+            }
+
+            points.Sort(
+                delegate(
+                    OutlineSample left,
+                    OutlineSample right)
+                {
+                    int horizontal =
+                        left.Horizontal.CompareTo(
+                            right.Horizontal);
+
+                    return horizontal != 0
+                        ? horizontal
+                        : left.Vertical.CompareTo(
+                            right.Vertical);
+                });
+
+            List<OutlineSample> unique =
+                new List<OutlineSample>();
+
+            for (int index = 0;
+                 index < points.Count;
+                 index++)
+            {
+                if (unique.Count == 0 ||
+                    Math.Abs(
+                        points[index].Horizontal -
+                        unique[unique.Count - 1].Horizontal) >
+                        1.0e-5 ||
+                    Math.Abs(
+                        points[index].Vertical -
+                        unique[unique.Count - 1].Vertical) >
+                        1.0e-5)
+                {
+                    unique.Add(
+                        points[index]);
+                }
+            }
+
+            if (unique.Count <= 2)
+            {
+                return unique;
+            }
+
+            List<OutlineSample> lower =
+                new List<OutlineSample>();
+
+            for (int index = 0;
+                 index < unique.Count;
+                 index++)
+            {
+                while (lower.Count >= 2 &&
+                       Cross(
+                           lower[lower.Count - 2],
+                           lower[lower.Count - 1],
+                           unique[index]) <= 0.0)
+                {
+                    lower.RemoveAt(
+                        lower.Count - 1);
+                }
+
+                lower.Add(
+                    unique[index]);
+            }
+
+            List<OutlineSample> upper =
+                new List<OutlineSample>();
+
+            for (int index = unique.Count - 1;
+                 index >= 0;
+                 index--)
+            {
+                while (upper.Count >= 2 &&
+                       Cross(
+                           upper[upper.Count - 2],
+                           upper[upper.Count - 1],
+                           unique[index]) <= 0.0)
+                {
+                    upper.RemoveAt(
+                        upper.Count - 1);
+                }
+
+                upper.Add(
+                    unique[index]);
+            }
+
+            lower.RemoveAt(
+                lower.Count - 1);
+
+            upper.RemoveAt(
+                upper.Count - 1);
+
+            lower.AddRange(
+                upper);
+
+            return lower;
+        }
+
+        private static List<OutlineSample> ReduceHull(
+            IList<OutlineSample> hull,
+            int maximumPoints)
+        {
+            List<OutlineSample> result =
+                new List<OutlineSample>();
+
+            if (hull == null ||
+                hull.Count == 0)
+            {
+                return result;
+            }
+
+            if (hull.Count <= maximumPoints)
+            {
+                for (int index = 0;
+                     index < hull.Count;
+                     index++)
+                {
+                    result.Add(
+                        hull[index]);
+                }
+
+                return result;
+            }
+
+            double step =
+                (double)hull.Count /
+                maximumPoints;
+
+            for (int index = 0;
+                 index < maximumPoints;
+                 index++)
+            {
+                int sourceIndex =
+                    Math.Min(
+                        hull.Count - 1,
+                        (int)Math.Floor(
+                            index * step));
+
+                result.Add(
+                    hull[sourceIndex]);
+            }
+
+            return result;
+        }
+
+        private static double Cross(
+            OutlineSample origin,
+            OutlineSample left,
+            OutlineSample right)
+        {
+            return
+                (left.Horizontal -
+                 origin.Horizontal) *
+                (right.Vertical -
+                 origin.Vertical) -
+                (left.Vertical -
+                 origin.Vertical) *
+                (right.Horizontal -
+                 origin.Horizontal);
+        }
+
+        private struct OutlineSample
+        {
+            public OutlineSample(
+                double horizontal,
+                double vertical)
+            {
+                Horizontal =
+                    horizontal;
+
+                Vertical =
+                    vertical;
+            }
+
+            public double Horizontal;
+            public double Vertical;
+        }
+        private static bool TryGetRendererLocalGeometryBounds(
+            Renderer renderer,
+            out Bounds bounds,
+            out Transform geometryTransform)
+        {
+            bounds =
+                new Bounds();
+
+            geometryTransform =
+                null;
+
+            if (renderer == null ||
+                renderer.transform == null)
+            {
+                return false;
+            }
+
+            /*
+             * Skinned meshes have a localBounds value in the renderer's own
+             * transform space. Use reflection so KMC.Plugin does not need a
+             * hard reference to another optional Unity split module.
+             */
+            Type rendererType =
+                renderer.GetType();
+
+            if (string.Equals(
+                    rendererType.Name,
+                    "SkinnedMeshRenderer",
+                    StringComparison.Ordinal))
+            {
+                try
+                {
+                    System.Reflection.PropertyInfo localBoundsProperty =
+                        rendererType.GetProperty(
+                            "localBounds");
+
+                    if (localBoundsProperty != null &&
+                        localBoundsProperty.PropertyType ==
+                            typeof(Bounds))
+                    {
+                        object value =
+                            localBoundsProperty.GetValue(
+                                renderer,
+                                null);
+
+                        if (value is Bounds)
+                        {
+                            bounds =
+                                (Bounds)value;
+
+                            geometryTransform =
+                                renderer.transform;
+
+                            return IsUsableBounds(
+                                bounds);
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            /*
+             * Ordinary KSP model renderers are normally MeshRenderer +
+             * MeshFilter. Read sharedMesh.bounds, which is native mesh-local
+             * geometry and has not been inflated into a world-space AABB.
+             *
+             * Use string/reflection lookup to remain tolerant of Unity's
+             * split assembly layout.
+             */
+            try
+            {
+                Component meshFilter =
+                    renderer.GetComponent(
+                        "MeshFilter");
+
+                if (meshFilter == null)
+                {
+                    return false;
+                }
+
+                System.Reflection.PropertyInfo sharedMeshProperty =
+                    meshFilter.GetType().GetProperty(
+                        "sharedMesh");
+
+                if (sharedMeshProperty == null)
+                {
+                    return false;
+                }
+
+                object mesh =
+                    sharedMeshProperty.GetValue(
+                        meshFilter,
+                        null);
+
+                if (mesh == null)
+                {
+                    return false;
+                }
+
+                System.Reflection.PropertyInfo boundsProperty =
+                    mesh.GetType().GetProperty(
+                        "bounds");
+
+                if (boundsProperty == null ||
+                    boundsProperty.PropertyType !=
+                        typeof(Bounds))
+                {
+                    return false;
+                }
+
+                object value =
+                    boundsProperty.GetValue(
+                        mesh,
+                        null);
+
+                if (!(value is Bounds))
+                {
+                    return false;
+                }
+
+                bounds =
+                    (Bounds)value;
+
+                geometryTransform =
+                    meshFilter.transform;
+
+                return IsUsableBounds(
+                    bounds);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void AccumulateRendererLocalBounds(
+            Part part,
+            Transform geometryTransform,
+            Bounds bounds,
+            ref bool hasBounds,
+            ref Vector3 localMin,
+            ref Vector3 localMax)
+        {
+            if (part == null ||
+                part.transform == null ||
+                geometryTransform == null)
+            {
+                return;
+            }
+
+            Vector3 center =
+                bounds.center;
+
+            Vector3 extents =
+                bounds.extents;
+
+            for (int cornerIndex = 0;
+                 cornerIndex < 8;
+                 cornerIndex++)
+            {
+                Vector3 geometryLocal =
+                    center +
+                    new Vector3(
+                        (cornerIndex & 1) != 0
+                            ? extents.x
+                            : -extents.x,
+                        (cornerIndex & 2) != 0
+                            ? extents.y
+                            : -extents.y,
+                        (cornerIndex & 4) != 0
+                            ? extents.z
+                            : -extents.z);
+
+                /*
+                 * Transform the native local mesh corner through the model
+                 * transform, then into the owning Part's local frame.
+                 * This preserves the actual model rotation/scale without
+                 * passing through renderer.bounds (world-space AABB).
+                 */
+                Vector3 world =
+                    geometryTransform.TransformPoint(
+                        geometryLocal);
+
+                Vector3 partLocal =
+                    part.transform.InverseTransformPoint(
+                        world);
+
+                if (!IsFinite(partLocal.x) ||
+                    !IsFinite(partLocal.y) ||
+                    !IsFinite(partLocal.z))
+                {
+                    continue;
+                }
+
+                if (!hasBounds)
+                {
+                    localMin =
+                        partLocal;
+
+                    localMax =
+                        partLocal;
+
+                    hasBounds =
+                        true;
+                }
+                else
+                {
+                    localMin =
+                        Vector3.Min(
+                            localMin,
+                            partLocal);
+
+                    localMax =
+                        Vector3.Max(
+                            localMax,
+                            partLocal);
+                }
+            }
+        }
+
+        private static bool IsUsableBounds(
+            Bounds bounds)
+        {
+            Vector3 size =
+                bounds.size;
+
+            return
+                IsFinite(size.x) &&
+                IsFinite(size.y) &&
+                IsFinite(size.z) &&
+                size.x >= 0.0f &&
+                size.y >= 0.0f &&
+                size.z >= 0.0f &&
+                size.sqrMagnitude >
+                    1.0e-10f;
+        }
         private static VesselAttachmentType GetAttachmentType(
             Part part)
         {

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 namespace KMC.Shared.Topology
 {
@@ -13,7 +13,8 @@ namespace KMC.Shared.Topology
             StoredResourceNames = new List<string>();
             Resources = new List<VesselResourceState>();
             PropellantRequirements = new List<VesselPropellantRequirement>();
-            Modules = new List<VesselModuleDescriptor>();
+            Modules = new List<VesselModuleDescriptor>();            SideOutlinePoints = new List<VesselOutlinePoint>();
+
 
             PartName = string.Empty;
             PartTitle = string.Empty;
@@ -39,6 +40,30 @@ namespace KMC.Shared.Topology
         public double VesselY { get; set; }
         public double VesselZ { get; set; }
 
+        // Build 14.23.2 â€” approximate part geometry.
+        // Bounds center/size are expressed in the Part transform's local
+        // coordinates. Right/Up/Forward are the Part local axes expressed in
+        // the vessel ReferenceTransform frame.
+        public bool GeometryAvailable { get; set; }
+        public double BoundsCenterX { get; set; }
+        public double BoundsCenterY { get; set; }
+        public double BoundsCenterZ { get; set; }
+        public double BoundsSizeX { get; set; }
+        public double BoundsSizeY { get; set; }
+        public double BoundsSizeZ { get; set; }
+
+        public double AxisRightX { get; set; }
+        public double AxisRightY { get; set; }
+        public double AxisRightZ { get; set; }
+
+        public double AxisUpX { get; set; }
+        public double AxisUpY { get; set; }
+        public double AxisUpZ { get; set; }
+
+        public double AxisForwardX { get; set; }
+        public double AxisForwardY { get; set; }
+        public double AxisForwardZ { get; set; }
+
         public int StructuralDepth { get; set; }
         public uint SymmetryGroupId { get; set; }
         public uint BranchRootPartId { get; set; }
@@ -60,7 +85,8 @@ namespace KMC.Shared.Topology
         public List<string> StoredResourceNames { get; private set; }
         public List<VesselResourceState> Resources { get; private set; }
         public List<VesselPropellantRequirement> PropellantRequirements { get; private set; }
-        public List<VesselModuleDescriptor> Modules { get; private set; }
+        public List<VesselModuleDescriptor> Modules { get; private set; }        public List<VesselOutlinePoint> SideOutlinePoints { get; private set; }
+
 
         public bool HasRole(
             VesselNodeRole role)
