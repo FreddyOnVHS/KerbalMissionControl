@@ -31,6 +31,11 @@ namespace KMC.MissionControl.Pages
             GuidanceSolutionModel guidance;
             GetLatestManeuverState(out plan, out guidance);
 
+            ManeuverOperatorFeedbackSnapshot operatorFeedback;
+            bool hasOperatorFeedback =
+                ManeuverOperatorFeedbackStore.TryGetLatest(
+                    out operatorFeedback);
+
             if (plan == null)
             {
                 layout.Row("PLAN STATUS", "PLAN UNAVAILABLE", "SOURCE", "ENGINE MANEUVER FOUNDATION");
@@ -38,7 +43,19 @@ namespace KMC.MissionControl.Pages
                 Rectangle emptyRegion = layout.ReserveRegion(
                     Math.Max(120, context.ContentBounds.Bottom - layout.CurrentY - 58));
                 DrawActiveManeuvers(context, emptyRegion, null);
-                DrawReviewBand(context, "NO ENGINE-OWNED MANEUVER PLAN AVAILABLE", false);
+
+                DrawReviewBand(
+                    context,
+                    hasOperatorFeedback &&
+                    operatorFeedback != null &&
+                    !string.IsNullOrWhiteSpace(
+                        operatorFeedback.Text)
+                        ? operatorFeedback.Text
+                        : "NO ENGINE-OWNED MANEUVER PLAN AVAILABLE",
+                    hasOperatorFeedback &&
+                    operatorFeedback != null &&
+                    operatorFeedback.Success);
+
                 return;
             }
 
@@ -124,6 +141,19 @@ namespace KMC.MissionControl.Pages
             else footer = "PLAN READY - CLICK UPLOAD MNV";
 
             bool healthy = manualComplete || (plan.Available && plan.NodeUniversalTimeAvailable && !crewModified && !nodeRemoved && !vesselNotActive);
+
+            if (hasOperatorFeedback &&
+                operatorFeedback != null &&
+                !string.IsNullOrWhiteSpace(
+                    operatorFeedback.Text))
+            {
+                footer =
+                    operatorFeedback.Text;
+
+                healthy =
+                    operatorFeedback.Success;
+            }
+
             DrawReviewBand(context, footer, healthy);
         }
 

@@ -1416,17 +1416,49 @@ namespace KMC.MissionControl.Pages
                         : "AWAIT GUIDANCE";
 
             bool ignitionStandby =
+                guidance != null &&
                 string.Equals(
-                    command,
-                    "IGNITION STANDBY",
+                    guidance.Status,
+                    "FINAL COUNT",
                     StringComparison.OrdinalIgnoreCase);
 
+            bool ignitionDue =
+                guidance != null &&
+                string.Equals(
+                    guidance.Status,
+                    "IGNITION DUE",
+                    StringComparison.OrdinalIgnoreCase);
+
+            if (ignitionStandby)
+            {
+                command =
+                    "IGNITION STANDBY" +
+                    Environment.NewLine +
+                    "T- " +
+                    FormatIgnitionCountdown(
+                        guidance.TimeToIgnitionSeconds);
+
+                color =
+                    Color.Orange;
+            }
+            else if (ignitionDue)
+            {
+                command =
+                    "IGNITE NOW" +
+                    Environment.NewLine +
+                    "HOLD MANEUVER VECTOR";
+
+                color =
+                    Color.Red;
+            }
+
             /*
-             * Render-time blink only. GUID is already continuously redrawn;
+             * Render-time alert only. GUID is already continuously redrawn;
              * no UI timer or Engine state is introduced.
              */
-            bool showStandbyBox =
-                ignitionStandby &&
+            bool showAlertBox =
+                (ignitionStandby ||
+                 ignitionDue) &&
                 DateTime.UtcNow.Millisecond < 500;
 
             using (SolidBrush brush =
@@ -1438,7 +1470,7 @@ namespace KMC.MissionControl.Pages
             using (Font commandFont =
                 new Font(
                     "Consolas",
-                    ignitionStandby
+                    ignitionStandby || ignitionDue
                         ? 30.0f
                         : 22.0f,
                     FontStyle.Bold))
@@ -1463,7 +1495,7 @@ namespace KMC.MissionControl.Pages
                         inner.Width,
                         commandHeight);
 
-                if (showStandbyBox)
+                if (showAlertBox)
                 {
                     Rectangle alertRect =
                         Rectangle.Inflate(
@@ -1522,6 +1554,25 @@ namespace KMC.MissionControl.Pages
             }
         }
 
+        private static string FormatIgnitionCountdown(
+            double seconds)
+        {
+            if (!IsFinite(seconds))
+            {
+                return "--.-";
+            }
+
+            double remaining =
+                Math.Max(
+                    0.0,
+                    seconds);
+
+            return
+                remaining.ToString(
+                    "0.0",
+                    System.Globalization.CultureInfo.InvariantCulture) +
+                " S";
+        }
         private static void DrawCompactField(
             MissionRenderContext context,
             string label,
@@ -1735,15 +1786,23 @@ namespace KMC.MissionControl.Pages
 
             if (string.Equals(
                     command,
-                    "HOLD MANEUVER VECTOR",
-                    StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(
-                    command,
                     "IGNITION STANDBY",
-                    StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Color.Orange;
+            }
+
+            if (string.Equals(
                     command,
                     "IGNITE / HOLD MANEUVER VECTOR",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Color.Red;
+            }
+
+            if (string.Equals(
+                    command,
+                    "HOLD MANEUVER VECTOR",
                     StringComparison.OrdinalIgnoreCase))
             {
                 return

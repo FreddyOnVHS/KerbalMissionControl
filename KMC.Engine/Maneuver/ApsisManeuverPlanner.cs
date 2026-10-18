@@ -587,18 +587,6 @@ namespace KMC.Engine.Maneuver
                     current,
                     totalDeltaV);
 
-            if (!IsFinite(
-                    burnDuration))
-            {
-                plan.Status =
-                    "BURN ESTIMATE UNAVAILABLE";
-
-                plan.Evidence.Add(
-                    "Mass/thrust telemetry cannot produce a burn-duration estimate.");
-
-                return plan;
-            }
-
             double nodeMissionTime =
                 current.MissionTimeSeconds +
                 nodeDelay;
@@ -608,8 +596,10 @@ namespace KMC.Engine.Maneuver
                 nodeDelay;
 
             double ignitionLead =
-                burnDuration /
-                2.0;
+                IsFinite(
+                    burnDuration)
+                    ? burnDuration / 2.0
+                    : double.NaN;
 
             plan.Available =
                 true;
@@ -652,8 +642,11 @@ namespace KMC.Engine.Maneuver
                 ignitionLead;
 
             plan.IgnitionMissionTimeSeconds =
-                nodeMissionTime -
-                ignitionLead;
+                IsFinite(
+                    ignitionLead)
+                    ? nodeMissionTime -
+                      ignitionLead
+                    : double.NaN;
 
             /*
              * Build 13.3 intentionally does not claim an arbitrary-node
@@ -693,6 +686,15 @@ namespace KMC.Engine.Maneuver
             plan.Evidence.Add(
                 "Burn duration uses absolute Delta-V, vessel mass, maximum thrust, and average specific impulse.");
 
+            if (!IsFinite(
+                    burnDuration))
+            {
+                plan.Evidence.Add(
+                    "Manual node remains valid even when burn-duration telemetry is unavailable.");
+
+                plan.Evidence.Add(
+                    "Burn duration and ignition lead remain unavailable; KSP node epoch and maneuver vector are still valid.");
+            }
             return plan;
         }
 
@@ -782,18 +784,6 @@ namespace KMC.Engine.Maneuver
                     current,
                     totalDeltaV);
 
-            if (!IsFinite(
-                    burnDuration))
-            {
-                plan.Status =
-                    "BURN ESTIMATE UNAVAILABLE";
-
-                plan.Evidence.Add(
-                    "Mass/thrust telemetry cannot produce a burn-duration estimate.");
-
-                return plan;
-            }
-
             double nodeMissionTime =
                 current.MissionTimeSeconds +
                 nodeDelay;
@@ -803,8 +793,10 @@ namespace KMC.Engine.Maneuver
                 nodeDelay;
 
             double ignitionLead =
-                burnDuration /
-                2.0;
+                IsFinite(
+                    burnDuration)
+                    ? burnDuration / 2.0
+                    : double.NaN;
 
             plan.Available =
                 true;
@@ -847,8 +839,11 @@ namespace KMC.Engine.Maneuver
                 ignitionLead;
 
             plan.IgnitionMissionTimeSeconds =
-                nodeMissionTime -
-                ignitionLead;
+                IsFinite(
+                    ignitionLead)
+                    ? nodeMissionTime -
+                      ignitionLead
+                    : double.NaN;
 
             plan.PredictedApoapsisMeters =
                 double.NaN;
@@ -883,6 +878,15 @@ namespace KMC.Engine.Maneuver
             plan.Evidence.Add(
                 "Build 13.4 does not fabricate an arbitrary-node target orbit; post-burn verification confirms maneuver Delta-V completion instead.");
 
+            if (!IsFinite(
+                    burnDuration))
+            {
+                plan.Evidence.Add(
+                    "Manual node remains valid even when burn-duration telemetry is unavailable.");
+
+                plan.Evidence.Add(
+                    "Burn duration and ignition lead remain unavailable; KSP node epoch and maneuver vector are still valid.");
+            }
             return plan;
         }
 
@@ -952,17 +956,13 @@ namespace KMC.Engine.Maneuver
             double totalDeltaV = Math.Abs(signedDeltaV);
             double burnDuration = EstimateBurnDuration(current, totalDeltaV);
 
-            if (!IsFinite(burnDuration))
-            {
-                plan.Status = "BURN ESTIMATE UNAVAILABLE";
-                plan.Evidence.Add(
-                    "Mass/thrust telemetry cannot produce a burn-duration estimate.");
-                return plan;
-            }
-
             double nodeMissionTime = current.MissionTimeSeconds + nodeDelay;
             double nodeUniversalTime = epoch.UniversalTimeSeconds + nodeDelay;
-            double ignitionLead = burnDuration / 2.0;
+            double ignitionLead =
+                IsFinite(
+                    burnDuration)
+                    ? burnDuration / 2.0
+                    : double.NaN;
 
             plan.Available = true;
             plan.OrbitTargetVerificationRequired = false;
@@ -977,7 +977,12 @@ namespace KMC.Engine.Maneuver
             plan.TotalDeltaVMetersPerSecond = totalDeltaV;
             plan.EstimatedBurnDurationSeconds = burnDuration;
             plan.IgnitionLeadSeconds = ignitionLead;
-            plan.IgnitionMissionTimeSeconds = nodeMissionTime - ignitionLead;
+            plan.IgnitionMissionTimeSeconds =
+                IsFinite(
+                    ignitionLead)
+                    ? nodeMissionTime -
+                      ignitionLead
+                    : double.NaN;
             plan.PredictedApoapsisMeters = double.NaN;
             plan.PredictedPeriapsisMeters = double.NaN;
             plan.PredictedInclinationDegrees = double.NaN;
@@ -996,6 +1001,15 @@ namespace KMC.Engine.Maneuver
             plan.Evidence.Add(
                 "Build 13.5 does not fabricate an arbitrary-node target orbit; post-burn verification confirms maneuver Delta-V completion instead.");
 
+            if (!IsFinite(
+                    burnDuration))
+            {
+                plan.Evidence.Add(
+                    "Manual node remains valid even when burn-duration telemetry is unavailable.");
+
+                plan.Evidence.Add(
+                    "Burn duration and ignition lead remain unavailable; KSP node epoch and maneuver vector are still valid.");
+            }
             return plan;
         }
 

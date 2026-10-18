@@ -1036,6 +1036,10 @@ _orbitMapReceiver.SnapshotReceived +=
                         DateTime.UtcNow
                 });
 
+            ManeuverOperatorFeedbackStore.Publish(
+                "COMPUTE REQUESTED - WAITING FOR ENGINE PLAN",
+                true);
+
             _missionDisplay.RequestRender();
         }
 
@@ -1057,8 +1061,18 @@ _orbitMapReceiver.SnapshotReceived +=
 
             string resultText;
 
-            _receiver.UploadLatestManeuver(
-                out resultText);
+            bool uploadAccepted =
+                _receiver.UploadLatestManeuver(
+                    out resultText);
+
+            ManeuverOperatorFeedbackStore.Publish(
+                string.IsNullOrWhiteSpace(
+                    resultText)
+                    ? uploadAccepted
+                        ? "UPLINK REQUEST ACCEPTED"
+                        : "UPLINK REQUEST REJECTED"
+                    : resultText,
+                uploadAccepted);
 
             _missionDisplay.RequestRender();
         }
@@ -1732,6 +1746,7 @@ _orbitMapReceiver.SnapshotReceived +=
             try
             {
                 ManeuverRequestStore.Reset();
+                ManeuverOperatorFeedbackStore.Clear();
                 KmcManeuverPlanStore.Clear();
                 ManeuverPlanPromotionStore.Clear();
                 OrbitNormalTelemetryStore.Clear();
@@ -2323,6 +2338,7 @@ _orbitMapReceiver.SnapshotReceived +=
             ManeuverInventoryStore.Clear();
             KmcManeuverPlanStore.Clear();
             ManeuverPlanPromotionStore.Clear();
+            ManeuverOperatorFeedbackStore.Clear();
 
             _maneuverQueueTransport.Dispose();
             _electricalControlReceiver.Dispose();

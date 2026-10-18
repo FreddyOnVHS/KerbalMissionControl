@@ -65,6 +65,9 @@ internal static class Program
         Run("GUID selects OrbitMap authoritative vector by vessel and node UT", ManeuverVectorStoreExactMatch);
         Run("standalone maneuver-vector UDP path removed", StandaloneManeuverVectorUdpRemoved);
         Run("maneuver execution readiness is Engine-owned and explicit", ManeuverExecutionReadinessRegression);
+        Run("GUID final count and ignition cues are explicit", GuidanceFinalCountCueRegression);
+        Run("MNV compute and upload actions expose operator feedback", ManeuverOperatorFeedbackRegression);
+        Run("manual maneuver nodes survive unavailable burn estimate", ManualManeuverBurnEstimateDecouplingRegression);
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
@@ -2444,6 +2447,217 @@ internal static class Program
                 "NODE VERIFIED / READY FOR GUIDANCE",
                 StringComparison.Ordinal) >= 0,
             "MNV handoff does not identify guidance readiness");
+    }
+
+    private static void GuidanceFinalCountCueRegression()
+    {
+        string enginePath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.Engine",
+                "Guidance",
+                "GuidanceSystem.cs");
+
+        string pagePath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.MissionControl",
+                "Pages",
+                "GuidancePage.cs");
+
+        Check(
+            File.Exists(enginePath) &&
+            File.Exists(pagePath),
+            "final-count regression source unavailable");
+
+        string engine =
+            File.ReadAllText(
+                enginePath);
+
+        string page =
+            File.ReadAllText(
+                pagePath);
+
+        /*
+         * The Engine remains the owner of the timing thresholds/states.
+         * The page only renders those states.
+         */
+        Check(
+            engine.IndexOf(
+                "IgnitionStandbySeconds = 10.0",
+                StringComparison.Ordinal) >= 0 &&
+            engine.IndexOf(
+                "\"FINAL COUNT\"",
+                StringComparison.Ordinal) >= 0 &&
+            engine.IndexOf(
+                "\"IGNITION DUE\"",
+                StringComparison.Ordinal) >= 0,
+            "Engine final-count/ignition states changed or missing");
+
+        Check(
+            page.IndexOf(
+                "FormatIgnitionCountdown",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "\"IGNITION STANDBY\"",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "\"T- \"",
+                StringComparison.Ordinal) >= 0,
+            "GUID final countdown cue missing");
+
+        Check(
+            page.IndexOf(
+                "\"IGNITE NOW\"",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "\"HOLD MANEUVER VECTOR\"",
+                StringComparison.Ordinal) >= 0,
+            "GUID ignition-due crew cue missing");
+
+        Check(
+            page.IndexOf(
+                "Color.Orange",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "Color.Red",
+                StringComparison.Ordinal) >= 0,
+            "final-count / ignition alert colors missing");
+    }
+
+    private static void ManeuverOperatorFeedbackRegression()
+    {
+        string mainPath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.MissionControl",
+                "MainForm.cs");
+
+        string pagePath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.MissionControl",
+                "Pages",
+                "ManeuverPage.cs");
+
+        string storePath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.MissionControl",
+                "Engineering",
+                "ManeuverOperatorFeedbackStore.cs");
+
+        Check(
+            File.Exists(mainPath) &&
+            File.Exists(pagePath) &&
+            File.Exists(storePath),
+            "MNV operator-feedback source unavailable");
+
+        string main =
+            File.ReadAllText(
+                mainPath);
+
+        string page =
+            File.ReadAllText(
+                pagePath);
+
+        string store =
+            File.ReadAllText(
+                storePath);
+
+        Check(
+            main.IndexOf(
+                "\"COMPUTE REQUESTED - WAITING FOR ENGINE PLAN\"",
+                StringComparison.Ordinal) >= 0,
+            "COMPUTE action does not publish immediate feedback");
+
+        Check(
+            main.IndexOf(
+                "bool uploadAccepted =",
+                StringComparison.Ordinal) >= 0 &&
+            main.IndexOf(
+                "ManeuverOperatorFeedbackStore.Publish",
+                StringComparison.Ordinal) >= 0,
+            "UPLOAD MNV still discards receiver result");
+
+        Check(
+            page.IndexOf(
+                "ManeuverOperatorFeedbackStore.TryGetLatest",
+                StringComparison.Ordinal) >= 0 &&
+            page.IndexOf(
+                "operatorFeedback.Text",
+                StringComparison.Ordinal) >= 0,
+            "MNV page does not surface action feedback");
+
+        Check(
+            store.IndexOf(
+                "TimeSpan.FromSeconds(8.0)",
+                StringComparison.Ordinal) >= 0,
+            "operator feedback is not bounded / short-lived");
+    }
+
+    private static void ManualManeuverBurnEstimateDecouplingRegression()
+    {
+        string plannerPath =
+            Path.Combine(
+                Environment.CurrentDirectory,
+                "KMC.Engine",
+                "Maneuver",
+                "ApsisManeuverPlanner.cs");
+
+        Check(
+            File.Exists(plannerPath),
+            "manual maneuver planner source unavailable");
+
+        string planner =
+            File.ReadAllText(
+                plannerPath);
+
+        int manualStart =
+            planner.IndexOf(
+                "private ManeuverPlanModel CalculateManualProgradeRetrograde(",
+                StringComparison.Ordinal);
+
+        int manualEnd =
+            planner.IndexOf(
+                "private static bool ValidateTargetPeriapsis(",
+                manualStart,
+                StringComparison.Ordinal);
+
+        Check(
+            manualStart >= 0 &&
+            manualEnd > manualStart,
+            "manual maneuver planner section unavailable");
+
+        string manualSection =
+            planner.Substring(
+                manualStart,
+                manualEnd - manualStart);
+
+        Check(
+            manualSection.IndexOf(
+                "plan.Status = \"BURN ESTIMATE UNAVAILABLE\"",
+                StringComparison.Ordinal) < 0,
+            "manual maneuver still hard-rejects unavailable burn estimate");
+
+        int evidenceCount =
+            System.Text.RegularExpressions.Regex.Matches(
+                manualSection,
+                System.Text.RegularExpressions.Regex.Escape(
+                    "Manual node remains valid even when burn-duration telemetry is unavailable.")).Count;
+
+        Check(
+            evidenceCount == 3,
+            "all three manual maneuver axes must preserve valid node without burn estimate");
+
+        Check(
+            manualSection.IndexOf(
+                "? burnDuration / 2.0",
+                StringComparison.Ordinal) >= 0 &&
+            manualSection.IndexOf(
+                ": double.NaN",
+                StringComparison.Ordinal) >= 0,
+            "manual maneuver does not preserve unknown burn timing explicitly");
     }
 
     private static void ManeuverUplinkDesiredPeriapsis()
