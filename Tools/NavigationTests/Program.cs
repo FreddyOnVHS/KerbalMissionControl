@@ -73,6 +73,9 @@ internal static class Program
         Run("SCHEM oriented geometry survives topology transport", VesselSchematicGeometryRegression);
         Run("SCHEM geometry uses native local mesh bounds", VesselSchematicNativeBoundsRegression);
         Run("SCHEM side outline survives topology transport", VesselSchematicOutlineTransportRegression);
+        Run("SCHEM v5 depth-resolved raster transport", SchematicRasterTransportRegression);
+        Run("SCHEM higher-resolution exterior raster presentation", SchematicResolutionRegression);
+        Run("SCHEM deterministic radial viewing angle", SchematicAngleSelectionRegression);
         Run("SCHEM uses one clean side-view renderer", VesselSchematicSingleViewRegression);
         Run("SCHEM presentation prioritizes hull and engine bell", VesselSchematicPresentationPolishRegression);
         Run("SCHEM engine bell is compact and attached", VesselSchematicEngineBellScaleRegression);
@@ -80,6 +83,56 @@ internal static class Program
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
+    private static void SchematicAngleSelectionRegression()
+    {
+        string builder = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "KMC.Plugin", "Topology", "VesselTopologyBuilder.cs"));
+        Check(builder.Contains("ChooseSchematicViewingAngle(topology)") &&
+              builder.Contains("VesselNodeCategory.SolidBooster") &&
+              builder.Contains("RotateSchematicPoint(local, sine, cosine)") &&
+              builder.Contains("const int width = 192, height = 320;") &&
+              builder.Contains("RasterTriangle(triangles[3*t]"),
+              "SCHEM automatic viewing-angle selection or depth rendering regressed");
+    }
+    private static void SchematicResolutionRegression()
+    {
+        string plugin = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "KMC.Plugin", "Topology", "VesselTopologyBuilder.cs"));
+        string page = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "KMC.MissionControl", "Pages", "SchematicPage.cs"));
+        Check(plugin.Contains("const int width = 192, height = 320;"),
+            "SCHEM raster dimensions regressed");
+        Check(page.Contains("InterpolationMode.HighQualityBilinear") &&
+              page.Contains("DrawImage(bitmap") &&
+              page.Contains("context.Graphics.InterpolationMode = previousInterpolation"),
+            "SCHEM bitmap smoothing or graphics-state restoration missing");
+    }
+
+    private static void SchematicRasterTransportRegression()
+    {
+        VesselTopology topology = new VesselTopology();
+        topology.SchematicWidth = 4;
+        topology.SchematicHeight = 3;
+        topology.SchematicMinH = -2;
+        topology.SchematicMaxH = 2;
+        topology.SchematicMinV = -3;
+        topology.SchematicMaxV = 3;
+        topology.SchematicPixels = new byte[] {0,0,2,0,0,1,1,2,0,0,2,0};
+        byte[] packet = VesselTopologyPacketCodec.Encode(topology);
+        VesselTopology decoded;
+        Check(VesselTopologyPacketCodec.TryDecode(packet, out decoded), "SCHEM v5 packet rejected");
+        Check(decoded.TransportVersion == 5 && decoded.SchematicWidth == 4 &&
+            decoded.SchematicHeight == 3 && decoded.SchematicPixels != null &&
+            decoded.SchematicPixels.Length == 12 && decoded.SchematicPixels[5] == 1 &&
+            decoded.SchematicPixels[6] == 1 && decoded.SchematicPixels[10] == 2 &&
+            decoded.SchematicMinH == -2 && decoded.SchematicMaxV == 3,
+            "SCHEM raster was not preserved");
+        // Old/empty geometry packets must still decode cleanly.
+        topology.SchematicPixels = null;
+        Check(VesselTopologyPacketCodec.TryDecode(VesselTopologyPacketCodec.Encode(topology), out decoded)
+            && decoded.SchematicPixels == null, "SCHEM raster fallback failed");
+    }
+
     private static void Run(string name, Action test)
     {
         try { test(); passed++; Console.WriteLine("PASS " + name); }

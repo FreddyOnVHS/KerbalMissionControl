@@ -154,6 +154,11 @@ namespace KMC.MissionControl.Pages
             outlineParts = 0;
             fallbackParts = 0;
 
+            // Prefer true KSP-side triangle z-buffer (transport v5).
+            // Old packets and unreadable mesh cases use legacy polygons.
+            if (DrawDepthResolvedSchematic(context, bounds, topology,
+                    out outlineParts, out fallbackParts)) return;
+
             Rectangle drawing =
                 Rectangle.FromLTRB(
                     bounds.Left + 34,
@@ -272,19 +277,105 @@ namespace KMC.MissionControl.Pages
             context.Graphics.SmoothingMode =
                 SmoothingMode.AntiAlias;
 
-            for (int nodeIndex = 0;
-                 nodeIndex < topology.Nodes.Count;
-                 nodeIndex++)
+            /*
+             * 14.23.6a prototype: clip secondary detail from projected
+             * primary-hull coverage. This is NOT physical near/far occlusion:
+             * v4 outline telemetry has no per-triangle depth. In particular,
+             * exterior surface parts inside the hull projection may be hidden.
+             * Keep this change isolated for runtime comparison.
+             */
+            using (Region hullMask = new Region())
             {
-                VesselTopologyNode node =
-                    topology.Nodes[nodeIndex];
-
-                if (node == null)
+                hullMask.MakeEmpty();
+                for (int maskIndex = 0;
+                     maskIndex < topology.Nodes.Count;
+                     maskIndex++)
                 {
-                    continue;
+                    VesselTopologyNode maskNode = topology.Nodes[maskIndex];
+                    if (maskNode == null || !IsPrimaryHullPart(maskNode) ||
+                        maskNode.SideOutlinePoints == null ||
+                        maskNode.SideOutlinePoints.Count < 3)
+                    {
+                        continue;
+                    }
+
+                    PointF[] maskPoints = new PointF[maskNode.SideOutlinePoints.Count];
+                    for (int pointIndex = 0; pointIndex < maskPoints.Length; pointIndex++)
+                    {
+                        VesselOutlinePoint p = maskNode.SideOutlinePoints[pointIndex];
+                        maskPoints[pointIndex] = ToScreen(
+                            p.Horizontal, p.Vertical, centerH, centerV,
+                            scale, screenCenterX, screenCenterY);
+                    }
+                    using (GraphicsPath maskPath = new GraphicsPath())
+                    {
+                        maskPath.AddPolygon(maskPoints);
+                        hullMask.Union(maskPath);
+                    }
                 }
 
-                bool isRoot =
+                GraphicsState detailState = context.Graphics.Save();
+                try
+                {
+                    context.Graphics.SetClip(hullMask, CombineMode.Exclude);
+                    // Existing layer loop draws all details. Restore the clip
+                    // before hull and engines so they remain fully visible.
+                    DrawSchematicLayer(context, topology, 0, centerH, centerV,
+                        scale, screenCenterX, screenCenterY);
+                }
+                finally
+                {
+                    context.Graphics.Restore(detailState);
+                }
+                DrawSchematicLayer(context, topology, 1, centerH, centerV,
+                    scale, screenCenterX, screenCenterY);
+                DrawSchematicLayer(context, topology, 2, centerH, centerV,
+                    scale, screenCenterX, screenCenterY);
+            }
+        }
+
+        private static void DrawSchematicLayer(
+            MissionRenderContext context,
+            VesselTopology topology,
+            int requestedLayer,
+            double centerH,
+            double centerV,
+            double scale,
+            float screenCenterX,
+            float screenCenterY)
+        {
+            /*
+             * Paint back to front, independent of vessel.parts ordering.
+             * Secondary detail goes underneath the hull, and engine bells
+             * remain legible above it. Geometry and telemetry are unchanged.
+             */
+            {
+                int layer = requestedLayer;
+                for (int nodeIndex = 0;
+                     nodeIndex < topology.Nodes.Count;
+                     nodeIndex++)
+                {
+                    VesselTopologyNode node =
+                        topology.Nodes[nodeIndex];
+
+                    if (node == null)
+                    {
+                        continue;
+                    }
+
+                    int partLayer =
+                        node.Category == VesselNodeCategory.Engine
+                            ? 2
+                            : IsPrimaryHullPart(node)
+                                ? 1
+                                : 0;
+
+                    if (partLayer != layer)
+                    {
+                        continue;
+                    }
+
+                    bool isRoot =
                     topology.HasRootPart &&
                     node.PartId ==
                         topology.RootPartId;
@@ -338,7 +429,81 @@ namespace KMC.MissionControl.Pages
                         node,
                         isRoot);
                 }
+                }
             }
+        }
+
+        private static bool DrawDepthResolvedSchematic(
+            MissionRenderContext context, Rectangle bounds, VesselTopology topology,
+            out int outlineParts, out int fallbackParts)
+        {
+            outlineParts = 0;
+            fallbackParts = 0;
+            byte[] pixels = topology.SchematicPixels;
+            int width = topology.SchematicWidth;
+            int height = topology.SchematicHeight;
+            if (pixels == null || width <= 0 || height <= 0 ||
+                pixels.Length != width * height) return false;
+            // Use slightly more of the page height. No crop/overzoom.
+            Rectangle drawing = Rectangle.FromLTRB(bounds.Left + 22,
+                bounds.Top + PanelHeaderHeight + 12,
+                bounds.Right - 22, bounds.Bottom - 12);
+            if (drawing.Width <= 0 || drawing.Height <= 0) return false;
+            double realW = topology.SchematicMaxH - topology.SchematicMinH;
+            double realH = topology.SchematicMaxV - topology.SchematicMinV;
+            if (!(realW > 0) || !(realH > 0)) return false;
+            double scale = Math.Min(drawing.Width / realW, drawing.Height / realH);
+            float imageW = (float)(realW * scale);
+            float imageH = (float)(realH * scale);
+            float left = drawing.Left + (drawing.Width - imageW) * 0.5f;
+            float top = drawing.Top + (drawing.Height - imageH) * 0.5f;
+
+            // Build an ARGB surface once per received raster draw, then let GDI+
+            // interpolate the *whole* raster instead of growing individual pixels.
+            // Empty pixels remain transparent and the panel background shows through.
+            using (Bitmap bitmap = new Bitmap(width, height,
+                System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+            {
+                Color phosphor = context.PhosphorColor;
+                int face = Color.FromArgb(55, phosphor).ToArgb();
+                int line = Color.FromArgb(235, phosphor).ToArgb();
+                int[] argb = new int[width * height];
+                for (int i = 0; i < argb.Length; i++)
+                    argb[i] = pixels[i] == 2 ? line : pixels[i] == 1 ? face : 0;
+                System.Drawing.Imaging.BitmapData data = bitmap.LockBits(
+                    new Rectangle(0, 0, width, height),
+                    System.Drawing.Imaging.ImageLockMode.WriteOnly,
+                    System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                try
+                {
+                    if (data.Stride != width * 4)
+                        throw new InvalidOperationException("Unexpected schematic bitmap stride.");
+                    System.Runtime.InteropServices.Marshal.Copy(argb, 0,
+                        data.Scan0, argb.Length);
+                }
+                finally { bitmap.UnlockBits(data); }
+                System.Drawing.Drawing2D.InterpolationMode previousInterpolation =
+                    context.Graphics.InterpolationMode;
+                System.Drawing.Drawing2D.PixelOffsetMode previousOffset =
+                    context.Graphics.PixelOffsetMode;
+                try
+                {
+                    context.Graphics.InterpolationMode =
+                        System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear;
+                    context.Graphics.PixelOffsetMode =
+                        System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                    context.Graphics.DrawImage(bitmap,
+                        new RectangleF(left, top, imageW, imageH),
+                        new RectangleF(0, 0, width, height), GraphicsUnit.Pixel);
+                }
+                finally
+                {
+                    context.Graphics.InterpolationMode = previousInterpolation;
+                    context.Graphics.PixelOffsetMode = previousOffset;
+                }
+            }
+            outlineParts = topology.Nodes.Count;
+            return true;
         }
 
         private static void DrawPartOutline(

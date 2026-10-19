@@ -7,7 +7,7 @@ namespace KMC.Shared.Topology
     public static class VesselTopologyPacketCodec
     {
         public const int TopologyPort = 5082;
-        public const int CurrentVersion = 4;
+        public const int CurrentVersion = 5;
 
         private const int Magic = 0x4B4D4354;
         private const int MinimumSupportedVersion = 1;
@@ -53,6 +53,7 @@ namespace KMC.Shared.Topology
                         topology.Nodes[index]);
                 }
 
+                WriteSchematic(writer, topology);
                 writer.Flush();
                 return stream.ToArray();
             }
@@ -123,6 +124,7 @@ namespace KMC.Shared.Topology
                                 version));
                     }
 
+                    if (version >= 5) ReadSchematic(reader, result);
                     topology = result;
                     return true;
                 }
@@ -132,6 +134,79 @@ namespace KMC.Shared.Topology
                 topology = null;
                 return false;
             }
+        }
+
+        private static void WriteSchematic(BinaryWriter writer, VesselTopology model)
+        {
+            byte[] pixels = model.SchematicPixels;
+            bool valid = pixels != null && model.SchematicWidth > 0 &&
+                model.SchematicHeight > 0 && model.SchematicWidth <= 256 &&
+                model.SchematicHeight <= 384 &&
+                pixels.Length == model.SchematicWidth * model.SchematicHeight;
+            writer.Write(valid);
+            if (!valid) return;
+            writer.Write(model.SchematicWidth);
+            writer.Write(model.SchematicHeight);
+            writer.Write(model.SchematicMinH);
+            writer.Write(model.SchematicMaxH);
+            writer.Write(model.SchematicMinV);
+            writer.Write(model.SchematicMaxV);
+            // Three-byte RLE: 1 byte code and 2 byte run length.
+            using (MemoryStream compressed = new MemoryStream())
+            using (BinaryWriter runs = new BinaryWriter(compressed))
+            {
+                for (int pos = 0; pos < pixels.Length;)
+                {
+                    byte value = pixels[pos];
+                    int count = 1;
+                    while (pos + count < pixels.Length &&
+                           pixels[pos + count] == value && count < 65535)
+                        count++;
+                    runs.Write(value);
+                    runs.Write((ushort)count);
+                    pos += count;
+                }
+                runs.Flush();
+                byte[] bytes = compressed.ToArray();
+                writer.Write(bytes.Length);
+                writer.Write(bytes);
+            }
+        }
+
+        private static void ReadSchematic(BinaryReader reader, VesselTopology model)
+        {
+            if (!reader.ReadBoolean()) return;
+            int width = reader.ReadInt32();
+            int height = reader.ReadInt32();
+            double minH = reader.ReadDouble();
+            double maxH = reader.ReadDouble();
+            double minV = reader.ReadDouble();
+            double maxV = reader.ReadDouble();
+            int len = reader.ReadInt32();
+            if (width <= 0 || height <= 0 || width > 256 || height > 384 ||
+                len < 0 || len > 300000 || len % 3 != 0 ||
+                !(maxH > minH) || !(maxV > minV))
+                throw new InvalidDataException("Invalid SCHEM raster header.");
+            byte[] packed = reader.ReadBytes(len);
+            if (packed.Length != len) throw new EndOfStreamException();
+            byte[] pixels = new byte[width * height];
+            int pos = 0;
+            for (int i = 0; i < packed.Length; i += 3)
+            {
+                byte value = packed[i];
+                int count = packed[i + 1] | (packed[i + 2] << 8);
+                if (value > 2 || count == 0 || count > pixels.Length - pos)
+                    throw new InvalidDataException("Invalid SCHEM RLE.");
+                for (int k = 0; k < count; k++) pixels[pos++] = value;
+            }
+            if (pos != pixels.Length) throw new InvalidDataException("Incomplete SCHEM RLE.");
+            model.SchematicWidth = width;
+            model.SchematicHeight = height;
+            model.SchematicMinH = minH;
+            model.SchematicMaxH = maxH;
+            model.SchematicMinV = minV;
+            model.SchematicMaxV = maxV;
+            model.SchematicPixels = pixels;
         }
 
         private static void WriteNode(
