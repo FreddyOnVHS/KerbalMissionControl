@@ -48,7 +48,7 @@ namespace KMC.MissionControl
         private readonly MissionControlReceiver _receiver;
         private readonly OrbitNormalTelemetryReceiver _orbitNormalReceiver;
         private readonly RadialTelemetryReceiver _radialReceiver;
-        private readonly OrbitMapTelemetryReceiver _orbitMapReceiver;        private readonly VesselSchematicTelemetryReceiver _vesselSchematicReceiver;
+        private readonly OrbitMapTelemetryReceiver _orbitMapReceiver;
 
         private readonly MapPage _mapPage;
         private readonly LatestTelemetryBuffer _telemetryBuffer;
@@ -226,8 +226,6 @@ namespace KMC.MissionControl
                 new RadialTelemetryReceiver();
 _orbitMapReceiver =
                 new OrbitMapTelemetryReceiver();
-            _vesselSchematicReceiver =
-                new VesselSchematicTelemetryReceiver();
 
             _orbitNormalReceiver.SampleReceived +=
                 OnOrbitNormalTelemetryReceived;
@@ -236,7 +234,7 @@ _orbitMapReceiver =
                 OnRadialTelemetryReceived;
 _orbitMapReceiver.SnapshotReceived +=
                 OnOrbitMapSnapshotReceived;
-            _vesselSchematicReceiver.SnapshotReceived +=
+            _receiver.TopologyReceived +=
                 OnVesselSchematicSnapshotReceived;
 
             _receiver.TelemetryReceived += OnTelemetryReceived;
@@ -1838,7 +1836,7 @@ _orbitMapReceiver.SnapshotReceived +=
 
                 _orbitNormalReceiver.Start();
                 _radialReceiver.Start();
-                _orbitMapReceiver.Start();                _vesselSchematicReceiver.Start();
+                _orbitMapReceiver.Start();
 
                 _maneuverQueueTransport.Start();
                 _electricalControlReceiver.Start();
@@ -1948,6 +1946,8 @@ _orbitMapReceiver.SnapshotReceived +=
         private void OnVesselSchematicSnapshotReceived(
             KMC.Shared.Topology.VesselTopology topology)
         {
+            // Shared decoded topology: the engineering transport owns UDP 5082.
+            VesselSchematicTelemetryStore.Publish(topology, DateTime.UtcNow);
             if (!_schematicPageActive ||
                 IsDisposed ||
                 !IsHandleCreated)
@@ -2432,12 +2432,12 @@ _orbitMapReceiver.SnapshotReceived +=
 
             _orbitMapReceiver.SnapshotReceived -=
                 OnOrbitMapSnapshotReceived;
-            _vesselSchematicReceiver.SnapshotReceived -=
+            _receiver.TopologyReceived -=
                 OnVesselSchematicSnapshotReceived;
 
             _orbitNormalReceiver.Dispose();
             _radialReceiver.Dispose();
-            _orbitMapReceiver.Dispose();            _vesselSchematicReceiver.Dispose();
+            _orbitMapReceiver.Dispose();
 
             OrbitNormalTelemetryStore.Clear();
             RadialTelemetryStore.Clear();
