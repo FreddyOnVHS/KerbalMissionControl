@@ -33,6 +33,7 @@ internal static class Program
         Run("planner rejects negative elliptic axes", NegativeEllipticAxes);
         Run("planner rejects conflicting reference frames", ConflictingFrames);
         Run("Lambert canonical short/long zero-revolution arcs", LambertCanonical);
+        Run("same-primary moon Lambert injection bootstrap", MoonTransferFoundationRegression);
         Run("Lambert Vallado 3D reference case", LambertVallado);
         Run("Lambert rejects invalid and degenerate boundary data", LambertInvalid);
         Run("MAP adapter builds Lambert preview from body telemetry", LambertMapPreviewAdapter);
@@ -83,6 +84,49 @@ internal static class Program
         Console.WriteLine("{0} passed, {1} failed", passed, failed);
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }
+
+    private static void MoonTransferFoundationRegression()
+    {
+        Check(MoonTransferRoute.Classify("Kerbin", "Mun", "Kerbin") ==
+            TransferRouteKind.SamePrimaryMoon, "Mun route not classified");
+        Check(MoonTransferRoute.Classify("Kerbin", "Duna", "Sun") ==
+            TransferRouteKind.Unsupported, "planetary route incorrectly treated as moon");
+        OrbitalElements craft = new OrbitalElements
+        {
+            ReferenceBodyName = "Kerbin", SemiMajorAxisMeters = 700000,
+            Eccentricity = 0, InclinationDegrees = 0,
+            LongitudeOfAscendingNodeDegrees = 0,
+            ArgumentOfPeriapsisDegrees = 0,
+            EpochUniversalTimeSeconds = 0, MeanAnomalyAtEpochRadians = 0
+        };
+        CelestialBodyState mun = new CelestialBodyState
+        {
+            Name = "Mun", ParentName = "Kerbin", RadiusMeters = 200000,
+            SoiRadiusMeters = 2400000,
+            Orbit = new OrbitalElements
+            {
+                ReferenceBodyName = "Kerbin", SemiMajorAxisMeters = 12000000,
+                Eccentricity = 0, InclinationDegrees = 0,
+                LongitudeOfAscendingNodeDegrees = 0,
+                ArgumentOfPeriapsisDegrees = 0,
+                EpochUniversalTimeSeconds = 0, MeanAnomalyAtEpochRadians = 2.0
+            }
+        };
+        MoonTransferCandidate candidate;
+        bool found = MoonTransferBootstrap.TryFindInjection(craft, mun,
+            3.5316e12, 0, 4000, 18000, 40000, 9, 9, out candidate);
+        Check(found && candidate != null, "moon Lambert bootstrap found no injection");
+        Check(candidate.DeltaVMetersPerSecond > 0 &&
+            candidate.DeltaV.IsFinite &&
+            candidate.ArrivalUniversalTimeSeconds > candidate.DepartureUniversalTimeSeconds &&
+            !candidate.EncounterVerified,
+            "moon bootstrap improperly claims validated encounter");
+        MoonTransferCandidate invalid;
+        Check(!MoonTransferBootstrap.TryFindInjection(craft, mun,
+            double.NaN, 0, 4000, 18000, 40000, 9, 9, out invalid) && invalid == null,
+            "moon bootstrap accepted invalid central gravity");
+    }
+
     private static void SchematicAngleSelectionRegression()
     {
         string builder = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,

@@ -48,6 +48,7 @@
     <Compile Include="Navigation\HohmannTransferPlanner.cs" />
     <Compile Include="Navigation\HyperbolicSoiExitSolver.cs" />
     <Compile Include="Navigation\LambertTransferSearch.cs" />
+    <Compile Include="Navigation\MoonTransferBootstrap.cs" />
     <Compile Include="Navigation\LambertParkingOrbitEjectionPlanner.cs" />
     <Compile Include="Navigation\General3dHyperbolicDeparturePlanner.cs" />
     <Compile Include="Navigation\LambertParkingOrbitEjectionSolution.cs" />
