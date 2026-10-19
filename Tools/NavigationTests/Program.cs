@@ -34,6 +34,7 @@ internal static class Program
         Run("planner rejects conflicting reference frames", ConflictingFrames);
         Run("Lambert canonical short/long zero-revolution arcs", LambertCanonical);
         Run("same-primary moon Lambert injection bootstrap", MoonTransferFoundationRegression);
+        Run("moon finite-SOI entry and periapsis diagnostics", MoonEncounterFoundation);
         Run("Lambert Vallado 3D reference case", LambertVallado);
         Run("Lambert rejects invalid and degenerate boundary data", LambertInvalid);
         Run("MAP adapter builds Lambert preview from body telemetry", LambertMapPreviewAdapter);
@@ -127,6 +128,48 @@ internal static class Program
             "moon bootstrap accepted invalid central gravity");
     }
 
+    private static void MoonEncounterFoundation()
+    {
+        OrbitalElements craft = new OrbitalElements
+        {
+            ReferenceBodyName = "Kerbin", SemiMajorAxisMeters = 700000,
+            Eccentricity = 0, InclinationDegrees = 0,
+            LongitudeOfAscendingNodeDegrees = 0,
+            ArgumentOfPeriapsisDegrees = 0,
+            EpochUniversalTimeSeconds = 0, MeanAnomalyAtEpochRadians = 0
+        };
+        CelestialBodyState mun = new CelestialBodyState
+        {
+            Name = "Mun", ParentName = "Kerbin", RadiusMeters = 200000,
+            SoiRadiusMeters = 2400000, GravParameter = 6.5138398e10,
+            Orbit = new OrbitalElements
+            {
+                ReferenceBodyName = "Kerbin", SemiMajorAxisMeters = 12000000,
+                Eccentricity = 0, InclinationDegrees = 0,
+                LongitudeOfAscendingNodeDegrees = 0,
+                ArgumentOfPeriapsisDegrees = 0,
+                EpochUniversalTimeSeconds = 0, MeanAnomalyAtEpochRadians = 2.0
+            }
+        };
+        MoonTransferCandidate candidate;
+        Check(MoonTransferBootstrap.TryFindInjection(craft, mun, 3.5316e12,
+            0, 4000, 18000, 40000, 9, 9, out candidate),
+            "moon bootstrap missing for SOI regression");
+        MoonEncounterAssessment assessment;
+        Check(MoonEncounterEvaluator.TryAssess(craft, mun, 3.5316e12,
+            candidate, 300000, out assessment),
+            "moon point-intercept seed failed to cross finite SOI");
+        Check(assessment.EntersSoi &&
+            assessment.EntryUniversalTimeSeconds > candidate.DepartureUniversalTimeSeconds &&
+            assessment.EntryUniversalTimeSeconds < candidate.ArrivalUniversalTimeSeconds &&
+            assessment.PredictedPeriapsisRadiusMeters >= 0 &&
+            !double.IsNaN(assessment.PeriapsisErrorMeters) &&
+            !assessment.RequestedPeriapsisSatisfied,
+            "moon evaluator reported unsafe point-intercept as targeted safe periapsis");
+        Check(!MoonEncounterEvaluator.TryAssess(craft, mun, 3.5316e12,
+            candidate, double.NaN, out assessment),
+            "moon evaluator accepted invalid desired periapsis");
+    }
     private static void SchematicAngleSelectionRegression()
     {
         string builder = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
