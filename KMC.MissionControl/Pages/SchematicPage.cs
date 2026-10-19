@@ -63,7 +63,7 @@ namespace KMC.MissionControl.Pages
             int sideWidth =
                 Math.Max(
                     260,
-                    (int)(content.Width * 0.22));
+                    (int)(content.Width * 0.30));
 
             Rectangle viewBounds =
                 new Rectangle(
@@ -100,7 +100,7 @@ namespace KMC.MissionControl.Pages
             DrawPanelFrame(
                 context,
                 statusBounds,
-                "SCHEMATIC STATUS");
+                "VESSEL INFORMATION");
 
             // KMC 14.23.11 CHUNKED TOPOLOGY: avoid displaying old vessels.
             VesselSchematicSnapshot snapshot =
@@ -115,7 +115,7 @@ namespace KMC.MissionControl.Pages
             if (wrongVessel || stale)
             {
                 DrawWaiting(context, viewBounds);
-                DrawStatus(context, statusBounds, null, DateTime.MinValue, 0, 0);
+                DrawStatus(context, statusBounds, null, DateTime.MinValue, 0, 0, telemetry);
                 return;
             }
 
@@ -134,7 +134,8 @@ namespace KMC.MissionControl.Pages
                     null,
                     DateTime.MinValue,
                     0,
-                    0);
+                    0,
+                    telemetry);
 
                 return;
             }
@@ -155,7 +156,8 @@ namespace KMC.MissionControl.Pages
                 snapshot.Topology,
                 snapshot.ReceivedUtc,
                 outlineParts,
-                fallbackParts);
+                fallbackParts,
+                telemetry);
         }
 
         private static void DrawVessel(
@@ -1021,171 +1023,68 @@ namespace KMC.MissionControl.Pages
             }
         }
 
+        // 14.23.13 VESSEL STATS: presentation-only; uses existing flight telemetry.
         private static void DrawStatus(
             MissionRenderContext context,
             Rectangle bounds,
             VesselTopology topology,
             DateTime receivedUtc,
             int outlineParts,
-            int fallbackParts)
+            int fallbackParts,
+            MissionTelemetry telemetry)
         {
-            int x =
-                bounds.Left + 14;
+            int x = bounds.Left + 14;
+            int valueX = bounds.Left + Math.Max(145, (int)(bounds.Width * 0.56));
+            int y = bounds.Top + PanelHeaderHeight + 16;
+            int step = 29;
+            bool valid = topology != null;
+            bool live = valid && telemetry != null &&
+                string.Equals(topology.VesselName, telemetry.VesselName,
+                    StringComparison.OrdinalIgnoreCase);
 
-            int valueX =
-                bounds.Left +
-                Math.Max(
-                    100,
-                    (int)(bounds.Width * 0.43));
-
-            int y =
-                bounds.Top +
-                PanelHeaderHeight +
-                16;
-
-            DrawField(
-                context,
-                "LINK",
-                topology != null
-                    ? "SCHEM ONLINE"
-                    : "WAITING",
-                x,
-                valueX,
-                y);
-
-            y += 28;
-
-            DrawField(
-                context,
-                "VESSEL",
-                topology != null
-                    ? Safe(
-                        topology.VesselName)
-                    : "---",
-                x,
-                valueX,
-                y);
-
-            y += 28;
-
-            DrawField(
-                context,
-                "PARTS",
-                topology != null
-                    ? topology.PartCount.ToString()
-                    : "---",
-                x,
-                valueX,
-                y);
-
-            y += 28;
-
-            DrawField(
-                context,
-                "OUTLINES",
-                topology != null
-                    ? outlineParts.ToString()
-                    : "---",
-                x,
-                valueX,
-                y);
-
-            y += 28;
-
-            DrawField(
-                context,
-                "FALLBACK",
-                topology != null
-                    ? fallbackParts.ToString()
-                    : "---",
-                x,
-                valueX,
-                y);
-
-            y += 28;
-
-            DrawField(
-                context,
-                "STAGE",
-                topology != null
-                    ? topology.CurrentStage.ToString()
-                    : "---",
-                x,
-                valueX,
-                y);
-
-            y += 28;
-
-            DrawField(
-                context,
-                "REV",
-                topology != null
-                    ? topology.Revision.ToString()
-                    : "---",
-                x,
-                valueX,
-                y);
-
-            y += 28;
-
-            DrawField(
-                context,
-                "VIEW",
-                "SIDE",
-                x,
-                valueX,
-                y);
-
-            y += 28;
-
-            DrawField(
-                context,
-                "AGE",
-                receivedUtc != DateTime.MinValue
-                    ? Math.Max(
-                        0.0,
-                        (DateTime.UtcNow -
-                         receivedUtc).TotalSeconds)
-                        .ToString("0.0") +
-                      " S"
-                    : "---",
-                x,
-                valueX,
-                y);
-
-            y += 48;
-
-            using (SolidBrush brush =
-                new SolidBrush(
-                    context.DimPhosphorColor))
-            {
-                context.Graphics.DrawString(
-                    "MESH HULL SCHEMATIC",
-                    context.SmallFont,
-                    brush,
-                    x,
-                    y);
-
-                y += 24;
-
-                context.Graphics.DrawString(
-                    "NO STRUCTURAL LINKS",
-                    context.SmallFont,
-                    brush,
-                    x,
-                    y);
-
-                y += 22;
-
-                context.Graphics.DrawString(
-                    "SINGLE SIDE VIEW",
-                    context.SmallFont,
-                    brush,
-                    x,
-                    y);
-            }
+            DrawField(context, "VESSEL", valid ? Safe(topology.VesselName) : "---", x, valueX, y);
+            y += step;
+            DrawField(context, "LINK", valid ? "SCHEM ONLINE" : "WAITING", x, valueX, y);
+            y += step + 19;
+            DrawSectionLabel(context, "MASS / PERFORMANCE", x, y);
+            y += step;
+            DrawField(context, "MASS", live ? telemetry.VesselMass.ToString("0.0") + " t" : "---", x, valueX, y);
+            y += step;
+            // KMC has no authoritative dry-mass telemetry yet.
+            DrawField(context, "DRY MASS", "N/A", x, valueX, y);
+            y += step;
+            DrawField(context, "MAX THRUST", live ? telemetry.MaximumThrust.ToString("0.0") + " kN" : "---", x, valueX, y);
+            y += step;
+            DrawField(context, "TWR (TELEM)", live ? telemetry.ThrustToWeightRatio.ToString("0.00") : "---", x, valueX, y);
+            y += step + 19;
+            DrawSectionLabel(context, "CONFIGURATION", x, y);
+            y += step;
+            DrawField(context, "PARTS", valid ? topology.PartCount.ToString() : "---", x, valueX, y);
+            y += step;
+            DrawField(context, "ENGINES", live ? telemetry.EngineCount.ToString() : "---", x, valueX, y);
+            y += step;
+            DrawField(context, "STAGE", valid ? topology.CurrentStage.ToString() : "---", x, valueX, y);
+            y += step;
+            DrawField(context, "NEXT STAGE", valid && topology.NextStage >= 0 ? topology.NextStage.ToString() : "---", x, valueX, y);
+            y += step + 19;
+            DrawSectionLabel(context, "SCHEM DIAGNOSTICS", x, y);
+            y += step;
+            DrawField(context, "REVISION", valid ? topology.Revision.ToString() : "---", x, valueX, y);
+            y += step;
+            DrawField(context, "AGE", valid ? Math.Max(0, (DateTime.UtcNow - receivedUtc).TotalSeconds).ToString("0.0") + " s" : "---", x, valueX, y);
+            y += step;
+            DrawField(context, "OUTLINES", valid ? outlineParts.ToString() : "---", x, valueX, y);
+            y += step;
+            DrawField(context, "FALLBACK", valid ? fallbackParts.ToString() : "---", x, valueX, y);
+            y += step + 12;
+            DrawSectionLabel(context, "SINGLE SIDE VIEW", x, y);
         }
 
+        private static void DrawSectionLabel(MissionRenderContext context, string label, int x, int y)
+        {
+            using (SolidBrush brush = new SolidBrush(context.DimPhosphorColor))
+                context.Graphics.DrawString(label, context.SmallFont, brush, x, y);
+        }
         private static void DrawField(
             MissionRenderContext context,
             string label,
