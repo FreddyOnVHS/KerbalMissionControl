@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using KMC.Shared.Topology;
@@ -136,10 +136,12 @@ namespace KMC.Plugin.Topology
                 VesselTopologyPacketCodec.Encode(
                     topology);
 
-            _udpClient.Send(
-                payload,
-                payload.Length,
-                _missionControlEndpoint);
+            // KMC 14.23.11 CHUNKED TOPOLOGY: avoid oversized UDP datagrams.
+            byte[][] chunks = VesselTopologyFragmentAssembler.Split(payload);
+            foreach (byte[] chunk in chunks)
+            {
+                _udpClient.Send(chunk, chunk.Length, _missionControlEndpoint);
+            }
 
             Debug.Log(
                 "[KMC] Topology revision " +

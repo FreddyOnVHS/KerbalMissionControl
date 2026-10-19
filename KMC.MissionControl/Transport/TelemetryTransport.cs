@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -29,6 +29,10 @@ namespace KMC.MissionControl.Transport
 
         private const int SystemsTelemetryPort = 5091;
         private const string SystemsProtocolId = "KMCSYS1";
+
+        // KMC 14.23.11 CHUNKED TOPOLOGY: one assembler shared by all UDP channels.
+        private readonly VesselTopologyFragmentAssembler _topologyAssembler =
+            new VesselTopologyFragmentAssembler();
 
         private readonly Dictionary<int, Channel> _channels =
             new Dictionary<int, Channel>();
@@ -194,6 +198,13 @@ namespace KMC.MissionControl.Transport
         private void Dispatch(
             byte[] data)
         {
+            // KMC 14.23.11 CHUNKED TOPOLOGY: never decode incomplete fragments.
+            byte[] reconstructed;
+            if (_topologyAssembler.Accept(data, out reconstructed))
+            {
+                if (reconstructed == null) return;
+                data = reconstructed;
+            }
             VesselTopology topology;
 
             if (VesselTopologyPacketCodec.TryDecode(

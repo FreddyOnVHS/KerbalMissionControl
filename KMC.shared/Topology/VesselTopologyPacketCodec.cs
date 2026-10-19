@@ -731,4 +731,139 @@ namespace KMC.Shared.Topology
             return count;
         }
     }
+    // KMC 14.23.11 CHUNKED TOPOLOGY: bounded UDP framing around the unchanged v5 codec.
+    // Supports interleaved vessels, stale-fragment eviction, size limits, and FNV-1a integrity.
+    public sealed class VesselTopologyFragmentAssembler
+    {
+        private const int FragmentMagic = unchecked((int)0x4B4D4346); // KMCF
+        private const int HeaderSize = 44;
+        private const int FragmentPayload = 1156;
+        private const int MaxTotalBytes = 1048576;
+        private const int MaxFragments = 1024;
+        private const int LifetimeSeconds = 8;
+        private readonly object _sync = new object();
+        private readonly System.Collections.Generic.Dictionary<Guid, Pending> _pending =
+            new System.Collections.Generic.Dictionary<Guid, Pending>();
+
+        private sealed class Pending
+        {
+            public DateTime LastUtc;
+            public int Total;
+            public int Count;
+            public uint Checksum;
+            public byte[][] Pieces;
+            public int Received;
+        }
+
+        private static uint Hash(byte[] bytes)
+        {
+            uint hash = 2166136261u;
+            unchecked { foreach (byte b in bytes) hash = (hash ^ b) * 16777619u; }
+            return hash;
+        }
+
+        public static byte[][] Split(byte[] encoded)
+        {
+            if (encoded == null || encoded.Length == 0 || encoded.Length > MaxTotalBytes)
+                throw new ArgumentOutOfRangeException("encoded", "Topology packet size exceeds 1 MiB limit.");
+            int count = (encoded.Length + FragmentPayload - 1) / FragmentPayload;
+            if (count > MaxFragments) throw new InvalidDataException("Too many topology fragments.");
+            Guid id = Guid.NewGuid();
+            byte[] idBytes = id.ToByteArray();
+            uint checksum = Hash(encoded);
+            byte[][] chunks = new byte[count][];
+            for (int i = 0; i < count; ++i)
+            {
+                int start = i * FragmentPayload;
+                int size = Math.Min(FragmentPayload, encoded.Length - start);
+                using (MemoryStream ms = new MemoryStream(HeaderSize + size))
+                using (BinaryWriter bw = new BinaryWriter(ms))
+                {
+                    bw.Write(FragmentMagic);
+                    bw.Write(1); // envelope version
+                    bw.Write(idBytes);
+                    bw.Write(encoded.Length);
+                    bw.Write(count);
+                    bw.Write(i);
+                    bw.Write(checksum);
+                    bw.Write(size);
+                    bw.Write(encoded, start, size);
+                    bw.Flush();
+                    chunks[i] = ms.ToArray();
+                }
+            }
+            return chunks;
+        }
+
+        // Returns false only if the datagram is unrelated to the fragment protocol.
+        // When true, a null completed result means incomplete or invalid input.
+        public bool Accept(byte[] datagram, out byte[] completed)
+        {
+            completed = null;
+            if (datagram == null || datagram.Length < 4 || BitConverter.ToInt32(datagram, 0) != FragmentMagic)
+                return false;
+            if (datagram.Length < HeaderSize || datagram.Length > HeaderSize + FragmentPayload) return true;
+            try
+            {
+                using (BinaryReader r = new BinaryReader(new MemoryStream(datagram, false)))
+                {
+                    r.ReadInt32();
+                    if (r.ReadInt32() != 1) return true;
+                    Guid id = new Guid(r.ReadBytes(16));
+                    int total = r.ReadInt32();
+                    int count = r.ReadInt32();
+                    int index = r.ReadInt32();
+                    uint checksum = r.ReadUInt32();
+                    int length = r.ReadInt32();
+                    if (total < 1 || total > MaxTotalBytes || count < 1 || count > MaxFragments ||
+                        count != (total + FragmentPayload - 1) / FragmentPayload ||
+                        index < 0 || index >= count || length < 1 || length > FragmentPayload ||
+                        length != Math.Min(FragmentPayload, total - index * FragmentPayload) ||
+                        datagram.Length != HeaderSize + length) return true;
+                    byte[] payload = r.ReadBytes(length);
+                    lock (_sync)
+                    {
+                        DateTime now = DateTime.UtcNow;
+                        var expired = new System.Collections.Generic.List<Guid>();
+                        foreach (var item in _pending)
+                            if ((now - item.Value.LastUtc).TotalSeconds > LifetimeSeconds) expired.Add(item.Key);
+                        foreach (Guid key in expired) _pending.Remove(key);
+                        Pending pending;
+                        if (!_pending.TryGetValue(id, out pending))
+                        {
+                            if (_pending.Count >= 8) _pending.Clear();
+                            pending = new Pending { LastUtc = now, Total = total, Count = count,
+                                Checksum = checksum, Pieces = new byte[count][] };
+                            _pending.Add(id, pending);
+                        }
+                        if (pending.Total != total || pending.Count != count || pending.Checksum != checksum)
+                        { _pending.Remove(id); return true; }
+                        pending.LastUtc = now;
+                        if (pending.Pieces[index] == null) { pending.Pieces[index] = payload; pending.Received++; }
+                        else if (!Equal(pending.Pieces[index], payload)) { _pending.Remove(id); return true; }
+                        if (pending.Received != count) return true;
+                        byte[] result = new byte[total];
+                        int position = 0;
+                        foreach (byte[] piece in pending.Pieces)
+                        {
+                            if (piece == null || position + piece.Length > total) { _pending.Remove(id); return true; }
+                            Buffer.BlockCopy(piece, 0, result, position, piece.Length);
+                            position += piece.Length;
+                        }
+                        _pending.Remove(id);
+                        if (position == total && Hash(result) == checksum) completed = result;
+                        return true;
+                    }
+                }
+            }
+            catch (Exception) { return true; }
+        }
+
+        private static bool Equal(byte[] left, byte[] right)
+        {
+            if (left.Length != right.Length) return false;
+            for (int i = 0; i < left.Length; i++) if (left[i] != right[i]) return false;
+            return true;
+        }
+    }
 }

@@ -102,8 +102,22 @@ namespace KMC.MissionControl.Pages
                 statusBounds,
                 "SCHEMATIC STATUS");
 
+            // KMC 14.23.11 CHUNKED TOPOLOGY: avoid displaying old vessels.
             VesselSchematicSnapshot snapshot =
                 VesselSchematicTelemetryStore.GetLatest();
+            bool hasActiveName = telemetry != null &&
+                !string.IsNullOrWhiteSpace(telemetry.VesselName);
+            bool wrongVessel = snapshot != null && snapshot.Topology != null &&
+                hasActiveName && !string.Equals(snapshot.Topology.VesselName,
+                    telemetry.VesselName, StringComparison.OrdinalIgnoreCase);
+            bool stale = snapshot != null &&
+                (DateTime.UtcNow - snapshot.ReceivedUtc).TotalSeconds > 8.0;
+            if (wrongVessel || stale)
+            {
+                DrawWaiting(context, viewBounds);
+                DrawStatus(context, statusBounds, null, DateTime.MinValue, 0, 0);
+                return;
+            }
 
             if (snapshot == null ||
                 snapshot.Topology == null ||
