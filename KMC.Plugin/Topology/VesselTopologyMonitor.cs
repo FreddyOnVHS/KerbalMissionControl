@@ -25,12 +25,15 @@ namespace KMC.Plugin.Topology
         private IPEndPoint _missionControlEndpoint;
         private float _nextScanTime;
         private float _nextResyncTime;
+        // Log an unsupported topology once per vessel revision, not each resync.
+        private string _lastOversizeKey = string.Empty;
 
         public void Start()
         {
             _service.Reset();
             _nextScanTime = 0.0f;
             _nextResyncTime = 0.0f;
+            _lastOversizeKey = string.Empty;
 
             try
             {
@@ -135,6 +138,24 @@ namespace KMC.Plugin.Topology
             byte[] payload =
                 VesselTopologyPacketCodec.Encode(
                     topology);
+
+            // KMC 14.23.12: reject unsupported sizes without retry-error storms.
+            // A later smaller vessel / changed revision can still be transmitted.
+            if (payload.Length > VesselTopologyFragmentAssembler.MaximumTopologyBytes)
+            {
+                string oversizeKey = (topology.VesselId ?? string.Empty) + "/" + topology.Revision;
+                if (!string.Equals(_lastOversizeKey, oversizeKey, StringComparison.Ordinal))
+                {
+                    _lastOversizeKey = oversizeKey;
+                    Debug.LogWarning("[KMC] TOPOLOGY OVERSIZE: vessel=" +
+                        topology.VesselName + " revision=" + topology.Revision +
+                        " encodedBytes=" + payload.Length + " maxBytes=" +
+                        VesselTopologyFragmentAssembler.MaximumTopologyBytes +
+                        ". SCHEM will become stale; normal flight telemetry continues.");
+                }
+                return;
+            }
+            _lastOversizeKey = string.Empty;
 
             // KMC 14.23.11 CHUNKED TOPOLOGY: avoid oversized UDP datagrams.
             byte[][] chunks = VesselTopologyFragmentAssembler.Split(payload);

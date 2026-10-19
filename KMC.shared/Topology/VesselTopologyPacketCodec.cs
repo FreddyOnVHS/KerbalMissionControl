@@ -739,9 +739,16 @@ namespace KMC.Shared.Topology
         private const int HeaderSize = 44;
         private const int FragmentPayload = 1156;
         private const int MaxTotalBytes = 1048576;
+        public const int MaximumTopologyBytes = MaxTotalBytes;
         private const int MaxFragments = 1024;
         private const int LifetimeSeconds = 8;
         private readonly object _sync = new object();
+        private long _completedMessages;
+        private long _evictedMessages;
+        private long _checksumFailures;
+        public long CompletedMessages { get { return System.Threading.Interlocked.Read(ref _completedMessages); } }
+        public long EvictedMessages { get { return System.Threading.Interlocked.Read(ref _evictedMessages); } }
+        public long ChecksumFailures { get { return System.Threading.Interlocked.Read(ref _checksumFailures); } }
         private readonly System.Collections.Generic.Dictionary<Guid, Pending> _pending =
             new System.Collections.Generic.Dictionary<Guid, Pending>();
 
@@ -827,11 +834,29 @@ namespace KMC.Shared.Topology
                         var expired = new System.Collections.Generic.List<Guid>();
                         foreach (var item in _pending)
                             if ((now - item.Value.LastUtc).TotalSeconds > LifetimeSeconds) expired.Add(item.Key);
-                        foreach (Guid key in expired) _pending.Remove(key);
+                        foreach (Guid key in expired)
+                        {
+                            if (_pending.Remove(key)) System.Threading.Interlocked.Increment(ref _evictedMessages);
+                        }
                         Pending pending;
                         if (!_pending.TryGetValue(id, out pending))
                         {
-                            if (_pending.Count >= 8) _pending.Clear();
+                            if (_pending.Count >= 8)
+                            {
+                                // Evict one oldest incomplete message; protect other vessels.
+                                Guid oldestKey = Guid.Empty;
+                                DateTime oldestUtc = DateTime.MaxValue;
+                                foreach (var item in _pending)
+                                {
+                                    if (item.Value.LastUtc < oldestUtc)
+                                    {
+                                        oldestUtc = item.Value.LastUtc;
+                                        oldestKey = item.Key;
+                                    }
+                                }
+                                if (_pending.Remove(oldestKey))
+                                    System.Threading.Interlocked.Increment(ref _evictedMessages);
+                            }
                             pending = new Pending { LastUtc = now, Total = total, Count = count,
                                 Checksum = checksum, Pieces = new byte[count][] };
                             _pending.Add(id, pending);
@@ -851,7 +876,15 @@ namespace KMC.Shared.Topology
                             position += piece.Length;
                         }
                         _pending.Remove(id);
-                        if (position == total && Hash(result) == checksum) completed = result;
+                        if (position == total && Hash(result) == checksum)
+                        {
+                            completed = result;
+                            System.Threading.Interlocked.Increment(ref _completedMessages);
+                        }
+                        else
+                        {
+                            System.Threading.Interlocked.Increment(ref _checksumFailures);
+                        }
                         return true;
                     }
                 }
