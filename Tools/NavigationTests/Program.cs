@@ -36,6 +36,7 @@ internal static class Program
         Run("same-primary moon Lambert injection bootstrap", MoonTransferFoundationRegression);
         Run("moon finite-SOI entry and periapsis diagnostics", MoonEncounterFoundation);
         Run("moon 3D periapsis correction preserves SOI feasibility", MoonPeriapsisCorrectionRegression);
+        Run("inclined Minmus finite-SOI periapsis targeting validation", InclinedMoonTargetingValidation);
         Run("Lambert Vallado 3D reference case", LambertVallado);
         Run("Lambert rejects invalid and degenerate boundary data", LambertInvalid);
         Run("MAP adapter builds Lambert preview from body telemetry", LambertMapPreviewAdapter);
@@ -214,6 +215,89 @@ internal static class Program
             "moon optimizer accepted nonfinite requested periapsis");
     }
 
+    // 14.24.4: separate noncoplanar Minmus-like target case. Convergence is
+    // independently checked against the actual patched-conic encounter.
+    private static void InclinedMoonTargetingValidation()
+    {
+        const double primaryMu = 3.5316e12;
+        OrbitalElements craft = new OrbitalElements {
+            ReferenceBodyName = "Kerbin", SemiMajorAxisMeters = 700000,
+            Eccentricity = 0, InclinationDegrees = 0,
+            LongitudeOfAscendingNodeDegrees = 0, ArgumentOfPeriapsisDegrees = 0,
+            EpochUniversalTimeSeconds = 0, MeanAnomalyAtEpochRadians = 0
+        };
+        CelestialBodyState minmus = new CelestialBodyState {
+            Name = "Minmus", ParentName = "Kerbin",
+            RadiusMeters = 60000, SoiRadiusMeters = 2247428,
+            GravParameter = 1.7658e9,
+            Orbit = new OrbitalElements {
+                ReferenceBodyName = "Kerbin", SemiMajorAxisMeters = 47000000,
+                Eccentricity = 0, InclinationDegrees = 6,
+                LongitudeOfAscendingNodeDegrees = 78,
+                ArgumentOfPeriapsisDegrees = 0,
+                EpochUniversalTimeSeconds = 0, MeanAnomalyAtEpochRadians = 2
+            }
+        };
+        const double requestedPeRadius = 80000;
+        // Bootstrap is ranked by injection DV, not SOI feasibility. Inspect
+        // individual bounded Lambert samples to choose a genuinely verified
+        // inbound encounter before testing the periapsis correction layer.
+        MoonTransferCandidate injection = null;
+        MoonEncounterAssessment seedAssessment = null;
+        int validLambertSeeds = 0;
+        int feasibleSeeds = 0;
+        const int samples = 9;
+        for (int d = 0; d < samples; d++)
+        {
+            double dep = 18000.0 * d / (samples - 1);
+            for (int f = 0; f < samples; f++)
+            {
+                double flight = 48000.0 + (145000.0 - 48000.0) * f / (samples - 1);
+                MoonTransferCandidate sample;
+                if (!MoonTransferBootstrap.TryFindInjection(craft, minmus,
+                    primaryMu, dep, dep, flight, flight, 1, 1, out sample))
+                    continue;
+                validLambertSeeds++;
+                MoonEncounterAssessment assessment;
+                if (!MoonEncounterEvaluator.TryAssess(craft, minmus, primaryMu,
+                    sample, requestedPeRadius, out assessment) || !assessment.EntersSoi)
+                    continue;
+                feasibleSeeds++;
+                if (injection == null || sample.DeltaVMetersPerSecond < injection.DeltaVMetersPerSecond)
+                {
+                    injection = sample;
+                    seedAssessment = assessment;
+                }
+            }
+        }
+        Console.WriteLine("Minmus seeds: Lambert=" + validLambertSeeds +
+            " finite-SOI=" + feasibleSeeds);
+        Check(injection != null && seedAssessment != null,
+            "no finite-SOI Minmus seed in the prescribed search grid");        MoonPeriapsisCorrection result;
+        bool converged = MoonPeriapsisOptimizer.TryCorrect(craft, minmus,
+            primaryMu, injection, requestedPeRadius, out result);
+        Check(result != null && result.Encounter != null &&
+            result.Injection.DeltaV.IsFinite && result.Encounter.EntersSoi,
+            "inclined Minmus correction lost feasible SOI entry");
+        Check(Math.Abs(result.Encounter.PeriapsisErrorMeters) <=
+            Math.Abs(seedAssessment.PeriapsisErrorMeters) + 0.02,
+            "inclined Minmus correction worsened periapsis error");
+        Check(!converged || (result.RequestedPeriapsisSatisfied &&
+            !result.Encounter.SurfaceImpact &&
+            Math.Abs(result.Encounter.PeriapsisErrorMeters) <= 1000),
+            "inclined Minmus optimizer falsely declared convergence");
+        // Tight verification: the reported encounter is recomputed, not trusted
+        // solely because the optimizer returned a candidate.
+        MoonEncounterAssessment independent;
+        Check(MoonEncounterEvaluator.TryAssess(craft, minmus, primaryMu,
+            result.Injection, requestedPeRadius, out independent) &&
+            Math.Abs(independent.PredictedPeriapsisRadiusMeters -
+                result.Encounter.PredictedPeriapsisRadiusMeters) < 0.1,
+            "inclined Minmus correction disagrees with independent evaluation");
+        Console.WriteLine("Minmus validation: converged=" + converged +
+            " PeError=" + result.Encounter.PeriapsisErrorMeters.ToString("0.0") +
+            "m DV=" + result.DepartureDeltaVMetersPerSecond.ToString("0.0") + "m/s");
+    }
     private static void SchematicAngleSelectionRegression()
     {
         string builder = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
