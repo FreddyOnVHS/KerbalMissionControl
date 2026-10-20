@@ -91,7 +91,7 @@ namespace KMC.MissionControl.Pages
             layout.Row("PROGRADE DV", FormatDeltaV(plan.ProgradeDeltaVMetersPerSecond), "TOTAL DV", FormatDeltaV(plan.TotalDeltaVMetersPerSecond));
             layout.Row("NORMAL DV", FormatDeltaV(plan.NormalDeltaVMetersPerSecond), "RADIAL DV", FormatDeltaV(plan.RadialDeltaVMetersPerSecond));
             layout.Space();
-            layout.Row("PREDICTED AP", FormatDistance(plan.PredictedApoapsisMeters), "PREDICTED PE", FormatDistance(plan.PredictedPeriapsisMeters));
+            layout.Row("PREDICTED AP", FormatDistance(plan.PredictedApoapsisMeters), (Safe(plan.Objective).StartsWith("MOON TRANSFER TO ", StringComparison.OrdinalIgnoreCase) ? "TARGET PE RADIUS" : "PREDICTED PE"), FormatDistance(plan.PredictedPeriapsisMeters));
             layout.Row("PREDICTED INC", FormatAngle(plan.PredictedInclinationDegrees), "PREDICTED ECC", FormatRatio(plan.PredictedEccentricity));
             layout.Row("PREDICTED PERIOD", FormatDuration(plan.PredictedPeriodSeconds), "UPLINK STATUS", displayedState);
 
