@@ -87,6 +87,9 @@ namespace KMC.MissionControl.Pages
 
         public void Draw(MissionRenderContext context, MissionTelemetry telemetry)
         {
+            // Refresh the estimate source while MAP is on screen. It is scoped
+            // to the active vessel and expires if telemetry stops arriving.
+            TransferManeuverPlanBridge.CaptureBurnTelemetry(telemetry);
             Rectangle b = context.ContentBounds;
             using (SolidBrush brush = new SolidBrush(context.PhosphorColor)) context.Graphics.DrawString("ORBIT MAP", context.LargeFont, brush, b.Left, b.Top);
             using (SolidBrush brush = new SolidBrush(context.DimPhosphorColor)) context.Graphics.DrawString("FDO / TRAJECTORY", context.SmallFont, brush, b.Right - 250, b.Top + 6);
@@ -3103,6 +3106,70 @@ namespace KMC.MissionControl.Pages
     /// </summary>
     internal static class TransferManeuverPlanBridge
     {
+        // 14.24.11 MAP burn estimate. Thrust [kN] / mass [tonnes] = m/s^2.
+        // Keep the snapshot isolated from maneuver identity and solver state.
+        private static readonly object BurnTelemetrySync = new object();
+        private static string _burnVesselName = string.Empty;
+        private static double _burnMassTonnes = double.NaN;
+        private static double _burnMaxThrustKn = double.NaN;
+        private static double _burnSpecificImpulseSeconds = double.NaN;
+        private static DateTime _burnTelemetryUtc = DateTime.MinValue;
+
+        public static void CaptureBurnTelemetry(MissionTelemetry telemetry)
+        {
+            if (telemetry == null) return;
+            lock (BurnTelemetrySync)
+            {
+                _burnVesselName = telemetry.VesselName ?? string.Empty;
+                _burnMassTonnes = telemetry.VesselMass;
+                _burnMaxThrustKn = telemetry.MaximumThrust;
+                _burnSpecificImpulseSeconds = telemetry.AverageSpecificImpulse;
+                _burnTelemetryUtc = DateTime.UtcNow;
+            }
+        }
+
+        internal static double EstimateBurnDurationSeconds(
+            double deltaV, double massTonnes, double maxThrustKn,
+            double specificImpulseSeconds)
+        {
+            if (!IsFinite(deltaV) || deltaV < 0.0 ||
+                !IsFinite(massTonnes) || massTonnes <= 0.0 ||
+                !IsFinite(maxThrustKn) || maxThrustKn <= 0.0)
+                return double.NaN;
+            if (deltaV == 0.0) return 0.0;
+
+            // Rocket-equation duration when the active engines report Isp.
+            // Using maximum available thrust assumes full-throttle execution.
+            if (IsFinite(specificImpulseSeconds) && specificImpulseSeconds > 0.0)
+            {
+                const double g0 = 9.80665;
+                double ve = specificImpulseSeconds * g0;
+                double fraction = 1.0 - Math.Exp(-deltaV / ve);
+                double duration = massTonnes * ve * fraction / maxThrustKn;
+                return IsFinite(duration) && duration >= 0.0
+                    ? duration : double.NaN;
+            }
+
+            // Without Isp, use constant-mass approximation instead of a zero lead.
+            double approximate = deltaV * massTonnes / maxThrustKn;
+            return IsFinite(approximate) && approximate >= 0.0
+                ? approximate : double.NaN;
+        }
+
+        private static double EstimateForActiveVessel(string vesselName, double deltaV)
+        {
+            lock (BurnTelemetrySync)
+            {
+                if (string.IsNullOrWhiteSpace(vesselName) ||
+                    !string.Equals(_burnVesselName, vesselName,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    DateTime.UtcNow - _burnTelemetryUtc > TimeSpan.FromSeconds(3.0))
+                    return double.NaN;
+
+                return EstimateBurnDurationSeconds(deltaV, _burnMassTonnes,
+                    _burnMaxThrustKn, _burnSpecificImpulseSeconds);
+            }
+        }
         public static void RegisterAndPromote(
             ManeuverUplinkPacket packet,
             string destinationBodyName)
@@ -3154,6 +3221,10 @@ namespace KMC.MissionControl.Pages
                         ? packet.TargetBodyName.Trim()
                         : "TARGET");
 
+            double duration = EstimateForActiveVessel(
+                livePacket != null ? livePacket.VesselName : string.Empty, totalDv);
+            double lead = IsFinite(duration) ? duration / 2.0 : double.NaN;
+
             ManeuverPlanPromotionRequest promotion =
                 new ManeuverPlanPromotionRequest
                 {
@@ -3176,8 +3247,8 @@ namespace KMC.MissionControl.Pages
                     RadialDeltaVMetersPerSecond =
                         packet.RadialDeltaVMetersPerSecond,
                     TotalDeltaVMetersPerSecond = totalDv,
-                    EstimatedBurnDurationSeconds = double.NaN,
-                    IgnitionLeadSeconds = 0.0,
+                    EstimatedBurnDurationSeconds = duration,
+                    IgnitionLeadSeconds = lead,
                     IgnitionMissionTimeSeconds = double.NaN,
                     PredictedApoapsisMeters = double.NaN,
                     PredictedPeriapsisMeters =
@@ -3191,7 +3262,17 @@ namespace KMC.MissionControl.Pages
                 };
 
             promotion.Evidence.Add(
+                IsFinite(duration)
+                    ? "MAP estimated full-throttle burn duration and centered ignition on the node."
+                    : "MAP burn timing unavailable: live vessel thrust/mass telemetry missing or stale.");
+
+            promotion.Evidence.Add(
                 "MAP transfer planner created and KSP accepted the maneuver node.");
+
+            promotion.Evidence.Add(
+                IsFinite(duration)
+                    ? "MAP estimated full-throttle burn duration and centered ignition on the node."
+                    : "MAP burn timing unavailable: live vessel thrust/mass telemetry missing or stale.");
 
             promotion.Evidence.Add(
                 "Plan identity is the exact MAP uplink PlanId/UT/P-N-R vector.");

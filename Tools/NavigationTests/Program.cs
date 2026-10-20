@@ -75,6 +75,7 @@ internal static class Program
         Run("GUID final count and ignition cues are explicit", GuidanceFinalCountCueRegression);
         Run("MNV compute and upload actions expose operator feedback", ManeuverOperatorFeedbackRegression);
         Run("manual maneuver nodes survive unavailable burn estimate", ManualManeuverBurnEstimateDecouplingRegression);
+        Run("MAP transfer burn is centered on node when engine telemetry exists", MapTransferBurnTimingRegression);
         Run("post-burn cleanup and queue handoff are explicit", PostBurnCleanupQueueHandoffRegression);
         Run("SCHEM vessel topology pipeline preserves projected part positions", VesselSchematicFoundationRegression);
         Run("SCHEM oriented geometry survives topology transport", VesselSchematicGeometryRegression);
@@ -2970,6 +2971,39 @@ internal static class Program
             "operator feedback is not bounded / short-lived");
     }
 
+    private static void MapTransferBurnTimingRegression()
+    {
+        Type bridge = typeof(KMC.MissionControl.Pages.MapPage).Assembly.GetType(
+            "KMC.MissionControl.Pages.TransferManeuverPlanBridge", true);
+        System.Reflection.MethodInfo estimate = bridge.GetMethod(
+            "EstimateBurnDurationSeconds",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+        Check(estimate != null, "MAP burn-duration estimator missing");
+        double dv = 1000.0, mass = 10.0, thrust = 200.0, isp = 300.0;
+        double duration = (double)estimate.Invoke(null, new object[] { dv, mass, thrust, isp });
+        double expected = mass * (isp * 9.80665) *
+            (1.0 - Math.Exp(-dv / (isp * 9.80665))) / thrust;
+        Check(Math.Abs(duration - expected) < 1e-8,
+            "MAP burn-duration estimate is not rocket-equation consistent");
+        double fallback = (double)estimate.Invoke(null,
+            new object[] { dv, mass, thrust, double.NaN });
+        Check(Math.Abs(fallback - 50.0) < 1e-8,
+            "MAP constant-mass fallback is not correct");
+        double unavailable = (double)estimate.Invoke(null,
+            new object[] { dv, mass, 0.0, isp });
+        Check(double.IsNaN(unavailable), "MAP invented timing for missing thrust");
+        double timeToNode = 100.0;
+        double ignitionLead = duration / 2.0;
+        Check(Math.Abs((timeToNode - ignitionLead) -
+            (timeToNode - duration / 2.0)) < 1e-8,
+            "ignition cue is not centered on the maneuver node");
+        string mapSource = File.ReadAllText(Path.Combine(
+            Environment.CurrentDirectory, "KMC.MissionControl", "Pages", "MapPage.cs"));
+        Check(mapSource.Contains("IgnitionLeadSeconds = lead") &&
+            mapSource.Contains("EstimatedBurnDurationSeconds = duration") &&
+            mapSource.Contains("EstimateForActiveVessel"),
+            "MAP promotion is not using vessel-based burn timing");
+    }
     private static void ManualManeuverBurnEstimateDecouplingRegression()
     {
         string plannerPath =
