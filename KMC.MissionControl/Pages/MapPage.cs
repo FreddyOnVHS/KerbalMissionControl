@@ -50,6 +50,7 @@ namespace KMC.MissionControl.Pages
         private string _moonPreviewStatus = "SELECT CALCULATE TO SEARCH";
         private Rectangle _moonCalculateButton = Rectangle.Empty;
         private OrbitMapPacket _moonPreviewPacket;
+        private OrbitMapPacket _moonSolvedPacket;
         private OrbitMapBody _moonPreviewDestination;
         private double _moonPreviewRadius = double.NaN;
         private volatile bool _moonPreviewRunning;
@@ -432,9 +433,12 @@ namespace KMC.MissionControl.Pages
                             : "HIERARCHY CHANGE";
 
                     context.Graphics.DrawString(
-                        "ROUTE  " + (relation == "SAME PARENT"
-                            ? "DIRECT PLANET TRANSFER"
-                            : "HIERARCHY CHANGE"),
+                        "ROUTE  " + (MoonTransferRoute.Classify(origin, destination.Name,
+                            destination.ParentName) == TransferRouteKind.SamePrimaryMoon
+                            ? "SAME-PRIMARY MOON TRANSFER"
+                            : (relation == "SAME PARENT"
+                                ? "DIRECT PLANET TRANSFER"
+                                : "HIERARCHY CHANGE")),
                         context.SmallFont,
                         dim,
                         x,
@@ -1219,6 +1223,7 @@ namespace KMC.MissionControl.Pages
                 System.Threading.Interlocked.Increment(ref _moonPreviewGeneration);
                 _moonPreviewKey = key;
                 _moonPreview = null;
+                _moonSolvedPacket = null;
                 _moonPreviewStatus = "SELECTION CHANGED - CALCULATE AGAIN";
             }
             _moonPreviewPacket = packet;
@@ -1253,7 +1258,9 @@ namespace KMC.MissionControl.Pages
                 _moonCalculateButton = new Rectangle(x, y + 6, 245, 26);
                 DrawButton(context, _moonCalculateButton, "CALCULATE MOON TRANSFER");
                 y += lineHeight + 34;
-                context.Graphics.DrawString("PREVIEW ONLY - NODE CREATION NOT ENABLED",
+                context.Graphics.DrawString(_moonPreview != null ?
+                    "VERIFIED MOON PLAN - CREATE KSP NODE BELOW" :
+                    "CALCULATE VERIFIED PLAN BEFORE NODE CREATION",
                     context.SmallFont, dim, x, y);
             }
         }
@@ -1275,6 +1282,7 @@ namespace KMC.MissionControl.Pages
             System.Threading.Tasks.Task.Run(() =>
             {
                 MoonTransferPlan plan = null;
+                OrbitMapPacket solvedSnapshot = null;
                 string state = "NO VERIFIED MOON PLAN IN SEARCH WINDOW";
                 try
                 {
@@ -1290,7 +1298,10 @@ namespace KMC.MissionControl.Pages
                         if (destination != null &&
                             OrbitMapNavigationAdapter.TryPlanMoonPreview(
                                 packet, destination, pe, out plan))
+                        {
                             state = "VERIFIED PLAN AVAILABLE";
+                            solvedSnapshot = packet;
+                        }
                     }
                 }
                 catch (Exception)
@@ -1304,6 +1315,7 @@ namespace KMC.MissionControl.Pages
                         ref _moonPreviewGeneration, generation, generation) == generation &&
                     string.Equals(_moonPreviewKey, key, StringComparison.Ordinal))
                 {
+                    _moonSolvedPacket = solvedSnapshot;
                     _moonPreview = plan;
                     _moonPreviewStatus = state;
                     _moonPreviewRunning = false;
@@ -2048,6 +2060,12 @@ namespace KMC.MissionControl.Pages
 
         private bool HasProductionNodeCandidate()
         {
+            if (_moonPreview != null && !_moonPreviewRunning &&
+                _moonPreviewDestination != null && _moonPreviewPacket != null &&
+                MoonTransferRoute.Classify(_moonPreviewPacket.ReferenceBodyName,
+                    _moonPreviewDestination.Name, _moonPreviewDestination.ParentName) ==
+                    TransferRouteKind.SamePrimaryMoon)
+                return true;
             if (GetProductionCoupledEjection() != null)
                 return true;
 
@@ -2313,8 +2331,70 @@ namespace KMC.MissionControl.Pages
                 };
         }
 
+        private void UploadMoonTransferNode()
+        {
+            if (_moonPreview == null || _moonPreviewRunning ||
+                _moonPreviewPacket == null || _moonSolvedPacket == null ||
+                _moonPreviewDestination == null ||
+                !string.Equals(_moonPreviewDestination.Name,
+                    _selectedTransferBodyName, StringComparison.OrdinalIgnoreCase))
+            {
+                _transferNodeActionText = "CALCULATE VERIFIED MOON PLAN FIRST";
+                return;
+            }
+            string planId = "MAP-MOON-" +
+                SanitizePlanToken(_selectedTransferBodyName) + "-" +
+                Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant();
+            if (_moonPreview.Correction.Injection.DepartureUniversalTimeSeconds <=
+                    _moonPreviewPacket.UniversalTimeSeconds + 10.0 ||
+                _moonPreviewPacket.ActiveOrbit == null ||
+                _moonSolvedPacket.ActiveOrbit == null ||
+                Math.Abs(_moonPreviewPacket.ActiveOrbit.SemiMajorAxisMeters -
+                    _moonSolvedPacket.ActiveOrbit.SemiMajorAxisMeters) >
+                    Math.Abs(_moonSolvedPacket.ActiveOrbit.SemiMajorAxisMeters) * 0.001 ||
+                Math.Abs(_moonPreviewPacket.ActiveOrbit.InclinationDegrees -
+                    _moonSolvedPacket.ActiveOrbit.InclinationDegrees) > 0.1)
+            {
+                _transferNodeActionText = "MOON PLAN EXPIRED / RE-CALCULATE";
+                return;
+            }
+            ManeuverUplinkPacket packet;
+            if (!OrbitMapNavigationAdapter.TryBuildMoonNodePacket(
+                    _moonSolvedPacket, _moonPreview, _selectedTransferBodyName,
+                    planId, out packet) ||
+                !string.Equals(packet.VesselId, _currentTransferVesselId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                _transferNodeActionText = "MOON NODE STALE / RE-CALCULATE";
+                return;
+            }
+            string response;
+            bool sent = TransferPlannerManeuverUplink.Send(packet, out response);
+            _transferNodeActionText = string.IsNullOrWhiteSpace(response)
+                ? (sent ? "MOON NODE UPLINK SENT" : "MOON NODE UPLINK FAILED")
+                : response;
+            if (!sent) return;
+            _lastTransferPlanId = planId;
+            _submittedTransferDestinationName = _selectedTransferBodyName;
+            _submittedTransferNodeUt = packet.NodeUniversalTimeSeconds;
+            _submittedTransferProgradeDv = packet.ProgradeDeltaVMetersPerSecond;
+            _submittedTransferNormalDv = packet.NormalDeltaVMetersPerSecond;
+            _submittedTransferRadialDv = packet.RadialDeltaVMetersPerSecond;
+            _submittedTransferUsedCoupledAuthority = false;
+            _submittedTransferUsedLambertAuthority = false;
+            TransferManeuverPlanBridge.RegisterAndPromote(
+                packet, _selectedTransferBodyName);
+        }
         private void UploadTransferNode()
         {
+            if (_moonPreview != null && _moonPreviewDestination != null &&
+                MoonTransferRoute.Classify(_moonPreviewPacket.ReferenceBodyName,
+                    _moonPreviewDestination.Name, _moonPreviewDestination.ParentName) ==
+                    TransferRouteKind.SamePrimaryMoon)
+            {
+                UploadMoonTransferNode();
+                return;
+            }
             LambertParkingOrbitEjectionSolution coupledEjection =
                 GetProductionCoupledEjection();
 

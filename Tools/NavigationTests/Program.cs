@@ -38,6 +38,7 @@ internal static class Program
         Run("moon 3D periapsis correction preserves SOI feasibility", MoonPeriapsisCorrectionRegression);
         Run("inclined Minmus finite-SOI periapsis targeting validation", InclinedMoonTargetingValidation);
         Run("moon production planner returns verified Minmus transfer", MoonProductionPlannerRegression);
+        Run("moon maneuver node PNR basis and verification guard", MoonNodeFrameProjectionRegression);
         Run("Lambert Vallado 3D reference case", LambertVallado);
         Run("Lambert rejects invalid and degenerate boundary data", LambertInvalid);
         Run("MAP adapter builds Lambert preview from body telemetry", LambertMapPreviewAdapter);
@@ -345,6 +346,38 @@ internal static class Program
             invalid == null, "moon production planner accepted invalid Pe");
     }
 
+    private static void MoonNodeFrameProjectionRegression()
+    {
+        // The engine's inertial burn vector must survive P/N/R projection
+        // even in an inclined orbit. An invalid or stale plan must be rejected.
+        const double mu = 3.5316e12;
+        OrbitalElements craft = new OrbitalElements {
+            ReferenceBodyName = "Kerbin", SemiMajorAxisMeters = 700000,
+            Eccentricity = 0, InclinationDegrees = 12,
+            LongitudeOfAscendingNodeDegrees = 40,
+            ArgumentOfPeriapsisDegrees = 0,
+            EpochUniversalTimeSeconds = 0, MeanAnomalyAtEpochRadians = 0
+        };
+        StateVector orbitState;
+        Check(KeplerPropagator.TryPropagate(craft, mu, 5000, out orbitState),
+            "moon PNR basis propagation rejected");
+        Vector3d p = orbitState.Velocity * (1.0 / orbitState.Velocity.Magnitude);
+        Vector3d n0 = Vector3d.Cross(orbitState.Position, orbitState.Velocity);
+        Vector3d n = n0 * (1.0 / n0.Magnitude);
+        Vector3d r = Vector3d.Cross(p, n);
+        Vector3d impulse = p * 780 + n * 53 + r * (-18);
+        double pp = Vector3d.Dot(impulse, p);
+        double nn = Vector3d.Dot(impulse, n);
+        double rr = Vector3d.Dot(impulse, r);
+        Check((p * pp + n * nn + r * rr - impulse).Magnitude < 1e-8 &&
+            Math.Abs(pp - 780) < 1e-8 && Math.Abs(nn - 53) < 1e-8 &&
+            Math.Abs(rr + 18) < 1e-8,
+            "moon PNR frame lost 3D burn components");
+        ManeuverUplinkPacket rejected;
+        Check(!OrbitMapNavigationAdapter.TryBuildMoonNodePacket(
+            new OrbitMapPacket(), null, "Mun", "TEST", out rejected) &&
+            rejected == null, "moon node adapter accepted unverified plan");
+    }
     private static void SchematicAngleSelectionRegression()
     {
         string builder = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,

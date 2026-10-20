@@ -422,6 +422,84 @@ namespace KMC.MissionControl.Navigation
             return 1.0 / relativeFrequency;
         }
 
+        // 14.24.7: same-primary direct-injection P/N/R projection.
+        // The Engine's inertial frame is the same reference used by
+        // KeplerPropagator. No hyperbolic departure or Unity axis swap.
+        public static bool TryBuildMoonNodePacket(
+            OrbitMapPacket source, MoonTransferPlan plan, string destinationName,
+            string planId, out ManeuverUplinkPacket packet)
+        {
+            packet = null;
+            if (source == null || source.ActiveOrbit == null ||
+                source.Bodies == null || string.IsNullOrWhiteSpace(source.VesselId) ||
+                string.IsNullOrWhiteSpace(planId) ||
+                string.IsNullOrWhiteSpace(destinationName) ||
+                plan == null || plan.Correction == null ||
+                plan.Correction.Injection == null ||
+                plan.Correction.Encounter == null ||
+                !plan.Correction.Encounter.EntersSoi ||
+                plan.Correction.Encounter.SurfaceImpact ||
+                !plan.Correction.Encounter.RequestedPeriapsisSatisfied)
+                return false;
+            CelestialBodyState moon = null;
+            CelestialBodyState primary = null;
+            for (int i = 0; i < source.Bodies.Count; i++)
+            {
+                OrbitMapBody body = source.Bodies[i];
+                if (body == null) continue;
+                if (string.Equals(body.Name, destinationName,
+                    StringComparison.OrdinalIgnoreCase)) moon = ToBody(body);
+                if (string.Equals(body.Name, source.ReferenceBodyName,
+                    StringComparison.OrdinalIgnoreCase)) primary = ToBody(body);
+            }
+            if (moon == null || primary == null ||
+                MoonTransferRoute.Classify(source.ReferenceBodyName,
+                    moon.Name, moon.ParentName) != TransferRouteKind.SamePrimaryMoon ||
+                !IsFinitePositive(primary.GravParameter)) return false;
+            MoonTransferCandidate injection = plan.Correction.Injection;
+            double ut = injection.DepartureUniversalTimeSeconds;
+            if (double.IsNaN(ut) || double.IsInfinity(ut) ||
+                ut <= source.UniversalTimeSeconds + 1.0 ||
+                ut >= injection.ArrivalUniversalTimeSeconds ||
+                !injection.DeltaV.IsFinite ||
+                !IsFinitePositive(injection.DeltaVMetersPerSecond)) return false;
+            StateVector state;
+            if (!KeplerPropagator.TryPropagate(ToElements(source.ActiveOrbit),
+                primary.GravParameter, ut, out state)) return false;
+            Vector3d p = state.Velocity;
+            Vector3d n = Vector3d.Cross(state.Position, state.Velocity);
+            if (!IsFinitePositive(p.Magnitude) || !IsFinitePositive(n.Magnitude))
+                return false;
+            p = p * (1.0 / p.Magnitude);
+            n = n * (1.0 / n.Magnitude);
+            Vector3d r = Vector3d.Cross(p, n);
+            if (!IsFinitePositive(r.Magnitude)) return false;
+            r = r * (1.0 / r.Magnitude);
+            double prograde = Vector3d.Dot(injection.DeltaV, p);
+            double normal = Vector3d.Dot(injection.DeltaV, n);
+            double radial = Vector3d.Dot(injection.DeltaV, r);
+            Vector3d reconstructed = p * prograde + n * normal + r * radial;
+            if (!reconstructed.IsFinite ||
+                (reconstructed - injection.DeltaV).Magnitude >
+                    Math.Max(1e-6, 1e-8 * injection.DeltaVMetersPerSecond))
+                return false;
+            double desiredPe = plan.Correction.Encounter.RequestedPeriapsisRadiusMeters;
+            if (!IsFinitePositive(desiredPe) ||
+                desiredPe <= moon.RadiusMeters || desiredPe >= moon.SoiRadiusMeters)
+                return false;
+            packet = new ManeuverUplinkPacket {
+                VesselId = source.VesselId,
+                PlanId = planId,
+                NodeUniversalTimeSeconds = ut,
+                ProgradeDeltaVMetersPerSecond = prograde,
+                NormalDeltaVMetersPerSecond = normal,
+                RadialDeltaVMetersPerSecond = radial,
+                DesiredPeriapsisRadiusMeters = desiredPe,
+                TargetBodyName = destinationName,
+                Operation = "CREATE"
+            };
+            return true;
+        }
         private static bool IsFinitePositive(double value)
         {
             return
