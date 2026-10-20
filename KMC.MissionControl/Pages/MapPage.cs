@@ -43,6 +43,17 @@ namespace KMC.MissionControl.Pages
         // NaN means AUTO. Manual values are altitude above the live target surface.
         private double _transferTargetPeriapsisAltitudeMeters = double.NaN;
         private ManeuverUplinkPacket _transferNodeCandidate;
+
+        // 14.24.6 cached moon preview; no node authorization.
+        private MoonTransferPlan _moonPreview;
+        private string _moonPreviewKey = string.Empty;
+        private string _moonPreviewStatus = "SELECT CALCULATE TO SEARCH";
+        private Rectangle _moonCalculateButton = Rectangle.Empty;
+        private OrbitMapPacket _moonPreviewPacket;
+        private OrbitMapBody _moonPreviewDestination;
+        private double _moonPreviewRadius = double.NaN;
+        private volatile bool _moonPreviewRunning;
+        private int _moonPreviewGeneration;
         private string _lastTransferPlanId = string.Empty;
         private string _transferNodeActionText = "NO NODE REQUEST";
         private string _submittedTransferDestinationName = string.Empty;
@@ -150,6 +161,11 @@ namespace KMC.MissionControl.Pages
 
             if (_subpage == 1)
             {
+                if (!_moonCalculateButton.IsEmpty && _moonCalculateButton.Contains(q))
+                {
+                    StartMoonTransferCalculation();
+                    return true;
+                }
                 if (HasProductionNodeCandidate() &&
                     !_createTransferNodeButton.IsEmpty &&
                     _createTransferNodeButton.Contains(q))
@@ -261,6 +277,7 @@ namespace KMC.MissionControl.Pages
             _transferBodyButtons.Clear();
             _transferBodyNames.Clear();
             _transferNodeCandidate = null;
+            _moonCalculateButton = Rectangle.Empty;
             _currentTransferVesselId = packet != null
                 ? (packet.VesselId ?? string.Empty)
                 : string.Empty;
@@ -1146,6 +1163,16 @@ namespace KMC.MissionControl.Pages
                     }
                     else
                     {
+                        if (MoonTransferRoute.Classify(origin, destination.Name,
+                            destination.ParentName) == TransferRouteKind.SamePrimaryMoon)
+                        {
+                            // Never expose stale interplanetary node authority on moon route.
+                            ResetLambertPreview();
+                            DrawMoonTransferPreview(context, packet, destination,
+                                x, ref y, transferLineHeight);
+                        }
+                        else
+                        {
                         context.Graphics.DrawString(
                             "WINDOW SOLUTION NOT AVAILABLE",
                             context.SmallFont,
@@ -1162,6 +1189,7 @@ namespace KMC.MissionControl.Pages
                             dim,
                             x,
                             y);
+                        }
                     }
                 }
 
@@ -1171,6 +1199,118 @@ namespace KMC.MissionControl.Pages
             }
         }
 
+
+        // 14.24.6a: drawing never performs an orbital solve.
+        private void DrawMoonTransferPreview(MissionRenderContext context,
+            OrbitMapPacket packet, OrbitMapBody destination, int x, ref int y,
+            int lineHeight)
+        {
+            double pe = ResolveRequestedPeriapsisRadius(destination);
+            if (!IsFinitePositive(pe)) pe = ComputeAutoTargetPeriapsisRadius(destination);
+            // 14.24.6c stable operator-request key: solve the captured orbit
+            // snapshot only when CALCULATE MOON is pressed. Osculating orbit
+            // element/UT changes must not discard the in-progress result.
+            // Operator must explicitly recalculate after an orbit change.
+            string key = (packet.VesselId ?? string.Empty) + "|" +
+                (packet.ReferenceBodyName ?? string.Empty) + "|" +
+                destination.Name + "|" + pe.ToString("R");
+            if (!string.Equals(_moonPreviewKey, key, StringComparison.Ordinal))
+            {
+                System.Threading.Interlocked.Increment(ref _moonPreviewGeneration);
+                _moonPreviewKey = key;
+                _moonPreview = null;
+                _moonPreviewStatus = "SELECTION CHANGED - CALCULATE AGAIN";
+            }
+            _moonPreviewPacket = packet;
+            _moonPreviewDestination = destination;
+            _moonPreviewRadius = pe;
+            using (SolidBrush bright = new SolidBrush(context.PhosphorColor))
+            using (SolidBrush dim = new SolidBrush(context.DimPhosphorColor))
+            {
+                context.Graphics.DrawString("MOON TRANSFER / SAME PRIMARY",
+                    context.SmallFont, bright, x, y); y += lineHeight;
+                if (_moonPreview != null)
+                {
+                    MoonPeriapsisCorrection c = _moonPreview.Correction;
+                    context.Graphics.DrawString("VERIFIED SOI / PE ERROR " +
+                        c.Encounter.PeriapsisErrorMeters.ToString("0") + " m",
+                        context.SmallFont, bright, x, y); y += lineHeight;
+                    context.Graphics.DrawString("DEPART DV " +
+                        c.DepartureDeltaVMetersPerSecond.ToString("0.0") + " m/s",
+                        context.SmallFont, bright, x, y); y += lineHeight;
+                    context.Graphics.DrawString("DEPART IN " +
+                        FormatTransferInterval(Math.Max(0,
+                            c.Injection.DepartureUniversalTimeSeconds -
+                            packet.UniversalTimeSeconds)),
+                        context.SmallFont, dim, x, y); y += lineHeight;
+                }
+                else
+                {
+                    context.Graphics.DrawString(_moonPreviewRunning ?
+                        "SEARCH IN PROGRESS..." : _moonPreviewStatus,
+                        context.SmallFont, dim, x, y); y += lineHeight;
+                }
+                _moonCalculateButton = new Rectangle(x, y + 6, 245, 26);
+                DrawButton(context, _moonCalculateButton, "CALCULATE MOON TRANSFER");
+                y += lineHeight + 34;
+                context.Graphics.DrawString("PREVIEW ONLY - NODE CREATION NOT ENABLED",
+                    context.SmallFont, dim, x, y);
+            }
+        }
+
+        private void StartMoonTransferCalculation()
+        {
+            if (_moonPreviewRunning || _moonPreviewPacket == null ||
+                _moonPreviewDestination == null ||
+                !IsFinitePositive(_moonPreviewRadius)) return;
+            // Copy the raw protocol packet on the UI thread, so the worker does
+            // not read a mutable telemetry snapshot belonging to the receiver.
+            string snapshot = _moonPreviewPacket.Serialize();
+            string destinationName = _moonPreviewDestination.Name;
+            double pe = _moonPreviewRadius;
+            string key = _moonPreviewKey;
+            int generation = System.Threading.Interlocked.Increment(ref _moonPreviewGeneration);
+            _moonPreviewRunning = true;
+            _moonPreviewStatus = "SEARCH IN PROGRESS...";
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                MoonTransferPlan plan = null;
+                string state = "NO VERIFIED MOON PLAN IN SEARCH WINDOW";
+                try
+                {
+                    OrbitMapPacket packet;
+                    if (OrbitMapPacket.TryParse(snapshot, out packet))
+                    {
+                        OrbitMapBody destination = null;
+                        for (int i = 0; i < packet.Bodies.Count; i++)
+                            if (packet.Bodies[i] != null &&
+                                string.Equals(packet.Bodies[i].Name, destinationName,
+                                    StringComparison.OrdinalIgnoreCase))
+                            { destination = packet.Bodies[i]; break; }
+                        if (destination != null &&
+                            OrbitMapNavigationAdapter.TryPlanMoonPreview(
+                                packet, destination, pe, out plan))
+                            state = "VERIFIED PLAN AVAILABLE";
+                    }
+                }
+                catch (Exception)
+                {
+                    state = "MOON PLAN CALCULATION FAILED";
+                }
+                // Keep the completion state, including a no-solution diagnostic,
+                // until the operator changes the vessel, destination, or Pe.
+                // Do not allow an old worker to replace a newer selection.
+                if (System.Threading.Interlocked.CompareExchange(
+                        ref _moonPreviewGeneration, generation, generation) == generation &&
+                    string.Equals(_moonPreviewKey, key, StringComparison.Ordinal))
+                {
+                    _moonPreview = plan;
+                    _moonPreviewStatus = state;
+                    _moonPreviewRunning = false;
+                }
+                // A stale worker must not clear a newer worker's running flag.
+            });
+        }
         private void ResetLambertPreview()
         {
             _lambertPreview = null;

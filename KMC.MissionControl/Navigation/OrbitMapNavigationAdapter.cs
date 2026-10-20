@@ -266,6 +266,53 @@ namespace KMC.MissionControl.Navigation
                     out solution);
         }
 
+
+        // 14.24.6: explicit moon route; never use interplanetary ejection here.
+        // Preview only. The caller controls caching and never uplinks this result.
+        public static bool TryPlanMoonPreview(
+            OrbitMapPacket packet, OrbitMapBody moon, double requestedPeRadius,
+            out MoonTransferPlan plan)
+        {
+            plan = null;
+            if (packet == null || moon == null || packet.ActiveOrbit == null ||
+                MoonTransferRoute.Classify(packet.ReferenceBodyName, moon.Name,
+                    moon.ParentName) != TransferRouteKind.SamePrimaryMoon ||
+                !IsFinitePositive(requestedPeRadius)) return false;
+            double primaryMu = double.NaN;
+            if (packet.Bodies != null)
+                for (int i = 0; i < packet.Bodies.Count; i++)
+                    if (packet.Bodies[i] != null &&
+                        string.Equals(packet.Bodies[i].Name, packet.ReferenceBodyName,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        primaryMu = packet.Bodies[i].GravParameter;
+                        break;
+                    }
+            if (!IsFinitePositive(primaryMu)) return false;
+            CelestialBodyState target = ToBody(moon);
+            OrbitalElements craft = ToElements(packet.ActiveOrbit);
+            double now = packet.UniversalTimeSeconds;
+            if (craft == null || target == null || target.Orbit == null ||
+                !IsFinitePositive(target.Orbit.SemiMajorAxisMeters) ||
+                !IsFinitePositive(craft.SemiMajorAxisMeters) ||
+                !IsFinitePositive(now + 1.0)) return false;
+            double a = craft.SemiMajorAxisMeters;
+            double b = target.Orbit.SemiMajorAxisMeters;
+            // Half-ellipse is an initialization scale, not an encounter proof.
+            double halfPeriod = Math.PI * Math.Sqrt(
+                Math.Pow((a + b) * 0.5, 3) / primaryMu);
+            if (!IsFinitePositive(halfPeriod)) return false;
+            double targetPeriod = target.Orbit.PeriodSeconds;
+            if (!IsFinitePositive(targetPeriod))
+                targetPeriod = 2.0 * Math.PI *
+                    Math.Sqrt(b * b * b / primaryMu);
+            if (!IsFinitePositive(targetPeriod)) return false;
+            return MoonTransferPlanner.TryPlan(craft, target, primaryMu,
+                requestedPeRadius, now + 60.0,
+                now + Math.Min(targetPeriod, 3.0 * halfPeriod),
+                Math.Max(600.0, 0.55 * halfPeriod),
+                1.65 * halfPeriod, 9, 9, 8, out plan);
+        }
         private static TransferSearchRequest CreateTransferSearchRequest(
             OrbitMapBody origin,
             OrbitMapBody destination,
