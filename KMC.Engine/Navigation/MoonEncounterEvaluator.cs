@@ -32,7 +32,7 @@ namespace KMC.Engine.Navigation
         // of the sample interval. Samples do NOT provide a global no-encounter proof
         // for arbitrarily short crossings, so callers must not treat false as such.
         private const int Samples = 320;
-        private const int BisectIterations = 52;
+        private const int BisectIterations = 32;
 
         public static bool TryAssess(OrbitalElements activeOrbit,
             CelestialBodyState moon, double primaryMu,

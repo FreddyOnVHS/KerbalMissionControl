@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using KMC.Engine.CelestialMechanics;
 
 namespace KMC.Engine.Navigation
@@ -13,6 +14,9 @@ namespace KMC.Engine.Navigation
         public int LambertCandidates { get; internal set; }
         public int SoiCandidates { get; internal set; }
         public int CorrectedCandidates { get; internal set; }
+        public long LambertAndSoiMilliseconds { get; internal set; }
+        public long CorrectionMilliseconds { get; internal set; }
+        public long TotalPlanningMilliseconds { get { return LambertAndSoiMilliseconds + CorrectionMilliseconds; } }
         public double DepartureDeltaVMetersPerSecond { get { return Correction.DepartureDeltaVMetersPerSecond; } }
     }
 
@@ -52,6 +56,7 @@ namespace KMC.Engine.Navigation
                 maximumCorrections < 1 || maximumCorrections > 32)
                 return false;
 
+            Stopwatch stageClock = Stopwatch.StartNew();
             List<Seed> feasible = new List<Seed>();
             int lambertCount = 0;
             for (int d = 0; d < departureSamples; d++)
@@ -90,6 +95,9 @@ namespace KMC.Engine.Navigation
                     }
                 }
             }
+            stageClock.Stop();
+            long searchMs = stageClock.ElapsedMilliseconds;
+            stageClock.Restart();
             feasible.Sort((x,y) => x.Injection.DeltaVMetersPerSecond.CompareTo(y.Injection.DeltaVMetersPerSecond));
             MoonPeriapsisCorrection lowest = null;
             int corrections = 0;
@@ -114,10 +122,13 @@ namespace KMC.Engine.Navigation
                         Injection = correction.Injection, Encounter = independent
                     };
             }
+            stageClock.Stop();
+            long correctionMs = stageClock.ElapsedMilliseconds;
             if (lowest == null) return false;
             plan = new MoonTransferPlan {
                 Correction = lowest, LambertCandidates = lambertCount,
-                SoiCandidates = feasible.Count, CorrectedCandidates = corrections
+                SoiCandidates = feasible.Count, CorrectedCandidates = corrections,
+                LambertAndSoiMilliseconds = searchMs, CorrectionMilliseconds = correctionMs
             };
             return true;
         }

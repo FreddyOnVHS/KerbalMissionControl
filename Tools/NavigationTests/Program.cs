@@ -38,6 +38,7 @@ internal static class Program
         Run("moon 3D periapsis correction preserves SOI feasibility", MoonPeriapsisCorrectionRegression);
         Run("inclined Minmus finite-SOI periapsis targeting validation", InclinedMoonTargetingValidation);
         Run("moon production planner returns verified Minmus transfer", MoonProductionPlannerRegression);
+        Run("moon performance staging and encounter precision", MoonPerformanceStageRegression);
         Run("moon maneuver node PNR basis and verification guard", MoonNodeFrameProjectionRegression);
         Run("Lambert Vallado 3D reference case", LambertVallado);
         Run("Lambert rejects invalid and degenerate boundary data", LambertInvalid);
@@ -377,6 +378,22 @@ internal static class Program
         Check(!OrbitMapNavigationAdapter.TryBuildMoonNodePacket(
             new OrbitMapPacket(), null, "Mun", "TEST", out rejected) &&
             rejected == null, "moon node adapter accepted unverified plan");
+    }
+    private static void MoonPerformanceStageRegression()
+    {
+        // Source contract: the search and correction phases have independent
+        // wall-clock measures; fast SOI bisection retains dense 320-sample
+        // encounter discovery and never replaces independent final assessment.
+        string planner = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "KMC.Engine", "Navigation", "MoonTransferPlanner.cs"));
+        string evaluator = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
+            "KMC.Engine", "Navigation", "MoonEncounterEvaluator.cs"));
+        Check(planner.Contains("LambertAndSoiMilliseconds") &&
+            planner.Contains("CorrectionMilliseconds") &&
+            planner.Contains("Stopwatch stageClock") &&
+            evaluator.Contains("private const int Samples = 320;") &&
+            evaluator.Contains("private const int BisectIterations = 32;"),
+            "moon performance timing or finite-SOI precision safeguards missing");
     }
     private static void SchematicAngleSelectionRegression()
     {

@@ -1248,6 +1248,19 @@ namespace KMC.MissionControl.Pages
                             c.Injection.DepartureUniversalTimeSeconds -
                             packet.UniversalTimeSeconds)),
                         context.SmallFont, dim, x, y); y += lineHeight;
+                    // SOLVER PERFORMANCE / 14.24.8a â€” completed-plan timings.
+                    // Values are computed in KMC.Engine; drawing never solves.
+                    context.Graphics.DrawString("SOLVER PERFORMANCE",
+                        context.SmallFont, dim, x, y); y += lineHeight;
+                    context.Graphics.DrawString("LAMBERT + SOI  " +
+                        _moonPreview.LambertAndSoiMilliseconds.ToString() + " ms",
+                        context.SmallFont, dim, x, y); y += lineHeight;
+                    context.Graphics.DrawString("PE CORRECTION  " +
+                        _moonPreview.CorrectionMilliseconds.ToString() + " ms",
+                        context.SmallFont, dim, x, y); y += lineHeight;
+                    context.Graphics.DrawString("TOTAL  " +
+                        _moonPreview.TotalPlanningMilliseconds.ToString() + " ms",
+                        context.SmallFont, dim, x, y); y += lineHeight;
                 }
                 else
                 {

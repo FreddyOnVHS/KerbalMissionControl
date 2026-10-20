@@ -38,6 +38,14 @@ namespace KMC.Engine.Navigation
             if (!MoonEncounterEvaluator.TryAssess(activeOrbit, moon, primaryMu,
                     seed, requestedPeriapsisRadiusMeters, out original)) return false;
 
+            // First attempt inexpensive finite-difference trust-region targeting.
+            MoonPeriapsisCorrection fast;
+            if (TryFastCorrect(activeOrbit, moon, primaryMu, seed,
+                requestedPeriapsisRadiusMeters, original, out fast))
+            {
+                best = fast;
+                return true;
+            }
             MoonTransferCandidate incumbent = Clone(seed, seed.DeltaV);
             MoonEncounterAssessment current = original;
             double step = Math.Max(1.0, seed.DeltaVMetersPerSecond * 0.08);
@@ -78,6 +86,106 @@ namespace KMC.Engine.Navigation
             return best.RequestedPeriapsisSatisfied && !current.SurfaceImpact;
         }
 
+        // 14.24.8b: bounded finite-difference targeting of the Pe constraint.
+        // The legacy pattern search below remains the fallback if this does not
+        // produce an independently assessed, safe periapsis solution.
+        private static bool TryFastCorrect(OrbitalElements orbit, CelestialBodyState moon,
+            double mu, MoonTransferCandidate seed, double requestedRadius,
+            MoonEncounterAssessment original, out MoonPeriapsisCorrection result)
+        {
+            result = null;
+            MoonTransferCandidate current = Clone(seed, seed.DeltaV);
+            MoonEncounterAssessment assessment = original;
+            MoonTransferCandidate feasible = null;
+            MoonEncounterAssessment feasibleAssessment = null;
+            double trust = Math.Max(3.0, Math.Min(50.0, seed.DeltaVMetersPerSecond * 0.04));
+            for (int iteration = 0; iteration < 18; iteration++)
+            {
+                if (assessment.RequestedPeriapsisSatisfied && !assessment.SurfaceImpact)
+                {
+                    if (feasible == null || current.DeltaVMetersPerSecond < feasible.DeltaVMetersPerSecond)
+                    {
+                        feasible = current;
+                        feasibleAssessment = assessment;
+                    }
+                    // The derivative search is for Pe feasibility. Once feasible,
+                    // don't spend hundreds of trajectories chasing tiny DV savings.
+                    break;
+                }
+                double epsilon = Math.Max(0.02, Math.Min(0.5, trust * 0.02));
+                double[] gradient = new double[3];
+                double[] components = { current.DeltaV.X, current.DeltaV.Y, current.DeltaV.Z };
+                int available = 0;
+                for (int axis = 0; axis < 3; axis++)
+                {
+                    double[] perturbed = (double[])components.Clone();
+                    perturbed[axis] += epsilon;
+                    MoonEncounterAssessment trialAssessment;
+                    MoonTransferCandidate trial = Clone(seed,
+                        new Vector3d(perturbed[0], perturbed[1], perturbed[2]));
+                    if (MoonEncounterEvaluator.TryAssess(orbit, moon, mu, trial,
+                        requestedRadius, out trialAssessment))
+                    {
+                        gradient[axis] = (trialAssessment.PeriapsisErrorMeters -
+                            assessment.PeriapsisErrorMeters) / epsilon;
+                        available++;
+                    }
+                }
+                double norm2 = gradient[0] * gradient[0] +
+                    gradient[1] * gradient[1] + gradient[2] * gradient[2];
+                if (available == 0 || double.IsNaN(norm2) ||
+                    double.IsInfinity(norm2) || norm2 < 1e-12) break;
+                double factor = -assessment.PeriapsisErrorMeters / norm2;
+                double magnitude = Math.Sqrt(norm2) * Math.Abs(factor);
+                if (magnitude > trust) factor *= trust / magnitude;
+                bool accepted = false;
+                double scale = 1.0;
+                for (int backtrack = 0; backtrack < 7; backtrack++)
+                {
+                    Vector3d dv = new Vector3d(
+                        components[0] + scale * factor * gradient[0],
+                        components[1] + scale * factor * gradient[1],
+                        components[2] + scale * factor * gradient[2]);
+                    MoonTransferCandidate trial = Clone(seed, dv);
+                    MoonEncounterAssessment trialAssessment;
+                    if (MoonEncounterEvaluator.TryAssess(orbit, moon, mu, trial,
+                        requestedRadius, out trialAssessment) &&
+                        (trialAssessment.RequestedPeriapsisSatisfied && !trialAssessment.SurfaceImpact ||
+                         Math.Abs(trialAssessment.PeriapsisErrorMeters) <
+                             Math.Abs(assessment.PeriapsisErrorMeters) - 0.1))
+                    {
+                        current = trial;
+                        assessment = trialAssessment;
+                        accepted = true;
+                        break;
+                    }
+                    scale *= 0.5;
+                }
+                if (!accepted)
+                {
+                    trust *= 0.5;
+                    if (trust < 0.01) break;
+                }
+                else trust = Math.Min(75.0, trust * 1.4);
+            }
+            if (feasible == null && assessment.RequestedPeriapsisSatisfied &&
+                !assessment.SurfaceImpact)
+            {
+                feasible = current;
+                feasibleAssessment = assessment;
+            }
+            if (feasible == null) return false;
+            // Never trust the derivative-stage assessment alone.
+            MoonEncounterAssessment verified;
+            if (!MoonEncounterEvaluator.TryAssess(orbit, moon, mu, feasible,
+                requestedRadius, out verified) || !verified.EntersSoi ||
+                verified.SurfaceImpact || !verified.RequestedPeriapsisSatisfied)
+                return false;
+            result = new MoonPeriapsisCorrection {
+                Injection = feasible, Encounter = verified
+            };
+            return true;
+        }
         private static MoonTransferCandidate Clone(MoonTransferCandidate old, Vector3d dv)
         {
             return new MoonTransferCandidate {
