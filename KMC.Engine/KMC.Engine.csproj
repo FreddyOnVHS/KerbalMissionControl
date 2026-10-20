@@ -51,6 +51,7 @@
     <Compile Include="Navigation\MoonTransferBootstrap.cs" />
     <Compile Include="Navigation\MoonEncounterEvaluator.cs" />
     <Compile Include="Navigation\MoonPeriapsisOptimizer.cs" />
+    <Compile Include="Navigation\MoonTransferPlanner.cs" />
     <Compile Include="Navigation\LambertParkingOrbitEjectionPlanner.cs" />
     <Compile Include="Navigation\General3dHyperbolicDeparturePlanner.cs" />
     <Compile Include="Navigation\LambertParkingOrbitEjectionSolution.cs" />

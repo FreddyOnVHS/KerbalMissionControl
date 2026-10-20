@@ -37,6 +37,7 @@ internal static class Program
         Run("moon finite-SOI entry and periapsis diagnostics", MoonEncounterFoundation);
         Run("moon 3D periapsis correction preserves SOI feasibility", MoonPeriapsisCorrectionRegression);
         Run("inclined Minmus finite-SOI periapsis targeting validation", InclinedMoonTargetingValidation);
+        Run("moon production planner returns verified Minmus transfer", MoonProductionPlannerRegression);
         Run("Lambert Vallado 3D reference case", LambertVallado);
         Run("Lambert rejects invalid and degenerate boundary data", LambertInvalid);
         Run("MAP adapter builds Lambert preview from body telemetry", LambertMapPreviewAdapter);
@@ -298,6 +299,52 @@ internal static class Program
             " PeError=" + result.Encounter.PeriapsisErrorMeters.ToString("0.0") +
             "m DV=" + result.DepartureDeltaVMetersPerSecond.ToString("0.0") + "m/s");
     }
+    private static void MoonProductionPlannerRegression()
+    {
+        const double primaryMu = 3.5316e12;
+        OrbitalElements craft = new OrbitalElements {
+            ReferenceBodyName = "Kerbin", SemiMajorAxisMeters = 700000,
+            Eccentricity = 0, InclinationDegrees = 0,
+            LongitudeOfAscendingNodeDegrees = 0, ArgumentOfPeriapsisDegrees = 0,
+            EpochUniversalTimeSeconds = 0, MeanAnomalyAtEpochRadians = 0
+        };
+        CelestialBodyState minmus = new CelestialBodyState {
+            Name = "Minmus", ParentName = "Kerbin",
+            RadiusMeters = 60000, SoiRadiusMeters = 2247428,
+            GravParameter = 1.7658e9,
+            Orbit = new OrbitalElements {
+                ReferenceBodyName = "Kerbin", SemiMajorAxisMeters = 47000000,
+                Eccentricity = 0, InclinationDegrees = 6,
+                LongitudeOfAscendingNodeDegrees = 78,
+                ArgumentOfPeriapsisDegrees = 0,
+                EpochUniversalTimeSeconds = 0, MeanAnomalyAtEpochRadians = 2
+            }
+        };
+        MoonTransferPlan plan;
+        bool found = MoonTransferPlanner.TryPlan(craft, minmus, primaryMu, 80000,
+            0, 18000, 48000, 145000, 9, 9, 3, out plan);
+        Check(found && plan != null && plan.Correction != null &&
+            plan.Correction.Encounter.RequestedPeriapsisSatisfied &&
+            !plan.Correction.Encounter.SurfaceImpact &&
+            plan.SoiCandidates > 0 && plan.CorrectedCandidates > 0,
+            "moon production planner did not return a verified Minmus periapsis");
+        MoonEncounterAssessment independentlyVerified;
+        Check(MoonEncounterEvaluator.TryAssess(craft, minmus, primaryMu,
+            plan.Correction.Injection, 80000, out independentlyVerified) &&
+            independentlyVerified.RequestedPeriapsisSatisfied &&
+            !independentlyVerified.SurfaceImpact,
+            "moon production planner returned an unverified candidate");
+        Console.WriteLine("Moon plan: Lambert=" + plan.LambertCandidates +
+            " finite-SOI=" + plan.SoiCandidates + " corrected=" +
+            plan.CorrectedCandidates + " PeError=" +
+            independentlyVerified.PeriapsisErrorMeters.ToString("0.0") + "m DV=" +
+            plan.DepartureDeltaVMetersPerSecond.ToString("0.0") + "m/s");
+        MoonTransferPlan invalid;
+        Check(!MoonTransferPlanner.TryPlan(craft, minmus, primaryMu,
+            double.NaN, 0, 18000, 48000, 145000, 9, 9, 3, out invalid) &&
+            invalid == null, "moon production planner accepted invalid Pe");
+    }
+
     private static void SchematicAngleSelectionRegression()
     {
         string builder = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
