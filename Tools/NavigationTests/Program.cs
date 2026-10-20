@@ -35,6 +35,7 @@ internal static class Program
         Run("Lambert canonical short/long zero-revolution arcs", LambertCanonical);
         Run("same-primary moon Lambert injection bootstrap", MoonTransferFoundationRegression);
         Run("moon finite-SOI entry and periapsis diagnostics", MoonEncounterFoundation);
+        Run("moon 3D periapsis correction preserves SOI feasibility", MoonPeriapsisCorrectionRegression);
         Run("Lambert Vallado 3D reference case", LambertVallado);
         Run("Lambert rejects invalid and degenerate boundary data", LambertInvalid);
         Run("MAP adapter builds Lambert preview from body telemetry", LambertMapPreviewAdapter);
@@ -170,6 +171,49 @@ internal static class Program
             candidate, double.NaN, out assessment),
             "moon evaluator accepted invalid desired periapsis");
     }
+    private static void MoonPeriapsisCorrectionRegression()
+    {
+        const double mu = 3.5316e12;
+        OrbitalElements craft = new OrbitalElements {
+            ReferenceBodyName = "Kerbin", SemiMajorAxisMeters = 700000,
+            Eccentricity = 0, InclinationDegrees = 0,
+            LongitudeOfAscendingNodeDegrees = 0, ArgumentOfPeriapsisDegrees = 0,
+            EpochUniversalTimeSeconds = 0, MeanAnomalyAtEpochRadians = 0
+        };
+        CelestialBodyState mun = new CelestialBodyState {
+            Name = "Mun", ParentName = "Kerbin", RadiusMeters = 200000,
+            SoiRadiusMeters = 2400000, GravParameter = 6.5138398e10,
+            Orbit = new OrbitalElements {
+                ReferenceBodyName = "Kerbin", SemiMajorAxisMeters = 12000000,
+                Eccentricity = 0, InclinationDegrees = 0,
+                LongitudeOfAscendingNodeDegrees = 0, ArgumentOfPeriapsisDegrees = 0,
+                EpochUniversalTimeSeconds = 0, MeanAnomalyAtEpochRadians = 2.0
+            }
+        };
+        MoonTransferCandidate seed;
+        Check(MoonTransferBootstrap.TryFindInjection(craft, mun, mu,
+            0, 4000, 18000, 40000, 9, 9, out seed),
+            "moon periapsis seed missing");
+        MoonEncounterAssessment initial;
+        Check(MoonEncounterEvaluator.TryAssess(craft, mun, mu, seed, 300000, out initial),
+            "moon periapsis initial SOI entry missing");
+        MoonPeriapsisCorrection corrected;
+        bool success = MoonPeriapsisOptimizer.TryCorrect(craft, mun, mu,
+            seed, 300000, out corrected);
+        Check(corrected != null && corrected.Encounter != null &&
+            corrected.Injection.DeltaV.IsFinite &&
+            Math.Abs(corrected.Encounter.PeriapsisErrorMeters) <=
+            Math.Abs(initial.PeriapsisErrorMeters) + 0.02,
+            "moon optimizer worsened validated encounter");
+        Check(!success || (corrected.RequestedPeriapsisSatisfied &&
+            !corrected.Encounter.SurfaceImpact),
+            "moon optimizer falsely declared safe targeted periapsis");
+        MoonPeriapsisCorrection invalid;
+        Check(!MoonPeriapsisOptimizer.TryCorrect(craft, mun, mu,
+            seed, double.NaN, out invalid) && invalid == null,
+            "moon optimizer accepted nonfinite requested periapsis");
+    }
+
     private static void SchematicAngleSelectionRegression()
     {
         string builder = File.ReadAllText(Path.Combine(Environment.CurrentDirectory,
